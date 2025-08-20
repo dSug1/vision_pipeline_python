@@ -2,6 +2,7 @@
 import subprocess
 import importlib.util
 
+
 # Ensure mediapipe is installed
 def ensure_mediapipe():
     package_name = "mediapipe"
