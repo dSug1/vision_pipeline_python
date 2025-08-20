@@ -17,7 +17,7 @@ ensure_mediapipe()
 import cv2
 import time
 
-from .inference import load_models, run_inference_on_frame
+from inference import load_models, run_inference_on_frame
 
 # Load models
 face_detector, hand_detector = load_models()
