@@ -1,12 +1,12 @@
 import json
 import os
 
-def extract_landmark_array(json_path="./received_hands_data.json"):
+def extract_landmark_array(json_file_path):
     def zero_landmarks():
         return [{"x_px": 0, "y_px": 0} for _ in range(21)]
 
     try:
-        with open(json_path, 'r') as f:
+        with open(json_file_path, 'r') as f:
             data = json.load(f)
 
         if not data or not isinstance(data, list):
@@ -28,11 +28,9 @@ def extract_landmark_array(json_path="./received_hands_data.json"):
 
         return left_output + right_output
 
+
     except (json.JSONDecodeError, FileNotFoundError, TypeError) as e:
         print(f"Error reading or parsing file: {e}")
         return zero_landmarks() * 2
 
-# Example usage
-if __name__ == "__main__":
-    result = extract_landmark_array()
-    print(result)
+

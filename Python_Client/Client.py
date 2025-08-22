@@ -1,6 +1,9 @@
 import socket
 import json
 
+
+from extract_hands_landmaks_in_array import extract_landmark_array as Create_hands_coordinates_array
+
 def receive_keypoints_data(host='127.0.0.1', port=5050):
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -28,6 +31,8 @@ def receive_keypoints_data(host='127.0.0.1', port=5050):
                         json.dump(data["data"], f, indent=4)
 
                     #print(f"[Client] Saved {data_type} keypoints to {output_file}.")
+                    result = Create_hands_coordinates_array("./received_hands_data.json")
+                    print(result)
 
                 except json.JSONDecodeError as e:
                     print(f"[Client] JSON decode error: {e}")
