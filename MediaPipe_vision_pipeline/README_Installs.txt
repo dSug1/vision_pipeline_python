@@ -1,7 +1,7 @@
 This Python program requires OpenCV and Mediapipe libraries to be installed.
 
 
-- IMPORT OPENCV
+1- IMPORT OPENCV
 
 To successfully import cv2 within a Python virtual environment, follow these steps:
 Create a Virtual Environment (if you haven't already):
@@ -31,7 +31,9 @@ Python
     print(cv2.__version__)
 If the installation was successful, this will import cv2 and print its version without raising an ImportError.
 
-- IMPORT MEDIAPIPE
+
+
+2- IMPORT MEDIAPIPE
 
 The MediaPipe tasks require the mediapipe PyPI package. You can install and import these dependencies with the following:
 

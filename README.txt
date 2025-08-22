@@ -1,8 +1,4 @@
-- 	The vision pipeline is packaged as a microservice that can be called via socket.
-
-	How to Run It?
-
-	-> The MediaPipe tasks require the mediapipe PyPI package. You can install and import these dependencies with the following:
+- 	The MediaPipe tasks require the mediapipe PyPI package. You can install and import these dependencies with the following:
 
 
 		$ python -m pip install mediapipe
