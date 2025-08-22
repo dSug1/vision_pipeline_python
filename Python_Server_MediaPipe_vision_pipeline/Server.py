@@ -22,7 +22,7 @@ def Load_keypoints_json(nameOfFile):
 def SendPacket(filename, throughconnection):
     try:
         keypoints_data = Load_keypoints_json(filename)
-        serialized = json.dumps(keypoints_data)
+        serialized = json.dumps(keypoints_data)+ "\n"  # Add delimiter
         throughconnection.sendall(serialized.encode('utf-8'))
         print("[Socket Server] Data sent successfully.")
     except Exception as e:

@@ -59,7 +59,7 @@ while True:
     
     cv2.imshow("Hands & Face Detection", annotatedImage)
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    if cv2.waitKey(1) & 0xFF == ord('q'):   #add the condition "& if the connection breaks"
         break
 
     # Serialize facekeypoints_coords and write to a JSON file
