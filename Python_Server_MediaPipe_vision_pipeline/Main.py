@@ -64,16 +64,60 @@ while True:
         break
 
     # Serialize facekeypoints_coords and write to a JSON file
-    handskeypoints_serialized_coords = json.dumps(allHandsLandmarksCoordinatesArray, indent=2)
-    handskeypointsCoordinates_output_path = os.path.join(os.path.dirname(__file__), "handskeypointsCoordinates.json")
-    with open(handskeypointsCoordinates_output_path, "w") as f:
-        f.write(handskeypoints_serialized_coords)
+    # Flatten face keypoints into [x1, y1, x2, y2, ...]
+    flat_face_coords = []
 
-    # Serialize handslandmarks and write to a JSON file
-    facekeypoints_serialized_coords = json.dumps(facekeypointsCoordinates, indent=2)
+    for point_index, point in enumerate(facekeypointsCoordinates):
+        if isinstance(point, dict):
+            try:
+                x = int(float(point.get("x", 0)))
+                y = int(float(point.get("y", 0)))
+                flat_face_coords.extend([x, y])
+            except (ValueError, TypeError):
+                flat_face_coords.extend([0, 0])
+        else:
+            print(f"[Warning] Unexpected face point format at index {point_index}: {point}")
+            flat_face_coords.extend([0, 0])
+
+
+
+    # Serialize and write to JSON
     facekeypointsCoordinates_output_path = os.path.join(os.path.dirname(__file__), "facekeypointsCoordinates.json")
     with open(facekeypointsCoordinates_output_path, "w") as f:
-        f.write(facekeypoints_serialized_coords)
+        json.dump(flat_face_coords, f, indent=2)
+
+    print(f"[Main] Saved flattened face keypoints to {facekeypointsCoordinates_output_path}")
+
+
+    # Serialize handslandmarks and write to a JSON file
+    # Flatten hands keypoints into [x1, y1, x2, y2, ...]
+    flat_hands_coords = []
+
+    for hand_index, hand in enumerate(allHandsLandmarksCoordinatesArray):
+        if isinstance(hand, list):
+            for point_index, point in enumerate(hand):
+                if isinstance(point, dict):
+                    try:
+                        x = int(float(point.get("x_px", 0)))
+                        y = int(float(point.get("y_px", 0)))
+                        flat_hands_coords.extend([x, y])
+                    except (ValueError, TypeError):
+                        flat_hands_coords.extend([0, 0])
+                else:
+                    print(f"[Warning] Unexpected point format at hand {hand_index}, point {point_index}: {point}")
+                    flat_hands_coords.extend([0, 0])
+        else:
+            print(f"[Warning] Unexpected hand format at index {hand_index}: {hand}")
+
+
+    # Serialize and write to JSON
+    handskeypointsCoordinates_output_path = os.path.join(os.path.dirname(__file__), "handskeypointsCoordinates.json")
+    with open(handskeypointsCoordinates_output_path, "w") as f:
+        json.dump(flat_hands_coords, f, indent=2)
+
+    print(f"[Main] Saved flattened hands keypoints to {handskeypointsCoordinates_output_path}")
+
+
 
     try:
         SendPacketThroughSocket("facekeypointsCoordinates.json", "handskeypointsCoordinates.json", connection)
