@@ -34,6 +34,6 @@ def SendPacket(facecoordsfilename, handscoordsfilename, throughconnection):
         print("[Socket Server] Hand keypoints sent successfully.")
     except Exception as e:
         print(f"[Socket Server] Error: {e}")
-
+        raise  # <-- This is critical: re-raise the exception
 
 

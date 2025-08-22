@@ -46,13 +46,14 @@ if not cap.isOpened():
 
 # Start socket server
 connection, address, server = StartServer('127.0.0.1', 5050)
+connection_alive = True
 
 # Run inference and write keypoints coordinates in json files
 timestamp_ms = 0
 
 while True:
     ret, frame = cap.read()
-    if not ret:
+    if not ret or not connection_alive:
         break
 
     annotatedImage, facekeypointsCoordinates, allHandsLandmarksCoordinatesArray = run_inference_on_frame(frame, face_detector, hand_detector, timestamp_ms)
@@ -74,7 +75,12 @@ while True:
     with open(facekeypointsCoordinates_output_path, "w") as f:
         f.write(facekeypoints_serialized_coords)
 
-    SendPacketThroughSocket("facekeypointsCoordinates.json", "handskeypointsCoordinates.json", connection)
+    try:
+        SendPacketThroughSocket("facekeypointsCoordinates.json", "handskeypointsCoordinates.json", connection)
+    except (BrokenPipeError, ConnectionResetError, OSError) as e:
+        print(f"[Main] Socket connection lost: {e}")
+        connection_alive = False
+        break
 
     timestamp_ms += 33  # ~30 FPS
 
