@@ -1,11 +1,8 @@
 import cv2
-import os
-import json
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from facevisualizer import visualize
-from facevisualizer import extract_keypoint_coordinates
+from facevisualizer import visualize, extract_facekeypoint_coordinates
 from hands_visualizer import draw_landmarks_on_image
 
 
@@ -41,15 +38,7 @@ def run_inference_on_frame(frame, face_detector, hand_detector, timestamp_ms):
     #face results
     face_result = face_detector.detect(mp_image)
     frame_with_faces = visualize(frame, face_result)
-    keypoint_coords = extract_keypoint_coordinates(face_result, frame.shape)
-    # Serialize keypoints_coords and write to JSON file
-    serialized_coords = json.dumps(keypoint_coords, indent=2)
-    output_path = os.path.join(os.path.dirname(__file__), "facekeypoints.json")
-    with open(output_path, "w") as f:
-        f.write(serialized_coords)
-
-
-
+    facekeypoint_coords = extract_facekeypoint_coordinates(face_result, frame.shape)
 
     #hands results
     hand_result = hand_detector.detect_for_video(mp_image, timestamp_ms)
@@ -57,5 +46,5 @@ def run_inference_on_frame(frame, face_detector, hand_detector, timestamp_ms):
 
     combined = cv2.addWeighted(frame_with_faces, 0.5,
                                cv2.cvtColor(frame_with_hands, cv2.COLOR_RGB2BGR), 0.5, 0)
-    return combined
+    return combined, facekeypoint_coords
 

@@ -1,4 +1,6 @@
 ﻿import sys
+import os
+import json
 import subprocess
 import importlib.util
 
@@ -46,11 +48,18 @@ while True:
     if not ret:
         break
 
-    annotated = run_inference_on_frame(frame, face_detector, hand_detector, timestamp_ms)
-    cv2.imshow("Hands & Face Detection", annotated)
+    annotatedImage, facekeypointsCoordinates = run_inference_on_frame(frame, face_detector, hand_detector, timestamp_ms)
+    
+    cv2.imshow("Hands & Face Detection", annotatedImage)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
+
+    # Serialize facekeypoints_coords and write to a JSON file
+    facekeypoints_serialized_coords = json.dumps(facekeypointsCoordinates, indent=2)
+    facekeypointsCoordinates_output_path = os.path.join(os.path.dirname(__file__), "facekeypointsCoordinates.json")
+    with open(facekeypointsCoordinates_output_path, "w") as f:
+        f.write(facekeypoints_serialized_coords)
 
     timestamp_ms += 33  # ~30 FPS
 

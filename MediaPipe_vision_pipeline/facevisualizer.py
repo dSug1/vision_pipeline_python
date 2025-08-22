@@ -70,7 +70,7 @@ def visualize(
 
   return annotated_image
 
-def extract_keypoint_coordinates(detection_result, image_shape):
+def extract_facekeypoint_coordinates(detection_result, image_shape):
     height, width = image_shape[:2]
     coordinates = []
 
