@@ -19,7 +19,7 @@ def receive_keypoints_data(host='127.0.0.1', port=5050):
                 packet, buffer = buffer.split('\n', 1)
                 try:
                     data = json.loads(packet)
-                    print("[Client] Received data:", data)
+                    #print("[Client] Received data:", data)
 
                     data_type = data.get("type", "unknown")
                     output_file = f"received_{data_type}_data.json"
@@ -27,7 +27,7 @@ def receive_keypoints_data(host='127.0.0.1', port=5050):
                     with open(output_file, 'w') as f:
                         json.dump(data["data"], f, indent=4)
 
-                    print(f"[Client] Saved {data_type} keypoints to {output_file}.")
+                    #print(f"[Client] Saved {data_type} keypoints to {output_file}.")
 
                 except json.JSONDecodeError as e:
                     print(f"[Client] JSON decode error: {e}")
