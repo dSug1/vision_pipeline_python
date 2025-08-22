@@ -63,21 +63,24 @@ while True:
     if cv2.waitKey(1) & 0xFF == ord('q'):   #add the condition "& if the connection breaks"
         break
 
+    expected_face_points = 6
+    if not facekeypointsCoordinates or len(facekeypointsCoordinates) != expected_face_points:
+        flat_face_coords = [0] * expected_face_points * 2
+    else:
     # Serialize facekeypoints_coords and write to a JSON file
     # Flatten face keypoints into [x1, y1, x2, y2, ...]
-    flat_face_coords = []
-
-    for point_index, point in enumerate(facekeypointsCoordinates):
-        if isinstance(point, dict):
-            try:
-                x = int(float(point.get("x", 0)))
-                y = int(float(point.get("y", 0)))
-                flat_face_coords.extend([x, y])
-            except (ValueError, TypeError):
+        flat_face_coords = []
+        for point_index, point in enumerate(facekeypointsCoordinates):
+            if isinstance(point, dict):
+                try:
+                    x = int(float(point.get("x", 0)))
+                    y = int(float(point.get("y", 0)))
+                    flat_face_coords.extend([x, y])
+                except (ValueError, TypeError):
+                    flat_face_coords.extend([0, 0])
+            else:
+                print(f"[Warning] Unexpected face point format at index {point_index}: {point}")
                 flat_face_coords.extend([0, 0])
-        else:
-            print(f"[Warning] Unexpected face point format at index {point_index}: {point}")
-            flat_face_coords.extend([0, 0])
 
 
 
