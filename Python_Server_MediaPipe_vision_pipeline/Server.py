@@ -10,7 +10,7 @@ def load_keypoints_json(filename="facekeypointsCoordinates.json"):
 def start_socket_server(serverhost, serverport):
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind((serverhost, serverport))
-    server.listen(1)
+    server.listen()
     print(f"[Socket Server] Listening on {serverhost}:{serverport}...")
 
     conn, addr = server.accept()
