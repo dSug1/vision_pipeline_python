@@ -69,3 +69,18 @@ def visualize(
                 FONT_SIZE, TEXT_COLOR, FONT_THICKNESS)
 
   return annotated_image
+
+def extract_keypoint_coordinates(detection_result, image_shape):
+    height, width = image_shape[:2]
+    coordinates = []
+
+    for detection in detection_result.detections:
+        for keypoint in detection.keypoints:
+            keypoint_px = _normalized_to_pixel_coordinates(
+                keypoint.x, keypoint.y, width, height
+            )
+            if keypoint_px:
+                coordinates.append({"x": keypoint_px[0], "y": keypoint_px[1]})
+
+    return coordinates
+
