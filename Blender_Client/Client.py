@@ -42,5 +42,4 @@ def receive_keypoints_data(host='127.0.0.1', port=5050):
 
 receive_keypoints_data()
 
-
-#add "if connection breaks" -> client.close() 
+#Want help building a unified client that routes packets to different Blender handlers based on type? I can sketch that out next.
