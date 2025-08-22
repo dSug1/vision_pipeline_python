@@ -32,6 +32,8 @@ import cv2
 import time
 
 from inference import load_models, run_inference_on_frame
+from Server import start_socket_server as StartServerSendsPackets
+
 
 # Load models
 face_detector, hand_detector = load_models()
@@ -41,6 +43,10 @@ cap = cv2.VideoCapture(0)
 if not cap.isOpened():
     raise RuntimeError("Could not open webcam.")
 
+# Start socket server
+StartServerSendsPackets('127.0.0.1', 5050)
+
+# Run inference and write keypoints coordinates in json files
 timestamp_ms = 0
 
 while True:
@@ -66,6 +72,7 @@ while True:
     facekeypointsCoordinates_output_path = os.path.join(os.path.dirname(__file__), "facekeypointsCoordinates.json")
     with open(facekeypointsCoordinates_output_path, "w") as f:
         f.write(facekeypoints_serialized_coords)
+
 
     timestamp_ms += 33  # ~30 FPS
 
