@@ -14,6 +14,18 @@ def ensure_mediapipe():
 
 ensure_mediapipe()
 
+# Ensure OpenCV is installed
+def ensure_opencv():
+    package_import_name = "cv2"
+    package_pip_name = "opencv-python"
+    if importlib.util.find_spec(package_import_name) is None:
+        print(f"{package_import_name} not found. Installing {package_pip_name}...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package_pip_name])
+    else:
+        print(f"{package_import_name} is already installed.")
+
+ensure_opencv()
+
 import cv2
 import time
 
