@@ -19,12 +19,19 @@ def Load_keypoints_json(nameOfFile):
     with open(path, "r") as f:
         return json.load(f)
     
-def SendPacket(filename, throughconnection):
+def SendPacket(facecoordsfilename, handscoordsfilename, throughconnection):
     try:
-        keypoints_data = Load_keypoints_json(filename)
-        serialized = json.dumps(keypoints_data)+ "\n"  # Add delimiter
+        #send face keypoints coordinates
+        facekeypoints_data = Load_keypoints_json(facecoordsfilename)
+        serialized = json.dumps({"type": "face", "data":facekeypoints_data})+ "\n"  # Add delimiter
         throughconnection.sendall(serialized.encode('utf-8'))
-        print("[Socket Server] Data sent successfully.")
+        print("[Socket Server] Face data sent successfully.")
+
+        #send hands landmarks coordinates
+        hands_data = Load_keypoints_json(handscoordsfilename)
+        hands_serialized = json.dumps({"type": "hands", "data": hands_data}) + "\n"
+        throughconnection.sendall(hands_serialized.encode('utf-8'))
+        print("[Socket Server] Hand keypoints sent successfully.")
     except Exception as e:
         print(f"[Socket Server] Error: {e}")
 

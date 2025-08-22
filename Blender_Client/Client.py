@@ -1,15 +1,17 @@
 import socket
 import json
 
-def receive_hand_data(host='127.0.0.1', port=5050, output_file='receivedData.json'):
+def receive_keypoints_data(host='127.0.0.1', port=5050):
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect((host, port))
-
     try:
+        client.connect((host, port))
+        print("[Client] Connected to server.")
+
         buffer = ""
         while True:
             chunk = client.recv(4096).decode('utf-8')
             if not chunk:
+                print("[Client] Connection closed by server.")
                 break
             buffer += chunk
 
@@ -19,17 +21,26 @@ def receive_hand_data(host='127.0.0.1', port=5050, output_file='receivedData.jso
                     data = json.loads(packet)
                     print("[Client] Received data:", data)
 
-                    with open(output_file, 'w') as f:
-                        json.dump(data, f, indent=4)
+                    data_type = data.get("type", "unknown")
+                    output_file = f"received_{data_type}_data.json"
 
-                    print(f"[Client] Overwritten {output_file} with latest data.")
+                    with open(output_file, 'w') as f:
+                        json.dump(data["data"], f, indent=4)
+
+                    print(f"[Client] Saved {data_type} keypoints to {output_file}.")
+
                 except json.JSONDecodeError as e:
                     print(f"[Client] JSON decode error: {e}")
+                except Exception as e:
+                    print(f"[Client] Error processing packet: {e}")
 
     except Exception as e:
-        print(f"[Client] Error: {e}")
+        print(f"[Client] Connection error: {e}")
+    finally:
+        client.close()
+        print("[Client] Socket closed.")
 
+receive_keypoints_data()
 
-receive_hand_data()
 
 #add "if connection breaks" -> client.close() 

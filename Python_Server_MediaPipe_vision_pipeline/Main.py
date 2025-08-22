@@ -74,7 +74,7 @@ while True:
     with open(facekeypointsCoordinates_output_path, "w") as f:
         f.write(facekeypoints_serialized_coords)
 
-    SendPacketThroughSocket("facekeypointsCoordinates.json", connection)
+    SendPacketThroughSocket("facekeypointsCoordinates.json", "handskeypointsCoordinates.json", connection)
 
     timestamp_ms += 33  # ~30 FPS
 
