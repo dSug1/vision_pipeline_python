@@ -86,36 +86,47 @@ while True:
     with open(facekeypointsCoordinates_output_path, "w") as f:
         json.dump(flat_face_coords, f, indent=2)
 
-    print(f"[Main] Saved flattened face keypoints to {facekeypointsCoordinates_output_path}")
+    #print(f"[Main] Saved flattened face keypoints to {facekeypointsCoordinates_output_path}")
 
 
     # Serialize handslandmarks and write to a JSON file
-    # Flatten hands keypoints into [x1, y1, x2, y2, ...]
-    flat_hands_coords = []
+    def zero_landmarks_flat():
+        return [0] * 42 * 2  # 42 per hand × 2 hands
 
-    for hand_index, hand in enumerate(allHandsLandmarksCoordinatesArray):
-        if isinstance(hand, list):
-            for point_index, point in enumerate(hand):
-                if isinstance(point, dict):
-                    try:
-                        x = int(float(point.get("x_px", 0)))
-                        y = int(float(point.get("y_px", 0)))
-                        flat_hands_coords.extend([x, y])
-                    except (ValueError, TypeError):
-                        flat_hands_coords.extend([0, 0])
-                else:
-                    print(f"[Warning] Unexpected point format at hand {hand_index}, point {point_index}: {point}")
-                    flat_hands_coords.extend([0, 0])
-        else:
-            print(f"[Warning] Unexpected hand format at index {hand_index}: {hand}")
+    def flatten_landmarks(landmarks):
+        flat = []
+        for lm in landmarks:
+            if isinstance(lm, dict):
+                try:
+                    x = int(float(lm.get("x_px", 0)))
+                    y = int(float(lm.get("y_px", 0)))
+                    flat.extend([x, y])
+                except (ValueError, TypeError):
+                    flat.extend([0, 0])
+            else:
+                flat.extend([0, 0])
+        return flat
 
+    left_hand = next((hand for hand in allHandsLandmarksCoordinatesArray if hand.get("handedness") == "Left"), None)
+    right_hand = next((hand for hand in allHandsLandmarksCoordinatesArray if hand.get("handedness") == "Right"), None)
+
+    left_landmarks = left_hand.get("landmarks", []) if left_hand else []
+    right_landmarks = right_hand.get("landmarks", []) if right_hand else []
+
+    left_valid = len(left_landmarks) == 21
+    right_valid = len(right_landmarks) == 21
+
+    left_output = flatten_landmarks(left_landmarks) if left_valid else [0] * 42
+    right_output = flatten_landmarks(right_landmarks) if right_valid else [0] * 42
+
+    flat_hands_coords = left_output + right_output
 
     # Serialize and write to JSON
     handskeypointsCoordinates_output_path = os.path.join(os.path.dirname(__file__), "handskeypointsCoordinates.json")
     with open(handskeypointsCoordinates_output_path, "w") as f:
         json.dump(flat_hands_coords, f, indent=2)
 
-    print(f"[Main] Saved flattened hands keypoints to {handskeypointsCoordinates_output_path}")
+    #print(f"[Main] Saved flattened hands keypoints to {handskeypointsCoordinates_output_path}")
 
 
 

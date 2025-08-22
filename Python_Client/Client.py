@@ -2,10 +2,6 @@ import socket
 import json
 
 
-#from extract_face_keypoints_in_array import extract_face_array as Create_face_coordinates_array
-#from extract_hands_landmaks_in_array import extract_landmark_array as Create_hands_coordinates_array
-
-
 def receive_keypoints_data(host='127.0.0.1', port=5050):
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -32,28 +28,7 @@ def receive_keypoints_data(host='127.0.0.1', port=5050):
                     with open(output_file, 'w') as f:
                         json.dump(data["data"], f, indent=4)
 
-                    #result_face_keypoints_Coord_array = Create_face_coordinates_array("./received_face_data.json")
-                    #print(result_face_keypoints_Coord_array)
-
-                    #result_handsLandmarksCoord_array = Create_hands_coordinates_array("./received_hands_data.json")
-                    #print(result_handsLandmarksCoord_array)
-
-                    # Save to output files
-                    # Save to face keypoints coord array output file
-                    #face_array_output_file = "face_keypoints_array_output.json"
-                    #with open(face_array_output_file, 'w') as f:
-                    #    json.dump(result_face_keypoints_Coord_array, f)
-
-                    #print(f"[Client] Saved face keypoints array to {face_array_output_file}")
-                    
-                    # Save to hands landmarks coord array output file
-                    #hands_array_output_file = "hands_landmarks_array_output.json"
-                    #with open(hands_array_output_file, 'w') as f:
-                    #    json.dump(result_handsLandmarksCoord_array, f)
-
-                    #print(f"[Client] Saved hands landmark array to {hands_array_output_file}")
-
-
+                   
                 except json.JSONDecodeError as e:
                     print(f"[Client] JSON decode error: {e}")
                 except Exception as e:
