@@ -2,17 +2,18 @@ import cv2
 from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
 import numpy as np
+from facevisualizer import _normalized_to_pixel_coordinates as _normalized_to_px_coords
 
 MARGIN = 10  # pixels
 FONT_SIZE = 1
 FONT_THICKNESS = 1
 HANDEDNESS_TEXT_COLOR = (88, 205, 54) # vibrant green
 
-def draw_landmarks_on_image(rgb_image, detection_result):
+def draw_landmarks_on_image(frame_image_shape, rgb_image, detection_result):
   hand_landmarks_list = detection_result.hand_landmarks
   handedness_list = detection_result.handedness
   annotated_image = np.copy(rgb_image)
-  height, width = rgb_image[:2]
+  height, width = frame_image_shape[:2]
   all_hands_coords = []
   landmarkscoordinatesArray = []
 
@@ -34,9 +35,15 @@ def draw_landmarks_on_image(rgb_image, detection_result):
         )
 
         # Extract coordinates into a dictionary
+        # Convert normalized coordinates to pixel coordinates
+        pixel_coords = _normalized_to_px_coords(
+            landmark.x, landmark.y, width, height
+        )
+
+        # Extract coordinates into a dictionary
         handslandmarks_coords.append({
-            "x": landmark.x,
-            "y": landmark.y,
+            "x_px": pixel_coords[0] if pixel_coords else None,
+            "y_px": pixel_coords[1] if pixel_coords else None
         })
 
     solutions.drawing_utils.draw_landmarks(
