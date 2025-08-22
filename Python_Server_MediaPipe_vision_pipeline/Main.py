@@ -32,7 +32,7 @@ import cv2
 import time
 
 from inference import load_models, run_inference_on_frame
-from Server import start_socket_server as StartServerSendsPackets
+from Server import Start_socket_server as StartServer
 
 
 # Load models
@@ -44,7 +44,7 @@ if not cap.isOpened():
     raise RuntimeError("Could not open webcam.")
 
 # Start socket server
-StartServerSendsPackets('127.0.0.1', 5050)
+connection, address = StartServer('127.0.0.1', 5050)
 
 # Run inference and write keypoints coordinates in json files
 timestamp_ms = 0
