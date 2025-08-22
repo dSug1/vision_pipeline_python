@@ -42,9 +42,9 @@ def run_inference_on_frame(frame, face_detector, hand_detector, timestamp_ms):
 
     #hands results
     hand_result = hand_detector.detect_for_video(mp_image, timestamp_ms)
-    frame_with_hands, landmarkscoordinatesarray, allHandsKeypointsArray = draw_landmarks_on_image(rgb_frame, hand_result)
+    frame_with_hands, allhandslandmarkscoordinatesarray = draw_landmarks_on_image(rgb_frame, hand_result)
 
     combined = cv2.addWeighted(frame_with_faces, 0.5,
                                cv2.cvtColor(frame_with_hands, cv2.COLOR_RGB2BGR), 0.5, 0)
-    return combined, facekeypoint_coords, landmarkscoordinatesarray
+    return combined, facekeypoint_coords, allhandslandmarkscoordinatesarray
 

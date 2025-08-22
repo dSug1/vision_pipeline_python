@@ -13,7 +13,7 @@ def draw_landmarks_on_image(rgb_image, detection_result):
   handedness_list = detection_result.handedness
   annotated_image = np.copy(rgb_image)
   height, width = rgb_image[:2]
-  all_hands = []
+  all_hands_coords = []
   landmarkscoordinatesArray = []
 
 
@@ -24,25 +24,21 @@ def draw_landmarks_on_image(rgb_image, detection_result):
     hand_landmarks = hand_landmarks_list[idx]
     handedness = handedness_list[idx]
 
-    #append the landmarks coordinates in an array
-    for lm in hand_landmarks:
-        landmarkscoordinatesArray.append({
-                "x": int(lm.x * width),
-                "y": int(lm.y * height),
-                "z": lm.z  # Optional: keep as-is or scale if needed
-            })
-      
-        #all_hands.append({
-        #    "handedness": handedness,
-        #    "landmarks": landmarksArray
-        #})
+    hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()     # Prepare protobuf for drawing
+    handslandmarks_coords = []  # This will store the extracted coordinates
 
+    for landmark in hand_landmarks:
+        # Add to protobuf for drawing
+        hand_landmarks_proto.landmark.append(
+            landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z)
+        )
 
-    # Draw the hand landmarks.
-    hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
-    hand_landmarks_proto.landmark.extend([
-      landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in hand_landmarks
-    ])
+        # Extract coordinates into a dictionary
+        handslandmarks_coords.append({
+            "x": landmark.x,
+            "y": landmark.y,
+        })
+
     solutions.drawing_utils.draw_landmarks(
       annotated_image,
       hand_landmarks_proto,
@@ -62,4 +58,10 @@ def draw_landmarks_on_image(rgb_image, detection_result):
                 (text_x, text_y), cv2.FONT_HERSHEY_DUPLEX,
                 FONT_SIZE, HANDEDNESS_TEXT_COLOR, FONT_THICKNESS, cv2.LINE_AA)
 
-  return annotated_image, landmarkscoordinatesArray, all_hands
+    # Append to full list
+    all_hands_coords.append({
+            "handedness": handedness[0].category_name,
+            "landmarks": handslandmarks_coords
+        })
+
+  return annotated_image, all_hands_coords

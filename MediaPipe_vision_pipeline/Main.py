@@ -48,7 +48,7 @@ while True:
     if not ret:
         break
 
-    annotatedImage, facekeypointsCoordinates, landmarksCoordinatesArray = run_inference_on_frame(frame, face_detector, hand_detector, timestamp_ms)
+    annotatedImage, facekeypointsCoordinates, allHandsLandmarksCoordinatesArray = run_inference_on_frame(frame, face_detector, hand_detector, timestamp_ms)
     
     cv2.imshow("Hands & Face Detection", annotatedImage)
 
@@ -56,7 +56,7 @@ while True:
         break
 
     # Serialize facekeypoints_coords and write to a JSON file
-    handskeypoints_serialized_coords = json.dumps(landmarksCoordinatesArray, indent=2)
+    handskeypoints_serialized_coords = json.dumps(allHandsLandmarksCoordinatesArray, indent=2)
     handskeypointsCoordinates_output_path = os.path.join(os.path.dirname(__file__), "handskeypointsCoordinates.json")
     with open(handskeypointsCoordinates_output_path, "w") as f:
         f.write(handskeypoints_serialized_coords)
