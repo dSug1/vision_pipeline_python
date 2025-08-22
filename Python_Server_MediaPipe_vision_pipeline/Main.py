@@ -33,6 +33,7 @@ import time
 
 from inference import load_models, run_inference_on_frame
 from Server import Start_socket_server as StartServer
+from Server import SendPacket as SendPacketThroughSocket
 
 
 # Load models
@@ -44,7 +45,7 @@ if not cap.isOpened():
     raise RuntimeError("Could not open webcam.")
 
 # Start socket server
-connection, address = StartServer('127.0.0.1', 5050)
+connection, address, server = StartServer('127.0.0.1', 5050)
 
 # Run inference and write keypoints coordinates in json files
 timestamp_ms = 0
@@ -73,8 +74,12 @@ while True:
     with open(facekeypointsCoordinates_output_path, "w") as f:
         f.write(facekeypoints_serialized_coords)
 
+    SendPacketThroughSocket("facekeypointsCoordinates.json", connection)
 
     timestamp_ms += 33  # ~30 FPS
 
 cap.release()
 cv2.destroyAllWindows()
+connection.close()
+server.close()
+print("[Socket Server] Connection closed.")
