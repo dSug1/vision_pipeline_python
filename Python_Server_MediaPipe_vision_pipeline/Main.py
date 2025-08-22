@@ -1,8 +1,19 @@
-﻿import sys
+﻿import cv2
+import sys
 import os
 import json
 import subprocess
 import importlib.util
+import time
+
+from inference import load_models, run_inference_on_frame
+from Server import Start_socket_server as StartServer
+from Server import SendPacket as SendPacketThroughSocket
+from utils_for_output_data_formatting import (
+    flatten_face_keypoints,
+    flatten_hand_keypoints,
+    extract_hand_by_type
+)
 
 
 # Ensure mediapipe is installed
@@ -28,14 +39,6 @@ def ensure_opencv():
 
 ensure_opencv()
 
-import cv2
-import time
-
-from inference import load_models, run_inference_on_frame
-from Server import Start_socket_server as StartServer
-from Server import SendPacket as SendPacketThroughSocket
-
-
 # Load models
 face_detector, hand_detector = load_models()
 
@@ -58,81 +61,37 @@ while True:
 
     annotatedImage, facekeypointsCoordinates, allHandsLandmarksCoordinatesArray = run_inference_on_frame(frame, face_detector, hand_detector, timestamp_ms)
     
+    #show in display
     cv2.imshow("Hands & Face Detection", annotatedImage)
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):   #add the condition "& if the connection breaks"
+    if cv2.waitKey(1) & 0xFF == ord('q'):   
         break
 
-    expected_face_points = 6
-    if not facekeypointsCoordinates or len(facekeypointsCoordinates) != expected_face_points:
-        flat_face_coords = [0] * expected_face_points * 2
-    else:
-    # Serialize facekeypoints_coords and write to a JSON file
-    # Flatten face keypoints into [x1, y1, x2, y2, ...]
-        flat_face_coords = []
-        for point_index, point in enumerate(facekeypointsCoordinates):
-            if isinstance(point, dict):
-                try:
-                    x = int(float(point.get("x", 0)))
-                    y = int(float(point.get("y", 0)))
-                    flat_face_coords.extend([x, y])
-                except (ValueError, TypeError):
-                    flat_face_coords.extend([0, 0])
-            else:
-                print(f"[Warning] Unexpected face point format at index {point_index}: {point}")
-                flat_face_coords.extend([0, 0])
+    # Process Face Keypoints
+    flat_face_coords = flatten_face_keypoints(facekeypointsCoordinates)
+
+    # Process Hand Keypoints
+    left_landmarks = extract_hand_by_type(allHandsLandmarksCoordinatesArray, "Left")
+    right_landmarks = extract_hand_by_type(allHandsLandmarksCoordinatesArray, "Right")
+
+    flat_hands_coords = (
+        flatten_hand_keypoints(left_landmarks) +
+        flatten_hand_keypoints(right_landmarks)
+    )
 
 
-
-    # Serialize and write to JSON
-    facekeypointsCoordinates_output_path = os.path.join(os.path.dirname(__file__), "facekeypointsCoordinates.json")
-    with open(facekeypointsCoordinates_output_path, "w") as f:
+    # Save to JSON
+    base_dir = os.path.dirname(__file__)
+    with open(os.path.join(base_dir, "facekeypointsCoordinates.json"), "w") as f:
         json.dump(flat_face_coords, f, indent=2)
 
-    #print(f"[Main] Saved flattened face keypoints to {facekeypointsCoordinates_output_path}")
-
-
-    # Serialize handslandmarks and write to a JSON file
-    def zero_landmarks_flat():
-        return [0] * 42 * 2  # 42 per hand × 2 hands
-
-    def flatten_landmarks(landmarks):
-        flat = []
-        for lm in landmarks:
-            if isinstance(lm, dict):
-                try:
-                    x = int(float(lm.get("x_px", 0)))
-                    y = int(float(lm.get("y_px", 0)))
-                    flat.extend([x, y])
-                except (ValueError, TypeError):
-                    flat.extend([0, 0])
-            else:
-                flat.extend([0, 0])
-        return flat
-
-    left_hand = next((hand for hand in allHandsLandmarksCoordinatesArray if hand.get("handedness") == "Left"), None)
-    right_hand = next((hand for hand in allHandsLandmarksCoordinatesArray if hand.get("handedness") == "Right"), None)
-
-    left_landmarks = left_hand.get("landmarks", []) if left_hand else []
-    right_landmarks = right_hand.get("landmarks", []) if right_hand else []
-
-    left_valid = len(left_landmarks) == 21
-    right_valid = len(right_landmarks) == 21
-
-    left_output = flatten_landmarks(left_landmarks) if left_valid else [0] * 42
-    right_output = flatten_landmarks(right_landmarks) if right_valid else [0] * 42
-
-    flat_hands_coords = left_output + right_output
-
-    # Serialize and write to JSON
-    handskeypointsCoordinates_output_path = os.path.join(os.path.dirname(__file__), "handskeypointsCoordinates.json")
-    with open(handskeypointsCoordinates_output_path, "w") as f:
+    with open(os.path.join(base_dir, "handskeypointsCoordinates.json"), "w") as f:
         json.dump(flat_hands_coords, f, indent=2)
 
     #print(f"[Main] Saved flattened hands keypoints to {handskeypointsCoordinates_output_path}")
 
 
-
+    # Send via Socket
     try:
         SendPacketThroughSocket("facekeypointsCoordinates.json", "handskeypointsCoordinates.json", connection)
     except (BrokenPipeError, ConnectionResetError, OSError) as e:
