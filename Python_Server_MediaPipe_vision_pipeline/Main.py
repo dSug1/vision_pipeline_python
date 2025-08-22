@@ -9,11 +9,12 @@ import time
 from inference import load_models, run_inference_on_frame
 from Server import Start_socket_server as StartServer
 from Server import SendPacket as SendPacketThroughSocket
-from utils_for_output_data_formatting import (
-    flatten_face_keypoints,
-    flatten_hand_keypoints,
+from utils_for_remapping_coordinates_and_output_formatting import (
+    remap_keypoints,
+    remap_point,
     extract_hand_by_type
 )
+
 
 
 # Ensure mediapipe is installed
@@ -59,6 +60,8 @@ while True:
     if not ret or not connection_alive:
         break
 
+    height, width = frame.shape[:2]
+
     annotatedImage, facekeypointsCoordinates, allHandsLandmarksCoordinatesArray = run_inference_on_frame(frame, face_detector, hand_detector, timestamp_ms)
     
     #show in display
@@ -67,16 +70,20 @@ while True:
     if cv2.waitKey(1) & 0xFF == ord('q'):   
         break
 
-    # Process Face Keypoints
-    flat_face_coords = flatten_face_keypoints(facekeypointsCoordinates)
+    # Process face keypoints: 6 keypoints × 2 = 12 values
+    flat_face_coords = remap_keypoints(
+        facekeypointsCoordinates,
+        width,
+        height,
+        expected_count=6
+    )
 
-    # Process Hand Keypoints
+    # Process hands landmarks: 21 keypoints per hand × 2 = 42 values per hand
     left_landmarks = extract_hand_by_type(allHandsLandmarksCoordinatesArray, "Left")
     right_landmarks = extract_hand_by_type(allHandsLandmarksCoordinatesArray, "Right")
-
     flat_hands_coords = (
-        flatten_hand_keypoints(left_landmarks) +
-        flatten_hand_keypoints(right_landmarks)
+        remap_keypoints(left_landmarks, width, height, x_key="x_px", y_key="y_px", expected_count=21) +
+        remap_keypoints(right_landmarks, width, height, x_key="x_px", y_key="y_px", expected_count=21)
     )
 
 
