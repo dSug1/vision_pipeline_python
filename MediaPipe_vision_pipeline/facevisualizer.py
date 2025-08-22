@@ -72,7 +72,7 @@ def visualize(
 
 def extract_facekeypoint_coordinates(detection_result, image_shape):
     height, width = image_shape[:2]
-    coordinates = []
+    facekeyptscoordinates = []
 
     for detection in detection_result.detections:
         for keypoint in detection.keypoints:
@@ -80,7 +80,7 @@ def extract_facekeypoint_coordinates(detection_result, image_shape):
                 keypoint.x, keypoint.y, width, height
             )
             if keypoint_px:
-                coordinates.append({"x": keypoint_px[0], "y": keypoint_px[1]})
+                facekeyptscoordinates.append({"x": keypoint_px[0], "y": keypoint_px[1]})
 
-    return coordinates
+    return facekeyptscoordinates
 

@@ -12,11 +12,31 @@ def draw_landmarks_on_image(rgb_image, detection_result):
   hand_landmarks_list = detection_result.hand_landmarks
   handedness_list = detection_result.handedness
   annotated_image = np.copy(rgb_image)
+  height, width = rgb_image[:2]
+  all_hands = []
+  landmarkscoordinatesArray = []
+
+
+
 
   # Loop through the detected hands to visualize.
   for idx in range(len(hand_landmarks_list)):
     hand_landmarks = hand_landmarks_list[idx]
     handedness = handedness_list[idx]
+
+    #append the landmarks coordinates in an array
+    for lm in hand_landmarks:
+        landmarkscoordinatesArray.append({
+                "x": int(lm.x * width),
+                "y": int(lm.y * height),
+                "z": lm.z  # Optional: keep as-is or scale if needed
+            })
+      
+        #all_hands.append({
+        #    "handedness": handedness,
+        #    "landmarks": landmarksArray
+        #})
+
 
     # Draw the hand landmarks.
     hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
@@ -42,4 +62,4 @@ def draw_landmarks_on_image(rgb_image, detection_result):
                 (text_x, text_y), cv2.FONT_HERSHEY_DUPLEX,
                 FONT_SIZE, HANDEDNESS_TEXT_COLOR, FONT_THICKNESS, cv2.LINE_AA)
 
-  return annotated_image
+  return annotated_image, landmarkscoordinatesArray, all_hands
