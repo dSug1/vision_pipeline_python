@@ -44,7 +44,7 @@ namespace MauiApp_Launcher
         {
 
             Vector2 pos = _cursorController?.CursorPosition ?? new Vector2(0f, 0f);
-            Vector2 pointerSize = GetPointerSize();
+            //Vector2 pointerSize = GetPointerSize();
 
             double xOffset = pos.X /*- pointerSize / 2*/;
             double yOffset = pos.Y /*- pointerSize / 2*/;
@@ -65,7 +65,7 @@ namespace MauiApp_Launcher
             if (_cursorController != null)
             {
                 var newPosition = new Vector2((float)e.NewValue, _cursorController.CursorPosition.Y);
-                await _cursorController.SetCursorPositionAsync(newPosition); UpdateCursorPointerPosition();
+                await _cursorController.SetCursorPositionAsync(newPosition);
                 UpdateCursorPointerPosition();
             }
             // Update label to show current zoom level
