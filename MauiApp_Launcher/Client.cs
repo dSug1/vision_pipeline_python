@@ -20,12 +20,16 @@ namespace MauiApp_Launcher
         {
             _host = host;
             _port = port;
+            /*NOT USED alternative location where received JSON files will be saved in FileSystem.AppDataDirectory, which is cross-platform safe
             _outputDir = Path.Combine(FileSystem.AppDataDirectory, "ReceivedDataJsonFiles");
+            */
+            _outputDir = Path.Combine(AppContext.BaseDirectory, "ReceivedDataJsonFiles");
             Directory.CreateDirectory(_outputDir);
         }
 
         public async Task ConnectAsync()
         {
+            Console.WriteLine($"[Client] Output directory: {_outputDir}");
             try
             {
                 _tcpClient = new TcpClient();

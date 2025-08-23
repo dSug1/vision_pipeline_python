@@ -15,6 +15,16 @@ namespace MauiApp_Launcher
 
         }
 
+        // Client setup
+        /* WARNING: make sure the Server is already listening*/
+        protected override async void OnAppearing()                             //create the Client connection when the page is loaded. The Server should already be listening
+        {
+            base.OnAppearing();
+
+            var client = new Client("127.0.0.1", 5050);
+            await client.ConnectAsync();
+        }
+
 
         //Cursor setup
         public interface ICursorController                                      //DEBUGGING: defines the cursor controller interface type
