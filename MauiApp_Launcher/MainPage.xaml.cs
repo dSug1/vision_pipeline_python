@@ -6,15 +6,24 @@ namespace MauiApp_Launcher
     public partial class MainPage : ContentPage
     {
         private ICursorController _cursorController;                            //DEBUGGING: creates a cursor controller
-        private Vector2 _leftIndexPosition =  Vector2.Zero;
+        private HandTriggeredActions _handActions;
 
         public MainPage()
         {
             InitializeComponent();
 
-            
             _cursorController = CreateCursorController();                       //DEBUGGING: create the cursor controller
+            _handActions = new HandTriggeredActions(_cursorController, new XamlCursorUIUpdater(this));
+
         }
+
+        //Cursor setup
+        private ICursorController CreateCursorController()                      //DEBUGGING: method called to create the instantiation of the CursorController class
+        {
+            Vector2 pointerSize = new Vector2((float)CursorPointer.WidthRequest, (float)CursorPointer.HeightRequest);       //Set the size of the cursor in the xaml.cs page
+            return new CursorController(pointerSize);
+        }
+
 
         // Client setup
         /* WARNING: make sure the Python Server is already launched & is therefore listening */
@@ -38,9 +47,7 @@ namespace MauiApp_Launcher
                     break;
 
                 case "hands":
-                    _leftIndexPosition = new Vector2(data[16], data[17]);               // Index finger tip (landmark 8 in MediaPipe)
-                    _cursorController.SetCursorPositionAsync(_leftIndexPosition);
-                    UpdateCursorPointerPositioninXAMLPage();
+                    if (data[16] != 0 || data[17] !=0)   _handActions.LeftIndexTip(new Vector2(data[16], data[17]));               // Index finger tip = landmark 8 in MediaPipe)                   
                     break;
 
                 default:
@@ -50,27 +57,16 @@ namespace MauiApp_Launcher
 
         }
 
-        //Cursor setup
-        private ICursorController CreateCursorController()                      //DEBUGGING: method called to create the instantiation of the CursorController class
-        {
-            Vector2 pointerSize = GetPointerSize();
-            return new CursorController(pointerSize);
-        }
+        //Update the cursor in UI as per cursorpositioner
 
-        private Vector2 GetPointerSize()
-        {
-            return new Vector2((float)CursorPointer.WidthRequest, (float)CursorPointer.HeightRequest);
-        }
-
-        //Cursor position update
-        private void UpdateCursorPointerPositioninXAMLPage()
+        public void UpdateCursorInUI()
         {
 
-            Vector2 pos = _cursorController?.CursorPosition ?? new Vector2(0f, 0f);
+            Vector2 pos = _cursorController?.CursorTargetPosition ?? new Vector2(0f, 0f);
             //Vector2 pointerSize = GetPointerSize();
 
-            double xOffset = pos.X /*- pointerSize / 2*/;
-            double yOffset = pos.Y /*- pointerSize / 2*/;
+            double xOffset = pos.X; //*- pointerSize / 2
+            double yOffset = pos.Y; //*- pointerSize / 2
 
             if (CursorPointer != null)
             {
@@ -80,7 +76,9 @@ namespace MauiApp_Launcher
         }
 
 
+
         /*DEBUGGING*/
+
 
         /*NOT USED 
         DEBUGGING - change position of cursor based on sliders in the xaml page
