@@ -1,4 +1,5 @@
-﻿using System.Numerics;
+﻿using System.Diagnostics;
+using System.Numerics;
 
 namespace MauiApp_Launcher
 {
@@ -20,9 +21,13 @@ namespace MauiApp_Launcher
         protected override async void OnAppearing()                             //create the Client connection when the page is loaded. The Server should already be listening
         {
             base.OnAppearing();
+            var launcher = new Launcher("127.0.0.1", 5050);
+            await launcher.LaunchPythonServerAsync();
+            Debug.WriteLine("launcher launched");
 
             var client = new Client("127.0.0.1", 5050);
             await client.ConnectAsync();
+            Debug.WriteLine("client launched");
         }
 
 
@@ -63,7 +68,7 @@ namespace MauiApp_Launcher
                 float clampedY = Math.Clamp(position.Y, 0f, _imageHeight - _pointerSize.Y);
                 CursorPosition = new Vector2(clampedX, clampedY);
 
-                //Console.WriteLine($"Cursor position set to: ({clampedX:F0}, {clampedY:F0})");
+                //Debug.WriteLine($"Cursor position set to: ({clampedX:F0}, {clampedY:F0})");
                 return Task.CompletedTask;
             }
         }

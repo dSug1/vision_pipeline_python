@@ -5,6 +5,8 @@ using System.Numerics;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Diagnostics;
+
 
 namespace MauiApp_Launcher
 {
@@ -16,7 +18,7 @@ namespace MauiApp_Launcher
         private NetworkStream _stream;
         private readonly string _outputDir;
 
-        public Client(string host = "127.0.0.1", int port = 5050)
+        public Client(string host, int port)
         {
             _host = host;
             _port = port;
@@ -29,19 +31,19 @@ namespace MauiApp_Launcher
 
         public async Task ConnectAsync()
         {
-            Console.WriteLine($"[Client] Output directory: {_outputDir}");
+            Debug.WriteLine($"[Client] Output directory: {_outputDir}");                          //DEBUGGING - provides the path of the folder where the json files for the data received by the Client are stored
             try
             {
                 _tcpClient = new TcpClient();
                 await _tcpClient.ConnectAsync(_host, _port);
                 _stream = _tcpClient.GetStream();
-                Console.WriteLine($"[Client] Connected to {_host}:{_port}");
+                Debug.WriteLine($"[Client] Connected to {_host}:{_port}");
 
                 await ReceiveKeypointsDataAsync();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Client] Connection error: {ex.Message}");
+                Debug.WriteLine($"[Client] Connection error: {ex.Message}");
             }
         }
 
@@ -57,7 +59,7 @@ namespace MauiApp_Launcher
                     int bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length);
                     if (bytesRead == 0)
                     {
-                        Console.WriteLine("[Client] Connection closed by server.");
+                        Debug.WriteLine("[Client] Connection closed by server.");
                         break;
                     }
 
@@ -84,24 +86,24 @@ namespace MauiApp_Launcher
                         }
                         catch (JsonException je)
                         {
-                            Console.WriteLine($"[Client] JSON decode error: {je.Message}");
+                            Debug.WriteLine($"[Client] JSON decode error: {je.Message}");
                         }
                         catch (Exception e)
                         {
-                            Console.WriteLine($"[Client] Error processing packet: {e.Message}");
+                            Debug.WriteLine($"[Client] Error processing packet: {e.Message}");
                         }
                     }
                 }
             }
             catch (Exception e)
             {
-                Console.WriteLine($"[Client] Stream error: {e.Message}");
+                Debug.WriteLine($"[Client] Stream error: {e.Message}");
             }
             finally
             {
                 _stream?.Close();
                 _tcpClient?.Close();
-                Console.WriteLine("[Client] Socket closed.");
+                Debug.WriteLine("[Client] Socket closed.");
             }
         }
     }
