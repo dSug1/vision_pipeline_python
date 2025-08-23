@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using System.Numerics;
 
+
 namespace MauiApp_Launcher
 {
     public partial class MainPage : ContentPage
@@ -20,7 +21,7 @@ namespace MauiApp_Launcher
         //Cursor setup
         private ICursorController CreateCursorController()                      //DEBUGGING: method called to create the instantiation of the CursorController class
         {
-            Vector2 pointerSize = new Vector2((float)CursorPointer.WidthRequest, (float)CursorPointer.HeightRequest);       //Set the size of the cursor in the xaml.cs page
+            Vector2 pointerSize = new Vector2((float)Cursor.WidthRequest, (float)Cursor.HeightRequest);       //Set the size of the cursor in the xaml.cs page
             return new CursorController(pointerSize);
         }
 
@@ -68,10 +69,10 @@ namespace MauiApp_Launcher
             double xOffset = pos.X; //*- pointerSize / 2
             double yOffset = pos.Y; //*- pointerSize / 2
 
-            if (CursorPointer != null)
+            if (Cursor != null)
             {
-                CursorPointer.TranslationX = xOffset;
-                CursorPointer.TranslationY = yOffset;
+                Cursor.TranslationX = xOffset;
+                Cursor.TranslationY = yOffset;
             }
         }
 
