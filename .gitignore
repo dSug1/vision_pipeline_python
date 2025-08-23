@@ -180,3 +180,77 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+
+# .NET MAUI - Cross-platform build artifacts
+bin/
+obj/
+platforms/
+
+# Android
+*.apk
+*.ap_
+*.dex
+*.class
+*.jar
+*.keystore
+*.so
+*.a
+*.h
+*.c
+*.cpp
+*.log
+*.gradle
+.gradle/
+local.properties
+captures/
+.externalNativeBuild/
+
+# iOS/macOS
+*.app/
+*.ipa
+*.dSYM/
+*.xcuserstate
+*.xcworkspace/
+*.xcodeproj/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcuserdata/
+*.DS_Store
+
+# Windows
+*.exe
+*.dll
+*.pdb
+*.cache
+*.manifest
+*.winmd
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# NuGet
+*.nupkg
+*.snupkg
+*.nuspec
+*.psmdcp
+*.symbols.nupkg
+packages/
+project.lock.json
+project.fragment.lock.json
+
+# MAUI specific
+*.maui.*
+*.net6
