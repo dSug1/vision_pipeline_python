@@ -28,12 +28,6 @@ namespace MauiApp_Launcher
 
 
         //Cursor setup
-        public interface ICursorController                                      //DEBUGGING: defines the cursor controller interface type
-        {
-            Vector2 CursorPosition { get; }
-
-            Task SetCursorPositionAsync(Vector2 position);
-        }
         private ICursorController CreateCursorController()                      //DEBUGGING: method called to create the instantiation of the CursorController class
         {
             Vector2 pointerSize = GetPointerSize();
@@ -45,29 +39,6 @@ namespace MauiApp_Launcher
             return new Vector2((float)CursorPointer.WidthRequest, (float)CursorPointer.HeightRequest);
         }
 
-        public class CursorController : ICursorController
-        {
-            private readonly float _imageWidth = 300f;
-            private readonly float _imageHeight = 200f;
-
-            private readonly Vector2 _pointerSize;
-            public CursorController(Vector2 pointerSize)
-            {
-                _pointerSize = pointerSize;
-            }
-
-            public Vector2 CursorPosition { get; private set; } = new(0f, 0f);  // Top-left origin
-
-            public Task SetCursorPositionAsync(Vector2 position)
-            {
-                float clampedX = Math.Clamp(position.X, 0f, _imageWidth - _pointerSize.X);
-                float clampedY = Math.Clamp(position.Y, 0f, _imageHeight - _pointerSize.Y);
-                CursorPosition = new Vector2(clampedX, clampedY);
-
-                //Debug.WriteLine($"Cursor position set to: ({clampedX:F0}, {clampedY:F0})");
-                return Task.CompletedTask;
-            }
-        }
         //Cursor position update
         private void UpdateCursorPointerPosition()
         {
