@@ -13,17 +13,13 @@ namespace MauiApp_Launcher
             InitializeComponent();
 
             _cursorController = CreateCursorController();                       //DEBUGGING: create the cursor controller
-
         }
 
         // Client setup
-        /* WARNING: make sure the Server is already listening*/
+        /* WARNING: make sure the Python Server is already launched & is therefore listening */
         protected override async void OnAppearing()                             //create the Client connection when the page is loaded. The Server should already be listening
         {
             base.OnAppearing();
-            var launcher = new Launcher("127.0.0.1", 5050);
-            await launcher.LaunchPythonServerAsync();
-            Debug.WriteLine("launcher launched");
 
             var client = new Client("127.0.0.1", 5050);
             await client.ConnectAsync();
@@ -43,7 +39,7 @@ namespace MauiApp_Launcher
             Vector2 pointerSize = GetPointerSize();
             return new CursorController(pointerSize);
         }
-        
+
         private Vector2 GetPointerSize()
         {
             return new Vector2((float)CursorPointer.WidthRequest, (float)CursorPointer.HeightRequest);
@@ -75,7 +71,7 @@ namespace MauiApp_Launcher
         //Cursor position update
         private void UpdateCursorPointerPosition()
         {
-            
+
             Vector2 pos = _cursorController?.CursorPosition ?? new Vector2(0f, 0f);
             Vector2 pointerSize = GetPointerSize();
 
@@ -119,8 +115,5 @@ namespace MauiApp_Launcher
                 ? $"YPosition of cursor: {_cursorController.CursorPosition.Y:F2}"
                 : "Cursor controller not initialized.";
         }
-
-
-
     }
 }
