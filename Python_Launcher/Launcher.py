@@ -26,7 +26,7 @@ print(f"[Launcher] Starting Main.py on {args.host}:{args.port}")
 subprocess.Popen(main_command)
 
 # Optional delay to ensure server starts before client connects
-time.sleep(5)
+time.sleep(1)
 
 # Launch Client.py
 client_command = [

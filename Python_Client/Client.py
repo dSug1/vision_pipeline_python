@@ -1,3 +1,5 @@
+from pathlib import Path
+import os
 import socket
 import json
 import argparse
@@ -16,6 +18,9 @@ print(f"[Client] Connected to {args.host}:{args.port}")
 #client.sendall(b'{"action": "start"}')
 
 
+script_dir = Path(__file__).resolve().parent
+output_dir = script_dir / "Received_data_json_files"
+output_dir.mkdir(exist_ok=True)
 
 
 def receive_keypoints_data():
@@ -35,7 +40,7 @@ def receive_keypoints_data():
                     #print("[Client] Received data:", data)
 
                     data_type = data.get("type", "unknown")
-                    output_file = f"received_{data_type}_data.json"
+                    output_file = output_dir / f"received_{data_type}_data.json"
 
                     with open(output_file, 'w') as f:
                         json.dump(data["data"], f, indent=4)

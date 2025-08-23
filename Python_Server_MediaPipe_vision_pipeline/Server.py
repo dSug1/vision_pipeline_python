@@ -26,7 +26,7 @@ def SendPacket(facecoordsfilename, handscoordsfilename, throughconnection):
         facekeypoints_data = Load_keypoints_json(facecoordsfilename)
         serialized = json.dumps({"type": "face", "data":facekeypoints_data})+ "\n"  # Add delimiter
         throughconnection.sendall(serialized.encode('utf-8'))
-        print("[Socket Server] Face data sent successfully.", serialized)
+        #print("[Socket Server] Face data sent successfully.", serialized)
 
         #send hands landmarks coordinates
         hands_data = Load_keypoints_json(handscoordsfilename)
