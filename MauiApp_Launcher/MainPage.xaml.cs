@@ -21,11 +21,18 @@ namespace MauiApp_Launcher
         {
             base.OnAppearing();
 
-            var client = new Client("127.0.0.1", 5050);
+            var client = new Client("127.0.0.1", 5050, this);
             await client.ConnectAsync();
-            Debug.WriteLine("client launched");
         }
+        
+        //Receive data from Client.cs
+        public void ReceiveFloatArray(string type, float[] data)
+        {
+            // Handle the incoming float array
+            Debug.WriteLine($"[MainPage] Received {type} data with [{string.Join(", ", data)}]");
 
+            // Example: visualize, store, or trigger UI update
+        }
 
         //Cursor setup
         private ICursorController CreateCursorController()                      //DEBUGGING: method called to create the instantiation of the CursorController class

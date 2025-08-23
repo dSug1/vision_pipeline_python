@@ -14,14 +14,16 @@ namespace MauiApp_Launcher
     {
         private readonly string _host;
         private readonly int _port;
-        private TcpClient _tcpClient;
-        private NetworkStream _stream;
-        private readonly string _outputDir;
+        private TcpClient _tcpClient = null;
+        private NetworkStream _stream = null;
+        private readonly string _outputDir = string.Empty;
+        private readonly MainPage _mainPage;
 
-        public Client(string host, int port)
+        public Client(string host, int port, MainPage mainPage)
         {
             _host = host;
             _port = port;
+            _mainPage = mainPage;
             /*NOT USED alternative location where received JSON files will be saved in FileSystem.AppDataDirectory, which is cross-platform safe
             _outputDir = Path.Combine(FileSystem.AppDataDirectory, "ReceivedDataJsonFiles");
             */
@@ -31,7 +33,6 @@ namespace MauiApp_Launcher
 
         public async Task ConnectAsync()
         {
-            Debug.WriteLine($"[Client] Output directory: {_outputDir}");                          //DEBUGGING - provides the path of the folder where the json files for the data received by the Client are stored
             try
             {
                 _tcpClient = new TcpClient();
@@ -83,6 +84,23 @@ namespace MauiApp_Launcher
 
                             string outputPath = Path.Combine(_outputDir, $"received_{type}_data.json");
                             await File.WriteAllTextAsync(outputPath, JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
+
+                            // Read the just-written JSON file
+                            string jsonContent = await File.ReadAllTextAsync(outputPath);
+
+                            // Deserialize into a float array
+                            float[]? floatArray = JsonSerializer.Deserialize<float[]>(jsonContent);
+
+                            // Send to another script or handler
+                            if (floatArray != null && floatArray.Length > 0)
+                            {
+                                await SendDataArrayToMainPageAsync(type, floatArray);
+                            }
+                            else
+                            {
+                                Debug.WriteLine($"[Client] Warning: Received null or empty float array for type '{type}'. Skipping MainPage dispatch.");
+                            }
+
                         }
                         catch (JsonException je)
                         {
@@ -106,5 +124,15 @@ namespace MauiApp_Launcher
                 Debug.WriteLine("[Client] Socket closed.");
             }
         }
+
+        private async Task SendDataArrayToMainPageAsync(string type, float[] dataArray)
+        {
+            _mainPage.ReceiveFloatArray(type, dataArray);
+            //Debug.WriteLine($"[Client] Sent {type} float array to MainPage.");
+            await Task.CompletedTask; // placeholder to satisfy compiler
+        }
+
+
+
     }
 }
