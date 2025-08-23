@@ -12,7 +12,6 @@ from Server import Start_socket_server as StartServer
 from Server import SendPacket as SendPacketThroughSocket
 from utils_for_remapping_coordinates_and_output_formatting import (
     remap_keypoints,
-    remap_point,
     extract_hand_by_type
 )
 

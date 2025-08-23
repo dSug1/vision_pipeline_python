@@ -1,4 +1,4 @@
-def remap_point(x, y, frame_width, frame_height, invert_x=True, center_origin=True, flip_y=True):
+def remap_point(x, y, frame_width, frame_height, invert_x, center_origin, flip_y):
     """
     Remaps a single (x, y) point from image-space to a centered coordinate system.
     - invert_x: if True, flips X horizontally
@@ -16,12 +16,13 @@ def remap_point(x, y, frame_width, frame_height, invert_x=True, center_origin=Tr
 
 
 def remap_keypoints(points, frame_width, frame_height, x_key="x", y_key="y", expected_count=None,
-                    invert_x=True, center_origin=True, flip_y=True):
+                    invert_x=True, center_origin=False, flip_y=False):
     """
     Remaps a list of keypoints (dicts with x/y) to the new coordinate system.
     Returns a flattened list: [x1, y1, x2, y2, ...]
     If expected_count is set and doesn't match, returns fallback zeros.
     """
+    # set invert_x=True, center_origin=True, flip_y=True if you want to have the keypoints origins to be at the center of the display with negative and positive variance around this origin
     if expected_count is not None and (not points or len(points) != expected_count):
         return [0] * expected_count * 2
 
