@@ -18,14 +18,18 @@
                 </Grid>
             </Border>
            
-            <!--  DEBUGGING : Cursor Position Labels & Sliders  -->
+            <!--  NOT USED 
+            DEBUGGING : Cursor Position Labels & Sliders
             <Label x:Name="CursorXPositionLabel" FontSize="14" HorizontalOptions="Center" Text="XPosition of cursor:"/>
             <Slider x:Name="xPositionOfCursor" Minimum="0" Maximum="300" Value="0" ValueChanged="CursorXPosition_ValueChanged" Margin="0,10"/>
             <Label x:Name="CursorYPositionLabel" FontSize="14" HorizontalOptions="Center" Text="YPosition of cursor: 0.5"/>
             <Slider x:Name="yPositionOfCursor" Minimum="0" Maximum="200" Value="0" ValueChanged="CursorYPosition_ValueChanged" Margin="0,10"/>
-           
-            <!--  DEBUGGING : debug messages label -->
+            -->
+            
+            <!--  NOT USED
+            DEBUGGING for ANDROID: debug messages label
             <Label x:Name="DebuggingLabel" FontSize="14" HorizontalOptions="Center" Text="Debugging message"/>
+            -->
        
         </VerticalStackLayout>
     </ScrollView>

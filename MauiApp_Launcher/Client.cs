@@ -14,8 +14,8 @@ namespace MauiApp_Launcher
     {
         private readonly string _host;
         private readonly int _port;
-        private TcpClient _tcpClient = null;
-        private NetworkStream _stream = null;
+        private TcpClient _tcpClient;
+        private NetworkStream _stream;
         private readonly string _outputDir = string.Empty;
         private readonly MainPage _mainPage;
 

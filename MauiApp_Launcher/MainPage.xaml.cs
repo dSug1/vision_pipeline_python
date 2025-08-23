@@ -6,12 +6,13 @@ namespace MauiApp_Launcher
     public partial class MainPage : ContentPage
     {
         private ICursorController _cursorController;                            //DEBUGGING: creates a cursor controller
-
+        private Vector2 _leftIndexPosition =  Vector2.Zero;
 
         public MainPage()
         {
             InitializeComponent();
 
+            
             _cursorController = CreateCursorController();                       //DEBUGGING: create the cursor controller
         }
 
@@ -29,9 +30,24 @@ namespace MauiApp_Launcher
         public void ReceiveFloatArray(string type, float[] data)
         {
             // Handle the incoming float array
-            Debug.WriteLine($"[MainPage] Received {type} data with [{string.Join(", ", data)}]");
+            //Debug.WriteLine($"[MainPage] Received {type} data with [{string.Join(", ", data)}]");
+            switch (type)
+            {
+                case "face":
+                    // TODO: Add logic for face movement
+                    break;
 
-            // Example: visualize, store, or trigger UI update
+                case "hands":
+                    _leftIndexPosition = new Vector2(data[16], data[17]);               // Index finger tip (landmark 8 in MediaPipe)
+                    _cursorController.SetCursorPositionAsync(_leftIndexPosition);
+                    UpdateCursorPointerPositioninXAMLPage();
+                    break;
+
+                default:
+                    Debug.WriteLine($"[MainPage] Unknown type: {type}");
+                    break;
+            }
+
         }
 
         //Cursor setup
@@ -47,7 +63,7 @@ namespace MauiApp_Launcher
         }
 
         //Cursor position update
-        private void UpdateCursorPointerPosition()
+        private void UpdateCursorPointerPositioninXAMLPage()
         {
 
             Vector2 pos = _cursorController?.CursorPosition ?? new Vector2(0f, 0f);
@@ -66,14 +82,15 @@ namespace MauiApp_Launcher
 
         /*DEBUGGING*/
 
-        /*DEBUGGING - change position of cursor based on sliders in the xaml page*/
+        /*NOT USED 
+        DEBUGGING - change position of cursor based on sliders in the xaml page
         private async void CursorXPosition_ValueChanged(object sender, ValueChangedEventArgs e)
         {
             if (_cursorController != null)
             {
                 var newPosition = new Vector2((float)e.NewValue, _cursorController.CursorPosition.Y);
                 await _cursorController.SetCursorPositionAsync(newPosition);
-                UpdateCursorPointerPosition();
+                UpdateCursorPointerPositioninXAMLPage();
             }
             // Update label to show current zoom level
             CursorXPositionLabel.Text = _cursorController != null
@@ -86,12 +103,13 @@ namespace MauiApp_Launcher
             {
                 var newPosition = new Vector2(_cursorController.CursorPosition.X, (float)e.NewValue);
                 await _cursorController.SetCursorPositionAsync(newPosition);
-                UpdateCursorPointerPosition();
+                UpdateCursorPointerPositioninXAMLPage();
             }
             // Update label to show current zoom level
             CursorYPositionLabel.Text = _cursorController != null
                 ? $"YPosition of cursor: {_cursorController.CursorPosition.Y:F2}"
                 : "Cursor controller not initialized.";
         }
+        */
     }
 }
