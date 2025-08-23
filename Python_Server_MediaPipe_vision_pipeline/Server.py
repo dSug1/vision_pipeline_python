@@ -5,6 +5,7 @@ import os
 
 def Start_socket_server(serverhost, serverport):
     serVer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    serVer.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  #This allows the socket to reuse the address if it was recently closed
     serVer.bind((serverhost, serverport))
     serVer.listen()
     print(f"[Socket Server] Listening on {serverhost}:{serverport}...")
@@ -25,7 +26,7 @@ def SendPacket(facecoordsfilename, handscoordsfilename, throughconnection):
         facekeypoints_data = Load_keypoints_json(facecoordsfilename)
         serialized = json.dumps({"type": "face", "data":facekeypoints_data})+ "\n"  # Add delimiter
         throughconnection.sendall(serialized.encode('utf-8'))
-        #print("[Socket Server] Face data sent successfully.")
+        print("[Socket Server] Face data sent successfully.", serialized)
 
         #send hands landmarks coordinates
         hands_data = Load_keypoints_json(handscoordsfilename)

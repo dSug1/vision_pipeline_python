@@ -1,4 +1,5 @@
 ﻿import cv2
+import argparse
 import sys
 import os
 import json
@@ -15,7 +16,16 @@ from utils_for_remapping_coordinates_and_output_formatting import (
     extract_hand_by_type
 )
 
+# Parse arguments
+parser = argparse.ArgumentParser(description="Run vision inference and socket server.")
+parser.add_argument("--host", type=str, default="127.0.0.1", help="Server host")
+parser.add_argument("--port", type=int, default=5050, help="Server port")
+args = parser.parse_args()
 
+
+# Start socket server
+connection, address, server = StartServer(args.host, args.port)
+connection_alive = True
 
 # Ensure mediapipe is installed
 def ensure_mediapipe():
@@ -48,9 +58,6 @@ cap = cv2.VideoCapture(0)
 if not cap.isOpened():
     raise RuntimeError("Could not open webcam.")
 
-# Start socket server
-connection, address, server = StartServer('127.0.0.1', 5050)
-connection_alive = True
 
 # Run inference and write keypoints coordinates in json files
 timestamp_ms = 0

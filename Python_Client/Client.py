@@ -1,13 +1,25 @@
 import socket
 import json
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--host", type=str, default="127.0.0.1")
+parser.add_argument("--port", type=int, default=5050)
+args = parser.parse_args()
+
+# Connect to server
+client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+client.connect((args.host, args.port))
+print(f"[Client] Connected to {args.host}:{args.port}")
+
+# Example: send a start command
+#client.sendall(b'{"action": "start"}')
 
 
-def receive_keypoints_data(host='127.0.0.1', port=5050):
-    client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+
+def receive_keypoints_data():
     try:
-        client.connect((host, port))
-        print("[Client] Connected to server.")
-
         buffer = ""
         while True:
             chunk = client.recv(4096).decode('utf-8')

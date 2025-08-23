@@ -1,4 +1,5 @@
 import cv2
+import os
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -7,21 +8,20 @@ from hands_visualizer import draw_landmarks_on_image
 
 
 def load_models():
+
+
+    # Get absolute path to the model relative to inference.py
+    model_dir = os.path.dirname(os.path.abspath(__file__))
+
     # Load face model
-
-
-    #model_path = os.path.join(os.path.dirname(__file__), "facedetector.tflite")
-    #face_base = python.BaseOptions(model_asset_path=model_path)
-    face_base = python.BaseOptions("facedetector.tflite")
+    face_model_path = os.path.join(model_dir, "facedetector.tflite")
+    face_base = python.BaseOptions(model_asset_path=face_model_path)
     face_options = vision.FaceDetectorOptions(base_options=face_base)
     face_detector = vision.FaceDetector.create_from_options(face_options)
 
     # Load hand model in VIDEO mode
-
-
-    #hand_model_path = os.path.join(os.path.dirname(__file__), "hand_landmarker.task")
-    #hand_base = python.BaseOptions(model_asset_path=hand_model_path)
-    hand_base = python.BaseOptions("hand_landmarker.task")
+    hand_model_path = os.path.join(model_dir, "hand_landmarker.task")
+    hand_base = python.BaseOptions(model_asset_path=hand_model_path)
     hand_options = vision.HandLandmarkerOptions(
         base_options=hand_base,
         num_hands=2,
