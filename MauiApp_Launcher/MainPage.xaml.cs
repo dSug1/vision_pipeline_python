@@ -1,0 +1,111 @@
+﻿using System.Numerics;
+
+namespace MauiApp_Launcher
+{
+    public partial class MainPage : ContentPage
+    {
+        private ICursorController _cursorController;                            //DEBUGGING: creates a cursor controller
+
+
+        public MainPage()
+        {
+            InitializeComponent();
+
+            _cursorController = CreateCursorController();                       //DEBUGGING: create the cursor controller
+
+        }
+
+
+        //Cursor setup
+        public interface ICursorController                                      //DEBUGGING: defines the cursor controller interface type
+        {
+            Vector2 CursorPosition { get; }
+
+            Task SetCursorPositionAsync(Vector2 position);
+        }
+        private ICursorController CreateCursorController()                      //DEBUGGING: method called to create the instantiation of the CursorController class
+        {
+            Vector2 pointerSize = GetPointerSize();
+            return new CursorController(pointerSize);
+        }
+        
+        private Vector2 GetPointerSize()
+        {
+            return new Vector2((float)CursorPointer.WidthRequest, (float)CursorPointer.HeightRequest);
+        }
+
+        public class CursorController : ICursorController
+        {
+            private readonly float _imageWidth = 300f;
+            private readonly float _imageHeight = 200f;
+
+            private readonly Vector2 _pointerSize;
+            public CursorController(Vector2 pointerSize)
+            {
+                _pointerSize = pointerSize;
+            }
+
+            public Vector2 CursorPosition { get; private set; } = new(0f, 0f);  // Top-left origin
+
+            public Task SetCursorPositionAsync(Vector2 position)
+            {
+                float clampedX = Math.Clamp(position.X, 0f, _imageWidth - _pointerSize.X);
+                float clampedY = Math.Clamp(position.Y, 0f, _imageHeight - _pointerSize.Y);
+                CursorPosition = new Vector2(clampedX, clampedY);
+
+                //Console.WriteLine($"Cursor position set to: ({clampedX:F0}, {clampedY:F0})");
+                return Task.CompletedTask;
+            }
+        }
+        //Cursor position update
+        private void UpdateCursorPointerPosition()
+        {
+            
+            Vector2 pos = _cursorController?.CursorPosition ?? new Vector2(0f, 0f);
+            Vector2 pointerSize = GetPointerSize();
+
+            double xOffset = pos.X /*- pointerSize / 2*/;
+            double yOffset = pos.Y /*- pointerSize / 2*/;
+
+            if (CursorPointer != null)
+            {
+                CursorPointer.TranslationX = xOffset;
+                CursorPointer.TranslationY = yOffset;
+            }
+        }
+
+
+        /*DEBUGGING*/
+
+        /*DEBUGGING - change position of cursor based on sliders in the xaml page*/
+        private async void CursorXPosition_ValueChanged(object sender, ValueChangedEventArgs e)
+        {
+            if (_cursorController != null)
+            {
+                var newPosition = new Vector2((float)e.NewValue, _cursorController.CursorPosition.Y);
+                await _cursorController.SetCursorPositionAsync(newPosition); UpdateCursorPointerPosition();
+                UpdateCursorPointerPosition();
+            }
+            // Update label to show current zoom level
+            CursorXPositionLabel.Text = _cursorController != null
+                ? $"XPosition of cursor: {_cursorController.CursorPosition.X:F2}"
+                : "Cursor controller not initialized.";
+        }
+        private async void CursorYPosition_ValueChanged(object sender, ValueChangedEventArgs e)
+        {
+            if (_cursorController != null)
+            {
+                var newPosition = new Vector2(_cursorController.CursorPosition.X, (float)e.NewValue);
+                await _cursorController.SetCursorPositionAsync(newPosition);
+                UpdateCursorPointerPosition();
+            }
+            // Update label to show current zoom level
+            CursorYPositionLabel.Text = _cursorController != null
+                ? $"YPosition of cursor: {_cursorController.CursorPosition.Y:F2}"
+                : "Cursor controller not initialized.";
+        }
+
+
+
+    }
+}
