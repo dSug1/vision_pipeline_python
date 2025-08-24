@@ -5,7 +5,8 @@
              Title="">
 
 
-    <Grid HorizontalOptions="Fill"
+    <Grid x:Name="MainGrid"
+          HorizontalOptions="Fill"
           VerticalOptions="Fill">
         <!-- Your full-screen image layout here -->
         <!--  Image with Border and Pointer  -->
