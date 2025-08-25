@@ -13,7 +13,7 @@ args = parser.parse_args()
 # Resolve paths relative to the parent folder
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 main_path = os.path.join(parent_dir, "Python_Server_MediaPipe_vision_pipeline", "Main.py")
-client_path = os.path.join("1-Client.py")
+client_path = os.path.join("1-Resources", "Client.py")
 
 # Launch Main.py
 main_command = [
