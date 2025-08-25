@@ -5,7 +5,7 @@ import os
 import time
 
 # Parse launcher arguments
-parser = argparse.ArgumentParser(description="Launcher for Python_Server_MediaPipe_vision_pipeline/Main.py and Client.py")
+parser = argparse.ArgumentParser(description="Launcher for Python_Server_MediaPipe_vision_pipeline/VisionPipeline.py and Client.py")
 parser.add_argument("--host", type=str, default="127.0.0.1", help="Server host")
 parser.add_argument("--port", type=int, default=5050, help="Server port")
 args = parser.parse_args()
@@ -13,7 +13,7 @@ args = parser.parse_args()
 # Resolve paths relative to the parent folder
 #parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 grandparent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-main_path = os.path.join(grandparent_dir, "Python_Server_MediaPipe_vision_pipeline", "Main.py")
+main_path = os.path.join(grandparent_dir, "Python_Server_MediaPipe_vision_pipeline", "VisionPipeline.py")
 client_path = os.path.join("Client.py")
 
 # Launch Main.py
@@ -23,7 +23,7 @@ main_command = [
     "--host", args.host,
     "--port", str(args.port)
 ]
-print(f"[Launcher] Starting Main.py on {args.host}:{args.port}")
+print(f"[Launcher] Starting VisionPipelin.py on {args.host}:{args.port}")
 subprocess.Popen(main_command)
 
 # Optional delay to ensure server starts before client connects
