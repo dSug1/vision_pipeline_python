@@ -22,6 +22,14 @@ time.sleep(3)
 
 from typing import List
 
-
 def receive_float_array(datatype: str, array: List[float]) -> None:
-    print(f"[Client] Sent {datatype} float array to MainPage: {array}.")
+    if datatype == "hands":
+        if len(array) >= 18:
+            indexfingerpositionX = array[16]
+            indexfingerpositionY = array[17]
+            print(f"[Client] Index finger position → X: {indexfingerpositionX}, Y: {indexfingerpositionY}")
+        else:
+            print("[Client] Warning: 'hands' array too short to extract index finger position.")
+    else:
+        print(f"[Client] Received {datatype} float array: {array}")
+
