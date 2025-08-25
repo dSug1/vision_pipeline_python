@@ -7,13 +7,14 @@ import subprocess
 import importlib.util
 import time
 
-from inference import load_models, run_inference_on_frame
-from Server import Start_socket_server as StartServer
-from Server import SendPacket as SendPacketThroughSocket
-from utils_for_remapping_coordinates_and_output_formatting import (
+from Resources.inference import load_models, run_inference_on_frame
+from Resources.Server import Start_socket_server as StartServer
+from Resources.Server import SendPacket as SendPacketThroughSocket
+from Resources.utils_for_remapping_coordinates_and_output_formatting import (
     remap_keypoints,
     extract_hand_by_type
 )
+
 
 # Parse arguments
 parser = argparse.ArgumentParser(description="Run vision inference and socket server.")
@@ -95,10 +96,10 @@ while True:
 
     # Save to JSON
     base_dir = os.path.dirname(__file__)
-    with open(os.path.join(base_dir, "facekeypointsCoordinates.json"), "w") as f:
+    with open(os.path.join(base_dir, "Resources", "facekeypointsCoordinates.json"), "w") as f:
         json.dump(flat_face_coords, f, indent=2)
 
-    with open(os.path.join(base_dir, "handskeypointsCoordinates.json"), "w") as f:
+    with open(os.path.join(base_dir, "Resources", "handskeypointsCoordinates.json"), "w") as f:
         json.dump(flat_hands_coords, f, indent=2)
 
     #print(f"[Main] Saved flattened hands keypoints to {handskeypointsCoordinates_output_path}")

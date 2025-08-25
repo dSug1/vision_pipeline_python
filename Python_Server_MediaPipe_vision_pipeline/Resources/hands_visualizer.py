@@ -2,7 +2,7 @@ import cv2
 from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
 import numpy as np
-from facevisualizer import _normalized_to_pixel_coordinates as _normalized_to_px_coords
+from .facevisualizer import _normalized_to_pixel_coordinates as _normalized_to_px_coords
 
 MARGIN = 10  # pixels
 FONT_SIZE = 1

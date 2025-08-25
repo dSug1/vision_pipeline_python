@@ -3,8 +3,8 @@ import os
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from facevisualizer import visualize, extract_facekeypoint_coordinates
-from hands_visualizer import draw_landmarks_on_image
+from Resources.facevisualizer import visualize, extract_facekeypoint_coordinates
+from Resources.hands_visualizer import draw_landmarks_on_image
 
 
 def load_models():
