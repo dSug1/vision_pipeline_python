@@ -19,7 +19,7 @@ print(f"[Client] Connected to {args.host}:{args.port}")
 
 
 script_dir = Path(__file__).resolve().parent
-output_dir = script_dir / "2-Received_data_json_files"
+output_dir = script_dir / "Received_data_json_files"
 output_dir.mkdir(exist_ok=True)
 
 
