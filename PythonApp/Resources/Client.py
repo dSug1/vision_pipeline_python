@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import sys
 import socket
 import json
 import argparse
@@ -21,6 +22,13 @@ print(f"[Client] Connected to {args.host}:{args.port}")
 script_dir = Path(__file__).resolve().parent
 output_dir = script_dir / "Received_data_json_files"
 output_dir.mkdir(exist_ok=True)
+
+# Get grandparent directory
+grandparent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(grandparent_dir)
+
+# Now import the module
+from PythonApp_Main import receive_float_array
 
 
 def receive_keypoints_data():
@@ -44,6 +52,20 @@ def receive_keypoints_data():
 
                     with open(output_file, 'w') as f:
                         json.dump(data["data"], f, indent=4)
+
+                    # Read back the just-written JSON
+                    try:
+                        with open(output_file, 'r') as f:
+                            json_content = f.read()
+                            float_array = json.loads(json_content)
+
+                            # Validate and dispatch
+                            if isinstance(float_array, list) and float_array:
+                                receive_float_array(data_type, float_array)
+                            else:
+                                print(f"[Client] Warning: Received null or empty float array for type '{data_type}'. Skipping MainPage dispatch.")
+                    except Exception as e:
+                        print(f"[Client] Error reading or dispatching float array: {e}")
 
                    
                 except json.JSONDecodeError as e:

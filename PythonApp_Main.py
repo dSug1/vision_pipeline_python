@@ -19,3 +19,9 @@ print(f"[Main.py] Starting Launcher_for_Server_and_Client.py")
 subprocess.Popen(launcher_command)
 
 time.sleep(3)
+
+from typing import List
+
+
+def receive_float_array(datatype: str, array: List[float]) -> None:
+    print(f"[Client] Sent {datatype} float array to MainPage: {array}.")
