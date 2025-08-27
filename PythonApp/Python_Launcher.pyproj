@@ -26,6 +26,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Resources\Client.py" />
+    <Compile Include="Resources\CursorController.py" />
+    <Compile Include="Resources\HandsTriggeredActions.py" />
     <Compile Include="Resources\Launcher_for_Server_and_Client.py" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
