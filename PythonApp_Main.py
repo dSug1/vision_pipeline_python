@@ -25,7 +25,7 @@ from PythonApp.Resources.HandsTriggeredActions import LeftIndexTip
 
 def receive_float_array(datatype: str, array: List[float]) -> None:
     # Debug-style printout of received data
-    print(f"[MainPage] Received {datatype} data with [{', '.join(map(str, array))}]")
+    #print(f"[MainPage] Received {datatype} data with [{', '.join(map(str, array))}]")
 
     if datatype == "face":
         # TODO: Add logic for face movement
@@ -41,5 +41,8 @@ def receive_float_array(datatype: str, array: List[float]) -> None:
 
     else:
         print(f"[MainPage] Unknown type: {datatype}")
+
+
+
 
 

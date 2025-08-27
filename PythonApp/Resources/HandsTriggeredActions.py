@@ -1,4 +1,9 @@
-﻿def LeftIndexTip(x: float, y: float) -> None:
-    print(f"[HandsTriggeredActions] Left index tip triggered → X: {x}, Y: {y}")
-    # Add your logic here: UI update, socket emit, animation trigger, etc.
+﻿from .CursorController import SetCursorTargetPositionAsync, UpdateCursorPositioninUI
+import sys
+import os
 
+
+def LeftIndexTip(x: float, y: float) -> None:
+    position = (x, y)  # Vector2-like tuple
+    SetCursorTargetPositionAsync(position)
+    UpdateCursorPositioninUI()
