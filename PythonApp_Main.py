@@ -21,15 +21,25 @@ subprocess.Popen(launcher_command)
 time.sleep(3)
 
 from typing import List
+from PythonApp.Resources.HandsTriggeredActions import LeftIndexTip
 
 def receive_float_array(datatype: str, array: List[float]) -> None:
-    if datatype == "hands":
-        if len(array) >= 18:
+    # Debug-style printout of received data
+    print(f"[MainPage] Received {datatype} data with [{', '.join(map(str, array))}]")
+
+    if datatype == "face":
+        # TODO: Add logic for face movement
+        pass
+
+    elif datatype == "hands":
+        if len(array) >= 18 and (array[16] != 0 or array[17] != 0):
             indexfingerpositionX = array[16]
             indexfingerpositionY = array[17]
-            print(f"[Client] Index finger position → X: {indexfingerpositionX}, Y: {indexfingerpositionY}")
+            LeftIndexTip(indexfingerpositionX, indexfingerpositionY)
         else:
-            print("[Client] Warning: 'hands' array too short to extract index finger position.")
+            print(f"[MainPage] Warning: 'hands' array missing or zeroed index finger tip.")
+
     else:
-        print(f"[Client] Received {datatype} float array: {array}")
+        print(f"[MainPage] Unknown type: {datatype}")
+
 
