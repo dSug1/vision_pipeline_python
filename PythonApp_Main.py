@@ -21,7 +21,7 @@ subprocess.Popen(launcher_command)
 time.sleep(3)
 
 from typing import List
-from PythonApp.Resources.HandsTriggeredActions import LeftIndexTip
+from PythonApp.Resources.HandsTriggeredActions import left_index_tip
 
 def receive_float_array(datatype: str, array: List[float]) -> None:
     # Debug-style printout of received data
@@ -35,7 +35,7 @@ def receive_float_array(datatype: str, array: List[float]) -> None:
         if len(array) >= 18 and (array[16] != 0 or array[17] != 0):
             indexfingerpositionX = array[16]
             indexfingerpositionY = array[17]
-            LeftIndexTip(indexfingerpositionX, indexfingerpositionY)
+            left_index_tip(indexfingerpositionX, indexfingerpositionY)
         else:
             print(f"[MainPage] Warning: 'hands' array missing or zeroed index finger tip.")
 
