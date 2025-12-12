@@ -23,7 +23,7 @@ main_command = [
     "--host", args.host,
     "--port", str(args.port)
 ]
-print(f"[Launcher] Starting VisionPipelin.py on {args.host}:{args.port}")
+print(f"[Launcher] Starting VisionPipeline.py on {args.host}:{args.port}")
 subprocess.Popen(main_command)
 
 # Optional delay to ensure server starts before client connects
