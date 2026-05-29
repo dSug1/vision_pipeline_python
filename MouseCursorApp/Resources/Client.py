@@ -1,4 +1,3 @@
-from pathlib import Path
 import os
 import sys
 import socket
@@ -13,30 +12,26 @@ args = parser.parse_args()
 
 # Connect to server. The server process needs a few seconds to import MediaPipe
 # before it starts listening, so retry instead of failing on the first refusal.
-client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# A failed connect() leaves the socket unusable on Windows, so create a fresh
+# socket for each attempt.
 _CONNECT_TIMEOUT = 30  # seconds
-connected = False
+client = None
 for _attempt in range(_CONNECT_TIMEOUT * 2):  # try every 0.5s
     try:
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client.connect((args.host, args.port))
-        connected = True
         break
     except (ConnectionRefusedError, OSError):
+        if client is not None:
+            client.close()
+        client = None
         time.sleep(0.5)
 
-if not connected:
+if client is None:
     print(f"[Client] Could not connect to {args.host}:{args.port} within {_CONNECT_TIMEOUT}s. Is the server running?")
     sys.exit(1)
 
 print(f"[Client] Connected to {args.host}:{args.port}")
-
-# Example: send a start command
-#client.sendall(b'{"action": "start"}')
-
-
-script_dir = Path(__file__).resolve().parent
-output_dir = script_dir / "Received_data_json_files"
-output_dir.mkdir(exist_ok=True)
 
 # Add the application directory (one level above Resources/) to the path so we
 # can import the entry module that defines the dispatch callback.
@@ -64,26 +59,14 @@ def receive_keypoints_data():
                     #print("[Client] Received data:", data)
 
                     data_type = data.get("type", "unknown")
-                    output_file = output_dir / f"received_{data_type}_data.json"
+                    float_array = data.get("data")
 
-                    with open(output_file, 'w') as f:
-                        json.dump(data["data"], f, indent=4)
+                    # Validate and dispatch directly from memory (no disk round-trip).
+                    if isinstance(float_array, list) and float_array:
+                        receive_float_array(data_type, float_array)
+                    else:
+                        print(f"[Client] Warning: empty/invalid '{data_type}' array. Skipping dispatch.")
 
-                    # Read back the just-written JSON
-                    try:
-                        with open(output_file, 'r') as f:
-                            json_content = f.read()
-                            float_array = json.loads(json_content)
-
-                            # Validate and dispatch
-                            if isinstance(float_array, list) and float_array:
-                                receive_float_array(data_type, float_array)
-                            else:
-                                print(f"[Client] Warning: Received null or empty float array for type '{data_type}'. Skipping MainPage dispatch.")
-                    except Exception as e:
-                        print(f"[Client] Error reading or dispatching float array: {e}")
-
-                   
                 except json.JSONDecodeError as e:
                     print(f"[Client] JSON decode error: {e}")
                 except Exception as e:

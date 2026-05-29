@@ -54,6 +54,9 @@ def visualize(
     for keypoint in detection.keypoints:
       keypoint_px = _normalized_to_pixel_coordinates(keypoint.x, keypoint.y,
                                                      width, height)
+      if keypoint_px is None:
+        # Keypoint fell outside the frame bounds; skip drawing it.
+        continue
       color, thickness, radius = (0, 255, 0), 2, 2
       cv2.circle(annotated_image, keypoint_px, thickness, color, radius)
 

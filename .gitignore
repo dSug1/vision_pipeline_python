@@ -235,3 +235,8 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Vision Pipeline — per-frame runtime artifacts (regenerated each run, not source)
+facekeypointsCoordinates.json
+handskeypointsCoordinates.json
+Received_data_json_files/

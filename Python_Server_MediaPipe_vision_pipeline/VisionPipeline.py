@@ -1,11 +1,5 @@
 ﻿import cv2
 import argparse
-import sys
-import os
-import json
-import subprocess
-import importlib.util
-import time
 
 from Resources.inference import load_models, run_inference_on_frame
 from Resources.Server import Start_socket_server as StartServer
@@ -27,30 +21,8 @@ args = parser.parse_args()
 connection, address, server = StartServer(args.host, args.port)
 connection_alive = True
 
-# Ensure mediapipe is installed
-def ensure_mediapipe():
-    package_name = "mediapipe"
-    if importlib.util.find_spec(package_name) is None:
-        print(f"{package_name} not found. Installing...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
-    else:
-        print(f"{package_name} is already installed.")
-
-ensure_mediapipe()
-
-# Ensure OpenCV is installed
-def ensure_opencv():
-    package_import_name = "cv2"
-    package_pip_name = "opencv-python"
-    if importlib.util.find_spec(package_import_name) is None:
-        print(f"{package_import_name} not found. Installing {package_pip_name}...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package_pip_name])
-    else:
-        print(f"{package_import_name} is already installed.")
-
-ensure_opencv()
-
-# Load models
+# Load models. Dependencies (mediapipe, opencv) are managed via requirements.txt
+# and the project's .venv — no runtime pip install.
 face_detector, hand_detector = load_models()
 
 # Start webcam.
@@ -102,20 +74,9 @@ try:
     )
 
 
-    # Save to JSON
-    base_dir = os.path.dirname(__file__)
-    with open(os.path.join(base_dir, "Resources", "facekeypointsCoordinates.json"), "w") as f:
-        json.dump(flat_face_coords, f, indent=2)
-
-    with open(os.path.join(base_dir, "Resources", "handskeypointsCoordinates.json"), "w") as f:
-        json.dump(flat_hands_coords, f, indent=2)
-
-    #print(f"[Main] Saved flattened hands keypoints to {handskeypointsCoordinates_output_path}")
-
-
-    # Send via Socket
+    # Send the in-memory coordinates straight over the socket (no disk round-trip).
     try:
-        SendPacketThroughSocket("facekeypointsCoordinates.json", "handskeypointsCoordinates.json", connection)
+        SendPacketThroughSocket(flat_face_coords, flat_hands_coords, connection)
     except (BrokenPipeError, ConnectionResetError, OSError) as e:
         print(f"[Main] Socket connection lost: {e}")
         connection_alive = False

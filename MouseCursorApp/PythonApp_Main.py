@@ -15,12 +15,13 @@ def receive_float_array(datatype: str, array: List[float]) -> None:
         pass
 
     elif datatype == "hands":
-        if len(array) >= 18 and (array[16] != 0 or array[17] != 0):
+        if len(array) < 18:
+            print(f"[MainPage] Warning: 'hands' array too short ({len(array)} values).")
+        elif array[16] != 0 or array[17] != 0:
             indexfingerpositionX = array[16]
             indexfingerpositionY = array[17]
             left_index_tip(indexfingerpositionX, indexfingerpositionY)
-        else:
-            print(f"[MainPage] Warning: 'hands' array missing or zeroed index finger tip.")
+        # else: left-hand index fingertip not detected this frame (normal) — no log spam
 
     else:
         print(f"[MainPage] Unknown type: {datatype}")
