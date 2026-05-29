@@ -190,36 +190,133 @@ frame, tune `min_tracking_confidence`.
 ## 6. Strike-detection algorithm
 
 For each finger, track its strike-axis coordinate `p(t)` over time (default: the
-fingertip's pixel **y**, the table-ward axis — configurable, see §7).
+fingertip's pixel **y**, the table-ward axis — configurable, see §7). The detector
+is a small **per-finger arm/contact state machine** combining kinematic and
+positional conditions; each rejects a different false positive so one real tap = one
+hit. Implemented in `core/strike_detector.py`.
 
-1. **Smooth** `p(t)` with a short moving average / low-pass filter to suppress
-   landmark jitter.
-2. **Velocity** (1st derivative): `v(t) = (p(t) − p(t−1)) / Δt`.
-3. **Strike = velocity sign inversion at impact:** detect a zero-crossing of
-   `v` from the *approach* sign (moving toward the table) to the opposite sign
-   (rebound) — i.e. the fingertip reached its lowest point and bounced.
-4. **Noise gate:** only count it if the peak approach speed just before the
-   crossing exceeds `V_threshold` (rejects slow drift / jitter).
-5. **Debounce:** enforce a per-finger refractory period `T_refractory` (e.g.
-   ~80–150 ms) so one tap = one strike.
-6. On a valid strike, publish `StrikeEvent(finger_id, …, strike_speed)`.
-   `strike_speed` can later drive **velocity-sensitive volume**.
+**Kinematic core**
+1. **Smooth** `p(t)` with a moving average to suppress landmark jitter. The window
+   is specified in **real time** (`POS_SMOOTHING_MS`); at launch the app **measures
+   the actual FPS** (`MonotonicMsClock` over a ~1.5 s warmup — `CAP_PROP_FPS` is
+   unreliable on DirectShow) and converts it to a frame count, so the smoothing spans
+   a consistent duration whether the camera runs at 15, 30, or 60 FPS. (E.g. 100 ms →
+   2 frames @15 FPS, 3 @30 FPS.) Falls back to `POS_SMOOTHING_FRAMES` if measurement
+   fails or `KINEMATICS_AUTO_FROM_FPS` is off.
+2. **Velocity** (1st derivative) computed between two smoothed samples
+   `VELOCITY_DELTA_FRAMES` apart, **divided by the real elapsed wall-clock time**
+   between them → **px/second**, then sign-normalized via `APPROACH_SIGN` so **+ve =
+   toward the table**. Because it is normalized by real time, the speed thresholds
+   (V_high/V_low) are **FPS-independent** — they don't shift when the frame rate
+   varies (`main.py` feeds a real `MonotonicMsClock`, not a synthetic frame clock).
+   These two frame counts are independent, tunable knobs: detection latency ≈
+   `(POS_SMOOTHING_FRAMES + VELOCITY_DELTA_FRAMES)` frames (smoothing 2–3, delta 1
+   is the sweet spot at ~30 FPS). NOTE: MediaPipe does **not** smooth landmark
+   coordinates (verified — no such option in the Tasks API), so this is the *only*
+   smoothing in the chain; it does not compound with the detection pipeline.
+   *Note:* the smoothing/velocity windows are derived from real-time (ms) values via
+   the measured FPS (step 1), so their real-time span holds across frame rates. This
+   assumes a roughly **stable** FPS; if the camera's FPS *fluctuates* mid-run (common
+   under changing light at ~15 FPS), the startup-measured conversion is fixed — a
+   fully time-windowed (EMA) smoother would be the next step. Still, very low FPS
+   inherently limits temporal resolution (a tap is only ~2-3 frames at 15 FPS).
+3. **Fast approach:** the toward-table velocity must reach **≥ `STRIKE_SPEED_THRESHOLD`
+   (V_high)** during the descent. This is the speed gate. The max velocity of the
+   burst is reported as `strike_speed` (free; reusable later for velocity-sensitive
+   volume) but is **not** itself a gate.
+4. **Deceleration = impact:** the hit fires on the frame velocity drops **below
+   `DECEL_SPEED_THRESHOLD` (V_low, "almost zero")** right after the fast approach —
+   the finger slammed to a stop *at* the table. We deliberately **do not wait for
+   the velocity to reverse** (go negative): by then the finger has already left the
+   table, which is pure latency. Firing on the deceleration lands the hit ~1 frame
+   earlier, while the tip is still on the surface. (This is why peak-speed tracking
+   was removed: the speed gate in step 3 already enforces "the approach was fast",
+   so a separate remembered max was redundant.)
 
-**Tunable parameters (to calibrate — §16):** smoothing window, `V_threshold`,
-`T_refractory`, strike axis, and whether to corroborate with the 2nd derivative
-(acceleration spike). All live in config, not code.
+> **No refractory/debounce.** The arm is **consumed** on each hit (step 6) and the
+> finger must rise back above the arm line to re-arm, so a micro-bounce at the table
+> cannot re-fire — the arm-consume rule *is* the debounce. (Caveat: with the contact
+> gate disabled [kinematic-only fallback] there is no arm gate, hence no debounce —
+> see §16. A consecutive-fast-frames noise gate was also removed; both are deferred.)
 
-> Optional refinement: use the landmark `z` (depth) instead of/along with `y` if
-> the camera geometry makes depth the cleaner strike axis — to be evaluated.
+**Positional conditions** (active once the finger is calibrated, §7; otherwise the
+detector falls back to kinematic-only)
+6. **ARM (high-position threshold):** a hit can only fire if the fingertip first
+   **rose above the table by the arm clearance** (above the contact zero) and then
+   came down. This (a) rejects derivative noise — a resting/jittering finger never
+   crossed the line — and (b) is the **masked-finger guard**: a finger that was
+   occluded (e.g. the thumb) and reappears near the table starts **disarmed** and
+   cannot fire until it is lifted. Small lifts re-arm it, so fast rolls still work.
+   The arm is **consumed** on each hit; the finger must clear the line again to
+   re-arm. The clearance is **measured at launch** by the index-finger dry-run (§7)
+   — 2/3 of the real tap amplitude, so a slightly smaller lift still re-arms (fewer
+   false negatives) — falling back to `ARM_CLEARANCE_PX` if the dry-run is skipped.
+7. **CONTACT (min-depth):** the deepest point reached must be **at least table-deep**
+   — within `CONTACT_BAND_PX` of the calibrated contact zero (deeper is fine). This
+   rejects mid-air taps that decelerate above the table. (Min-depth chosen over a
+   symmetric band so hard taps that overshoot the surface are not lost.)
+
+On a valid strike, publish `StrikeEvent(finger_id, …, strike_speed)`.
+
+**Tunable parameters (to calibrate — §16):** `POS_SMOOTHING_FRAMES`,
+`VELOCITY_DELTA_FRAMES`, `STRIKE_SPEED_THRESHOLD` (V_high), `DECEL_SPEED_THRESHOLD`
+(V_low), `GAP_RESET_MS`, `STRIKE_AXIS`, `APPROACH_SIGN`, `CONTACT_GATE_ENABLED`,
+`CONTACT_BAND_PX`, `ARM_CALIBRATION_FRACTION` / `ARM_CLEARANCE_PX`. All live in
+config, not code. *(Deferred noise knobs `MIN_FAST_FRAMES` and `REFRACTORY_MS` were
+removed for now — see §16.)*
+
+> Re-acquisition: if a finger is unseen for `GAP_RESET_MS` its motion history is
+> dropped **and it is disarmed**, so we never differentiate across the absence gap
+> and a re-entering hand cannot fake a strike.
+> Optional refinements (future): corroborate with the 2nd derivative (acceleration
+> spike); use landmark `z` (depth) if the camera geometry makes depth the cleaner
+> strike axis.
 
 ---
 
 ## 7. Strike axis & calibration
+
+### Strike axis
 Because the camera is *laid on the table*, "toward the table" may map to image
-**y**, image **x**, or **z** depending on placement. Provide:
-- a **config flag** for the strike axis (default `y`), and/or
-- a short **auto-calibration**: observe a few taps and pick the axis with the
-  largest oscillation amplitude.
+**y**, image **x**, or **z** depending on placement. Provided as config: the
+`STRIKE_AXIS` flag (default `y`) and an `APPROACH_SIGN` (+1/−1) for which direction
+along that axis is "toward the table". *(Future: auto-pick the axis with the largest
+oscillation amplitude over a few taps.)*
+
+### Contact calibration (launch-time, two phases)
+At launch the app calibrates the positional gates (§6.6–6.7) in two timed phases
+(`core/calibrator.py` + `run_calibration` in `main.py`). Both run purely on a
+**timer** — *the keyboard is not used during capture* — so the user can keep hands
+on the table. Closing the window aborts → kinematic-only.
+
+**Phase 1 — contact zero (per finger).**
+1. A countdown banner asks the user to **rest all 10 fingertips flat on the table**.
+2. Capture for `CALIBRATION_CAPTURE_SECONDS`.
+3. The contact zero per finger is the **median** of its samples (robust to stray
+   frames); fingers with too few samples are left **ungated** (kinematic-only).
+
+**Phase 2 — arm-clearance dry-run (one index finger).**
+1. A banner asks the user to **tap the table a few times with one index finger**.
+2. Capture for `ARM_DRYRUN_SECONDS`; measure the index finger's strike-axis
+   **amplitude** (raised peak → table contact = a real tap's vertical travel).
+3. Arm clearance = `ARM_CALIBRATION_FRACTION` (≈ 2/3) × amplitude — so the finger
+   need only rise *most* of the way to re-arm, avoiding false negatives. One global
+   clearance (px), applied to all fingers; falls back to `ARM_CLEARANCE_PX` if no
+   index taps are captured.
+
+> ⚠️ **PLACEHOLDER TIMING — fine-tune later.** `CALIBRATION_CAPTURE_SECONDS = 1.5`,
+> `ARM_DRYRUN_SECONDS = 4.0`, and the 3 s countdowns are first guesses. The global
+> (non-per-finger) arm clearance and the 2/3 fraction are also first cuts. Revisit
+> once tested live.
+
+**Width modes for the contact band:**
+- **`fixed` (current):** the band half-width is the config float `CONTACT_BAND_PX`
+  around the captured zero. Fast to tune for debugging.
+- **`sweep` (FUTURE — not yet implemented):** during calibration the user keeps
+  fingers on the table and slides hands **nearer/farther** from the camera; the app
+  records the per-finger **range** of contact positions (perspective makes "touching"
+  span a range of pixels) and sizes the band automatically. To be added; tracked in
+  §16.
 
 ---
 
@@ -354,8 +451,22 @@ AVFoundation, the native MediaPipe Tasks SDK, and native audio/UI.
    visible.** Validated live: hand/finger tracking works when only the last 2-3
    phalanges are in frame (palm out of view), **and** re-acquires cleanly after a
    hand leaves and re-enters the frame. *(This was the highest risk — now cleared.)*
-2. **Strike axis & thresholds** (`V_threshold`, `T_refractory`, smoothing) — must
-   be empirically calibrated for the table/camera setup.
+2. **Strike axis & thresholds** (`STRIKE_SPEED_THRESHOLD`, `REFRACTORY_MS`,
+   `POS_SMOOTHING_FRAMES`, `VELOCITY_DELTA_FRAMES`, `CONTACT_BAND_PX`,
+   `ARM_CLEARANCE_PX`) — must be empirically calibrated live for the table/camera.
+2a. **Calibration timing** (`CALIBRATION_CAPTURE_SECONDS = 1.5`, 3 s countdown) is a
+   PLACEHOLDER — fine-tune after live testing (§7).
+2b. **Sweep calibration mode** (auto-size the contact band by moving hands near/far)
+   is FUTURE WORK — only `fixed` width mode exists today (§7).
+2c. **Noise-elimination layer (DEFERRED).** Two guards were intentionally removed to
+   keep the logic lean, to be revisited once the core is tuned live:
+   • `MIN_FAST_FRAMES` — require N consecutive ≥ V_high frames before a hit (rejects
+     single-frame velocity spikes).
+   • `REFRACTORY_MS` — per-finger debounce. Currently redundant because the
+     arm-consume rule prevents re-fire until the finger re-arms; **but** in the
+     kinematic-only fallback (contact gate disabled) there is then **no debounce** —
+     reinstate if that mode is used. The current gates (arm-rise, high→low velocity
+     transition, contact vicinity) are relied on for noise rejection meanwhile.
 3. **`y` vs `z`** as the strike axis — evaluate which is cleaner for this geometry.
 4. **Lite vs full** hand model — accuracy vs CPU trade-off for this close-up,
    partial-hand view.

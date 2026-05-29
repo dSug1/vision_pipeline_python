@@ -13,6 +13,7 @@ from core.contracts import (
     Landmark,
     LandmarkFrame,
     finger_id_for,
+    strike_axis_value,
 )
 from core.events import EventBus
 from core.strike_detector import StrikeDetector
@@ -26,11 +27,7 @@ class FingerTracker:
         bus.subscribe(LandmarkFrame, self.on_landmark_frame)
 
     def _axis_value(self, lm: Landmark) -> float:
-        if self._axis == "x":
-            return float(lm.x_px)
-        if self._axis == "z":
-            return float(lm.z)
-        return float(lm.y_px)  # default: vertical (toward/away from table)
+        return strike_axis_value(lm, self._axis)
 
     def on_landmark_frame(self, frame: LandmarkFrame) -> None:
         for hand in frame.hands:

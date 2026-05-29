@@ -39,6 +39,17 @@ def finger_id_for(handedness: "Handedness", finger: str) -> "FingerId":
     return FingerId[f"{handedness.name}_{finger.upper()}"]
 
 
+def strike_axis_value(lm: "Landmark", axis: str) -> float:
+    """The fingertip's coordinate along the strike axis (image axis 'toward the
+    table'). Shared by the finger tracker and the calibrator so they cannot drift.
+    'x'/'y' are pixels; 'z' is the normalized depth relative to the wrist."""
+    if axis == "x":
+        return float(lm.x_px)
+    if axis == "z":
+        return float(lm.z)
+    return float(lm.y_px)  # default: vertical (toward/away from table)
+
+
 @dataclass
 class Landmark:
     """A single hand landmark. x/y/z are normalized to [0,1] (z relative to the

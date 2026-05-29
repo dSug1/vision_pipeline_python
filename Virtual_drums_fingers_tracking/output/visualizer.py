@@ -10,7 +10,8 @@ strike points, so they are drawn larger and flash red on a strike.
 """
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
+import time
+from typing import Dict, List, Optional, Tuple
 
 import cv2  # DESKTOP-ONLY
 
@@ -58,29 +59,72 @@ class Visualizer:
         bus: EventBus,
         draw_full_skeleton: bool = True,
         draw_labels: bool = False,
+        draw_fps: bool = True,
     ) -> None:
         self._draw_full_skeleton = draw_full_skeleton
         self._draw_labels = draw_labels
+        self._draw_fps = draw_fps
         self._last_frame: Optional[LandmarkFrame] = None
         self._flash_until: Dict[str, int] = {}  # finger_id.value -> timestamp_ms
+        self._last_wall_s: Optional[float] = None  # real-time clock for FPS measurement
+        self._fps: float = 0.0
         bus.subscribe(LandmarkFrame, self._on_landmark_frame)
         bus.subscribe(StrikeEvent, self._on_strike)
 
     def _on_landmark_frame(self, frame: LandmarkFrame) -> None:
         self._last_frame = frame
 
+    def set_frame(self, frame: LandmarkFrame) -> None:
+        """Set the landmarks to draw without going through the bus (used by the
+        calibration phase, which doesn't publish LandmarkFrames)."""
+        self._last_frame = frame
+
     def _on_strike(self, event: StrikeEvent) -> None:
         self._flash_until[event.finger_id.value] = event.timestamp_ms + _FLASH_MS
 
-    def render(self, frame_bgr, timestamp_ms: int) -> None:
-        """Draw hand landmarks + strike flashes onto frame_bgr and show the window."""
+    def render(self, frame_bgr, timestamp_ms: int, banner: Optional[List[str]] = None) -> None:
+        """Draw hand landmarks + strike flashes onto frame_bgr and show the window.
+        If `banner` lines are given (calibration), draw them as a top overlay."""
         lf = self._last_frame
         if lf is not None:
             for hand in lf.hands:
                 if len(hand.landmarks) < 21:
                     continue
                 self._draw_hand(frame_bgr, hand, timestamp_ms)
+        if self._draw_fps:
+            self._update_and_draw_fps(frame_bgr)
+        if banner:
+            self._draw_banner(frame_bgr, banner)
         cv2.imshow(WINDOW_NAME, frame_bgr)
+
+    def _update_and_draw_fps(self, frame_bgr) -> None:
+        """Measure the REAL loop rate (wall clock, not the synthetic frame clock)
+        with a light exponential moving average, and draw it top-right."""
+        now = time.monotonic()
+        if self._last_wall_s is not None:
+            dt = now - self._last_wall_s
+            if dt > 0:
+                inst = 1.0 / dt
+                self._fps = inst if self._fps == 0.0 else 0.9 * self._fps + 0.1 * inst
+        self._last_wall_s = now
+        text = f"{self._fps:4.1f} FPS"
+        w = frame_bgr.shape[1]
+        cv2.putText(frame_bgr, text, (w - 110, 22), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6, (0, 255, 0), 1, cv2.LINE_AA)
+
+    @staticmethod
+    def _draw_banner(frame_bgr, lines: List[str]) -> None:
+        h, w = frame_bgr.shape[:2]
+        strip_h = 16 + 28 * len(lines)
+        overlay = frame_bgr.copy()
+        cv2.rectangle(overlay, (0, 0), (w, strip_h), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.55, frame_bgr, 0.45, 0, frame_bgr)
+        y = 30
+        for i, line in enumerate(lines):
+            scale = 0.85 if i == 0 else 0.6
+            cv2.putText(frame_bgr, line, (12, y), cv2.FONT_HERSHEY_SIMPLEX,
+                        scale, (255, 255, 255), 1, cv2.LINE_AA)
+            y += 28
 
     def _draw_hand(self, frame_bgr, hand, timestamp_ms: int) -> None:
         pts = [(lm.x_px, lm.y_px) for lm in hand.landmarks]

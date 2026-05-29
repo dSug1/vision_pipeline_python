@@ -10,23 +10,36 @@ The **Virtual Drums** app runs end-to-end (camera → hand landmarks → per-fin
 "strike" → debug flash + console print). User chose **detection logic/calibration
 first**, then audio.
 
-**Done (2026-05-29): reworked the strike-detection logic** (`core/strike_detector.py`).
-The first pass had three real bugs, now fixed:
-1. It only checked the *single previous frame's* velocity, so hard taps whose
-   deceleration spanned 2–3 frames were **missed**. Now it tracks the **peak
-   approach speed** over the whole descent and fires on reversal if the peak beat
-   the threshold (matches spec §6.4).
-2. **No history reset on re-acquisition** → a phantom strike fired the instant a
-   hand re-entered the frame (differentiating across the absence gap). Now a
-   `GAP_RESET_MS` guard drops stale motion history when a finger reappears.
-3. Smoothing was folded into the derivative oddly; now it's a clean moving-average
-   position → 1-frame velocity.
-Verified with synthetic sequences (real tap → 1 hit, jitter → 0, re-acquisition →
-0, double-tap → 2, direction-sign flip works). **Not yet run on the live camera.**
+**Done (2026-05-29): strike detection is an arm/contact state machine that fires on
+DECELERATION** (`core/strike_detector.py` + `core/calibrator.py`). A hit requires:
+- **ARM** — the fingertip first rose above the table by the arm clearance, then came
+  down. Rejects derivative noise AND is the **masked-finger guard** (an occluded
+  thumb that reappears near the table starts disarmed → no phantom hit). Arm is
+  consumed per hit; small lifts re-arm it so rolls work. Clearance is measured by a
+  launch dry-run (2/3 of the index tap amplitude), fallback `ARM_CLEARANCE_PX`.
+- **FAST APPROACH** — velocity reached ≥ `STRIKE_SPEED_THRESHOLD` (V_high) during the
+  descent. (Replaced the old peak-speed gate, redundant once we gate on speed.)
+- **DECELERATION = impact** — fires the frame velocity drops below
+  `DECEL_SPEED_THRESHOLD` (V_low, "almost zero"). **Does NOT wait for velocity
+  reversal** → fires ~1 frame earlier, while the tip is still on the table (verified).
+- **CONTACT (min-depth)** — deepest point reached at least table-deep (within
+  `CONTACT_BAND_PX` of the calibrated zero; deeper is fine).
+- **No debounce** — the arm-consume rule replaces it (a micro-bounce can't re-fire
+  without re-arming). `MIN_FAST_FRAMES` + `REFRACTORY_MS` were removed as **deferred
+  noise work** (spec §16); reinstate if the kinematic-only fallback is used.
+Velocity: `POS_SMOOTHING_FRAMES` moving average → derivative over
+`VELOCITY_DELTA_FRAMES` (latency ≈ their sum). Confirmed MediaPipe does NOT pre-smooth
+landmarks, so no double-smoothing. **Two-phase launch calibration** (timer-based, no
+keyboard): (1) rest all 10 fingertips → per-finger contact zero; (2) tap with one
+index finger → arm clearance. Verified with synthetic sequences (table tap → 1,
+no-rebound stop → 1, mid-air → 0, never-armed → 0, masked reappearance → 0,
+fires-on-decel-not-reversal). **Not yet run on the live camera.**
 
 Next work, in order:
 
-1. **Run live & calibrate** the new logic (tune `config.py`). See §10.
+1. **Run live & calibrate** (tune `config.py`). See §10. Calibration timings
+   (1.5 s / 4 s) are PLACEHOLDERS; `sweep` band mode is future work (spec §7). A live
+   **FPS overlay** (top-right, `DRAW_FPS`) shows the real loop rate.
 2. **Finalize the finger→drum mapping** (`FINGER_SOUNDS` in the same file).
 3. **Add real audio** (implement `AudioSoundEngine`; pick a license-free library).
 
@@ -103,31 +116,50 @@ exist here). Flow:
 StrikeDetector → StrikeEvent (bus) → LoggingSoundEngine + Visualizer`.
 
 **Run it:** double-click `Virtual_drums_fingers_tracking\launch.bat`
-(local `.venv` is already built, so it starts immediately). Quit with **`q`** or
-by closing the window. You'll see green fingertip dots; a strike flashes that
-fingertip red + larger and prints e.g. `[drum] left_index -> snare`.
+(local `.venv` is already built, so it starts immediately). **Two timer-based
+calibration phases run first** (don't touch the keyboard): (1) rest all 10 fingertips
+flat on the table; (2) tap a few times with one index finger (sizes the arm
+clearance). Then play begins. Quit with **`q`** or by closing the window. The window
+shows the **full hand skeleton** (all 21 landmarks, color-coded per finger) and a
+real-FPS readout top-right; a strike flashes that fingertip red + larger and prints
+e.g. `[drum] left_index -> snare`. (Closing the window during calibration skips it →
+detector runs kinematic-only.)
 
 **Key tunables — `Virtual_drums_fingers_tracking/config.py`:**
 - `STRIKE_AXIS` = `"y"` (image axis "toward the table"; options `y`/`x`/`z`)
 - `APPROACH_SIGN` = `+1` (flip to `-1` if taps NEVER register — you're approaching
-  in the decreasing-axis direction; this is the first thing to try if nothing fires)
-- `STRIKE_SPEED_THRESHOLD` = `6.0` (min **peak** approach speed, px/frame, to count
-  as a strike — raise if trigger-happy, lower if real taps get missed)
-- `REFRACTORY_MS` = `120` (debounce per finger — raise to kill double-fires)
-- `SMOOTHING_WINDOW` = `3` (frames smoothed before differentiating)
-- `GAP_RESET_MS` = `100` (drop a finger's motion history if unseen this long)
+  in the decreasing-axis direction; first thing to try if nothing fires)
+- `POS_SMOOTHING_MS` = `100` / `VELOCITY_DELTA_MS` = `33` (kinematics windows in REAL
+  time; app measures FPS at launch and converts to frames, so 15/30/60 FPS all get a
+  consistent span. `KINEMATICS_AUTO_FROM_FPS=True`; `*_FRAMES` are the fallback)
+- `STRIKE_SPEED_THRESHOLD` = `180.0` (V_high: min approach speed, **px/sec** — raise
+  if trigger-happy, lower if real taps get missed)
+- `DECEL_SPEED_THRESHOLD` = `60.0` (V_low: "almost zero" speed, px/sec, that = impact;
+  fires here, not on reversal. Must be < V_high)
+- `GAP_RESET_MS` = `100` (drop+disarm a finger if unseen this long)
+- _(removed, deferred noise work: `MIN_FAST_FRAMES`, `REFRACTORY_MS` — spec §16)_
+- `CONTACT_GATE_ENABLED` = `True` (False → pure kinematic, no calibration needed)
+- `CONTACT_BAND_PX` = `25.0` (min-depth tolerance below the calibrated table height)
+- `ARM_CALIBRATION_ENABLED` = `True`, `ARM_CALIBRATION_FRACTION` = `0.667` (arm
+  clearance = 2/3 × measured index-tap amplitude), `ARM_CLEARANCE_PX` = `35.0`
+  (fallback if dry-run skipped; keep > band)
+- `CALIBRATION_CAPTURE_SECONDS` = `1.5` / `ARM_DRYRUN_SECONDS` = `4.0` (PLACEHOLDERS),
+  countdowns `3.0` each
+- `DRAW_FPS` = `True` (live real-FPS overlay, top-right)
 - `FINGER_SOUNDS` = the finger→drum-name map (10 fingers). Labels are placeholders
   (kick/snare/hat_closed/hat_open/tom_low/tom_high/crash/ride + kick_2/snare_2).
   No audio yet — these are just printed.
 
-**Strike algorithm (spec §6, in `strike_detector.py`):** moving-average smooth the
-fingertip's strike-axis position → 1-frame velocity (sign-normalized so +ve =
-toward table) → while descending, accumulate the **peak approach speed** → on
-velocity sign inversion (stop/rebound at impact), fire if peak ≥
-`STRIKE_SPEED_THRESHOLD`, debounced by `REFRACTORY_MS`. Stale history is dropped
-after a `GAP_RESET_MS` absence so re-entering hands don't fake a strike. NOTE:
-`main.py` uses a synthetic 33 ms/frame clock, so "velocity" is effectively
-**px/frame**, not px/ms.
+**Strike algorithm (spec §6, in `strike_detector.py`):** per-finger arm/contact
+state machine — see the bullets in §0 (ARM → FAST APPROACH → DECELERATION → CONTACT
+min-depth). Calibration (`core/calibrator.py`) supplies the per-finger contact zero;
+without it the detector falls back to kinematic-only. NOTE: `main.py` now uses a
+real wall-clock (`MonotonicMsClock`), so velocity is **px/second** and the speed
+thresholds are **FPS-independent**. The app also **measures FPS at launch** (~1.5 s)
+and converts the ms-based smoothing/velocity windows to frame counts, so they hold a
+consistent real-time span at 15/30/60 FPS (prints `[fps] measured ... -> smoothing=N
+frames`). The real timestamp gap also drives `GAP_RESET_MS` re-acquisition detection.
+(If FPS *fluctuates* mid-run, a time-windowed EMA smoother is the next step — spec §6.)
 
 ## 5. What is validated / works
 - ✅ Full loop runs; 10 fingers detected and distinguished; strikes fire.
