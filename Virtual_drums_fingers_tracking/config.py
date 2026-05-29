@@ -41,8 +41,11 @@ VELOCITY_DELTA_FRAMES = 1        # gap (frames) between the two smoothed samples
 # leaves the table. Requires velocity >= V_high during the descent, then < V_low.
 # Speeds are in PIXELS PER SECOND (real wall-clock, FPS-independent — main.py feeds
 # the detector real timestamps). At ~30 FPS, 180 px/s ~= 6 px/frame.
-STRIKE_SPEED_THRESHOLD = 180.0 # V_high: min downward speed (px/sec) of the approach.
-                               #   The main float to tune: raise = less sensitive.
+STRIKE_SPEED_THRESHOLD = 130.0 # V_high: min downward speed (px/sec) of the approach.
+                               #   The main float to tune: raise = less sensitive. Tuned to
+                               #   130 from live data (2026-05-29): the RING finger taps slow
+                               #   (~160-250 px/s) vs the index (300-520); 180 missed soft ring
+                               #   taps. Positional gates (arm+contact) do the false-fire filtering.
 DECEL_SPEED_THRESHOLD = 60.0   # V_low: 'almost zero' speed (px/sec) that marks the impact.
                                #   Must be < STRIKE_SPEED_THRESHOLD. Raise to fire a touch earlier.
 GAP_RESET_MS = 100             # if a finger is unseen this long, drop its motion history AND
@@ -70,7 +73,18 @@ CALIBRATION_CAPTURE_SECONDS = 1.5    # PLACEHOLDER timing — fine-tune later (s
 # measure the tap amplitude (raised peak -> table) and set the arm clearance to a
 # fraction of it (so a slightly smaller lift still re-arms -> fewer false negatives).
 ARM_CALIBRATION_ENABLED = True
-ARM_CALIBRATION_FRACTION = 0.667     # use 2/3 of the measured tap amplitude
+ARM_DRYRUN_FINGER = "ring"           # which finger to tap during the dry-run. Use the WEAKEST
+                                     #   finger (ring/pinky): its lift is the smallest, so a
+                                     #   clearance sized to it lets every stronger finger (which
+                                     #   lifts more) clear the arm line too. (Calibrating with the
+                                     #   strong index set the bar too high for the ring.)
+ARM_CALIBRATION_FRACTION = 0.6       # fraction of the AVERAGE swing amplitude to use as the arm
+                                     #   clearance. The dry-run averages real tap swings (outlier-
+                                     #   robust, see below), so a larger fraction is appropriate.
+                                     #   NOTE: per-finger arm clearance is the robust fix for weak
+                                     #   fingers (ring/pinky) — see handoff.
+ARM_SWING_MIN_PROMINENCE_PX = 6.0    # min peak-to-valley travel for a motion to count as a tap
+                                     #   "swing" during the dry-run (rejects landmark jitter ~3-5px)
 ARM_DRYRUN_COUNTDOWN_SECONDS = 3.0
 ARM_DRYRUN_SECONDS = 4.0             # PLACEHOLDER timing — fine-tune later
 ARM_CLEARANCE_PX = 35.0              # fallback: used if the dry-run is disabled or yields no
@@ -81,6 +95,12 @@ ARM_CLEARANCE_PX = 35.0              # fallback: used if the dry-run is disabled
 DRAW_FULL_SKELETON = True      # draw EVERY hand landmark + bone (not just fingertips)
 DRAW_LANDMARK_LABELS = False   # overlay the MediaPipe landmark index next to each point
 DRAW_FPS = True                # overlay the measured (real wall-clock) loop FPS, top-right
+
+# --- Debug CSV logging (for finetuning; set back to False for normal use) ---
+DEBUG_LOG_ENABLED = False      # write per-frame detector internals to a CSV for analysis
+                               #   (flip to True for a finetuning session, then back to False)
+DEBUG_LOG_PATH = "debug_log.csv"   # written in the app folder (overwritten each run)
+DEBUG_LOG_HANDS = ("Left", "Right")  # which hands to log (all fingers of each)
 
 # --- Finger -> sound mapping (debug logs the name; audio plays a sample later) ---
 FINGER_SOUNDS = {

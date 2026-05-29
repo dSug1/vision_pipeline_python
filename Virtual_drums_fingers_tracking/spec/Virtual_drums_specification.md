@@ -249,8 +249,15 @@ detector falls back to kinematic-only)
    cannot fire until it is lifted. Small lifts re-arm it, so fast rolls still work.
    The arm is **consumed** on each hit; the finger must clear the line again to
    re-arm. The clearance is **measured at launch** by the index-finger dry-run (§7)
-   — 2/3 of the real tap amplitude, so a slightly smaller lift still re-arms (fewer
-   false negatives) — falling back to `ARM_CLEARANCE_PX` if the dry-run is skipped.
+   — `ARM_CALIBRATION_FRACTION` (0.4) of the real tap amplitude — falling back to
+   `ARM_CLEARANCE_PX` if the dry-run is skipped.
+   > The arm check uses the **raw (un-smoothed)** position, unlike velocity/contact
+   > which use the smoothed signal. Reason (found in live tuning, 15 FPS): a quick
+   > shallow lift is only 1 frame, and the moving average blends it with neighbours,
+   > hiding the rise — so a real fast tap was rejected as "not armed". Arming only
+   > *enables* a hit (the fire still needs speed + reaching the table), so using the
+   > raw position is safe and catches brief lifts. Tuned on real data: arm-on-raw +
+   > `ARM_CALIBRATION_FRACTION=0.4` gives 5/5 hits with no false/double fires.
 7. **CONTACT (min-depth):** the deepest point reached must be **at least table-deep**
    — within `CONTACT_BAND_PX` of the calibrated contact zero (deeper is fine). This
    rejects mid-air taps that decelerate above the table. (Min-depth chosen over a
@@ -295,14 +302,22 @@ on the table. Closing the window aborts → kinematic-only.
 3. The contact zero per finger is the **median** of its samples (robust to stray
    frames); fingers with too few samples are left **ungated** (kinematic-only).
 
-**Phase 2 — arm-clearance dry-run (one index finger).**
-1. A banner asks the user to **tap the table a few times with one index finger**.
-2. Capture for `ARM_DRYRUN_SECONDS`; measure the index finger's strike-axis
-   **amplitude** (raised peak → table contact = a real tap's vertical travel).
-3. Arm clearance = `ARM_CALIBRATION_FRACTION` (≈ 2/3) × amplitude — so the finger
-   need only rise *most* of the way to re-arm, avoiding false negatives. One global
+**Phase 2 — arm-clearance dry-run (the WEAKEST finger).**
+1. A banner asks the user to **tap a few times with the `ARM_DRYRUN_FINGER`** —
+   default the **ring** finger. Calibrate with the *weakest* finger on purpose: its
+   lift is the smallest, so a clearance sized to it lets every *stronger* finger
+   (which lifts more) clear the arm line too. (Calibrating with the strong index set
+   the bar too high — the ring couldn't reach it; found in live tuning 2026-05-29.)
+2. Capture for `ARM_DRYRUN_SECONDS`; measure that finger's **average swing
+   amplitude**: a zig-zag detector finds alternating turning points (press valleys /
+   lift peaks) that reverse by at least `ARM_SWING_MIN_PROMINENCE_PX` (rejects
+   landmark jitter ~3-5 px), and the peak-to-valley travels are **averaged**. This is
+   outlier-robust — one stray high lift is a single swing among many, not the whole
+   value (unlike max-min). Tap the dry-run the way you'll actually play.
+3. Arm clearance = `ARM_CALIBRATION_FRACTION` (0.6) × average swing. One global
    clearance (px), applied to all fingers; falls back to `ARM_CLEARANCE_PX` if no
-   index taps are captured.
+   clean swings are captured. The fraction + the raw-position arm check (§6.6) keep
+   it forgiving. *(Per-finger arm clearance would be the fully robust fix — §16.)*
 
 > ⚠️ **PLACEHOLDER TIMING — fine-tune later.** `CALIBRATION_CAPTURE_SECONDS = 1.5`,
 > `ARM_DRYRUN_SECONDS = 4.0`, and the 3 s countdowns are first guesses. The global

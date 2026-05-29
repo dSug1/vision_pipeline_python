@@ -29,6 +29,7 @@ from vision.camera_source import OpenCvCameraSource
 from vision.hand_landmarker import MediaPipeHandLandmarker
 from output.sound_engine import LoggingSoundEngine
 from output.visualizer import Visualizer
+from output.debug_logger import DebugLogger
 
 
 def build():
@@ -129,24 +130,45 @@ def _frames_from_ms(window_ms: float, fps: float) -> int:
     return max(1, round(window_ms * fps / 1000.0))
 
 
-def configure_kinematics(detector, camera, visualizer, clock) -> None:
+def configure_kinematics(detector, camera, visualizer, clock) -> dict:
     """Measure FPS and set the detector's smoothing/velocity windows from the
     ms-based config, so the real-time spans hold regardless of frame rate. Falls back
-    to the frame-count config if measurement fails or auto-mode is off."""
+    to the frame-count config if measurement fails or auto-mode is off. Returns the
+    chosen settings (for the debug-log metadata)."""
     if not config.KINEMATICS_AUTO_FROM_FPS:
         print(f"[fps] auto-from-FPS off -> smoothing={config.POS_SMOOTHING_FRAMES} frames, "
               f"velocity_delta={config.VELOCITY_DELTA_FRAMES} frames.")
-        return
+        return {"fps": None, "smoothing_frames": config.POS_SMOOTHING_FRAMES,
+                "velocity_delta_frames": config.VELOCITY_DELTA_FRAMES}
     fps = measure_fps(camera, visualizer, clock, config.MEASURE_FPS_SECONDS)
     if fps is None or fps <= 0:
         print("[fps] measurement failed -> using POS_SMOOTHING_FRAMES / VELOCITY_DELTA_FRAMES.")
-        return
+        return {"fps": None, "smoothing_frames": config.POS_SMOOTHING_FRAMES,
+                "velocity_delta_frames": config.VELOCITY_DELTA_FRAMES}
     smoothing = _frames_from_ms(config.POS_SMOOTHING_MS, fps)
     delta = _frames_from_ms(config.VELOCITY_DELTA_MS, fps)
     detector.set_kinematics(smoothing, delta)
     print(f"[fps] measured {fps:.1f} FPS -> smoothing={smoothing} frames "
           f"({config.POS_SMOOTHING_MS:.0f}ms), velocity_delta={delta} frames "
           f"({config.VELOCITY_DELTA_MS:.0f}ms).")
+    return {"fps": fps, "smoothing_frames": smoothing, "velocity_delta_frames": delta}
+
+
+def _debug_meta_lines(kin: dict, contact_zeros: dict, arm_clearance) -> list:
+    """Compose the `#`-commented header for the debug CSV so the data is self-describing."""
+    arm = arm_clearance if arm_clearance is not None else config.ARM_CLEARANCE_PX
+    fps = kin.get("fps")
+    zeros = ", ".join(f"{fid.value}={z:.1f}" for fid, z in contact_zeros.items()) or "(none - kinematic only)"
+    return [
+        "Virtual Drums debug log (per finger per frame)",
+        f"measured_fps={fps:.2f}" if fps else "measured_fps=unknown(fallback)",
+        f"smoothing_frames={kin.get('smoothing_frames')}  velocity_delta_frames={kin.get('velocity_delta_frames')}",
+        f"STRIKE_SPEED_THRESHOLD(px/s)={config.STRIKE_SPEED_THRESHOLD}  DECEL_SPEED_THRESHOLD(px/s)={config.DECEL_SPEED_THRESHOLD}",
+        f"CONTACT_BAND_PX={config.CONTACT_BAND_PX}  arm_clearance_px={arm:.1f}",
+        f"strike_axis={config.STRIKE_AXIS}  approach_sign={config.APPROACH_SIGN}",
+        f"contact_zeros: {zeros}",
+        "events: warmup/vel_warmup/dt_zero/approach/medium/FIRE/impact_noarm/impact_noreach/slow_stop",
+    ]
 
 
 class _CalibrationAborted(Exception):
@@ -213,21 +235,28 @@ def run_calibration(camera, landmarker, visualizer, clock):
         # Phase 2: arm-clearance dry-run (tap with one index finger).
         arm_clearance = None
         if config.ARM_CALIBRATION_ENABLED:
+            fname = config.ARM_DRYRUN_FINGER.lower()
             dryrun_cal = _capture_phase(
                 camera, landmarker, visualizer, clock,
                 config.ARM_DRYRUN_COUNTDOWN_SECONDS, config.ARM_DRYRUN_SECONDS,
-                ["CALIBRATION 2/2 - tap amplitude", "Tap the table a few times with your INDEX finger."],
-                ["Keep tapping with your index finger..."],
+                ["CALIBRATION 2/2 - tap amplitude",
+                 f"Tap the table a few times with your {fname.upper()} finger."],
+                [f"Keep tapping with your {fname} finger..."],
             )
-            amps = [a for a in (dryrun_cal.amplitude(FingerId.LEFT_INDEX),
-                                dryrun_cal.amplitude(FingerId.RIGHT_INDEX)) if a]
+            amps = []
+            for hand in ("LEFT", "RIGHT"):
+                fid = FingerId.__members__.get(f"{hand}_{fname.upper()}")
+                a = dryrun_cal.average_swing_amplitude(fid, config.ARM_SWING_MIN_PROMINENCE_PX) if fid else None
+                if a:
+                    amps.append(a)
             if amps:
-                arm_clearance = config.ARM_CALIBRATION_FRACTION * max(amps)
-                print(f"[calibration] index tap amplitude {max(amps):.0f}px "
+                swing = max(amps)   # the actively-tapped hand (resting hand gives ~0)
+                arm_clearance = config.ARM_CALIBRATION_FRACTION * swing
+                print(f"[calibration] {fname} avg swing {swing:.0f}px "
                       f"-> arm clearance {arm_clearance:.0f}px "
                       f"({config.ARM_CALIBRATION_FRACTION:.0%}).")
             else:
-                print("[calibration] no index-finger taps captured -> using ARM_CLEARANCE_PX fallback.")
+                print(f"[calibration] no {fname}-finger swings captured -> using ARM_CLEARANCE_PX fallback.")
         return zeros, arm_clearance
     except _CalibrationAborted:
         print("[calibration] aborted -> running kinematic-only (no contact gate).")
@@ -237,15 +266,25 @@ def run_calibration(camera, landmarker, visualizer, clock):
 def main() -> None:
     bus, camera, landmarker, detector, visualizer = build()
     clock = MonotonicMsClock()
+    logger = None
     try:
         # Measure FPS and set the smoothing/velocity windows from the ms-based config.
-        configure_kinematics(detector, camera, visualizer, clock)
+        kin = configure_kinematics(detector, camera, visualizer, clock)
 
         # Calibrate the per-finger table height + the arm clearance, then apply.
         contact_zeros, arm_clearance = run_calibration(camera, landmarker, visualizer, clock)
         detector.set_contact_zeros(contact_zeros)
         if arm_clearance is not None:
             detector.set_arm_clearance(arm_clearance)
+
+        # Optional debug logging of the detector internals, for finetuning.
+        if config.DEBUG_LOG_ENABLED:
+            logger = DebugLogger(os.path.join(APP_DIR, config.DEBUG_LOG_PATH),
+                                 hands=config.DEBUG_LOG_HANDS)
+            logger.write_meta(_debug_meta_lines(kin, contact_zeros, arm_clearance))
+            detector.set_debug_sink(logger.record)
+            print(f"[debug-log] logging to {config.DEBUG_LOG_PATH} "
+                  f"(hands: {', '.join(config.DEBUG_LOG_HANDS)}).")
 
         # Play.
         while True:
@@ -259,6 +298,8 @@ def main() -> None:
             if visualizer.should_quit():
                 break
     finally:
+        if logger is not None:
+            logger.close()
         camera.release()
         landmarker.close()
         visualizer.destroy()

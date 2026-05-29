@@ -44,7 +44,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Deque, Dict, Optional
+from typing import Callable, Deque, Dict, Optional
 
 from core.contracts import FingerId, Handedness, StrikeEvent
 
@@ -96,6 +96,7 @@ class StrikeDetector:
         contact_gate_enabled: bool = True,
         contact_band_px: float = 25.0,  # min-depth tolerance below the contact zero
         arm_clearance_px: float = 35.0, # fallback height above the zero needed to (re)arm
+        debug_sink: Optional[Callable[[dict], None]] = None,  # per-frame debug record sink
     ) -> None:
         self._smoothing_frames = max(1, smoothing_frames)
         self._velocity_delta = max(1, velocity_delta_frames)
@@ -106,6 +107,7 @@ class StrikeDetector:
         self._contact_gate_enabled = contact_gate_enabled
         self._contact_band = contact_band_px
         self._arm_clearance = arm_clearance_px
+        self._debug_sink = debug_sink
         # Per-finger contact depth (calibrated zero, in depth units = axis * sign).
         self._contact_depth: Dict[FingerId, float] = {}
         self._state: Dict[FingerId, _FingerState] = {}
@@ -134,6 +136,11 @@ class StrikeDetector:
         if clearance_px > 0:
             self._arm_clearance = clearance_px
 
+    def set_debug_sink(self, sink: Optional[Callable[[dict], None]]) -> None:
+        """Attach a callback that receives one debug record (dict) per finger per
+        frame — used by the CSV debug logger for finetuning. None disables it."""
+        self._debug_sink = sink
+
     def _gate_active_for(self, finger_id: FingerId) -> bool:
         return self._contact_gate_enabled and finger_id in self._contact_depth
 
@@ -161,65 +168,110 @@ class StrikeDetector:
         st.last_seen_ms = timestamp_ms
 
         st.raw.append(axis_value)
-        if len(st.raw) < self._smoothing_frames:
-            return None
-        smoothed = sum(st.raw) / len(st.raw)
-        st.smoothed.append(smoothed)
-        st.stamps.append(timestamp_ms)
-
-        depth = smoothed * self._sign  # larger == more toward the table
         gate = self._gate_active_for(finger_id)
+        contact = self._contact_depth.get(finger_id)
 
-        # ARM: the tip must rise above the table by the clearance to (re)arm a hit.
-        if gate and depth <= self._contact_depth[finger_id] - self._arm_clearance:
-            st.armed = True
-
-        if len(st.smoothed) < self._velocity_delta + 1:
-            return None
-
-        # Smoothed velocity over the frame gap, normalized by REAL elapsed time
-        # (px/second); +ve == toward the table. FPS-independent.
-        dt_ms = st.stamps[-1] - st.stamps[-1 - self._velocity_delta]
-        if dt_ms <= 0:
-            return None
-        velocity = (st.smoothed[-1] - st.smoothed[-1 - self._velocity_delta]) / dt_ms * 1000.0 * self._sign
-
-        if velocity >= self._speed_threshold:
-            # Fast approach: mark it and remember the burst peak / depth.
-            st.was_fast = True
-            if velocity > st.burst_max_speed:
-                st.burst_max_speed = velocity
-            if depth > st.deepest_depth:
-                st.deepest_depth = depth
-            return None
-
-        if velocity >= self._decel_threshold:
-            # Decelerating but not yet 'stopped': hold the burst, keep tracking depth.
-            if depth > st.deepest_depth:
-                st.deepest_depth = depth
-            return None
-
-        # velocity < V_low: the finger has (almost) stopped -> the impact moment.
+        # Defaults for the per-frame debug record (filled in as far as we get).
+        smoothed = None
+        depth = None
+        velocity = None
+        event = "warmup"
         strike: Optional[StrikeEvent] = None
-        if st.was_fast:
-            if depth > st.deepest_depth:
-                st.deepest_depth = depth
-            if gate:
-                armed_ok = st.armed
-                reached_table = st.deepest_depth >= (self._contact_depth[finger_id] - self._contact_band)
+        log_peak = None
+        log_deepest = None
+        log_armed = st.armed
+
+        if len(st.raw) >= self._smoothing_frames:
+            smoothed = sum(st.raw) / len(st.raw)
+            st.smoothed.append(smoothed)
+            st.stamps.append(timestamp_ms)
+            depth = smoothed * self._sign        # smoothed: used for velocity & contact
+            raw_depth = axis_value * self._sign   # un-smoothed: used for the arm check
+
+            # ARM on the RAW position: a quick shallow lift can be averaged away by
+            # the smoothing (at low FPS a 1-frame lift gets blended with neighbours),
+            # so detect the rise with the un-smoothed depth. Arming only ENABLES a
+            # hit — the fire still needs a fast approach that reaches the table — so
+            # a few px of raw noise here is harmless (can't cross the arm clearance).
+            if gate and raw_depth <= contact - self._arm_clearance:
+                st.armed = True
+            log_armed = st.armed
+
+            if len(st.smoothed) < self._velocity_delta + 1:
+                event = "vel_warmup"
             else:
-                armed_ok = True          # no calibration -> kinematic-only fallback
-                reached_table = True
-            if armed_ok and reached_table:
-                st.armed = False         # consume the arm; must lift again to re-arm
-                strike = StrikeEvent(
-                    finger_id=finger_id,
-                    handedness=handedness,
-                    timestamp_ms=timestamp_ms,
-                    strike_speed=st.burst_max_speed,
-                    x_px=x_px,
-                    y_px=y_px,
-                )
-        # The fast approach is over (fired or not); arm the trackers for the next one.
-        st._reset_burst()
+                # Smoothed velocity over the frame gap, normalized by REAL elapsed
+                # time (px/second); +ve == toward the table. FPS-independent.
+                dt_ms = st.stamps[-1] - st.stamps[-1 - self._velocity_delta]
+                if dt_ms <= 0:
+                    event = "dt_zero"
+                else:
+                    velocity = (st.smoothed[-1] - st.smoothed[-1 - self._velocity_delta]) / dt_ms * 1000.0 * self._sign
+
+                    if velocity >= self._speed_threshold:
+                        # Fast approach: mark it and remember the burst peak / depth.
+                        st.was_fast = True
+                        if velocity > st.burst_max_speed:
+                            st.burst_max_speed = velocity
+                        if depth > st.deepest_depth:
+                            st.deepest_depth = depth
+                        event = "approach"
+                        log_peak, log_deepest = st.burst_max_speed, st.deepest_depth
+                    elif velocity >= self._decel_threshold:
+                        # Decelerating but not 'stopped' yet: hold the burst, track depth.
+                        if depth > st.deepest_depth:
+                            st.deepest_depth = depth
+                        event = "medium"   # speed in the V_low..V_high band (descending)
+                        log_peak, log_deepest = st.burst_max_speed, st.deepest_depth
+                    else:
+                        # velocity < V_low: the finger has (almost) stopped -> impact.
+                        if st.was_fast:
+                            if depth > st.deepest_depth:
+                                st.deepest_depth = depth
+                            if gate:
+                                armed_ok = st.armed
+                                reached_table = st.deepest_depth >= (contact - self._contact_band)
+                            else:
+                                armed_ok = True       # no calibration -> kinematic-only
+                                reached_table = True
+                            log_peak, log_deepest, log_armed = st.burst_max_speed, st.deepest_depth, armed_ok
+                            if armed_ok and reached_table:
+                                st.armed = False      # consume the arm; must lift to re-arm
+                                strike = StrikeEvent(
+                                    finger_id=finger_id,
+                                    handedness=handedness,
+                                    timestamp_ms=timestamp_ms,
+                                    strike_speed=st.burst_max_speed,
+                                    x_px=x_px,
+                                    y_px=y_px,
+                                )
+                                event = "FIRE"
+                            elif not armed_ok:
+                                event = "impact_noarm"
+                            else:
+                                event = "impact_noreach"
+                        else:
+                            event = "slow_stop"
+                        # The approach is over (fired or not); arm trackers for the next.
+                        st._reset_burst()
+
+        if self._debug_sink is not None:
+            self._debug_sink({
+                "ts_ms": timestamp_ms,
+                "finger": finger_id.value,
+                "hand": handedness.value,
+                "raw_y": float(axis_value),
+                "smoothed_y": smoothed,
+                "velocity_pxps": velocity,
+                "depth": depth,
+                "armed": int(bool(log_armed)),
+                "was_fast": int(st.was_fast),
+                "deepest_y": (log_deepest * self._sign) if (log_deepest is not None and log_deepest > _NEG_INF) else None,
+                "contact_zero_y": (contact * self._sign) if contact is not None else None,
+                "arm_line_y": ((contact - self._arm_clearance) * self._sign) if contact is not None else None,
+                "event": event,
+                "fired": int(strike is not None),
+                "strike_speed": log_peak,
+            })
+
         return strike

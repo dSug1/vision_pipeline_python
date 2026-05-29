@@ -53,9 +53,43 @@ class ContactCalibrator:
 
     def amplitude(self, finger_id: FingerId) -> Optional[float]:
         """Strike-axis travel (max - min) observed for one finger over the capture
-        window. Used by the arm dry-run to size the arm clearance from a real tap.
-        Returns None if the finger had too few samples."""
+        window. The simple peak-to-peak; outlier-sensitive (one stray lift dominates).
+        Prefer `average_swing_amplitude` for the arm dry-run. None if too few samples."""
         vals = self._samples.get(finger_id)
         if vals and len(vals) >= self._min_samples:
             return float(max(vals) - min(vals))
         return None
+
+    def average_swing_amplitude(self, finger_id: FingerId,
+                                min_prominence_px: float) -> Optional[float]:
+        """Average tap amplitude for one finger over the dry-run. Detects alternating
+        turning points (press valleys / lift peaks) with a minimum prominence (rejects
+        landmark jitter), then averages the peak-to-valley travels. More robust than
+        max-min: a single stray lift is just one swing among many, not the whole value.
+        Returns None if too few clean swings were seen."""
+        vals = self._samples.get(finger_id)
+        if not vals or len(vals) < self._min_samples:
+            return None
+        th = max(1.0, min_prominence_px)
+        # Zig-zag: confirm a turning point only after the signal reverses by >= th.
+        turns: List[float] = []
+        lo = hi = vals[0]
+        direction = 0  # 0 unknown, +1 moving toward table (y up), -1 lifting
+        for v in vals:
+            if v > hi:
+                hi = v
+            if v < lo:
+                lo = v
+            if direction >= 0 and v <= hi - th:      # was rising -> reversed: hi is a peak
+                turns.append(hi)
+                direction = -1
+                lo = v
+            elif direction <= 0 and v >= lo + th:     # was falling -> reversed: lo is a valley
+                turns.append(lo)
+                direction = 1
+                hi = v
+        # Drop the seed turn (vals[0]) if it produced a partial first leg.
+        diffs = [abs(turns[i + 1] - turns[i]) for i in range(len(turns) - 1)]
+        if not diffs:
+            return None
+        return float(sum(diffs) / len(diffs))
