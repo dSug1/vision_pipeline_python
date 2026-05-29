@@ -53,16 +53,21 @@ ensure_opencv()
 # Load models
 face_detector, hand_detector = load_models()
 
-# Start webcam
-cap = cv2.VideoCapture(0)
+# Start webcam.
+# Use the DirectShow backend (CAP_DSHOW) explicitly: the default MSMF backend on
+# Windows can hang for a very long time on open — especially if a previous run
+# was killed without releasing the device.
+WINDOW_NAME = "Hands & Face Detection"
+cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 if not cap.isOpened():
-    raise RuntimeError("Could not open webcam.")
+    raise RuntimeError("Could not open webcam (index 0). Is another program using the camera?")
 
 
 # Run inference and write keypoints coordinates in json files
 timestamp_ms = 0
 
-while True:
+try:
+  while True:
     ret, frame = cap.read()
     if not ret or not connection_alive:
         break
@@ -70,11 +75,14 @@ while True:
     height, width = frame.shape[:2]
 
     annotatedImage, facekeypointsCoordinates, allHandsLandmarksCoordinatesArray = run_inference_on_frame(frame, face_detector, hand_detector, timestamp_ms)
-    
-    #show in display
-    cv2.imshow("Hands & Face Detection", annotatedImage)
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):   
+    #show in display
+    cv2.imshow(WINDOW_NAME, annotatedImage)
+
+    # Stop on 'q' OR when the preview window is closed with the X button.
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+    if cv2.getWindowProperty(WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1:
         break
 
     # Process face keypoints: 6 keypoints × 2 = 12 values
@@ -114,9 +122,17 @@ while True:
         break
 
     timestamp_ms += 33  # ~30 FPS
-
-cap.release()
-cv2.destroyAllWindows()
-connection.close()
-server.close()
-print("[Socket Server] Connection closed.")
+finally:
+    # Always release the camera and sockets, even on exception / interrupt,
+    # so the device is never left in a stuck state for the next run.
+    cap.release()
+    cv2.destroyAllWindows()
+    try:
+        connection.close()
+    except Exception:
+        pass
+    try:
+        server.close()
+    except Exception:
+        pass
+    print("[Socket Server] Connection closed.")

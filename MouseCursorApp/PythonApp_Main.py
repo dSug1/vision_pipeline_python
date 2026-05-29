@@ -3,7 +3,7 @@ import sys
 import os
 from typing import List
 
-from PythonApp.Resources.HandsTriggeredActions import left_index_tip
+from Resources.HandsTriggeredActions import left_index_tip
 
 
 def receive_float_array(datatype: str, array: List[float]) -> None:
@@ -29,7 +29,7 @@ def receive_float_array(datatype: str, array: List[float]) -> None:
 def main() -> None:
     # Resolve the launcher path relative to this file (cwd-independent)
     _dir = os.path.dirname(os.path.abspath(__file__))
-    launcher_path = os.path.join(_dir, "PythonApp", "Resources", "Launcher_for_Server_and_Client.py")
+    launcher_path = os.path.join(_dir, "Resources", "Launcher_for_Server_and_Client.py")
 
     launcher_command = [sys.executable, launcher_path]
     print(f"[Main.py] Starting Launcher_for_Server_and_Client.py")

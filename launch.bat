@@ -1,9 +1,9 @@
 @echo off
 REM ============================================================
-REM  Vision Pipeline launcher
+REM  Vision Pipeline launcher - Mouse Cursor application
 REM  - Uses the project's virtual environment (.venv)
-REM  - Starts PythonApp_Main.py, which spawns the vision server
-REM    and the client (cursor control).
+REM  - Starts MouseCursorApp\PythonApp_Main.py, which spawns the shared
+REM    vision server and the cursor-control client.
 REM  Press 'q' in the camera preview window to stop.
 REM ============================================================
 
@@ -18,8 +18,8 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
-echo [launch] Starting Vision Pipeline...
-".venv\Scripts\python.exe" PythonApp_Main.py
+echo [launch] Starting Vision Pipeline (Mouse Cursor app)...
+".venv\Scripts\python.exe" MouseCursorApp\PythonApp_Main.py
 
 echo.
 echo [launch] Vision Pipeline exited.

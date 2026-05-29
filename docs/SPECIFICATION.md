@@ -19,23 +19,36 @@ gestures captured from a standard webcam.
 
 ## 2. Components
 
-The repository is split into three top-level units plus a MAUI launcher app.
+The repository separates a **shared vision server** from one or more
+**applications** that consume its hand/face coordinate stream. Each application
+lives in its own top-level folder and is self-contained (its own entry point,
+launcher, and socket client). The Mouse Cursor app is the first such app;
+additional apps (e.g. other hand-driven tools) get their own sibling folder.
 
 | Component | Path | Role |
 |-----------|------|------|
-| **Entry point** | `PythonApp_Main.py` | Boots the launcher, defines the data callback `receive_float_array`. |
-| **Launcher** | `PythonApp/Resources/Launcher_for_Server_and_Client.py` | Spawns the vision server and the client as subprocesses. |
-| **Vision server** | `Python_Server_MediaPipe_vision_pipeline/` | Webcam capture, MediaPipe inference, socket server. |
-| **Client / action layer** | `PythonApp/Resources/` | Receives packets, dispatches to cursor/action handlers. |
-| **MAUI launcher** | `MauiApp_Launcher/` | Cross-platform .NET app that can launch the Python pipeline. |
+| **Shared vision server** | `Python_Server_MediaPipe_vision_pipeline/` | Webcam capture, MediaPipe inference, socket server. Reused by every app. |
+| **Mouse Cursor app** | `MouseCursorApp/` | Application that maps hand coordinates to mouse-cursor movement. |
+| ↳ Entry point | `MouseCursorApp/PythonApp_Main.py` | Boots the launcher, defines the data callback `receive_float_array`. |
+| ↳ Launcher | `MouseCursorApp/Resources/Launcher_for_Server_and_Client.py` | Spawns the shared vision server and this app's client. |
+| ↳ Client / action layer | `MouseCursorApp/Resources/` | Receives packets, dispatches to cursor handlers. |
+| **MAUI launcher** | `MauiApp_Launcher/` | Separate cross-platform .NET app (C# reimplementation of the cursor client). |
+
+> **Adding a new application:** copy the `MouseCursorApp/` layout to a new
+> sibling folder, then replace the cursor-specific logic (`CursorController.py`,
+> `HandsTriggeredActions.py`, and the `"hands"` branch of `receive_float_array`)
+> with the new app's behavior. The shared server stays untouched. Note: the
+> server currently accepts a **single** client connection, so only one app can
+> run at a time (see Limitations).
 
 ---
 
 ## 3. Module Reference
 
-### 3.1 `PythonApp_Main.py` (entry point)
-- Launches `Launcher_for_Server_and_Client.py` as a subprocess.
-- Sleeps ~3s to let the server/client come up.
+### 3.1 `MouseCursorApp/PythonApp_Main.py` (entry point)
+- `main()` launches `Resources/Launcher_for_Server_and_Client.py` as a subprocess.
+- Launch logic is guarded by `if __name__ == "__main__"` so that when `Client.py`
+  imports this module for the callback, the pipeline is **not** re-launched.
 - Defines `receive_float_array(datatype, array)`:
   - `datatype == "face"` → currently a no-op (TODO: face-driven movement).
   - `datatype == "hands"` → reads the **left index-finger tip** (array indices
@@ -147,7 +160,8 @@ Each packet is a single JSON object followed by `"\n"`:
 | Host | `127.0.0.1` | `--host` arg (all entry points) |
 | Port | `5050` | `--port` arg |
 | Frame rate | ~30 FPS | `timestamp_ms += 33` in `VisionPipeline.py` |
-| Camera index | `0` | `cv2.VideoCapture(0)` |
+| Camera index | `0` | `cv2.VideoCapture(0, cv2.CAP_DSHOW)` |
+| Camera backend | DirectShow (`CAP_DSHOW`) | Avoids MSMF open hangs on Windows |
 | Max hands | `2` | `inference.load_models` |
 | Screen size | `1920×1080` | `CursorController` |
 
@@ -175,11 +189,21 @@ Double-click **`launch.bat`**, or from a terminal:
 .\launch.bat
 
 # Or manually with the venv interpreter:
-.\.venv\Scripts\python.exe PythonApp_Main.py
+.\.venv\Scripts\python.exe MouseCursorApp\PythonApp_Main.py
 ```
-Press **`q`** in the camera preview window to stop. Because every process is
-spawned with `sys.executable`, launching with the venv interpreter means the
-server and client subprocesses inherit the same environment automatically.
+**Stopping:** press **`q`** in the camera preview window, or close the window
+with the **X** button — either cleanly releases the camera and closes the
+sockets (which also shuts the client down). If a run ever gets stuck, run
+**`stop.bat`** to force-kill the pipeline's processes.
+
+Because every process is spawned with `sys.executable`, launching with the venv
+interpreter means the server and client subprocesses inherit the same
+environment automatically.
+
+> **Note on process model:** `PythonApp_Main.py` spawns the launcher and exits
+> immediately, so the server/client run *detached* from the launching console —
+> Ctrl+C in that console will **not** stop them. Stop via the preview window or
+> `stop.bat`.
 
 ---
 

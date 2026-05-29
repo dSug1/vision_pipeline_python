@@ -4,15 +4,30 @@ import sys
 import socket
 import json
 import argparse
+import time
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--host", type=str, default="127.0.0.1")
 parser.add_argument("--port", type=int, default=5050)
 args = parser.parse_args()
 
-# Connect to server
+# Connect to server. The server process needs a few seconds to import MediaPipe
+# before it starts listening, so retry instead of failing on the first refusal.
 client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-client.connect((args.host, args.port))
+_CONNECT_TIMEOUT = 30  # seconds
+connected = False
+for _attempt in range(_CONNECT_TIMEOUT * 2):  # try every 0.5s
+    try:
+        client.connect((args.host, args.port))
+        connected = True
+        break
+    except (ConnectionRefusedError, OSError):
+        time.sleep(0.5)
+
+if not connected:
+    print(f"[Client] Could not connect to {args.host}:{args.port} within {_CONNECT_TIMEOUT}s. Is the server running?")
+    sys.exit(1)
+
 print(f"[Client] Connected to {args.host}:{args.port}")
 
 # Example: send a start command
@@ -23,9 +38,10 @@ script_dir = Path(__file__).resolve().parent
 output_dir = script_dir / "Received_data_json_files"
 output_dir.mkdir(exist_ok=True)
 
-# Get grandparent directory
-grandparent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(grandparent_dir)
+# Add the application directory (one level above Resources/) to the path so we
+# can import the entry module that defines the dispatch callback.
+app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(app_dir)
 
 # Now import the module
 from PythonApp_Main import receive_float_array
