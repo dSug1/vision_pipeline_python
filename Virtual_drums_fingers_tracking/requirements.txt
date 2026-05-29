@@ -1,0 +1,12 @@
+# Virtual Drums — Finger Tracking — dependencies (self-contained)
+# This folder is independent: it declares its own deps and uses its own local
+# .venv (created automatically by launch.bat).
+#
+# MediaPipe pinned to 0.10.14 (has Windows wheels and the Tasks HandLandmarker
+# API used here). NOTE: unlike the original pipeline, this app does NOT use the
+# legacy `mediapipe.solutions` / `mediapipe.framework` modules (drawing is done
+# with plain OpenCV), so a newer tasks-only MediaPipe would also work — kept
+# pinned for reproducibility.
+mediapipe==0.10.14
+opencv-contrib-python>=4.8.0
+numpy

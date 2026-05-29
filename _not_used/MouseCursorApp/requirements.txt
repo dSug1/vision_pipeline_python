@@ -1,11 +1,11 @@
-# Vision Pipeline — Python dependencies
-# Install with:  pip install -r requirements.txt
-# Tested with Python 3.11
+# Vision Pipeline — Python dependencies (ORIGINAL server-client system, parked in _not_used)
+# Used by MouseCursorApp + its sibling ../Python_Server_MediaPipe_vision_pipeline.
+# launch.bat builds a local .venv here from this file. Tested with Python 3.11.
 
 # NOTE: pinned, do not bump blindly. MediaPipe 0.10.30+ removed the legacy
 # `mediapipe.solutions` and `mediapipe.framework` Python modules (tasks-only
 # builds). The vision server's preview drawing in
-# Python_Server_MediaPipe_vision_pipeline/Resources/hands_visualizer.py and
+# ../Python_Server_MediaPipe_vision_pipeline/Resources/hands_visualizer.py and
 # facevisualizer.py still depend on those modules, so we pin to a version that
 # ships both the legacy `solutions` API and the newer `tasks` API.
 #

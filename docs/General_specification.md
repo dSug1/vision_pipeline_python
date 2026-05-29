@@ -1,4 +1,18 @@
-# Vision Pipeline — Technical Specification
+# Vision Pipeline — General Specification (Original Design)
+
+> **Status — original design.** This document specifies the project's **original
+> architecture**: a Python, desktop-only, **server–client** pipeline — a vision
+> server that streams landmarks over a local TCP socket to a separate client
+> process — which powers the **MouseCursorApp**. It reflects the system as first
+> built and still carries open issues, notably the **single-client server**
+> limitation (multi-client support is **not yet solved** — see §8).
+>
+> This is **not** the design for the new desktop app; a **separate specification
+> will be written for that** (to be added under `docs/`). Per the project's
+> cross-platform goal, the Python code described here is treated as a desktop
+> prototype whose **design** (producer→consumer separation, landmark data
+> contract, UX, model files) should transfer to a future mobile rebuild — even
+> though the code itself will not.
 
 ## 1. Overview
 
@@ -7,9 +21,10 @@ that detects **face** and **hand** keypoints with Google MediaPipe and streams
 the resulting coordinates over a local TCP socket. A client consumes that stream
 and turns hand keypoints into OS-level actions (e.g. moving the mouse cursor).
 
-The system is designed to be launched standalone (`PythonApp_Main.py`) or driven
-from a companion **.NET MAUI** application (`MauiApp_Launcher`) that spawns the
-Python process.
+The system is launched standalone via `PythonApp_Main.py`. A companion **.NET
+MAUI** client (`MauiApp_Launcher`) was an alternative consumer of the same
+stream, but is now **parked in `_not_used/`** and is not part of the active
+design.
 
 ### High-level goal
 Let a user control the desktop cursor (and, in future, other actions) with hand
