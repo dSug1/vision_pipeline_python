@@ -16,9 +16,18 @@ MIN_TRACKING_CONFIDENCE = 0.5
 
 # --- Strike detection (spec sections 6/7; TO CALIBRATE for the table/camera) ---
 STRIKE_AXIS = "y"              # "y" | "x" | "z" — image axis pointing toward the table
+APPROACH_SIGN = +1             # +1 if "toward the table" means the axis value INCREASES,
+                               #   -1 if it decreases. Flip this if taps never register
+                               #   (you're approaching in the other direction).
 SMOOTHING_WINDOW = 3           # frames of moving-average smoothing before differentiating
-STRIKE_SPEED_THRESHOLD = 8.0   # min approach speed (px/frame for x/y) to count as a strike
+STRIKE_SPEED_THRESHOLD = 6.0   # min PEAK approach speed (px/frame for x/y) to count as a strike
 REFRACTORY_MS = 120            # min time between two strikes of the same finger
+GAP_RESET_MS = 100             # if a finger is unseen this long, drop its motion history on
+                               #   re-acquisition (prevents a phantom strike when a hand re-enters)
+
+# --- Debug visualization (spec sections 9; turn off for max frame rate) ---
+DRAW_FULL_SKELETON = True      # draw EVERY hand landmark + bone (not just fingertips)
+DRAW_LANDMARK_LABELS = False   # overlay the MediaPipe landmark index next to each point
 
 # --- Finger -> sound mapping (debug logs the name; audio plays a sample later) ---
 FINGER_SOUNDS = {

@@ -1,26 +1,39 @@
 @echo off
+setlocal
 REM ============================================================
 REM  Virtual Drums - Finger Tracking launcher (self-contained)
-REM  Creates/uses a LOCAL .venv inside THIS folder, so the folder
-REM  can be copied anywhere with no external dependencies or links.
-REM  Launching the app launches the vision pipeline (one process).
-REM  Press 'q' or close the window to stop.
+REM  Builds/uses a LOCAL .venv inside THIS folder, then runs the app.
+REM  The folder can be copied anywhere with no external dependencies.
+REM  Press 'q' or close the camera window to stop.
 REM ============================================================
-
-REM Work from this .bat's own folder (the self-contained app root).
 cd /d "%~dp0"
 
-REM Create the local virtual environment on first run.
-if not exist ".venv\Scripts\python.exe" (
-    echo [launch] Creating local virtual environment (.venv)...
-    python -m venv .venv
-    ".venv\Scripts\python.exe" -m pip install --upgrade pip
-    ".venv\Scripts\python.exe" -m pip install -r requirements.txt
-)
+if exist ".venv\Scripts\python.exe" goto run
 
+echo [launch] First run: creating local virtual environment (.venv)...
+python -m venv .venv
+if errorlevel 1 goto nopython
+echo [launch] Installing dependencies (first time only, may take a few minutes)...
+".venv\Scripts\python.exe" -m pip install --upgrade pip
+".venv\Scripts\python.exe" -m pip install -r requirements.txt
+if errorlevel 1 goto pipfail
+
+:run
 echo [launch] Starting Virtual Drums...
 ".venv\Scripts\python.exe" main.py
+goto end
 
+:nopython
 echo.
-echo [launch] Virtual Drums exited.
+echo [launch] ERROR: 'python' was not found on PATH.
+echo [launch] Install Python 3.11+ (check "Add to PATH" in the installer) and re-run.
+goto end
+
+:pipfail
+echo.
+echo [launch] ERROR: dependency installation failed. See the messages above.
+goto end
+
+:end
+echo.
 pause

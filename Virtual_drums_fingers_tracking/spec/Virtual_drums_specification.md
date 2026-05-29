@@ -350,8 +350,10 @@ AVFoundation, the native MediaPipe Tasks SDK, and native audio/UI.
 ---
 
 ## 16. Open questions / to calibrate / risks
-1. **Palm-detector re-acquisition** with only phalanges visible after tracking
-   loss — validate robustness; tune detection confidence. *(highest risk)*
+1. ✅ **RESOLVED (2026-05-29) — Palm-detector re-acquisition with only phalanges
+   visible.** Validated live: hand/finger tracking works when only the last 2-3
+   phalanges are in frame (palm out of view), **and** re-acquires cleanly after a
+   hand leaves and re-enters the frame. *(This was the highest risk — now cleared.)*
 2. **Strike axis & thresholds** (`V_threshold`, `T_refractory`, smoothing) — must
    be empirically calibrated for the table/camera setup.
 3. **`y` vs `z`** as the strike axis — evaluate which is cleaner for this geometry.

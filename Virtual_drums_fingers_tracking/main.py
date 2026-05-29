@@ -47,12 +47,18 @@ def build():
         smoothing_window=config.SMOOTHING_WINDOW,
         speed_threshold=config.STRIKE_SPEED_THRESHOLD,
         refractory_ms=config.REFRACTORY_MS,
+        gap_reset_ms=config.GAP_RESET_MS,
+        approach_sign=config.APPROACH_SIGN,
     )
     FingerTracker(bus, detector, strike_axis=config.STRIKE_AXIS)  # subscribes to the bus
 
     # Consumers
     LoggingSoundEngine(bus, config.FINGER_SOUNDS)  # debug; swap for AudioSoundEngine later
-    visualizer = Visualizer(bus)
+    visualizer = Visualizer(
+        bus,
+        draw_full_skeleton=config.DRAW_FULL_SKELETON,
+        draw_labels=config.DRAW_LANDMARK_LABELS,
+    )
 
     return bus, camera, landmarker, visualizer
 
