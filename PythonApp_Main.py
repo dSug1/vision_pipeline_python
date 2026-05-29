@@ -1,27 +1,10 @@
 import subprocess
 import sys
 import os
-import time
-
-from PythonApp.Resources import Launcher_for_Server_and_Client
-from PythonApp.Resources import Client
-
-# Resolve paths relative to the folder
-_dir = os.path.dirname(os.path.abspath(__file__))
-launcher_path = os.path.join("PythonApp", "Resources", "Launcher_for_Server_and_Client.py")
-
-# Launch Launcher.py
-launcher_command = [
-    sys.executable,
-    launcher_path
-]
-print(f"[Main.py] Starting Launcher_for_Server_and_Client.py")
-subprocess.Popen(launcher_command)
-
-time.sleep(3)
-
 from typing import List
+
 from PythonApp.Resources.HandsTriggeredActions import left_index_tip
+
 
 def receive_float_array(datatype: str, array: List[float]) -> None:
     # Debug-style printout of received data
@@ -43,6 +26,17 @@ def receive_float_array(datatype: str, array: List[float]) -> None:
         print(f"[MainPage] Unknown type: {datatype}")
 
 
+def main() -> None:
+    # Resolve the launcher path relative to this file (cwd-independent)
+    _dir = os.path.dirname(os.path.abspath(__file__))
+    launcher_path = os.path.join(_dir, "PythonApp", "Resources", "Launcher_for_Server_and_Client.py")
+
+    launcher_command = [sys.executable, launcher_path]
+    print(f"[Main.py] Starting Launcher_for_Server_and_Client.py")
+    subprocess.Popen(launcher_command)
 
 
-
+# Only launch the pipeline when run directly. When Client.py imports this module
+# to reuse receive_float_array(), the launch logic must NOT run again.
+if __name__ == "__main__":
+    main()

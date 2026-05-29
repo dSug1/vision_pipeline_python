@@ -11,10 +11,10 @@ parser.add_argument("--port", type=int, default=5050, help="Server port")
 args = parser.parse_args()
 
 # Resolve paths relative to the parent folder
-#parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+script_dir = os.path.dirname(os.path.abspath(__file__))
 grandparent_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 main_path = os.path.join(grandparent_dir, "Python_Server_MediaPipe_vision_pipeline", "VisionPipeline.py")
-client_path = os.path.join("Client.py")
+client_path = os.path.join(script_dir, "Client.py")
 
 # Launch Main.py
 main_command = [
