@@ -1,10 +1,29 @@
 # Part One — gesture/pattern recognition design & matrix
 
+> **⚠ Superseded (2026-07-30): read `GESTURE_PIPELINE_SPEC.md` first.**
+> §6–§8 below document a **rule-based (hand-tuned threshold) pinch
+> classifier that was built, tested, and then abandoned** — it worked for
+> the hand orientation it was calibrated on, but a state-of-the-art
+> literature check plus reproducible live/recorded evidence showed it
+> could not be fixed without either endless heuristic patching (rejected —
+> not backed by literature, doesn't generalize) or a fundamentally
+> different approach. That different approach — labeled recording, a
+> *trained* classifier instead of hand-picked thresholds, and a live debug
+> tool, run identically for every future gesture — is now specified in
+> `GESTURE_PIPELINE_SPEC.md`. **That document is the active spec.** Every
+> file the rule-based attempt produced (`GestureRules.py`,
+> `AnalyzeRecordings.py`, `ValidateWindowedClassifier.py`,
+> `LiveGestureDebug.py`, `debug_gestures.bat`) and every old recording have
+> been deleted — §6–§8 are kept below **only** as the evidence trail for
+> why, not as a description of current code. §1–§5 (scope, architecture
+> decisions, the gesture matrix, the wire-protocol gap, open items) are
+> still current and still apply.
+
 Implements §7 of `Specification.md`: Pipeline A gesture recognition, developed
 on PC against the existing Python MediaPipe pipeline. This file is the living
-design reference for Part One's gesture vocabulary — **the matrix in §2 below
+design reference for Part One's gesture vocabulary — **the matrix in §3 below
 is meant to be enriched** as new gestures/objects are added; keep it in sync
-with `rules.py`/`temporal.py` as they're built.
+with the classifier code as it's built (see `GESTURE_PIPELINE_SPEC.md` for how).
 
 ## 1. Scope decided so far
 
@@ -29,6 +48,26 @@ parallel JS implementation. See Specification.md §2 for why (avoids
 maintaining tuned thresholds in two languages at once); portability is kept
 cheap via pure-function `features.py`/`rules.py` and an engine-agnostic
 `gesture_config.json` (§7.4), not by building both sides simultaneously.
+
+**Gesture classification is data-driven and camera-pose-invariant, not
+eyeballed.** Revised after step 1: rather than hand-picking a pixel-distance
+threshold and tuning it live by eye, gestures are classified from
+`world_landmarks` (metric, hand-relative 3D — not image-space pixels or
+normalized `[0,1]` coordinates), built from **recorded, labeled sessions**
+via the pipeline in `GESTURE_PIPELINE_SPEC.md` (labeled recording →
+literature benchmark → **trained classifier** → live debug tool — not
+hand-picked thresholds; §6–§8 below tried the hand-picked-threshold version
+first and document why it didn't hold up). Two reasons this still holds
+regardless of classifier method: (1) a flat pixel threshold breaks the
+moment camera resolution or hand-to-camera distance changes, and doesn't
+survive the planned future move to a glasses-mounted, outward-facing camera
+(§12 of `Specification.md`) — only hand-relative 3D geometry does; (2)
+empirical calibration against real recorded data beats a guessed constant,
+regardless of whether that calibration is a hand-picked threshold or a
+trained model's weights. This does **not** apply to cube *translation*
+(positioning the cube on screen) — that stays image-space/pixel-based,
+since placing something on screen inherently needs a frame-relative
+signal; only gesture *classification* moved to `world_landmarks`.
 
 ## 2. Core architecture decisions
 
@@ -94,31 +133,371 @@ it actually belongs to), and cross-check §7.4's engine-agnostic
 | Order | Signal / Gesture | Hand(s) | Input | Detection logic | Effect | Status |
 |---|---|---|---|---|---|---|
 | 1 | Scaffolding | both, independent | full 21-landmark list per hand | n/a — plumbing only | red cube added to scene; both hands' landmarks flow through (not just left); no ownership/grab logic yet | **Built, not yet live-verified** — code in `Local_pc/Movement_with_hand_detection/`; run `launch.bat` and confirm blue cube follows left hand, red cube follows right hand |
-| 2 | Pinch detection | each hand independently | thumb tip (4), index tip (8) | `distance(4,8) < pinch_threshold` | candidate grab trigger (rising edge) | Not started |
+| 2 | Pinch detection | each hand independently | `world_landmarks`, features TBD by the new pipeline's stage 2/3 | a **trained classifier**, not hand-picked thresholds — see `GESTURE_PIPELINE_SPEC.md` | candidate grab trigger (rising edge) | **Reset (2026-07-30)** — rule-based approach abandoned (structural rotation ambiguity, not fixable by more thresholds — see §6/§7/§9 below for the evidence). Rebuilding under `GESTURE_PIPELINE_SPEC.md`'s pipeline; not started under the new approach yet |
 | 3 | Grab acquisition + arbitration | each hand vs. shared registry | pinch (#2) + pinch-midpoint vs. cube positions | pinch rising-edge → nearest **unowned** cube within grab radius → claim in shared registry | idle/hover → grabbed | Not started |
 | 4 | Release | each hand | pinch state, or tracking loss | un-pinch (falling edge past hysteresis) **or** hand tracking lost | grabbed → idle; cube frozen in place; ownership cleared; requires fresh pinch to reacquire | Not started |
 | 5 | Translation | each hand, while grabbed | pinch midpoint (4+8) | cube position = mapped(pinch midpoint), X/Y only | cube follows pinch | Not started |
 | 6 | Depth proxy → scale + color | each hand, while grabbed | apparent hand span (image coords) vs. calibration baseline | `ratio = current_span / baseline_span` | cube scale ∝ ratio; color lerps light↔dark by ratio | Not started |
 | 7 | Rotation (quaternion) | each hand, while grabbed | `world_landmarks`: wrist(0), index_MCP(5), pinky_MCP(17) | orthonormal frame → quaternion → slerp | cube orientation follows hand orientation | Not started — **requires sending `world_landmarks` over the wire, not currently sent** (server only sends 2D pixel landmarks today, see §4) |
 
-## 4. Known wire-protocol gap (relevant to step 7)
+## 4. Known wire-protocol gap (live pipeline, not recording)
 
 The existing socket protocol (`VisionPipeline.py` → `Client.py` →
 `PythonApp_Main.py`) currently sends only 2D pixel-space landmarks (21
 points × 2 hands × `(x_px, y_px)` = 84 floats per `"hands"` packet) — no `z`,
-no `world_landmarks`. Steps 1–6 above only need 2D image-space data, so no
-protocol change is needed until step 7 (rotation), which needs
-`world_landmarks` (metric, hand-relative 3D) per the data contract in
-Specification.md §6. Extend the `"hands"` packet then, not before —
-resist adding it early since it's dead weight until rotation is built.
+no `world_landmarks`. Translation (step 5) only needs 2D image-space data,
+so that part of the protocol doesn't need to change. But since §1's revision,
+**gesture classification needs `world_landmarks`**, which the live socket
+protocol doesn't carry yet — originally this gap was only flagged for step 7
+(rotation), it now also blocks wiring the tuned pinch classifier (step 2/3)
+into the live pipeline.
+
+This does **not** block recording or analysis, though: `RecordSession.py`
+(§7) captures `world_landmarks` directly from the in-process MediaPipe
+`HandLandmarker` result, bypassing the socket entirely — recording and
+offline analysis can proceed with today's protocol unchanged. The wire
+extension is only needed at the point where the *tuned* classifier gets
+wired into `HandsTriggeredActions.py` for live use. Extend `VisionPipeline.py`
+/ `Server.py` to send `world_landmarks` then, not before.
 
 ## 5. Open items to resolve empirically, not now
 
-- Exact pinch/release threshold values and hysteresis margin — tune by eye
-  once step 2 is live.
+- Pinch classification itself — superseded, see the banner at the top of
+  this file and `GESTURE_PIPELINE_SPEC.md`.
 - Exact grab-radius value (likely scaled to cube size).
 - Tie-break rule if both hands' pinch rising-edges land on the same free
   cube in the same frame (currently unspecified — low-probability edge
   case, revisit only if it's actually hit in practice).
 - Exact hand-span metric for the depth proxy (wrist↔middle-MCP vs. a full
   bounding-box diagonal) — pick whichever is more stable empirically.
+
+## 6. Pinch classifier design basis (state-of-the-art check, 2026-07-30)
+
+*(§6–§8: historical record of the abandoned rule-based approach — see the
+banner at the top of this file. Kept for the evidence trail, not as a
+description of current code.)*
+
+Researched before building, since a naive single-distance threshold is not
+what production implementations actually use. Findings, and how they shape
+the design:
+
+- **Distance alone false-positives on a fist.** Common practice (e.g.
+  MediaPipe-based tutorials, GRLib) checks `distance(thumb_tip, index_tip)`
+  **and** confirms the other three fingertips are *not* also curled in
+  (middle/ring/pinky tips below their MCP joints) — otherwise a closed fist
+  reads as a pinch too, since thumb and index end up close together there
+  as well. Folded into row #2's detection logic above as a required
+  conjunct, not an optional refinement.
+- **Ratio-normalize by a hand-size reference**, not a raw distance — this
+  is the single biggest accuracy lever per Specification.md §6, and it's
+  also what makes the classifier resolution/distance-independent, which is
+  the whole point of moving off pixels (§1).
+- **A learned classifier (small MLP / SVM / XGBoost on landmark-derived
+  features, or MediaPipe's own embedding+classification-head architecture)
+  is the state-of-the-art direction for larger gesture vocabularies**, and
+  several papers report strong results this way. Not adopted now —
+  Specification.md §7.1 already recommends starting rule-based and only
+  reaching for a learned model if rules prove insufficient, and nothing
+  here contradicts that. But recording full labeled landmark data (§7),
+  not just derived ratios, means today's sessions could train a small
+  classifier later with **no recapture needed** if rules turn out
+  insufficient — free optionality, not a plan change.
+- **DTW/HMM/sliding-window+LSTM are for genuinely dynamic gestures**
+  (swipe, twist trajectories), not a static pose like pinch. Confirms
+  rather than changes the matrix's existing plan (row #7's dynamic
+  gestures already deferred, sliding-window only if static rules prove
+  insufficient — Specification.md §7.1).
+- **4–6 landmarks is enough** per several papers — matches row #2 above
+  (thumb tip, index tip, wrist, middle MCP, plus the three other
+  fingers' MCP/PIP/tip for the uncurl check — nowhere near all 21 points).
+- **Curl is a joint angle, not a wrist-relative distance ratio** — refined
+  after an XR-SDK literature check (Meta Horizon OS, Unity XR Hands):
+  production hand-tracking curl features use the angle at the PIP joint
+  (`angle(MCP→PIP, PIP→tip)`, small = straight, large = curled), not a
+  `distance(wrist, tip) / distance(wrist, MCP)` ratio. `GestureRules.py`
+  implements both (`finger_curl_angle_deg`, `finger_extension_ratio`) so
+  the analysis script could compare them empirically rather than assuming
+  which is better — see §7's result.
+- **Otsu's method (Otsu, 1979)** — a standard automatic-thresholding
+  algorithm from image binarization, generalized here to any 1D bimodal
+  distribution — is the principled way to split `pinch_x3`'s frames into a
+  pinching/released cluster without per-frame labels, rather than an
+  ad-hoc "biggest gap" heuristic. Used in `AnalyzeRecordings.py` (§7).
+
+### 6.1 Derived result (2026-07-30, `AnalyzeRecordings.py` against 2× `pinch_x3` + `fist` + `open_hand`)
+
+- **`pinch_ratio` threshold = 0.371`** (Otsu split of `pinch_x3`'s own
+  distribution — the value is the boundary between a 56-frame low/pinching
+  cluster and a 184-frame high/released cluster).
+- **`pinch_angle_deg` was tested but not adopted** as a required condition:
+  its own Otsu split produced a much larger, misaligned cluster (143 of 240
+  frames — implausibly high for a signal meant to isolate brief pinch
+  moments) versus `pinch_ratio`'s 56, indicating it responds to more than
+  just the pinch action (likely overall hand orientation during the
+  cycle). `pinch_angle_deg()` is still computed and available in
+  `GestureRules.py` for future re-evaluation, just not required by
+  `is_pinching()`.
+- **Other-fingers-uncurled gate: curl angle, percentile-based, not a clean
+  min/max split.** Even restricted to the 56 frames `pinch_ratio` confirms
+  as genuinely mid-pinch, the *worst* (most-curled) of middle/ring/pinky
+  sometimes reached fist-like curl values — a per-finger breakdown showed
+  this wasn't one specific finger misbehaving, all three showed some tail
+  overlap with `fist`. Read as either brief transition frames near the
+  ratio decision boundary, or genuine finger coupling (thumb+index closing
+  measurably drags the other fingers somewhat — documented in hand
+  biomechanics literature, not unique to this data). Chasing a zero-overlap
+  split on 2 recordings would be overfitting, not rigor — so the threshold
+  is the **90th percentile of confirmed-pinch `curl_worst_deg`, = 112.965°**
+  (accepts the top 10% of true-pinch frames failing the gate, in exchange
+  for a threshold that generalizes past this one session).
+- **Measured result**: `pinch_ratio < 0.371 AND curl_worst_deg < 112.965°`
+  together produce **0/117 false positives on the recorded `fist`
+  session** (actually measured, not assumed from the two gates
+  separately).
+- **Gap found, not yet closed: 9.2% (11/120) false positives on
+  `open_hand`.** `open_hand` wasn't part of the threshold derivation (only
+  `fist` was used as the adversarial stress test, per §6's original
+  reasoning) — running the finalized `is_pinching()` back over all four
+  recordings as a sanity check surfaced this. Likely a *relaxed* open hand
+  occasionally lets thumb and index drift closer than a deliberately
+  splayed one. Not fixed yet — see §7's open items.
+
+## 7. Recording & analysis workflow
+
+**Tool**: `Local_pc/Python_Server_MediaPipe_vision_pipeline/RecordSession.py`,
+run via `Local_pc/Movement_with_hand_detection/record.bat <label>
+[duration_seconds]` (reuses that folder's `.venv` — run `launch.bat` at
+least once first if it doesn't exist yet). Standalone: opens the webcam
+directly, runs MediaPipe `HandLandmarker` in `VIDEO` mode. **Recording is
+timed, not keypress-stopped** — a 3s on-screen countdown gives time to get
+hands in frame, then capture runs for `duration_seconds` (default 4s) and
+stops automatically. No keypress needed once it starts, since both hands
+are busy performing the gesture, not at the keyboard — closing the preview
+window is still available as an early abort if needed. Every captured frame
+— both hands' `handedness`, normalized `landmarks`, and `world_landmarks`
+(Specification.md §6 schema) — is saved to
+`Local_pc/Python_Server_MediaPipe_vision_pipeline/recordings/<label>_<timestamp>.json`.
+No cube window, no socket — independent of the live pipeline (§4).
+`recordings/` is gitignored (raw capture data, not source).
+
+**Session convention**: one label per whole session (§1's revision from an
+earlier held-pose-only plan) — cyclic gestures like pinch are recorded as
+the gesture repeated ~3 times within one session (neutral → pinch → release,
+×3), so the transition dynamics show up multiple times per file, not just a
+single static hold. Static baselines (open hand, fist) are a single held
+session, no repetition needed.
+
+**Sessions recorded so far**: 2× `pinch_x3` (60 frames each), 1× `fist`
+(60 frames), 1× `open_hand` (60 frames) — all with both hands detected
+throughout. `near_pinch` (fingers close but not touching, a deliberate
+boundary stress test per the original recording-set plan) not recorded yet.
+
+**Analysis**: built — `Local_pc/Movement_with_hand_detection/AnalyzeRecordings.py`.
+Loads every session from `recordings/`, computes `pinch_ratio`,
+`pinch_angle_deg`, per-finger curl angles, and per-finger extension ratios
+per hand-frame (via `Resources/GestureRules.py`), prints full distributions
+per label, runs the Otsu split described in §6.1, cross-checks against
+`fist`/`open_hand`, and prints recommended thresholds with the actual
+measured false-positive counts (not estimates). Re-run it
+(`.venv\Scripts\python.exe AnalyzeRecordings.py`) any time more sessions are
+added — thresholds should be re-derived, not hand-adjusted.
+
+**Open items surfaced by this pass** (not yet resolved):
+- **`open_hand` false-positive root cause found (2026-07-30 debug pass)**:
+  all 11 false positives are on the **left hand only**, in three brief
+  ~66–99ms bursts (frames 17-20, 31-33, 45-48 — roughly evenly spaced,
+  not random scatter). Curl values throughout stay comfortably in the
+  extended range (72–82°, nowhere near the 112.965° threshold) — the curl
+  gate is working correctly; it's specifically the thumb-index ratio that
+  periodically narrows (down to 0.212) on an otherwise genuinely open,
+  relaxed left hand. Likely natural resting-hand thumb drift, not a
+  tracking artifact (the rhythmic spacing argues against random jitter)
+  and not a fist-confusion case.
+  - **Debounce alone won't cleanly fix this**: checked contiguous
+    `is_pinching()`-true run lengths in the `pinch_x3` recordings —
+    genuine pinch holds run only 3–5 frames (~100–165ms), i.e. *the same
+    order of duration* as the false-positive blips. A simple "require N
+    consecutive frames" filter would either still catch the blips (if N is
+    small enough to keep genuine fast pinches) or reject real pinches (if
+    N is large enough to exclude the blips) — the current data doesn't
+    support a clean duration cutoff either.
+  - **Practical mitigation that already exists**: grab acquisition (matrix
+    row #3) is proximity-gated, not pinch-alone-gated — a relaxed hand
+    that isn't near any cube can't spuriously grab one no matter how the
+    raw pinch signal flickers. This softens the real-world impact
+    considerably; don't over-fit the threshold chasing this artifact from
+    one small recording before row #3 exists to actually test against.
+  - **If still a problem once row #3 is live-tested**: record pinch
+    sessions with slower, more deliberate holds (longer `--duration`,
+    fewer cycles) so genuine pinches are unambiguously longer than
+    incidental drift, making a duration debounce viable; and/or record a
+    second `open_hand` baseline with fingers explicitly fanned apart to
+    see if that removes the drift (would confirm it's a relaxed-hand
+    posture effect, not inherent to this classifier).
+- `near_pinch` session still not recorded — would sharpen exactly where the
+  0.371 ratio boundary should sit, rather than relying on `pinch_x3`'s own
+  release-phase frames as the only "not pinching" reference for that
+  threshold.
+- Only one person's hand in this data (2 sessions worth of `pinch_x3`) —
+  thresholds are a starting point for live tuning against `is_pinching()`,
+  not a final calibration.
+
+### 7.1 Live debug tool (§8 step 4)
+
+**Tool**: `Local_pc/Movement_with_hand_detection/LiveGestureDebug.py`, run
+via `debug_gestures.bat` in the same folder (or `--duration <seconds>` for
+a bounded, non-interactive run). Standalone — no socket, no cube window —
+opens the webcam directly and overlays each detected hand's gesture status
+on a preview window (`PINCH *` when active), logging to the console on
+each detection's rising edge rather than every frame. `GESTURES` is a
+`{display_name: classifier_function}` dict — adding a future gesture here
+is a one-line addition, the loop itself doesn't change.
+
+**Integration bug found and fixed while building this (2026-07-30)**:
+`GestureRules.py`'s functions were only ever exercised against
+JSON-loaded landmark dicts (`{"x", "y", "z"}`, the shape
+`RecordSession.py` writes) via `AnalyzeRecordings.py` — never against
+MediaPipe's native live result objects, which expose `.x`/`.y`/`.z` as
+attributes, not dict keys. First live run crashed on this
+(`TypeError: 'Landmark' object is not subscriptable`). Fixed at the call
+site (`_to_dict_landmarks()` converts before calling any classifier) rather
+than making `GestureRules.py` polymorphic over two landmark shapes — keeps
+the classifier functions' data contract single and simple. **Lesson for
+future gestures**: a classifier that's only been tested against recorded
+JSON hasn't been tested against the live data path at all — step 4 isn't
+optional polish, it catches integration bugs step 3 structurally cannot.
+
+**First live smoke test (bounded 12s run)**: 8 `PINCH` detections logged on
+the right hand, no crash, clean shutdown. Not yet a full interactive
+session — that's next, checking both hands and specifically trying to
+reproduce the `open_hand` left-hand flicker (§7's open items) live.
+
+### 7.2 Interactive live testing found a bigger gap: rotation (2026-07-30)
+
+Live testing (§7.1) surfaced what the recorded-data analysis couldn't:
+static single-frame geometry is fundamentally ambiguous under hand
+rotation, and doesn't generalize across hand orientation at all.
+
+**Observed live**: (1) pinch detection works well with hands in
+roughly the same position/orientation as the recordings; (2) rotating the
+hand triggers pinch detection randomly; (3) palm-up (not represented in any
+recording) doesn't detect pinches at all.
+
+**Quantified**: ran `is_pinching()` (the static classifier) against a new
+`rotating_hand` baseline (hand moving/rotating, no pinching, recorded via
+`RecordSession.py --label rotating_hand --duration 6`) — **38.5% false
+positives overall, 62.2% on one hand**. Confirms this isn't a minor edge
+case.
+
+**Why, per a literature check**: a pinch is inherently a *transition*, not
+a fixed pose — a static geometric snapshot can't distinguish "thumb and
+index happen to be close right now" (which many rotated, non-pinching hand
+configurations produce incidentally) from "thumb and index are closing
+together" (the actual pinch action). A robust VR-controller pinch-detection
+paper (AtaTouch) uses closing *velocity* — not just distance — as a core
+signal, plus a ~100ms temporal-persistence check to reject transient noise.
+
+**Redesign — `PinchTracker` / `is_pinching_from_window` in
+`GestureRules.py`**: a windowed detector requiring both the static gates
+(ratio + curl, unchanged) **and** a recent closing motion (`pinch_ratio`
+decreased by at least `DEFAULT_VELOCITY_THRESHOLD` = -0.05 over a
+`PINCH_WINDOW_FRAMES` = 5-frame / ~165ms window). This is the one place
+state enters the module — `PinchTracker` is a thin rolling-buffer wrapper
+around the pure `is_pinching_from_window` function (Specification.md §7.1
+already anticipated dynamic gestures needing a sliding window; pinch just
+needed it sooner than planned). `is_pinching()` (the static-only version)
+is kept as a building block and for static-geometry analysis, with its
+limitation documented in its own docstring — **not used for live
+detection anymore**.
+
+**Validated against all 5 recorded sessions, in temporal per-hand order**
+(`ValidateWindowedClassifier.py` — unlike `AnalyzeRecordings.py`'s pooled
+analysis, this preserves frame adjacency, which a velocity feature needs):
+
+| Session | Hand | Static | Windowed |
+|---|---|---|---|
+| `rotating_hand` | Right | 62.2% | **22.2%** |
+| `rotating_hand` | Left | 14.6% | 10.1% |
+| `open_hand` | Left | 18.3% | **18.3% (unchanged)** |
+| `pinch_x3` (×2, true positives) | both | 16.7–25.0% | 13.3–20.0% (some loss) |
+
+**Real progress, not a full fix — and the reason why matters more than the
+numbers.** Inspected the `open_hand` left-hand blip directly: `pinch_ratio`
+drops from 0.546 → 0.212 → back to 0.543 within ~6 frames (~200ms) — a
+genuine, complete closing-and-reopening motion, not static noise. It has
+the velocity signature of a real pinch **because it structurally is one** —
+an unintentional but real fast hand motion. Velocity alone can't
+distinguish it from a genuine pinch because the reference `pinch_x3`
+recordings are themselves very fast: 3 cycles in 4 seconds means real pinch
+holds only last 3–5 frames (§6.1's contiguous-run-length finding) — right
+in the same range as this incidental blip. **The two classes overlap in
+timing because the training data doesn't have a clean timing signature to
+key off of, not because the velocity approach is wrong.**
+
+**Next step (not yet done)**: re-record `pinch_x3` (or a new, explicitly
+slower variant) with deliberate, sustained holds — e.g. ~300–500ms per
+hold, not a rapid ×3-in-4-seconds cadence — so genuine pinches have an
+unambiguous duration to detect against. Re-deriving `DEFAULT_VELOCITY_THRESHOLD`
+and `PINCH_WINDOW_FRAMES` against fast-cadence data would be overfitting
+to a dataset that structurally can't support the separation; the recording
+protocol needs to change, not just the threshold.
+
+## 8. General gesture classifier development workflow (apply to every future gesture)
+
+Established while building pinch (§6–§7 are the worked example) — this is
+now the standard procedure for adding **any** new gesture to §3's matrix,
+not pinch-specific process notes. Four steps, always in this order:
+
+1. **Record several automatic sessions**: the target gesture itself (cyclic
+   gestures as repeated cycles per session, e.g. ×3, static poses as one
+   held session — §7's convention), **plus several baseline/negative
+   sessions** covering poses that could plausibly be confused with the
+   target gesture. Which baselines to record is decided by step 2, not
+   guessed — `fist` was recorded for pinch because the literature flagged
+   it as the specific confusable pose, not because it seemed like a
+   reasonable default. Use `RecordSession.py` (§7): timed/auto-stop, no
+   keypress needed since both hands are busy performing the gesture.
+   **Camera-in-front for now.** The same recording set gets repeated later
+   with a forward/outward-facing camera once the project moves toward the
+   glasses use case (Specification.md §12) — camera orientation is a
+   variable to eventually test empirically, not assumed to transfer
+   unchanged from the front-facing data. **Also record a baseline of the
+   hand moving/rotating through varied orientations without performing the
+   gesture** (§7.2's `rotating_hand` finding) — a static single-frame
+   classifier is ambiguous under rotation almost by construction, and this
+   is the cheapest single session to catch it early rather than live.
+   **Cadence matters if the classifier will use velocity/timing at all**
+   (§7.2): recording a cyclic gesture too fast (e.g. 3 reps in 4 seconds)
+   makes genuine holds barely longer than incidental micro-movements,
+   destroying exactly the timing signal a velocity feature needs — record
+   deliberate, sustained reps unless the real target gesture is
+   itself meant to be that fast.
+2. **Benchmark the classifier strategy against state-of-the-art literature
+   *before* computing anything.** As done for pinch (§6): what
+   features/thresholds/algorithms do existing implementations and papers
+   use for this gesture or a close analog? This is what surfaces the right
+   feature set (e.g. §6's curl-angle vs. distance-ratio finding) and the
+   specific confusable poses step 1 needs baselines for — the fist
+   false-positive risk was *found* this way, not guessed after the fact.
+   Don't skip straight to recording without it.
+3. **Compute the classifier from the recorded data.** Derive thresholds
+   empirically — Otsu's method for unlabeled bimodal cyclic-gesture data
+   (§6.1), percentile-based margins where a clean min/max split doesn't
+   exist, cross-validated against the negative baselines with *actually
+   measured* false-positive counts, not assumed ones. `AnalyzeRecordings.py`
+   (§7) is the reference implementation for pinch; extend it (or add a
+   parallel analysis script) for each new gesture using the same method,
+   not a different ad-hoc one each time.
+4. **Live debug tool.** Run the camera live and display "gesture X
+   detected" in real time (`LiveGestureDebug.py`) before wiring the
+   classifier into the actual grab/release pipeline (matrix row #3+). This
+   is the step that catches what a small recorded dataset can't — e.g. the
+   `open_hand` false-positive gap (§6.1) was only found by running the
+   finalized classifier back over the recordings as a sanity check; a live
+   tool makes that kind of check immediate and visual instead of a
+   one-off script run.
+
+Don't skip a step because a gesture "seems simple" — pinch looked simple
+too. Step 4 in particular is what catches what steps 1–3 miss on a small
+dataset; treat thresholds from steps 1–3 as a starting point for step 4's
+live tuning, not a final answer.

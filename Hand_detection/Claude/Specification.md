@@ -455,7 +455,12 @@ following as hard rules, not style preferences:
 
 Recorded here so it's available at the spec level when the gesture set is next enriched;
 full detail and the enrichable gesture matrix live in `Claude/PART_ONE.md` — read that
-file before adding a new gesture, don't just work from this summary.
+file before adding a new gesture, don't just work from this summary. **For how any gesture
+classifier actually gets built (recording, training, live validation) read
+`Claude/GESTURE_PIPELINE_SPEC.md` first** — a hand-tuned-threshold pinch classifier was
+built and then abandoned (structural rotation ambiguity a threshold couldn't fix, see
+`PART_ONE.md` §6–§8 for the evidence); that spec is what replaced it and applies to every
+gesture, not just pinch.
 
 - **Live PC prototype, not offline-only.** Part One's first concrete build is a live,
   visually-tuned two-hand/two-cube manipulation prototype extending Part Zero's
