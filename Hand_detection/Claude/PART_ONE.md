@@ -15,7 +15,13 @@ Specification.md §2/§7 — because grab thresholds, rotation feel, and the
 depth-proxy mapping all need to be tuned by eye against a live webcam feed,
 the same way Part Zero-bis's coordinate mapping needed live verification
 (see `PART_ZERO_BIS.md`). It's built as a direct extension of Part Zero's
-`CubeWindow.py`, not a separate offline module. See Specification.md §7.5 for
+`CubeWindow.py`, **in place, in the same `Hand_detection/Local_pc/` folder**
+— not a new sibling folder and not a separate offline module. This matches
+how Part Zero itself was built (modifying the pre-existing cursor-control
+pipeline in place, with `PART_ZERO.md` documenting the delta rather than a
+frozen copy being kept). `Part_Zero_local_pc/` and `Part_Zero_Bis_Web/` were
+renamed to `Local_pc/` and `Web/` accordingly once Part One started —
+history is in git, not in a parallel folder. See Specification.md §7.5 for
 the pointer back to this file.
 
 **Sequencing vs. the browser port**: built PC-only, first, in full — no
@@ -87,7 +93,7 @@ it actually belongs to), and cross-check §7.4's engine-agnostic
 
 | Order | Signal / Gesture | Hand(s) | Input | Detection logic | Effect | Status |
 |---|---|---|---|---|---|---|
-| 1 | Scaffolding | both, independent | full 21-landmark list per hand | n/a — plumbing only | red cube added to scene; both hands' landmarks flow through (not just left); no ownership/grab logic yet | **In progress** |
+| 1 | Scaffolding | both, independent | full 21-landmark list per hand | n/a — plumbing only | red cube added to scene; both hands' landmarks flow through (not just left); no ownership/grab logic yet | **Built, not yet live-verified** — code in `Local_pc/Movement_with_hand_detection/`; run `launch.bat` and confirm blue cube follows left hand, red cube follows right hand |
 | 2 | Pinch detection | each hand independently | thumb tip (4), index tip (8) | `distance(4,8) < pinch_threshold` | candidate grab trigger (rising edge) | Not started |
 | 3 | Grab acquisition + arbitration | each hand vs. shared registry | pinch (#2) + pinch-midpoint vs. cube positions | pinch rising-edge → nearest **unowned** cube within grab radius → claim in shared registry | idle/hover → grabbed | Not started |
 | 4 | Release | each hand | pinch state, or tracking loss | un-pinch (falling edge past hysteresis) **or** hand tracking lost | grabbed → idle; cube frozen in place; ownership cleared; requires fresh pinch to reacquire | Not started |
