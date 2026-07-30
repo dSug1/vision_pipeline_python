@@ -1,9 +1,25 @@
 import subprocess
 import sys
 import os
-from typing import List
+from typing import List, Tuple
 
-from Resources.HandsTriggeredActions import left_index_tip, configure_source_resolution
+from Resources.HandsTriggeredActions import on_hands_frame, configure_source_resolution
+
+# "hands" packets carry both hands' full 21-point landmark lists, flattened
+# as [left_x0, left_y0, ..., left_x20, left_y20, right_x0, right_y0, ...,
+# right_x20, right_y20] — see VisionPipeline.py's remap_keypoints calls for
+# "Left" then "Right". A hand not detected this frame arrives as 21 (0, 0)
+# placeholder points rather than being omitted (see
+# utils_for_remapping_coordinates_and_output_formatting.py's expected_count
+# fallback), so the array length is always the same regardless of how many
+# hands are actually visible.
+LANDMARKS_PER_HAND = 21
+VALUES_PER_HAND = LANDMARKS_PER_HAND * 2  # (x, y) per landmark
+VALUES_PER_HANDS_PACKET = VALUES_PER_HAND * 2  # left hand + right hand
+
+
+def _to_landmark_pairs(values: List[float]) -> List[Tuple[float, float]]:
+    return [(values[i], values[i + 1]) for i in range(0, len(values), 2)]
 
 
 def receive_float_array(datatype: str, array: List[float]) -> None:
@@ -21,13 +37,12 @@ def receive_float_array(datatype: str, array: List[float]) -> None:
         pass
 
     elif datatype == "hands":
-        if len(array) < 18:
-            print(f"[MainPage] Warning: 'hands' array too short ({len(array)} values).")
-        elif array[16] != 0 or array[17] != 0:
-            indexfingerpositionX = array[16]
-            indexfingerpositionY = array[17]
-            left_index_tip(indexfingerpositionX, indexfingerpositionY)
-        # else: left-hand index fingertip not detected this frame (normal) — no log spam
+        if len(array) < VALUES_PER_HANDS_PACKET:
+            print(f"[MainPage] Warning: 'hands' array too short ({len(array)} values, expected {VALUES_PER_HANDS_PACKET}).")
+        else:
+            left_landmarks = _to_landmark_pairs(array[:VALUES_PER_HAND])
+            right_landmarks = _to_landmark_pairs(array[VALUES_PER_HAND:VALUES_PER_HANDS_PACKET])
+            on_hands_frame(left_landmarks, right_landmarks)
 
     else:
         print(f"[MainPage] Unknown type: {datatype}")
