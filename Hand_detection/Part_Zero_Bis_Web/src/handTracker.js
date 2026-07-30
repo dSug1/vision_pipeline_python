@@ -8,11 +8,16 @@ import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
  * @returns {Promise<HandLandmarker>}
  */
 export async function createHandLandmarker() {
-  const vision = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
+  // import.meta.env.BASE_URL (Vite's configured `base`, "/" by default) —
+  // not a hardcoded "/", so these same-origin asset paths keep resolving
+  // correctly if this is ever hosted under a sub-path (e.g. GitHub Pages
+  // project pages serve at https://<user>.github.io/<repo>/, not domain root).
+  const base = import.meta.env.BASE_URL;
+  const vision = await FilesetResolver.forVisionTasks(`${base}mediapipe/wasm`);
 
   return HandLandmarker.createFromOptions(vision, {
     baseOptions: {
-      modelAssetPath: "/models/hand_landmarker.task",
+      modelAssetPath: `${base}models/hand_landmarker.task`,
       delegate: "GPU",
     },
     runningMode: "VIDEO",
