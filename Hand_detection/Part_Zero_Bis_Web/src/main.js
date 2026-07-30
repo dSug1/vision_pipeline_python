@@ -62,7 +62,7 @@ enableBtn.addEventListener("click", async () => {
 
   await handLandmarkerPromise;
 
-  setStatus("Tracking active — move your left hand in front of the camera.");
+  setStatus(`Tracking active (camera feed: ${width}×${height}) — move your left hand in front of the camera.`);
   trackingActive = true;
   requestAnimationFrame(detectionLoop);
 });
