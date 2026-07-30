@@ -4,6 +4,7 @@ import argparse
 from Resources.inference import load_models, run_inference_on_frame
 from Resources.Server import Start_socket_server as StartServer
 from Resources.Server import SendPacket as SendPacketThroughSocket
+from Resources.Server import SendMetaPacket as SendMetaPacketThroughSocket
 from Resources.utils_for_remapping_coordinates_and_output_formatting import (
     remap_keypoints,
     extract_hand_by_type
@@ -34,16 +35,26 @@ cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 if not cap.isOpened():
     raise RuntimeError("Could not open webcam (index 0). Is another program using the camera?")
 
+# Read one frame up front purely to learn the webcam's actual capture
+# resolution (cap.get(CAP_PROP_FRAME_WIDTH/HEIGHT) can report 0 or a stale
+# value before the first frame is pulled, especially on CAP_DSHOW) and tell
+# the client, so it can size its consumer to the real resolution instead of
+# guessing (see Claude/PART_ZERO.md).
+ret, frame = cap.read()
+if not ret:
+    raise RuntimeError("Could not read an initial frame from the webcam.")
+height, width = frame.shape[:2]
+try:
+    SendMetaPacketThroughSocket(width, height, connection)
+except (BrokenPipeError, ConnectionResetError, OSError) as e:
+    print(f"[Main] Socket connection lost while sending meta packet: {e}")
+    connection_alive = False
 
 # Run inference and write keypoints coordinates in json files
 timestamp_ms = 0
 
 try:
-  while True:
-    ret, frame = cap.read()
-    if not ret or not connection_alive:
-        break
-
+  while connection_alive:
     height, width = frame.shape[:2]
 
     annotatedImage, facekeypointsCoordinates, allHandsLandmarksCoordinatesArray = run_inference_on_frame(frame, face_detector, hand_detector, timestamp_ms)
@@ -83,6 +94,10 @@ try:
         break
 
     timestamp_ms += 33  # ~30 FPS
+
+    ret, frame = cap.read()
+    if not ret:
+        break
 finally:
     # Always release the camera and sockets, even on exception / interrupt,
     # so the device is never left in a stuck state for the next run.

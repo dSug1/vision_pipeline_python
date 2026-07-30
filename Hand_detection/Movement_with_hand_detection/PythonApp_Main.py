@@ -3,14 +3,20 @@ import sys
 import os
 from typing import List
 
-from Resources.HandsTriggeredActions import left_index_tip
+from Resources.HandsTriggeredActions import left_index_tip, configure_source_resolution
 
 
 def receive_float_array(datatype: str, array: List[float]) -> None:
     # Debug-style printout of received data
     #print(f"[MainPage] Received {datatype} data with [{', '.join(map(str, array))}]")
 
-    if datatype == "face":
+    if datatype == "meta":
+        if len(array) < 2 or array[0] <= 0 or array[1] <= 0:
+            print(f"[MainPage] Warning: invalid 'meta' resolution {array}.")
+        else:
+            configure_source_resolution(int(array[0]), int(array[1]))
+
+    elif datatype == "face":
         # TODO: Add logic for face movement
         pass
 

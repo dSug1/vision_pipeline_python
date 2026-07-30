@@ -37,9 +37,17 @@ calls.
   `cube_window.pump_and_draw()` instead of `controller.set_target_position_async(...)`
   + `controller.update_cursor_position_in_ui()`.
 - **Changed:** `requirements.txt` — added `pygame==2.6.1` (pinned, per §10).
-- **Unchanged:** webcam capture, MediaPipe detection, socket protocol,
-  `Client.py`, `PythonApp_Main.py`, `CursorController.py` (left in place,
-  simply no longer imported — nothing else referenced it).
+- **New:** a `"meta"` packet, sent once by the server right after the webcam
+  opens (`Python_Server_MediaPipe_vision_pipeline/VisionPipeline.py` reads one
+  frame up front, reports its real `frame.shape` width/height via the new
+  `SendMetaPacket` in `Resources/Server.py`) — lets the client size the cube
+  window to the webcam's *actual* capture resolution instead of guessing.
+  `PythonApp_Main.py` dispatches `datatype == "meta"` to
+  `HandsTriggeredActions.configure_source_resolution(width, height)`, which
+  calls the new `CubeWindow.resize(...)`.
+- **Unchanged:** MediaPipe detection itself, the rest of the socket protocol,
+  `Client.py`, `CursorController.py` (left in place, simply no longer
+  imported — nothing else referenced it).
 
 ## How to run it
 
@@ -53,14 +61,12 @@ process by matching `VisionPipeline.py` in its command line.
 
 - The server sends **mirrored webcam-frame pixel coordinates**, not
   normalized `[0,1]` coordinates — `remap_keypoints(..., invert_x=True)` in
-  `VisionPipeline.py`. `CubeWindow` assumes those pixels are roughly in a
-  640×480 range (`VisionPipeline.py` never calls `cap.set()`, so whatever your
-  webcam's default resolution is applies) and maps them 1:1 into a 640×480
-  window with no rescaling. If your camera's default resolution differs, the
-  cube's range of motion inside the window will feel off — adjust
-  `DEFAULT_WINDOW_SIZE` in `CubeWindow.py` to match, or (future work) have the
-  server include actual frame width/height in the packet so the client can
-  scale properly instead of assuming.
+  `VisionPipeline.py`. The cube window now sizes itself to the webcam's real
+  resolution via the `"meta"` packet (see above) rather than assuming a fixed
+  size, so this maps 1:1 with no rescaling needed regardless of your camera's
+  actual capture resolution. `CubeWindow`'s `DEFAULT_WINDOW_SIZE` (640×480) is
+  only the placeholder shown for the brief moment before the meta packet
+  arrives.
 - No smoothing changes, no multi-hand logic, no gesture recognition — none of
   that is in scope here, by design (§4).
 

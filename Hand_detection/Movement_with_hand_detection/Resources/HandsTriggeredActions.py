@@ -14,3 +14,9 @@ def left_index_tip(x: float, y: float) -> None:
     cube_window.set_target_position(position)
     cube_window.pump_and_draw()
 
+def configure_source_resolution(width: int, height: int) -> None:
+    """Called once, as soon as the server's "meta" packet arrives, to size
+    the cube window to the webcam's actual frame resolution instead of the
+    placeholder default it opens with."""
+    cube_window.resize((width, height))
+

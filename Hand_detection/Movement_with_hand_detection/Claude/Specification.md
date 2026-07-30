@@ -282,6 +282,17 @@ porting problems are found and solved now — not later, once Pipeline A is comp
   - **Mirroring**: webcam feeds are often displayed mirrored; confirm whether "hand moves
     right → cube moves right" holds the same way in both the Python window and the browser
     version, and fix any inversion consistently.
+  - **Camera resolution**: don't assume a fixed capture resolution. Part Zero's Python
+    version originally hardcoded a 640×480 window before being fixed to have the server
+    read the webcam's actual `frame.shape` and send it once to the client as a `"meta"`
+    packet, which the client uses to size the cube window correctly (see
+    `Claude/PART_ZERO.md`). Do the browser-side equivalent: read the active video track's
+    real resolution — `track.getSettings().width`/`.height` (from the `MediaStreamTrack`
+    obtained via `getUserMedia`), or the `<video>` element's `videoWidth`/`videoHeight`
+    once its `loadedmetadata` event fires — and use that when mapping the fingertip
+    landmark to the Three.js cube's position, rather than hardcoding an assumed
+    resolution. Note this in `NOTES.md` either way (confirmed same behavior, or had to
+    fix an assumption) since it's a concrete parity point with the Python side.
   - **Latency/perf**: sanity-check that `detectForVideo` in a `requestAnimationFrame` loop
     keeps up in real time; note the delegate setting used (`GPU` vs `CPU`) and any
     frame-rate difference versus the Python pipeline.

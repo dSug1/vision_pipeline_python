@@ -14,6 +14,18 @@ def Start_socket_server(serverhost, serverport):
 
     return conn, addr, serVer
 
+def SendMetaPacket(frame_width, frame_height, throughconnection):
+    """Sent once at startup so the client knows the webcam's actual capture
+    resolution instead of having to guess/hardcode one (e.g. Part Zero's
+    CubeWindow sizing itself off this instead of assuming 640x480)."""
+    try:
+        serialized = json.dumps({"type": "meta", "data": [frame_width, frame_height]}) + "\n"
+        throughconnection.sendall(serialized.encode('utf-8'))
+    except Exception as e:
+        print(f"[Socket Server] Error: {e}")
+        raise  # re-raise so the caller can mark the connection dead
+
+
 def SendPacket(face_data, hands_data, throughconnection):
     """Serialize the face and hands coordinate arrays and send them as two
     newline-delimited JSON packets over the socket. `\n` is the packet

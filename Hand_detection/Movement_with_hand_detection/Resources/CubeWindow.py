@@ -3,10 +3,10 @@ from typing import Tuple
 
 # The vision server sends the left-index-fingertip position as mirrored
 # webcam-frame pixel coordinates (see VisionPipeline.py's remap_keypoints call,
-# invert_x=True). No explicit capture resolution is set there, so the webcam's
-# default applies (commonly 640x480). Match that here 1:1 (no rescaling) so the
-# cube's range of motion roughly fills the window; nudge these constants if the
-# cube doesn't reach the edges on this PC's actual camera resolution.
+# invert_x=True). This default is only a placeholder shown before the server's
+# real resolution arrives — VisionPipeline.py now reads the webcam's actual
+# frame size and sends it once as a "meta" packet (see PythonApp_Main.py's
+# dispatch for datatype == "meta"), which calls resize() below to match it.
 DEFAULT_WINDOW_SIZE: Tuple[int, int] = (640, 480)
 DEFAULT_CUBE_SIZE = 40
 
@@ -28,6 +28,20 @@ class CubeWindow:
             (window_size[1] - cube_size) / 2,
         )
         self.closed = False
+
+    def resize(self, window_size: Tuple[int, int]) -> None:
+        """Re-size the window to the webcam's actual frame resolution, once
+        it's known (see the "meta" packet handling in PythonApp_Main.py).
+        Re-centers the cube since the old position may no longer be valid
+        against the new bounds."""
+        if window_size == self.window_size:
+            return
+        self.window_size = window_size
+        self.screen = pygame.display.set_mode(window_size)
+        self.cube_position = (
+            (window_size[0] - self.cube_size) / 2,
+            (window_size[1] - self.cube_size) / 2,
+        )
 
     def set_target_position(self, position: Tuple[float, float]) -> None:
         """Clamp and store the next cube position. Mirrors
