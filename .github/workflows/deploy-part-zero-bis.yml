@@ -8,10 +8,16 @@ name: Deploy Part Zero-bis to GitHub Pages
 #
 # One-time manual step this workflow can't do for you: in the repo's
 # Settings -> Pages, set Source to "GitHub Actions".
+#
+# Triggers on push to ANY branch (no `branches:` filter below), not just
+# main — this repo's workflow is a chain of version-numbered branches that
+# never get merged into main (main is 90+ commits stale), so "whatever
+# branch you just pushed" is what ends up live on Pages. A push to a
+# different branch later simply overwrites what's currently live (the
+# `concurrency` group below ensures only the latest deploy wins, not a race).
 
 on:
   push:
-    branches: [main]
     paths:
       - "Hand_detection/Part_Zero_Bis_Web/**"
       - ".github/workflows/deploy-part-zero-bis.yml"
