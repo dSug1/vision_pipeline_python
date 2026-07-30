@@ -6,14 +6,16 @@ simplest possible pipeline, so porting problems (coordinate systems,
 mirroring, camera resolution, permissions, perf) surface now instead of
 after Pipeline A/B get complex.
 
-Code lives in `Hand_detection/Part_Zero_Bis_Web/` — a sibling of this
-`Claude/` folder and of `Part_Zero_local_pc/` (which holds the Python
-pipeline: `Movement_with_hand_detection/` and
+Code lives in `Hand_detection/Web/` — a sibling of this `Claude/` folder and
+of `Local_pc/` (which holds the Python pipeline:
+`Movement_with_hand_detection/` and
 `Python_Server_MediaPipe_vision_pipeline/`), not inside either. It's a
 standalone Vite/npm project (JS, not Python), so it gets its own top-level
 folder rather than being squeezed into the Python pipeline's structure. See
 that folder's `README.md` for how to run it and `NOTES.md` for the
-Python↔browser comparison findings §5 asks for.
+Python↔browser comparison findings §5 asks for. (Both folders were later
+renamed from `Part_Zero_Bis_Web`/`Part_Zero_local_pc` once Part One started
+building directly on top of Part Zero's PC code — see `PART_ONE.md` §1.)
 
 ## What Part Zero-bis actually is
 
@@ -72,18 +74,18 @@ detection runs client-side:
 
 ## How to run it locally
 
-See `Hand_detection/Part_Zero_Bis_Web/README.md`. Short version: `npm
+See `Hand_detection/Web/README.md`. Short version: `npm
 install && npm run dev` in that folder, then open the printed local URL and
 click "Enable camera."
 
 ## Deployed on GitHub Pages
 
 Live at `https://dsug1.github.io/vision_pipeline_python/`. Deployed by
-`.github/workflows/deploy-part-zero-bis.yml` (repo root, not under
+`.github/workflows/deploy-web.yml` (repo root, not under
 `Hand_detection/` — GitHub Actions requires workflows there).
 
 - **Trigger:** push to *any* branch that touches
-  `Hand_detection/Part_Zero_Bis_Web/**` (also runnable manually from the
+  `Hand_detection/Web/**` (also runnable manually from the
   Actions tab — `workflow_dispatch`). Not restricted to `main`: this repo's
   workflow is a chain of version-numbered branches that never get merged
   into `main`, so whatever branch you push last is what ends up live —

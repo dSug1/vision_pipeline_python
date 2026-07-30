@@ -4,8 +4,11 @@ Implements §4 of `Specification.md`: the smallest possible change that proves
 "finger position → object position" instead of "finger position → OS cursor
 position", using the *existing* pipeline unmodified except for the last step.
 
-Code lives in `Hand_detection/Part_Zero_local_pc/` — a sibling of this
-`Claude/` folder and of `Part_Zero_Bis_Web/`. This doc used to live inside
+Code lives in `Hand_detection/Local_pc/` — a sibling of this `Claude/`
+folder and of `Web/`. (Both folders were later renamed from
+`Part_Zero_local_pc`/`Part_Zero_Bis_Web` once Part One started building
+directly on top of Part Zero's code rather than in a separate folder — see
+`PART_ONE.md` §1.) This doc used to live inside
 `Part_Zero_local_pc/Movement_with_hand_detection/`; it (and `Specification.md`
 and `PART_ZERO_BIS.md`) were pulled up to `Hand_detection/Claude/` so one
 `Claude/` folder documents both the PC pipeline and its browser port,
@@ -14,7 +17,7 @@ instead of the docs living inside just one of the two things they describe.
 ## What Part Zero actually is
 
 The existing pipeline is two processes talking over a local TCP socket, both
-under `Part_Zero_local_pc/`:
+under `Local_pc/`:
 
 - **Server** (`Python_Server_MediaPipe_vision_pipeline/VisionPipeline.py`) — opens
   the webcam, runs MediaPipe hand/face detection every frame, streams landmark
@@ -35,7 +38,7 @@ calls.
 
 ## What changed
 
-All paths below are relative to `Part_Zero_local_pc/Movement_with_hand_detection/`
+All paths below are relative to `Local_pc/Movement_with_hand_detection/`
 unless stated otherwise.
 
 - **New:** `Resources/CubeWindow.py` — a small Pygame window with one square
@@ -62,7 +65,7 @@ unless stated otherwise.
 
 ## How to run it
 
-Same as before: `Part_Zero_local_pc/Movement_with_hand_detection/launch.bat`
+Same as before: `Local_pc/Movement_with_hand_detection/launch.bat`
 (creates/reuses `.venv`, installs `requirements.txt`, runs
 `PythonApp_Main.py`, which spawns the server + client). A cyan square should
 now track your left hand's index fingertip in its own window instead of
@@ -88,6 +91,10 @@ command lines.
 Part Zero-bis (§5): port this same minimal loop — hand detection + cube
 follows fingertip — to the browser (MediaPipe Tasks Vision JS +
 Three.js), as the early dry run for the eventual full browser port. Done —
-see `PART_ZERO_BIS.md` (same folder) and `Hand_detection/Part_Zero_Bis_Web/`.
+see `PART_ZERO_BIS.md` (same folder) and `Hand_detection/Web/`.
 It's live on GitHub Pages — see `PART_ZERO_BIS.md` for the URL and how
 deploys are triggered.
+
+Then Part One (§7): back on PC, real gesture recognition built directly on
+top of this folder's code (`Local_pc/`) — see `PART_ONE.md` for the design
+and gesture matrix.

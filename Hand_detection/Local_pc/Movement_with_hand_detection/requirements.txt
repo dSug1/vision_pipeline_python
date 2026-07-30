@@ -1,7 +1,9 @@
-# Vision Pipeline — Python dependencies for the active Part Zero pipeline
-# (Hand_detection/Claude/PART_ZERO.md). Used by this folder's client + its sibling
-# ../Python_Server_MediaPipe_vision_pipeline (both under Part_Zero_local_pc/).
-# launch.bat builds a local .venv here from this file. Tested with Python 3.11.
+# Vision Pipeline — Python dependencies for the PC pipeline (started as Part
+# Zero, Hand_detection/Claude/PART_ZERO.md; now also Part One's gesture work,
+# Hand_detection/Claude/PART_ONE.md). Used by this folder's client + its
+# sibling ../Python_Server_MediaPipe_vision_pipeline (both under
+# Hand_detection/Local_pc/). launch.bat builds a local .venv here from this
+# file. Tested with Python 3.11.
 
 # NOTE: pinned, do not bump blindly. MediaPipe 0.10.30+ removed the legacy
 # `mediapipe.solutions` and `mediapipe.framework` Python modules (tasks-only

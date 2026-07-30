@@ -21,7 +21,7 @@ none are still design-time assumptions.
 
 ## How this was verified
 
-1. Ran the Python pipeline (`Hand_detection/Part_Zero_local_pc/Movement_with_hand_detection/launch.bat`)
+1. Ran the Python pipeline (`Hand_detection/Local_pc/Movement_with_hand_detection/launch.bat`)
    and the deployed web page (`https://dsug1.github.io/vision_pipeline_python/`)
    side by side.
 2. Moved a hand right/left/up/down in front of the camera in both at once —

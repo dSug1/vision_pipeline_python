@@ -451,6 +451,42 @@ following as hard rules, not style preferences:
   requires touching anything outside `gestureConfig.js` plus the relevant detection
   function body, check whether engine-specific detail leaked into the config by mistake.
 
+### 7.5 Part One's concrete first-pass design (rotation, grab arbitration, gimbal lock)
+
+Recorded here so it's available at the spec level when the gesture set is next enriched;
+full detail and the enrichable gesture matrix live in `Claude/PART_ONE.md` — read that
+file before adding a new gesture, don't just work from this summary.
+
+- **Live PC prototype, not offline-only.** Part One's first concrete build is a live,
+  visually-tuned two-hand/two-cube manipulation prototype extending Part Zero's
+  `CubeWindow.py` directly, not the offline-JSON-only R&D sketched in §2/§7 above — grab
+  thresholds, rotation feel, and the depth-proxy mapping all need tuning against a live
+  webcam feed to be validated at all, the same reasoning that made Part Zero-bis's
+  coordinate mapping a live-verification exercise rather than a docs-only assumption.
+- **Grab arbitration is the one cross-hand exception to "gestures are per-hand."** Either
+  hand may grab either object (no fixed hand→object pairing), so a small shared registry
+  (`{object: holding_hand | None}`) is needed: on a pinch rising-edge, claim the nearest
+  *unowned* object within grab radius, skipping objects already owned by the other hand.
+  Every other signal (pinch, translation, rotation, depth proxy) stays a pure per-hand
+  computation with no cross-hand data — this is deliberately the minimum "combined" logic
+  needed, not a general two-hand gesture-fusion system.
+- **Rotation must be quaternion-based — never decompose to Euler angles.** Build hand
+  orientation each frame as a quaternion from an orthonormal frame (Gram-Schmidt on
+  `wrist→index_MCP` and `wrist→pinky_MCP` from `world_landmarks`), and slerp the object's
+  quaternion toward it. Gimbal lock is a property of roll/pitch/yaw decomposition, not of
+  the underlying rotation — so no per-axis Euler math at any point, including for
+  smoothing (smooth the composed quaternion uniformly, not per-axis). Expect rotation
+  about the axis orthogonal to the camera plane (twisting the wrist while facing the
+  camera — a clean 2D rotation in image-space landmarks) to be reliable, and rotation
+  about axes in the camera plane (tilting toward/away from the camera — pitch/yaw, which
+  shows up mainly in `world_landmarks`' noisier `z` component) to be noisier — this is an
+  inherent monocular-tracking limitation, not something to "fix," just to smooth harder
+  against and verify empirically.
+- **Depth proxy uses apparent hand size, not raw MediaPipe `z`.** Hand span in
+  normalized/pixel image coordinates relative to a calibration baseline captured at grab
+  time, mapped to object scale + color gradient only (no Z-axis translation yet,
+  deliberately deferred) — active only while grabbed, not as a hover preview.
+
 ---
 
 ## 8. Pipeline B — Three.js scene + Blender asset pipeline

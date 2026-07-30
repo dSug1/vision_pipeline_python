@@ -1,10 +1,12 @@
-name: Deploy Part Zero-bis to GitHub Pages
+name: Deploy Web to GitHub Pages
 
-# Builds Hand_detection/Part_Zero_Bis_Web (a Vite/Three.js/MediaPipe static
-# site — see Hand_detection/Claude/PART_ZERO_BIS.md) and deploys it to
-# GitHub Pages. Pages serves over HTTPS, which getUserMedia() requires
-# (Specification.md §9), and static hosting fits the project's no-backend
-# design (§10).
+# Builds Hand_detection/Web (a Vite/Three.js/MediaPipe static site —
+# originally Part Zero-bis, see Hand_detection/Claude/PART_ZERO_BIS.md; the
+# folder was later renamed from Part_Zero_Bis_Web to Web since it's the
+# ongoing browser pipeline, not a Part-Zero-bis-specific artifact — see
+# Hand_detection/Claude/PART_ONE.md §1) and deploys it to GitHub Pages.
+# Pages serves over HTTPS, which getUserMedia() requires (Specification.md
+# §9), and static hosting fits the project's no-backend design (§10).
 #
 # One-time manual step this workflow can't do for you: in the repo's
 # Settings -> Pages, set Source to "GitHub Actions".
@@ -19,8 +21,8 @@ name: Deploy Part Zero-bis to GitHub Pages
 on:
   push:
     paths:
-      - "Hand_detection/Part_Zero_Bis_Web/**"
-      - ".github/workflows/deploy-part-zero-bis.yml"
+      - "Hand_detection/Web/**"
+      - ".github/workflows/deploy-web.yml"
   workflow_dispatch:
 
 permissions:
@@ -38,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: Hand_detection/Part_Zero_Bis_Web
+        working-directory: Hand_detection/Web
     steps:
       - uses: actions/checkout@v4
 
@@ -46,7 +48,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: Hand_detection/Part_Zero_Bis_Web/package-lock.json
+          cache-dependency-path: Hand_detection/Web/package-lock.json
 
       - run: npm ci
       # npm install's own postinstall already copies the MediaPipe wasm +
@@ -60,7 +62,7 @@ jobs:
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: Hand_detection/Part_Zero_Bis_Web/dist
+          path: Hand_detection/Web/dist
 
   deploy:
     needs: build
