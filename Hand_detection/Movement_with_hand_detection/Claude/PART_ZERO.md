@@ -74,5 +74,5 @@ process by matching `VisionPipeline.py` in its command line.
 
 Part Zero-bis (§5): port this same minimal loop — hand detection + cube
 follows fingertip — to the browser (MediaPipe Tasks Vision JS +
-Three.js), as the early dry run for the eventual full browser port. Not
-started yet.
+Three.js), as the early dry run for the eventual full browser port. Done —
+see `Claude/PART_ZERO_BIS.md` and `../Part_Zero_Bis_Web/`.

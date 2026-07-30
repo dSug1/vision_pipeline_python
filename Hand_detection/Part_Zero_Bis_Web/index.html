@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Part Zero-bis — cube follows fingertip</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #16181d;
+        color: #e6e6e6;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        padding: 16px;
+      }
+      h1 { font-size: 1.1rem; margin: 4px 0; }
+      .privacy-note {
+        max-width: 640px;
+        font-size: 0.85rem;
+        color: #a8adb8;
+        text-align: center;
+      }
+      #controls { display: flex; gap: 8px; align-items: center; }
+      button {
+        font-size: 0.95rem;
+        padding: 8px 16px;
+        border-radius: 6px;
+        border: 1px solid #3a3f4b;
+        background: #232733;
+        color: #e6e6e6;
+        cursor: pointer;
+      }
+      button:disabled { opacity: 0.5; cursor: default; }
+      button:not(:disabled):hover { background: #2c313f; }
+      #status { min-height: 1.2em; font-size: 0.9rem; color: #f0c674; }
+      #preview-wrap {
+        position: relative;
+        width: 160px;
+        height: 120px;
+        border: 1px solid #3a3f4b;
+        border-radius: 6px;
+        overflow: hidden;
+        background: #000;
+      }
+      /* Mirrored purely for a natural "looking in a mirror" self-view — the
+         raw (unmirrored) video feed is what actually gets sent to the hand
+         landmarker for detection. See NOTES.md's Mirroring section. */
+      #camera-preview {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transform: scaleX(-1);
+      }
+      #camera-indicator {
+        position: absolute;
+        top: 4px;
+        left: 6px;
+        font-size: 0.75rem;
+        background: rgba(0, 0, 0, 0.55);
+        color: #6cff8f;
+        padding: 2px 6px;
+        border-radius: 4px;
+        display: none;
+      }
+      #camera-indicator.active { display: block; }
+      #scene-canvas {
+        display: block;
+        width: min(90vw, 640px);
+        height: min(67.5vw, 480px);
+        border: 1px solid #3a3f4b;
+        border-radius: 6px;
+        background: #1e2128;
+      }
+      #debug-readout {
+        max-width: 640px;
+        width: 100%;
+        font-size: 0.75rem;
+        color: #8ecbff;
+        background: #10121a;
+        border: 1px solid #262a34;
+        border-radius: 6px;
+        padding: 8px;
+        white-space: pre-wrap;
+        box-sizing: border-box;
+        min-height: 3.5em;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Part Zero-bis — cube follows left index fingertip (browser)</h1>
+    <p class="privacy-note">
+      This page runs hand detection and rendering entirely in your browser.
+      Your camera video and hand landmarks are never sent over the network —
+      nothing leaves this page. See
+      <code>Movement_with_hand_detection/Claude/Specification.md</code> §9.
+    </p>
+
+    <div id="controls">
+      <button id="enable-camera-btn" type="button">Enable camera</button>
+      <button id="disable-camera-btn" type="button" disabled>Disable camera</button>
+    </div>
+    <div id="status"></div>
+
+    <div id="preview-wrap">
+      <video id="camera-preview" autoplay playsinline muted></video>
+      <span id="camera-indicator">● camera active</span>
+    </div>
+
+    <canvas id="scene-canvas"></canvas>
+
+    <pre id="debug-readout">(debug: handedness / landmark readout appears here once tracking starts)</pre>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
