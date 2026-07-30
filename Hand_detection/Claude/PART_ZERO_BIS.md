@@ -97,17 +97,19 @@ Live at `https://dsug1.github.io/vision_pipeline_python/`. Deployed by
 - **One-time setup already done:** repo Settings → Pages → Source: "GitHub
   Actions."
 
-## What's not yet empirically verified
+## Empirical verification — done
 
-Everything in `NOTES.md`'s table marked **TO VERIFY** — chiefly, whether the
-mirrored-X mapping and MediaPipe JS's "Left"/"Right" handedness labels
-actually produce the same hand-moves-right → cube-moves-right behavior as
-the Python window, side by side, on a live camera. That requires a human
-running both at once; this was built and reasoned through from documented
-MediaPipe/browser behavior, not confirmed against hardware from here.
+Confirmed live (2026-07-30) by running the Python pipeline and the deployed
+web page side by side: mirrored-X mapping, MediaPipe JS's "Left"/"Right"
+handedness labels, and the cube's range of motion all match the Python
+window's behavior. One real bug was caught and fixed along the way (see
+`NOTES.md`'s Coordinate convention row): the cube's mapped range was smaller
+than the camera's actual visible area, so it stopped short of the window
+edges — fixed by deriving the range from the camera's FOV/distance/aspect
+instead of a guessed constant. Full detail in `NOTES.md`.
 
 ## Next step
 
 Part One (§7): back on PC, build real gesture recognition (`features.py`,
-`rules.py`) against the existing Python pipeline — informed by whatever
-`NOTES.md` turns up here, but not blocked on it. Not started yet.
+`rules.py`) against the existing Python pipeline — informed by `NOTES.md`'s
+findings. Not started yet.
