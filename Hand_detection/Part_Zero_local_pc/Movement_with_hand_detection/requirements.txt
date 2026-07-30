@@ -1,5 +1,5 @@
 # Vision Pipeline — Python dependencies for the active Part Zero pipeline
-# (Claude/PART_ZERO.md). Used by this folder's client + its sibling
+# (Hand_detection/Claude/PART_ZERO.md). Used by this folder's client + its sibling
 # ../Python_Server_MediaPipe_vision_pipeline (both under Part_Zero_local_pc/).
 # launch.bat builds a local .venv here from this file. Tested with Python 3.11.
 
@@ -15,6 +15,6 @@
 # `cv2` module and is a common cause of a broken cv2 import after a reinstall.
 mediapipe==0.10.14
 
-# Part Zero (see Claude/PART_ZERO.md): local window used to prove out
+# Part Zero (see Hand_detection/Claude/PART_ZERO.md): local window used to prove out
 # "landmark -> object position" before porting to the browser.
 pygame==2.6.1

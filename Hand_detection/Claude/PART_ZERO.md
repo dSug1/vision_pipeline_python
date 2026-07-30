@@ -4,9 +4,17 @@ Implements §4 of `Specification.md`: the smallest possible change that proves
 "finger position → object position" instead of "finger position → OS cursor
 position", using the *existing* pipeline unmodified except for the last step.
 
+Code lives in `Hand_detection/Part_Zero_local_pc/` — a sibling of this
+`Claude/` folder and of `Part_Zero_Bis_Web/`. This doc used to live inside
+`Part_Zero_local_pc/Movement_with_hand_detection/`; it (and `Specification.md`
+and `PART_ZERO_BIS.md`) were pulled up to `Hand_detection/Claude/` so one
+`Claude/` folder documents both the PC pipeline and its browser port,
+instead of the docs living inside just one of the two things they describe.
+
 ## What Part Zero actually is
 
-The existing pipeline is two processes talking over a local TCP socket:
+The existing pipeline is two processes talking over a local TCP socket, both
+under `Part_Zero_local_pc/`:
 
 - **Server** (`Python_Server_MediaPipe_vision_pipeline/VisionPipeline.py`) — opens
   the webcam, runs MediaPipe hand/face detection every frame, streams landmark
@@ -27,6 +35,9 @@ calls.
 
 ## What changed
 
+All paths below are relative to `Part_Zero_local_pc/Movement_with_hand_detection/`
+unless stated otherwise.
+
 - **New:** `Resources/CubeWindow.py` — a small Pygame window with one square
   ("cube" — a flat square stand-in, per §4's explicit allowance) whose
   position is set via `set_target_position(x, y)` (clamped to the window,
@@ -38,11 +49,11 @@ calls.
   + `controller.update_cursor_position_in_ui()`.
 - **Changed:** `requirements.txt` — added `pygame==2.6.1` (pinned, per §10).
 - **New:** a `"meta"` packet, sent once by the server right after the webcam
-  opens (`Python_Server_MediaPipe_vision_pipeline/VisionPipeline.py` reads one
-  frame up front, reports its real `frame.shape` width/height via the new
-  `SendMetaPacket` in `Resources/Server.py`) — lets the client size the cube
-  window to the webcam's *actual* capture resolution instead of guessing.
-  `PythonApp_Main.py` dispatches `datatype == "meta"` to
+  opens (`../Python_Server_MediaPipe_vision_pipeline/VisionPipeline.py` reads
+  one frame up front, reports its real `frame.shape` width/height via the new
+  `SendMetaPacket` in that folder's `Resources/Server.py`) — lets the client
+  size the cube window to the webcam's *actual* capture resolution instead of
+  guessing. `PythonApp_Main.py` dispatches `datatype == "meta"` to
   `HandsTriggeredActions.configure_source_resolution(width, height)`, which
   calls the new `CubeWindow.resize(...)`.
 - **Unchanged:** MediaPipe detection itself, the rest of the socket protocol,
@@ -51,11 +62,13 @@ calls.
 
 ## How to run it
 
-Same as before: `launch.bat` (creates/reuses `.venv`, installs
-`requirements.txt`, runs `PythonApp_Main.py`, which spawns the server +
-client). A cyan square should now track your left hand's index fingertip in
-its own window instead of moving your mouse. `stop.bat` kills the server
-process by matching `VisionPipeline.py` in its command line.
+Same as before: `Part_Zero_local_pc/Movement_with_hand_detection/launch.bat`
+(creates/reuses `.venv`, installs `requirements.txt`, runs
+`PythonApp_Main.py`, which spawns the server + client). A cyan square should
+now track your left hand's index fingertip in its own window instead of
+moving your mouse. `stop.bat` kills the server and client processes by
+matching `VisionPipeline.py` / `Client.py` / `PythonApp_Main.py` in their
+command lines.
 
 ## Known caveats / assumptions (carried over from the original pipeline)
 
@@ -75,4 +88,6 @@ process by matching `VisionPipeline.py` in its command line.
 Part Zero-bis (§5): port this same minimal loop — hand detection + cube
 follows fingertip — to the browser (MediaPipe Tasks Vision JS +
 Three.js), as the early dry run for the eventual full browser port. Done —
-see `Claude/PART_ZERO_BIS.md` and `../Part_Zero_Bis_Web/`.
+see `PART_ZERO_BIS.md` (same folder) and `Hand_detection/Part_Zero_Bis_Web/`.
+It's live on GitHub Pages — see `PART_ZERO_BIS.md` for the URL and how
+deploys are triggered.

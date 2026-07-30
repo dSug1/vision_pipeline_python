@@ -6,13 +6,14 @@ simplest possible pipeline, so porting problems (coordinate systems,
 mirroring, camera resolution, permissions, perf) surface now instead of
 after Pipeline A/B get complex.
 
-Code lives in `Hand_detection/Part_Zero_Bis_Web/` — a sibling of
-`Part_Zero_local_pc/` (the folder that holds this Python pipeline and
-`Python_Server_MediaPipe_vision_pipeline/`, see below), not inside it. It's
-a standalone Vite/npm project (JS, not Python), so it gets its own
-top-level folder rather than being squeezed into the Python pipeline's
-structure. See that folder's `README.md` for how to run it and `NOTES.md`
-for the Python↔browser comparison findings §5 asks for.
+Code lives in `Hand_detection/Part_Zero_Bis_Web/` — a sibling of this
+`Claude/` folder and of `Part_Zero_local_pc/` (which holds the Python
+pipeline: `Movement_with_hand_detection/` and
+`Python_Server_MediaPipe_vision_pipeline/`), not inside either. It's a
+standalone Vite/npm project (JS, not Python), so it gets its own top-level
+folder rather than being squeezed into the Python pipeline's structure. See
+that folder's `README.md` for how to run it and `NOTES.md` for the
+Python↔browser comparison findings §5 asks for.
 
 ## What Part Zero-bis actually is
 
@@ -69,11 +70,32 @@ detection runs client-side:
   pipeline's own `Resources/` folder into `public/` at install time
   (Specification.md §10).
 
-## How to run it
+## How to run it locally
 
 See `Hand_detection/Part_Zero_Bis_Web/README.md`. Short version: `npm
 install && npm run dev` in that folder, then open the printed local URL and
 click "Enable camera."
+
+## Deployed on GitHub Pages
+
+Live at `https://dsug1.github.io/vision_pipeline_python/`. Deployed by
+`.github/workflows/deploy-part-zero-bis.yml` (repo root, not under
+`Hand_detection/` — GitHub Actions requires workflows there).
+
+- **Trigger:** push to *any* branch that touches
+  `Hand_detection/Part_Zero_Bis_Web/**` (also runnable manually from the
+  Actions tab — `workflow_dispatch`). Not restricted to `main`: this repo's
+  workflow is a chain of version-numbered branches that never get merged
+  into `main`, so whatever branch you push last is what ends up live —
+  there's no separate "production branch" gate.
+- **Build:** `npm ci` then `npm run build -- --base=/vision_pipeline_python/`
+  — the `--base` matters because GitHub project-pages serve at
+  `https://<user>.github.io/<repo>/`, not domain root; `src/handTracker.js`
+  reads `import.meta.env.BASE_URL` (rather than hardcoding `/`) specifically
+  so its same-origin asset paths (`mediapipe/wasm`, `models/hand_landmarker.task`)
+  still resolve correctly under that sub-path.
+- **One-time setup already done:** repo Settings → Pages → Source: "GitHub
+  Actions."
 
 ## What's not yet empirically verified
 

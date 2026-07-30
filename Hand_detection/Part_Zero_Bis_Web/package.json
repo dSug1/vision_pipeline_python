@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Part Zero-bis: browser port dry run (hand detection + cube-follows-fingertip) — see Part_Zero_local_pc/Movement_with_hand_detection/Claude/PART_ZERO_BIS.md",
+  "description": "Part Zero-bis: browser port dry run (hand detection + cube-follows-fingertip) — see Hand_detection/Claude/PART_ZERO_BIS.md",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

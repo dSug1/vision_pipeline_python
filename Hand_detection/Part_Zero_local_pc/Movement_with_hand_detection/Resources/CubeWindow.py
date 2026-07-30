@@ -14,7 +14,7 @@ DEFAULT_CUBE_SIZE = 40
 class CubeWindow:
     """A local window with a single square ('cube') whose position is driven
     live by an external position signal — the Part Zero replacement for
-    CursorController's OS-cursor move. See Claude/PART_ZERO.md."""
+    CursorController's OS-cursor move. See Hand_detection/Claude/PART_ZERO.md."""
 
     def __init__(self, window_size: Tuple[int, int] = DEFAULT_WINDOW_SIZE, cube_size: int = DEFAULT_CUBE_SIZE):
         pygame.init()

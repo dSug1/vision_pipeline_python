@@ -1,10 +1,10 @@
 name: Deploy Part Zero-bis to GitHub Pages
 
 # Builds Hand_detection/Part_Zero_Bis_Web (a Vite/Three.js/MediaPipe static
-# site — see Hand_detection/Part_Zero_local_pc/Movement_with_hand_detection/
-# Claude/PART_ZERO_BIS.md) and deploys it to GitHub Pages. Pages serves over
-# HTTPS, which getUserMedia() requires (Specification.md §9), and static
-# hosting fits the project's no-backend design (§10).
+# site — see Hand_detection/Claude/PART_ZERO_BIS.md) and deploys it to
+# GitHub Pages. Pages serves over HTTPS, which getUserMedia() requires
+# (Specification.md §9), and static hosting fits the project's no-backend
+# design (§10).
 #
 # One-time manual step this workflow can't do for you: in the repo's
 # Settings -> Pages, set Source to "GitHub Actions".

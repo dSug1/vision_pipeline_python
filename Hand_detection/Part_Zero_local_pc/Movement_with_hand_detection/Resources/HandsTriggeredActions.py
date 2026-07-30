@@ -2,7 +2,7 @@
 import os
 from .CubeWindow import CubeWindow
 
-# Part Zero (see Claude/PART_ZERO.md): retargeted from moving the OS cursor
+# Part Zero (see Hand_detection/Claude/PART_ZERO.md): retargeted from moving the OS cursor
 # (CursorController, still in CursorController.py but no longer used here) to
 # moving a cube in a local window. The signal itself — left-index-fingertip
 # (x, y) — and the point it enters at (left_index_tip) are unchanged; only

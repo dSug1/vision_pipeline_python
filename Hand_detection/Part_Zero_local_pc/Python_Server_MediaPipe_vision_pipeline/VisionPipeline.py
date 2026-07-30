@@ -39,7 +39,7 @@ if not cap.isOpened():
 # resolution (cap.get(CAP_PROP_FRAME_WIDTH/HEIGHT) can report 0 or a stale
 # value before the first frame is pulled, especially on CAP_DSHOW) and tell
 # the client, so it can size its consumer to the real resolution instead of
-# guessing (see Claude/PART_ZERO.md).
+# guessing (see Hand_detection/Claude/PART_ZERO.md).
 ret, frame = cap.read()
 if not ret:
     raise RuntimeError("Could not read an initial frame from the webcam.")

@@ -1,6 +1,6 @@
 // Copies MediaPipe's WASM runtime and the shared hand_landmarker model into
 // public/ so the browser loads them same-origin instead of from a CDN — see
-// Claude/Specification.md §10 (prefer bundling WASM/model assets same-origin
+// Hand_detection/Claude/Specification.md §10 (prefer bundling WASM/model assets same-origin
 // over the jsdelivr CDN pattern shown in MediaPipe's own quickstart docs, to
 // remove the external-CDN trust/availability risk entirely).
 //

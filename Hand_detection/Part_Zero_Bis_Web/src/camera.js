@@ -63,7 +63,7 @@ export function disableCamera(videoEl) {
 }
 
 /** Real capture resolution from the active track, once known — mirrors the
- * PC pipeline's "meta" packet (see Claude/PART_ZERO.md and
+ * PC pipeline's "meta" packet (see Hand_detection/Claude/PART_ZERO.md and
  * Specification.md §5's "Camera resolution" comparison point). Don't assume
  * a fixed size; read it from the track itself. */
 export function getTrackResolution(track) {
