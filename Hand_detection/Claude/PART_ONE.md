@@ -93,6 +93,21 @@ signal; only gesture *classification* moved to `world_landmarks`.
   its last known position, ownership is cleared, state → idle. Re-acquiring
   always requires a fresh pinch rising-edge near the cube — tracking
   resuming mid-pinch does **not** auto-regrab.
+- **Release is decomposed from pinch as its own onset/apex/offset concern,
+  not assumed symmetric with it** — confirmed against literature
+  (`GESTURE_PIPELINE_SPEC.md` §3.3.1, added 2026-07-30): production XR SDKs
+  (Ultraleap, Meta Quest) detect pinch and release as two events read off
+  one continuous confidence signal via hysteresis, which is what the
+  release-conditions bullet above already did — but prehension-kinematics
+  literature shows release/opening genuinely behaves differently from
+  pinch/closing (measurably different movement timing, not just a
+  time-reversed mirror), so the event layer tunes onset and offset detection
+  as two independent parameter sets. And since grabbing an object is
+  usually done near `front` but releasing it can happen at any orientation
+  if the point of the grab was to rotate the object, release detection is
+  recorded and validated across the full 6-orientation grid, not just the
+  orientation pinch itself is normally performed at. See
+  `GESTURE_PIPELINE_SPEC.md` §5 for the resulting recording taxonomy.
 - **Rotation — quaternion-based, gimbal-lock-safe.** Track hand orientation
   as a quaternion built from an orthonormal frame (Gram-Schmidt on
   `wrist→index_MCP` and `wrist→pinky_MCP` from `world_landmarks`), and slerp
@@ -139,6 +154,15 @@ it actually belongs to), and cross-check §7.4's engine-agnostic
 | 5 | Translation | each hand, while grabbed | pinch midpoint (4+8) | cube position = mapped(pinch midpoint), X/Y only | cube follows pinch | Not started |
 | 6 | Depth proxy → scale + color | each hand, while grabbed | apparent hand span (image coords) vs. calibration baseline | `ratio = current_span / baseline_span` | cube scale ∝ ratio; color lerps light↔dark by ratio | Not started |
 | 7 | Rotation (quaternion) | each hand, while grabbed | `world_landmarks`: wrist(0), index_MCP(5), pinky_MCP(17) | orthonormal frame → quaternion → slerp | cube orientation follows hand orientation | Not started — **requires sending `world_landmarks` over the wire, not currently sent** (server only sends 2D pixel landmarks today, see §4) |
+
+**Row 2 (pinch/onset) and row 4 (release/offset) note (2026-07-30)**: these
+are the same episodic gesture's two event boundaries, not independent
+gestures — decomposed and cross-checked against literature in
+`GESTURE_PIPELINE_SPEC.md` §3.3.1, which also drove the 6-orientation
+recording grid in that document's §5 (`front`/`palm_away`/`palm_up`/
+`palm_down`/`palm_in`/`palm_out`) replacing the earlier 3-orientation
+version. See §2's updated release-conditions bullet above for the design
+consequence.
 
 ## 4. Known wire-protocol gap (live pipeline, not recording)
 
