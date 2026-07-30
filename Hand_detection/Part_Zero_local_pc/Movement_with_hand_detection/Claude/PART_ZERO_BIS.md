@@ -6,13 +6,13 @@ simplest possible pipeline, so porting problems (coordinate systems,
 mirroring, camera resolution, permissions, perf) surface now instead of
 after Pipeline A/B get complex.
 
-Code lives in `../Part_Zero_Bis_Web/` (sibling to this folder and to
-`Python_Server_MediaPipe_vision_pipeline/`), not inside
-`Movement_with_hand_detection/` — it's a standalone Vite/npm project (JS,
-not Python), so it gets its own top-level folder rather than being squeezed
-into the Python pipeline's structure. See that folder's `README.md` for how
-to run it and `NOTES.md` for the Python↔browser comparison findings §5 asks
-for.
+Code lives in `Hand_detection/Part_Zero_Bis_Web/` — a sibling of
+`Part_Zero_local_pc/` (the folder that holds this Python pipeline and
+`Python_Server_MediaPipe_vision_pipeline/`, see below), not inside it. It's
+a standalone Vite/npm project (JS, not Python), so it gets its own
+top-level folder rather than being squeezed into the Python pipeline's
+structure. See that folder's `README.md` for how to run it and `NOTES.md`
+for the Python↔browser comparison findings §5 asks for.
 
 ## What Part Zero-bis actually is
 
@@ -71,9 +71,9 @@ detection runs client-side:
 
 ## How to run it
 
-See `../Part_Zero_Bis_Web/README.md`. Short version: `npm install && npm run
-dev` in that folder, then open the printed local URL and click "Enable
-camera."
+See `Hand_detection/Part_Zero_Bis_Web/README.md`. Short version: `npm
+install && npm run dev` in that folder, then open the printed local URL and
+click "Enable camera."
 
 ## What's not yet empirically verified
 

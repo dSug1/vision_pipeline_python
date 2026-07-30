@@ -1,8 +1,14 @@
 # Part Zero-bis — web
 
 Browser port of Part Zero's cube-follows-fingertip loop. See
-`Movement_with_hand_detection/Claude/PART_ZERO_BIS.md` for what this is and
-why, and `NOTES.md` in this folder for Python↔browser porting findings.
+`Part_Zero_local_pc/Movement_with_hand_detection/Claude/PART_ZERO_BIS.md`
+for what this is and why, and `NOTES.md` in this folder for Python↔browser
+porting findings.
+
+This folder lives directly under `Hand_detection/`, as a sibling of
+`Part_Zero_local_pc/` (which holds the Python pipeline —
+`Movement_with_hand_detection/` and `Python_Server_MediaPipe_vision_pipeline/`)
+— not inside it, since this is a standalone JS/npm project.
 
 ## Run it
 
@@ -40,7 +46,7 @@ src/
 public/
   mediapipe/wasm/          copied from node_modules/@mediapipe/tasks-vision/wasm
   models/hand_landmarker.task
-                            copied from ../Python_Server_MediaPipe_vision_pipeline/Resources/
+                            copied from ../Part_Zero_local_pc/Python_Server_MediaPipe_vision_pipeline/Resources/
 scripts/
   copy-mediapipe-assets.mjs  the copy step above (runs on `npm install` via postinstall)
 NOTES.md                     Python vs. browser porting findings (§5's deliverable)
@@ -55,5 +61,5 @@ regenerate them after a fresh checkout.
 Specification.md §10: prefer same-origin assets over MediaPipe's quickstart
 CDN pattern, to remove that external dependency's trust/availability risk
 entirely. The model file is also already vetted — it's the exact file the
-Python pipeline uses (`Python_Server_MediaPipe_vision_pipeline/Resources/hand_landmarker.task`),
+Python pipeline uses (`Part_Zero_local_pc/Python_Server_MediaPipe_vision_pipeline/Resources/hand_landmarker.task`),
 not a separately-sourced copy.

@@ -19,6 +19,7 @@ const wasmDestDir = path.join(projectRoot, "public", "mediapipe", "wasm");
 const modelSrc = path.resolve(
   projectRoot,
   "..",
+  "Part_Zero_local_pc",
   "Python_Server_MediaPipe_vision_pipeline",
   "Resources",
   "hand_landmarker.task"
