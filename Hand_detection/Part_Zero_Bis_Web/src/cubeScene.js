@@ -5,10 +5,6 @@
 import * as THREE from "three";
 
 const CUBE_SIZE = 0.4;
-// Half-extent of the cube's range of motion in Three.js world units — the
-// mapping target for normalized [0,1] fingertip coordinates.
-const RANGE_X = 2.0;
-const RANGE_Y = 1.5;
 
 export class CubeScene {
   constructor(canvas) {
@@ -44,12 +40,32 @@ export class CubeScene {
   }
 
   /**
+   * The camera's actual visible half-width/half-height at the cube's z=0
+   * plane, derived from FOV/distance/aspect (not a guessed constant) — so
+   * the cube's range of motion always fills the real window, matching
+   * CubeWindow.py's clamp against the actual window bounds instead of an
+   * assumed size (see Claude/PART_ZERO.md).
+   */
+  _getVisibleHalfExtents() {
+    const distance = this.camera.position.z; // camera looks down -Z at the cube's z=0 plane
+    const halfHeight = distance * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2);
+    const halfWidth = halfHeight * this.camera.aspect;
+    return { halfWidth, halfHeight };
+  }
+
+  /**
    * @param {number} normalizedX - [0,1], already mirrored to match "hand moves right -> cube moves right"
    * @param {number} normalizedY - [0,1], image-space (0 = top)
    */
   setCubePositionFromNormalized(normalizedX, normalizedY) {
-    const worldX = (normalizedX - 0.5) * 2 * RANGE_X;
-    const worldY = (0.5 - normalizedY) * 2 * RANGE_Y; // flip: image Y-down -> world Y-up
+    const { halfWidth, halfHeight } = this._getVisibleHalfExtents();
+    // Subtract the cube's own half-size so its far edge reaches the visible
+    // boundary exactly at normalizedX/Y 0 or 1, instead of overshooting past
+    // the window or (as before) stopping well short of it.
+    const rangeX = halfWidth - CUBE_SIZE / 2;
+    const rangeY = halfHeight - CUBE_SIZE / 2;
+    const worldX = (normalizedX - 0.5) * 2 * rangeX;
+    const worldY = (0.5 - normalizedY) * 2 * rangeY; // flip: image Y-down -> world Y-up
     this.cube.position.set(worldX, worldY, 0);
   }
 
