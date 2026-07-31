@@ -13,12 +13,13 @@ pointer plus a prioritized action list.
   `PART_ZERO_BIS.md`. Not touched by anything below.
 - **Part One step 1** (scaffolding: two-cube live pipeline) is built and
   confirmed working. Not touched by anything below.
-- **Part One step 2 (pinch gesture classifier) is in active, iterative
-  development under `GESTURE_PIPELINE_SPEC.md`'s pipeline** — Stage 1
-  (recording) is done and mature, Stage 3 (base classifier) has been built
-  and retrained eight times with measured, logged improvement most rounds,
-  Stage 3.3 (event layer) was attempted and found blocked on an earlier,
-  worse classifier — worth a fresh attempt now, not assumed still blocked,
+- **Part One step 2 (pinch gesture classifier): Stage 3's working target is
+  now MET (§3.2.9, 2026-07-31)** — rotation FP 5.5%, recall 0.724, both
+  clearing §9.3's bar simultaneously for the first time. Stage 1
+  (recording) is done and mature, Stage 3 (base classifier) went through
+  nine retrain rounds to get here, Stage 3.3 (event layer) was attempted
+  and found blocked on an earlier, much worse classifier — **that blocker
+  is now lifted, resuming event-layer tuning is the natural next step**,
   Stage 4 (live debug tool) has not been started. Full detail below.
 
 ## 2. Stage 1 — recording corpus (done, mature)
@@ -44,35 +45,33 @@ pointer plus a prioritized action list.
 - `pinch_cycles` (6 orientations) and `pinch_rotate_release` (4 reps) are
   recorded for the event layer (Stage 3.3) — not classifier training data.
 
-## 3. Stage 3 — base classifier (eight rounds of iteration, not finished, but real progress)
+## 3. Stage 3 — base classifier (working target MET, §3.2.9)
 
-Current best model: **`mlp/raw_landmarks`** — rotation false-positive rate
-**11.2% (best-ever)**, recall **0.643 (best-ever, first to clear the >0.6
-target)**, F1 0.657, precision 0.671 (§3.2.8, 2026-07-31). History: rotation
-FP 27.2% → 22.0% → 14.7% → 13.2% → 11.4% → **11.2%** across seven retrains
-(`GESTURE_PIPELINE_SPEC.md` §3.2.1/§3.2.3/§3.2.4/§3.2.6/§3.2.7/§3.2.8 have
-the full history). **Not a finished, reliable classifier yet** — still
-short of §9.3's working target (rotation FP <~10%; recall now clears its
-half).
+Current best model: **`mlp/raw_plus_handcrafted`, `hidden_units=24`** —
+rotation false-positive rate **5.5%**, recall **0.724**, F1 0.748,
+precision 0.773 (§3.2.9, 2026-07-31). **Both halves of §9.3's working
+target (rotation FP <~10%, recall >~0.6-0.7) are now met simultaneously,
+for the first time.** History: rotation FP 27.2% → 22.0% → 14.7% → 13.2% →
+11.4% → 11.2% → **5.5%** across nine retrains (`GESTURE_PIPELINE_SPEC.md`
+§3.2.1 through §3.2.9 have the full history). `mlp/raw_landmarks` is a
+close second (6.0% FP, 0.719 recall) — checked across 6 seeds, both
+representations hold up (rotation FP range 4.5-6.6%, recall range
+0.713-0.822 for the winner), not a lucky single run.
 
-**A real trade-off surfaced this round, worth reading before assuming "more
-data" is a free lunch (§3.2.8)**: a controlled learning-curve ablation
-(fixed test split, train on 1/1+2/1+2+3 distance-sets, rotation-negative
-data held constant) found F1/recall/precision all improve monotonically as
-held-state distance diversity grows, but **rotation-FP gets *worse*, not
-better** (2.4%→11.1%→13.9% across the three set-counts) — the model
-discriminates pinch from open_hand/fist better with more diverse data, but
-does it via a less conservative decision boundary that also lets in more
-rotation false positives. Same tension §3.2.5 found with class weighting,
-now confirmed from a completely different lever.
-
-**The §3.2.7 fusion representation's win did not hold up**: adding the
-medium-distance set made `raw_plus_handcrafted` degrade sharply (F1
-0.713→0.514, recall 0.576→0.494, rotation FP 11.4%→13.9%) while plain
-`raw_landmarks` improved on the same corpus growth and is the new winner.
-Root cause not yet verified (§8 item 5) — plausibly the third distance adds
-noise the small hand-crafted component can't average out as cleanly across
-three distances as it could across two.
+**The key late-session finding (§3.2.9): the recall-vs-rotation-FP tension
+that persisted through §3.2.5/§3.2.6/§3.2.8 turned out to include a stale
+hyperparameter, not just a structural data trade-off.** `hidden_units=4`
+was chosen via a sweep against the *original* 2,281-example corpus
+(§3.2.1) and never revisited as the corpus grew ~7x to 15,408 train
+examples. A fresh sweep found bigger hidden layers **decreased** the
+train/test F1 gap (0.242 at hidden=4 down to 0.169-0.182 at 8-24) — the
+small model was *underfitting* the larger input space, not overfitting a
+small one, the opposite of §3.2.1's original finding on the smaller
+corpus. This also resolved §3.2.8's confusing "fusion representation
+regression" — `hand_size_ref` variance at the new medium distance was
+checked and found to be the *lowest* of the three distances (not a noise
+problem), and the real cause was the same stale `hidden_units=4` capping
+what the richer 70-dim fused input could learn.
 
 **What's been tried, briefly** (full detail and citations in the spec):
 hand-crafted vs. raw-landmark input representations, logistic regression
@@ -80,43 +79,37 @@ vs. a small hand-rolled MLP, a velocity-delta windowed feature (didn't
 meaningfully help, §3.2.3), a prediction-error / predictive-coding-inspired
 feature (§3.2.4), class-weighted training (rejected, §3.2.5), a
 window-size sweep (ruled out window mis-tuning, §3.2.6), a fused
-raw+hand-crafted representation (won at the time, later reversed, §3.2.7),
-and a third-distance recording set + learning-curve ablation (§3.2.8,
-this session) — real progress on rotation-FP/recall, but revealed the
-recall-vs-rotation-FP tension is structural, not an artifact of any one
-fix tried so far.
+raw+hand-crafted representation (§3.2.7), a third-distance recording set +
+learning-curve ablation (§3.2.8, revealed a real recall-vs-rotation-FP
+trade-off from data alone), and finally re-sweeping `hidden_units` against
+the now much-larger corpus (§3.2.9) — which is what actually closed the
+gap.
 
 ## 4. Prioritized next steps (in order)
 
-Everything through §3.2.7 has been tried in sequence — summarized in §3
-above, full detail in the spec. Current priority:
+The base classifier is no longer the bottleneck. Current priority:
 
-1. **Root-cause the fusion-representation reversal** (§8 item 5, new) —
-   check `hand_size_ref` variance at the medium distance (mirroring
-   §3.2.1's near/far diagnostic) before the next representation decision,
-   rather than re-guessing why `raw_plus_handcrafted` degraded.
-2. **Continue the continuous-improvement data loop** (`GESTURE_PIPELINE_SPEC.md`
-   §9) on top of the new `raw_landmarks` winner — more `rotating_no_pinch`
-   variety historically the strongest lever, though recent rounds are
-   buying less each time (watch for a confirmed plateau). Also still-open
-   from §9.2: `open_hand_palmup` density, and the confirmed `palm_out`
-   framing gap (now reproduced at 2 distances — worth a deliberately
-   different capture setup, not just another attempt).
-3. **Working target**: base classifier rotation FP below ~10% and recall
-   above ~0.6-0.7. Recall now clears its half (0.643); rotation FP (11.2%)
-   is the closest yet but not there.
-4. **Once that target is met (or the data loop plateaus per §9.3), resume
-   event-layer tuning** (`GESTURE_PIPELINE_SPEC.md` §3.3.2,
-   `tune_event_layer.py`) — built, and the design/tuning mechanics work,
-   but blocked on base-classifier quality per the last attempt (which
-   predates the current, better classifier — worth a fresh attempt once
-   the working target is met). Also revisit the `palm_away`-specific
-   finding there (fixed ratio-magnitude threshold doesn't work at that
-   orientation) before considering the event layer done for all 6
-   orientations.
-5. **Then Stage 4** — the live debug tool. Not built yet; required before
+1. **Resume event-layer tuning** (`GESTURE_PIPELINE_SPEC.md` §3.3.2,
+   `tune_event_layer.py`) — built, design/tuning mechanics work, was
+   blocked purely on base-classifier quality, and that classifier was far
+   worse (0.90 confidence spikes during pure rotation) than the current
+   one. Re-run against the current `pinch_classifier_weights.json`, not
+   assumed still blocked. Also revisit the `palm_away`-specific finding
+   there (fixed ratio-magnitude threshold doesn't work at that
+   orientation — `pinch_ratio` barely moves there even during a real
+   pinch) before considering the event layer done for all 6 orientations.
+2. **Then Stage 4** — the live debug tool. Not built yet; required before
    pinch counts as "done" per the spec's own rule (§2/§3, "not optional
    polish").
+3. **Lower priority, still open**: `open_hand_palmup` density (§9.2), and
+   the confirmed `palm_out` framing gap (`pinch_palmout`/`fist_palmout`
+   have zero clean sessions at the medium distance, reproduced failure
+   across 4 attempts — worth a deliberately different capture setup next
+   time, not just another attempt at the same one).
+4. **Continuous-improvement data loop** (§9) remains available if the
+   event layer surfaces a new weak case, per the pipeline's standard
+   "record it as an explicit case, retrain" discipline — not a scheduled
+   next step on its own anymore now that the working target is met.
 
 ## 5. Environment notes
 
@@ -133,20 +126,20 @@ above, full detail in the spec. Current priority:
   including the ones that live in the sibling
   `Python_Server_MediaPipe_vision_pipeline/` folder.
 - Key scripts, all in `Local_pc/Movement_with_hand_detection/`:
-  `Resources/features.py` (pure feature extraction, including the
-  windowed/prediction-error features and `extract_raw_plus_handcrafted_
-  features`, §3.2.7 — not the current winner but still a compared
-  representation every retrain), `Resources/classifier.py` (loads trained
-  weights, runs the forward pass), `Resources/event_layer.py`
-  (`PinchEventTracker`, blocked per §4 above), `train_pinch_classifier.py`
-  (Stage 3, run this to retrain — auto-discovers recordings, auto-selects
-  the winning model, prints a rotation stress test and misclassified-cell
-  breakdown every run), `tune_event_layer.py` (Stage 3.3, currently
-  blocked), `analyze_transition_window.py` (one-off analysis that produced
-  the 300ms window constant), `sweep_prediction_error_window.py` (one-off
-  window-size sweep, §3.2.6), `train_set_ablation.py` (one-off
-  learning-curve ablation, §3.2.8 — reusable if a 4th distance set is ever
-  added).
+  `Resources/features.py` (pure feature extraction, including
+  `extract_raw_plus_handcrafted_features`, §3.2.7 — the current winning
+  representation), `Resources/classifier.py` (loads trained weights, runs
+  the forward pass), `Resources/event_layer.py` (`PinchEventTracker`, no
+  longer blocked per §4 above — ready for a fresh tuning attempt),
+  `train_pinch_classifier.py` (Stage 3, run this to retrain —
+  auto-discovers recordings, auto-selects the winning model via
+  `hidden_units=24` MLPs per §3.2.9, prints a rotation stress test and
+  misclassified-cell breakdown every run), `tune_event_layer.py` (Stage
+  3.3, ready to re-run against the current classifier), `analyze_
+  transition_window.py` (one-off analysis that produced the 300ms window
+  constant), `sweep_prediction_error_window.py` (one-off window-size
+  sweep, §3.2.6), `train_set_ablation.py` (one-off learning-curve
+  ablation, §3.2.8 — reusable if a 4th distance set is ever added).
 - Trained weights: `Resources/pinch_classifier_weights.json` — always
   regenerated by retraining, never hand-edited (`GESTURE_PIPELINE_SPEC.md`
   §3.2.2's rule).

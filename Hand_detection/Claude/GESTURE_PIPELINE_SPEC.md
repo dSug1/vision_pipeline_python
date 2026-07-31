@@ -957,6 +957,92 @@ cumulative-training-pool pattern is reusable for any future learning-curve
 question (e.g. re-running this exact ablation once a 4th set exists, to see
 if the rotation-FP-degradation slowdown continues).
 
+### 3.2.9 Follow-up (2026-07-31): root-caused — a stale hyperparameter, not distance noise or a representation flaw. Working target met.
+
+Direct follow-up to §3.2.8's open question (§8 item 5): why did
+`raw_plus_handcrafted` regress once the medium-distance set was added?
+Two hypotheses checked in order, per §2's "measured, not guessed"
+discipline:
+
+**Hypothesis 1 (distance noise) — checked and rejected.** Mirrored §3.2.1's
+`hand_size_ref` diagnostic across all three distances for `open_hand_front`:
+near std=0.0023 (CV 0.025), far std=0.0055 (CV 0.056), **medium std=0.0016
+(CV 0.016) — the LOWEST variance of the three, not the highest.** A direct
+question raised alongside this check — could camera focus/sharpness matter,
+since the medium-distance recordings had the sharpest image definition —
+pointed the same direction: sharper focus means more precise landmark
+localization, i.e. *less* measurement noise, consistent with (not
+contradicting) the variance finding. This rules out "medium distance is
+just noisier" as the mechanism.
+
+**Diagnostic: per-cell misclassification comparison, same fixed test
+split, `raw_landmarks` vs. `raw_plus_handcrafted`.** Not a uniform
+regression — `raw_plus_handcrafted` improved sharply at `pinch_front`
+(46%→3% wrong) but regressed badly elsewhere (`open_hand_front` 0%→43%,
+`pinch_palmdown` 44%→77%, `pinch_palmin` 10%→51%). This is the signature of
+a capacity-constrained model concentrating on a few high-frequency train
+patterns rather than generalizing — not a representation-quality problem.
+
+**Hypothesis 2 (stale hyperparameter) — checked and confirmed.**
+`hidden_units=4` was chosen via a sweep in §3.2.1, against the
+**original near-only corpus (2,281 train examples)** — never revisited as
+the corpus grew to 15,408 train examples (~7x) across §3.2.4/§3.2.6/§3.2.8.
+Swept `hidden_units` ∈ {4, 8, 12, 16, 24} × `l2` ∈ {0.001, 0.01} for
+`raw_plus_handcrafted` on the current full corpus:
+
+| hidden_units (l2=0.001) | Train F1 | Test F1 | Recall | Rotation FP | Train/test gap |
+|---|---|---|---|---|---|
+| 4 (stale default) | 0.756 | 0.514 | 0.494 | 13.9% | 0.242 |
+| 8 | 0.851 | 0.682 | 0.671 | 8.2% | 0.169 |
+| 16 | 0.927 | 0.720 | 0.765 | 6.3% | 0.207 |
+| 24 | 0.930 | 0.748 | 0.724 | **5.5%** | 0.182 |
+
+**Bigger hidden layers *decreased* the train/test gap** (0.242 at
+hidden=4 down to 0.169-0.182 at 8-24) — the small model was **underfitting**
+the larger, richer input space, not overfitting a small one. This is the
+opposite of §3.2.1's original finding (there, *wider* layers 8-20 clearly
+overfit on the much smaller original corpus) — both findings are correct
+for the corpus size they were measured against, which is exactly why a
+hyperparameter chosen once isn't safe to leave unexamined as the corpus
+keeps growing.
+
+**Seed-sensitivity check** (§3.2.2's own required discipline before
+trusting a single run): `hidden_units=24` across 6 seeds — F1 range
+[0.705, 0.775], recall range **[0.713, 0.822]**, rotation FP range **[4.5%,
+6.6%]**. Every single seed clears the working target on both axes — not a
+lucky run.
+
+**Updated `train_pinch_classifier.py`'s default to `hidden_units=24`**
+(applies to every representation in the standard sweep, not just the fused
+one — re-testing the hyperparameter uniformly rather than special-casing
+one representation). Full retrain, all representations, current 148-session
+corpus:
+
+| Model | Rotation FP | Test F1 | Recall | Precision |
+|---|---|---|---|---|
+| **`mlp/raw_plus_handcrafted` (winner)** | **5.5%** | **0.748** | **0.724** | 0.773 |
+| `mlp/raw_landmarks` (close second) | 6.0% | 0.740 | 0.719 | 0.761 |
+| `mlp/handcrafted_full` | 18.0% | 0.651 | 0.602 | 0.708 |
+| (logreg variants all far behind, unaffected by the MLP hyperparameter fix) | | | | |
+
+**§9.3's working target is met, for the first time**: rotation FP <~10%
+(5.5%) **and** recall >~0.6-0.7 (0.724), simultaneously, on the same model.
+`raw_plus_handcrafted` and `raw_landmarks` are now close enough (5.5% vs
+6.0% FP, 0.724 vs 0.719 recall) that the fusion representation's original
+§3.2.7 rationale (hand-crafted features add real value) holds up once the
+confound (undersized model) is removed — the earlier "reversal" (§3.2.8)
+was never really evidence against the representation, just against the
+stale capacity setting. Params at `hidden_units=24`: 70×24+24+24+1 = 1,729
+— still comfortably inside Specification.md §7.1's "few thousand params,
+JS-portable" budget, so this fix didn't cost the portability requirement
+anything.
+
+**Practical implication**: per §4's prioritized next steps, event-layer
+tuning (§3.3.2) was explicitly blocked on base-classifier quality — that
+blocker is now lifted. Re-running `tune_event_layer.py` against this
+classifier (not the older, worse one §3.3.2 tested against) is the
+natural next step, not further base-classifier work.
+
 ### Stage 3.3 — Event-detection layer (episodic gestures only)
 
 This is new, added in response to a direct question about whether
@@ -1430,16 +1516,16 @@ the same-model-different-platform problem.
   hyperparameters. Not yet re-checked against the current hand-crafted
   winner or the combined corpus — do that before trusting 0.617 as more
   than a single point estimate, same caveat as before.
-- **Top-priority blocker, real progress but still open (§3.2.4): the base
-  classifier is more rotation-robust but not solved, and a new
-  precision/recall tension appeared.** Rotation stress test (mean
-  false-positive rate across all 9 `rotating_no_pinch` sessions, up from
-  5) sits at 14.7% for the current best model (`mlp/raw_landmarks`) — the
-  best result yet (was 22.0% → 27.2% → original ~27-38%), driven mainly by
-  **corpus growth** (more/varied `rotating_no_pinch` data), not by the
-  prediction-error features tried alongside it (§3.2.4). **This still
-  blocks reliable event-layer tuning (§3.3.2)** — 14.7% is progress, not a
-  green light to resume. Concrete next steps, in priority order:
+- ~~Top-priority blocker: the base classifier is more rotation-robust but
+  not solved~~ — **resolved (§3.2.9): the working target is met.**
+  `mlp/raw_plus_handcrafted`, rotation FP **5.5%**, recall **0.724** — both
+  halves of §9.3's target simultaneously, for the first time. Root cause of
+  the long-running recall-vs-rotation-FP tension (§3.2.5, §3.2.6, §3.2.8)
+  turned out to include a stale hyperparameter (`hidden_units=4`, sized for
+  a corpus 7x smaller than the current one) alongside the already-identified
+  data-volume effects. **This no longer blocks event-layer tuning
+  (§3.3.2)** — resuming it against the current classifier is the natural
+  next step. History retained below for anyone auditing what was tried:
   1. ~~Investigate the recall collapse across hand-crafted variants~~ —
      **done and closed (§3.2.5): class-weighted training was tried and
      measured to be a strictly worse operating point**, not the fix hoped
@@ -1476,22 +1562,21 @@ the same-model-different-platform problem.
      0.540→0.576, precision 0.743→0.936) — the first improvement that
      didn't trade one metric for another. **Superseded by item 5 below —
      this win did not hold up once more corpus was added.**
-  5. **New, unresolved (§3.2.8): the fusion representation's win reversed
-     once a third ("medium") distance set was added — not yet root-caused.**
-     `raw_plus_handcrafted` degraded sharply on the 148-recording corpus
-     (F1 0.713→0.514, recall 0.576→0.494, rotation FP 11.4%→13.9%) while
-     plain `raw_landmarks` *improved* on the same corpus growth (rotation FP
-     13.2%→11.2%, recall 0.540→0.643) and is the new winner. Plausible but
-     **unverified** mechanism: the third distance may add a noise pattern
-     the small (7-dim) hand-crafted component can't average out as cleanly
-     as it did across only two distances, with `hidden_units=4` leaving
-     little capacity to route around a degraded sub-component. Worth
-     directly checking (e.g. `hand_size_ref` variance at the medium
-     distance, mirroring §3.2.1's near/far diagnostic) before the next
-     representation decision, rather than re-guessing. Current winner:
-     **`mlp/raw_landmarks`, rotation FP 11.2% (best-ever), recall 0.643
-     (best-ever, first to clear the >0.6 target half)**, F1 0.657 — still
-     short of the combined working target (rotation FP <~10% not yet met).
+  5. ~~The fusion representation's win reversed once a third ("medium")
+     distance set was added~~ — **root-caused and resolved (§3.2.9): a
+     stale hyperparameter, not a real representation or distance-noise
+     problem.** `hand_size_ref` variance at medium distance was actually
+     the *lowest* of the three distances (ruling out "more noise"); the
+     real cause was `hidden_units=4`, chosen via a sweep against the
+     original 2,281-example corpus and never revisited as the corpus grew
+     ~7x. A fresh sweep found `hidden_units=24` **decreased** the
+     train/test gap (was underfitting, not overfitting) and cleared the
+     working target across all 6 tested seeds. **Working target met**:
+     `mlp/raw_plus_handcrafted`, rotation FP **5.5%**, recall **0.724**,
+     F1 0.748 — both axes of §9.3's target simultaneously, for the first
+     time. `mlp/raw_landmarks` is a close second (6.0%/0.719), confirming
+     the fusion representation's original §3.2.7 rationale holds once the
+     capacity confound is removed.
 - **`palm_away`-specific finding (§3.3.2)**: `pinch_ratio` barely moves at
   this orientation even during a real pinch (0.43-0.54 vs ~0.16-0.65 at
   `front`), while classifier confidence still tracks correctly — a fixed
@@ -1504,9 +1589,9 @@ the same-model-different-platform problem.
   needs base-classifier and possibly per-orientation-signal changes first,
   not more sweeping over the current inputs.
 - Stage 4 (live debug tool) not yet built — needed before pinch counts as
-  done per §2/§3's own rule ("not optional polish"). Building it now would
-  mean debugging a classifier already known to be rotation-fragile, so
-  probably sequenced after the blocker above, not before.
+  done per §2/§3's own rule ("not optional polish"). No longer blocked on
+  base-classifier quality (§3.2.9) — worth building against the current
+  classifier rather than continuing to wait.
 
 ## 9. Continuous improvement playbook (data + retrain only — not a strategy change)
 

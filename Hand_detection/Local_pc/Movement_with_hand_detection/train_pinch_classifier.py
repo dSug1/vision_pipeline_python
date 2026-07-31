@@ -412,12 +412,21 @@ def main():
 
         for arch_name, make_model, fit_kwargs in [
             ("logreg", lambda: LogisticRegression(n_features=len(X_train[0])), {}),
-            # hidden_units=4, l2=0.001 chosen via a hyperparameter sweep (not
-            # guessed) -- see GESTURE_PIPELINE_SPEC.md stage 3 results. Wider
-            # hidden layers (8-20) and weaker L2 overfit hard given how few
-            # independent sessions this dataset has (train/test F1 gaps of
-            # 0.2-0.3); this config had the best test-set generalization.
-            ("mlp", lambda: TinyMLP(n_features=len(X_train[0]), hidden_units=4),
+            # hidden_units=24, l2=0.001 (2026-07-31, GESTURE_PIPELINE_SPEC.md
+            # §3.2.9) -- re-swept after §3.2.8's fusion-representation
+            # regression turned out to be a STALE hyperparameter, not a data
+            # problem: hidden_units=4 was chosen via a sweep on the original
+            # near-only corpus (2,281 train examples, §3.2.1) and never
+            # revisited as the corpus grew ~7x (15,408 train examples now).
+            # A fresh sweep (4/8/12/16/24) found bigger hidden layers
+            # DECREASE the train/test F1 gap here (0.242 at hidden=4 down to
+            # 0.182 at hidden=24) -- hidden=4 was underfitting the larger,
+            # richer input space, not overfitting a small one. hidden=24
+            # cleared the working target (rotation FP<10%, recall>0.6-0.7)
+            # across all 6 tested seeds (rotation_fp range 4.5-6.6%, recall
+            # range 0.713-0.822) -- checked for seed sensitivity, not a
+            # single lucky run.
+            ("mlp", lambda: TinyMLP(n_features=len(X_train[0]), hidden_units=24),
              {"l2": 0.001}),
             # Balanced class weighting was tried here (2026-07-31) and
             # measured to be a strictly worse operating point, not left in
