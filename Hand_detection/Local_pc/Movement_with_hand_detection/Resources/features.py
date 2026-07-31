@@ -32,6 +32,25 @@ HANDCRAFTED_FEATURE_NAMES = [
     "curl_worst_deg",
 ]
 
+# Windowed/derivative features (Stage 3 redesign, 2026-07-31): static
+# per-frame classification of pinch is fundamentally ambiguous against
+# incidental rotation-induced poses -- confirmed both by this project's own
+# measured evidence (base classifier hit 0.9 confidence during pure
+# rotation, GESTURE_PIPELINE_SPEC.md §3.3.2) and by gesture-recognition
+# literature (clockwise/counterclockwise circular motion shares
+# intermediate static poses; only temporal order disambiguates) and
+# biological-motion-perception literature (humans use motion cues, not
+# static snapshots, for exactly this kind of intention judgment). These 2
+# features give the classifier that temporal signal directly, instead of
+# only a per-frame snapshot. Window = 300ms, chosen from
+# analyze_transition_window.py's measured onset/offset transition-duration
+# distribution (median 667-967ms depending on distance, p25 220-440ms) --
+# short enough to trigger before a slow transition fully completes, long
+# enough to carry real signal above frame-to-frame noise.
+DELTA_FEATURE_NAMES = ["delta_pinch_ratio", "delta_curl_worst_deg"]
+HANDCRAFTED_WINDOWED_FEATURE_NAMES = HANDCRAFTED_FEATURE_NAMES + DELTA_FEATURE_NAMES
+DELTA_WINDOW_MS = 300
+
 
 def to_dict_landmarks(mp_landmarks):
     """Convert MediaPipe's live landmark objects (.x/.y/.z attributes) to
@@ -103,6 +122,10 @@ def pinky_curl_deg(landmarks):
     return _finger_curl_deg(landmarks, PINKY_MCP, PINKY_PIP, PINKY_TIP)
 
 
+def curl_worst_deg(landmarks):
+    return max(middle_curl_deg(landmarks), ring_curl_deg(landmarks), pinky_curl_deg(landmarks))
+
+
 def extract_handcrafted_features(landmarks):
     """7 hand-crafted features -> list, in HANDCRAFTED_FEATURE_NAMES order.
     One of the two input representations stage 3 compares (§6.2)."""
@@ -151,3 +174,31 @@ def extract_raw_features(landmarks, handedness=None):
         out.append((lm["y"] - wrist["y"]) / size_ref)
         out.append((lm["z"] - wrist["z"]) / size_ref)
     return out
+
+
+def extract_delta_features(current_landmarks, past_landmarks):
+    """2 windowed/derivative features -- how much pinch_ratio and
+    curl_worst changed between two landmark snapshots (typically
+    ~DELTA_WINDOW_MS apart). Pure function over two landmark snapshots, not
+    three -- the caller (training pipeline or a live rolling buffer) owns
+    picking which past frame to compare against and how many real
+    milliseconds apart it is; this function doesn't need to know."""
+    return [
+        pinch_ratio(current_landmarks) - pinch_ratio(past_landmarks),
+        curl_worst_deg(current_landmarks) - curl_worst_deg(past_landmarks),
+    ]
+
+
+def extract_handcrafted_windowed_features(current_landmarks, past_landmarks):
+    """7 hand-crafted features + 2 delta features -> 9 values, in
+    HANDCRAFTED_WINDOWED_FEATURE_NAMES order."""
+    return extract_handcrafted_features(current_landmarks) + extract_delta_features(
+        current_landmarks, past_landmarks
+    )
+
+
+def extract_raw_windowed_features(current_landmarks, past_landmarks, handedness=None):
+    """63 raw landmark values + 2 delta features -> 65 values."""
+    return extract_raw_features(current_landmarks, handedness) + extract_delta_features(
+        current_landmarks, past_landmarks
+    )

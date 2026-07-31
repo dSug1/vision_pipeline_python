@@ -4,7 +4,7 @@ import os
 
 import numpy as np
 
-from Resources import features
+from Resources import classifier, features
 
 # Stage 3 of Claude/GESTURE_PIPELINE_SPEC.md: train the base per-frame pinch
 # classifier. Loads every held-state recording (pinch/open_hand/fist/
@@ -19,10 +19,9 @@ from Resources import features
 # spec's stage 1 rule (cyclic/transition sessions are never part of this
 # train/test split).
 
-RECORDINGS_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..", "Python_Server_MediaPipe_vision_pipeline", "recordings",
-)
+# Recordings live on the external drive, not the local disk (2026-07-31) --
+# must match RecordSession.py's RECORDINGS_DIR.
+RECORDINGS_DIR = r"E:\Python\Recordings for vision_pipeline"
 WEIGHTS_OUT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "Resources", "pinch_classifier_weights.json"
 )
@@ -81,20 +80,73 @@ def session_level_split(cells):
     return train_sessions, test_sessions
 
 
-def frames_to_examples(session_list):
+# Fallback session duration (seconds), for recordings made before
+# RecordSession.py started storing "duration_s" in the JSON (2026-07-31).
+# Matches this project's actual recording commands -- see the Stage 1
+# recording session for the --duration value used per label prefix.
+LABEL_DURATION_FALLBACK_S = [
+    ("pinch_cycles", 10.0),
+    ("pinch_rotate_release", 8.0),
+    ("rotating_no_pinch", 6.0),
+]
+DEFAULT_DURATION_FALLBACK_S = 4.0
+
+
+def session_duration_s(data):
+    if "duration_s" in data:
+        return data["duration_s"]
+    label = data["label"]
+    for prefix, duration in LABEL_DURATION_FALLBACK_S:
+        if label.startswith(prefix):
+            return duration
+    return DEFAULT_DURATION_FALLBACK_S
+
+
+def hand_landmark_sequence(data, handedness):
+    """One hand's world_landmarks across a session, in temporal order --
+    skips frames where that hand wasn't detected."""
+    seq = []
+    for frame in data["frames"]:
+        for hand in frame["hands"]:
+            if hand["handedness"] == handedness:
+                seq.append(hand["world_landmarks"])
+                break
+    return seq
+
+
+def sessions_to_windowed_examples(session_list):
     """Expands (cell, path, data) session entries into one example per
-    hand-frame: (handcrafted_features, raw_features, y, meta)."""
+    hand-frame: (handcrafted_windowed_features, raw_windowed_features, y,
+    meta). Each example pairs the current frame with a frame
+    ~features.DELTA_WINDOW_MS earlier (Stage 3 redesign, 2026-07-31 --
+    static single-frame classification can't distinguish genuine pinch
+    from incidental rotation-induced poses, see
+    GESTURE_PIPELINE_SPEC.md §3.3.2/§3 stage-3-redesign note; these delta
+    features give the classifier real temporal signal). The window is
+    converted from milliseconds to frames per-session, using that
+    session's own measured fps (frame count / duration) -- NOT a fixed
+    frame count, since capture fps varies with hardware load (measured
+    ~15fps near-distance vs ~27fps far-distance sessions). The first
+    window_frames of each hand's sequence are skipped (no valid "past"
+    frame yet), the same warm-up skip a live rolling-buffer tracker would
+    naturally have."""
     examples = []
     for (base_class, orientation), path, data in session_list:
         y = 1 if base_class == "pinch" else 0
-        for frame in data["frames"]:
-            for hand in frame["hands"]:
-                lm = hand["world_landmarks"]
-                hc = features.extract_handcrafted_features(lm)
-                raw = features.extract_raw_features(lm, handedness=hand["handedness"])
+        duration_s = session_duration_s(data)
+        for handedness in ("Left", "Right"):
+            seq = hand_landmark_sequence(data, handedness)
+            if len(seq) < 2:
+                continue
+            fps = len(seq) / duration_s
+            window_frames = max(1, round(fps * features.DELTA_WINDOW_MS / 1000))
+            for i in range(window_frames, len(seq)):
+                current, past = seq[i], seq[i - window_frames]
+                hc = features.extract_handcrafted_windowed_features(current, past)
+                raw = features.extract_raw_windowed_features(current, past, handedness=handedness)
                 examples.append((hc, raw, y, {
                     "base_class": base_class, "orientation": orientation,
-                    "handedness": hand["handedness"], "file": os.path.basename(path),
+                    "handedness": handedness, "file": os.path.basename(path),
                 }))
     return examples
 
@@ -215,6 +267,37 @@ class TinyMLP:
         }
 
 
+def rotation_stress_test(model_json, representation):
+    """Runs the trained model against EVERY rotating_no_pinch recording
+    (not just the one held-out test session) and reports the fraction of
+    frames that falsely exceed the 0.5 'pinch' bar during pure rotation
+    with zero pinching. This is the actual target metric for the Stage 3
+    redesign (GESTURE_PIPELINE_SPEC.md §3 stage-3-redesign /
+    §3.3.2's rotation-robustness finding) -- aggregate F1 doesn't isolate
+    it, since rotating_no_pinch is only ~15% of the dataset's frames."""
+    pcts = []
+    for path in sorted(glob.glob(os.path.join(RECORDINGS_DIR, "rotating_no_pinch_*.json"))):
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        duration_s = session_duration_s(data)
+        for handedness in ("Left", "Right"):
+            seq = hand_landmark_sequence(data, handedness)
+            if len(seq) < 2:
+                continue
+            fps = len(seq) / duration_s
+            window_frames = max(1, round(fps * features.DELTA_WINDOW_MS / 1000))
+            confs = []
+            for i in range(window_frames, len(seq)):
+                current, past = seq[i], seq[i - window_frames]
+                if representation == "handcrafted":
+                    x = features.extract_handcrafted_windowed_features(current, past)
+                else:
+                    x = features.extract_raw_windowed_features(current, past, handedness=handedness)
+                confs.append(classifier.predict_from_features(model_json, x))
+            pcts.append(100.0 * float(np.mean(np.array(confs) > 0.5)))
+    return float(np.mean(pcts)) if pcts else float("nan")
+
+
 def evaluate(model, X, y, meta, label):
     p = model.predict_proba(X)
     pred = (p >= 0.5).astype(int)
@@ -250,9 +333,10 @@ def main():
     for (base_class, orientation), path, data in test_sessions:
         print(f"  held out as TEST: {base_class}/{orientation} <- {os.path.basename(path)}")
 
-    train_ex = frames_to_examples(train_sessions)
-    test_ex = frames_to_examples(test_sessions)
-    print(f"\nHand-frame examples: train={len(train_ex)} test={len(test_ex)}")
+    train_ex = sessions_to_windowed_examples(train_sessions)
+    test_ex = sessions_to_windowed_examples(test_sessions)
+    print(f"\nHand-frame examples (windowed, {features.DELTA_WINDOW_MS}ms window): "
+          f"train={len(train_ex)} test={len(test_ex)}")
 
     results = {}
     for representation, idx in [("handcrafted", 0), ("raw_landmarks", 1)]:
@@ -261,8 +345,8 @@ def main():
         X_test = [ex[idx] for ex in test_ex]
         y_test = [ex[2] for ex in test_ex]
         feature_names = (
-            features.HANDCRAFTED_FEATURE_NAMES if representation == "handcrafted"
-            else [f"lm{i}_{axis}" for i in range(21) for axis in ("x", "y", "z")]
+            features.HANDCRAFTED_WINDOWED_FEATURE_NAMES if representation == "handcrafted"
+            else [f"lm{i}_{axis}" for i in range(21) for axis in ("x", "y", "z")] + features.DELTA_FEATURE_NAMES
         )
 
         for arch_name, make_model, fit_kwargs in [
@@ -281,18 +365,56 @@ def main():
             model.fit(X_train, y_train, **fit_kwargs)
             evaluate(model, X_train, y_train, [ex[3] for ex in train_ex], "train")
             test_report = evaluate(model, X_test, y_test, [ex[3] for ex in test_ex], "test")
+            model_json = model.to_json(feature_names, representation)
+            rotation_fp_pct = rotation_stress_test(model_json, representation)
+            print(f"  [rotation stress test] mean false-positive rate during pure "
+                  f"rotation (all rotating_no_pinch sessions): {rotation_fp_pct:.1f}%")
             results[key] = {"model": model, "feature_names": feature_names,
-                             "representation": representation, "test": test_report}
+                             "representation": representation, "test": test_report,
+                             "rotation_fp_pct": rotation_fp_pct}
 
-    print("\n=== Summary (held-out test F1) ===")
+    print("\n=== Summary (held-out test F1, and the rotation stress test that actually matters right now) ===")
     for key, r in sorted(results.items(), key=lambda kv: -kv[1]["test"]["f1"]):
         t = r["test"]
         print(f"  {key:24s} f1={t['f1']:.3f} accuracy={t['accuracy']:.3f} "
-              f"precision={t['precision']:.3f} recall={t['recall']:.3f}")
+              f"precision={t['precision']:.3f} recall={t['recall']:.3f} "
+              f"rotation_fp={r['rotation_fp_pct']:.1f}%")
 
-    winner = max(results, key=lambda k: results[k]["test"]["f1"])
+    # Selection is NOT plain max(test F1) -- aggregate F1 doesn't isolate
+    # rotation robustness (rotating_no_pinch is only ~15% of frames), and
+    # that's this project's actual current priority (GESTURE_PIPELINE_SPEC.md
+    # §3.3.2). But rotation_fp_pct alone is gameable by a degenerate
+    # always-predict-not-pinch model (trivially zero false positives
+    # anywhere, including during rotation) -- found this exact failure
+    # live: logreg/raw_landmarks had the best rotation_fp_pct but recall
+    # 0.250 (misses 3 of 4 real pinches). MIN_RECALL excludes candidates
+    # that "solve" rotation robustness by barely predicting pinch at all;
+    # only among the survivors does the lowest rotation_fp_pct win, with a
+    # preference for hand-crafted features per §8's decided default.
+    MIN_RECALL = 0.4
+    eligible = [k for k in results if results[k]["test"]["recall"] >= MIN_RECALL]
+    if not eligible:
+        print(f"\nWARNING: no candidate reached recall >= {MIN_RECALL}; "
+              f"falling back to the best test F1 (all candidates are weak).")
+        eligible = list(results)
+    handcrafted_eligible = [k for k in eligible if results[k]["representation"] == "handcrafted"]
+    raw_eligible = [k for k in eligible if results[k]["representation"] == "raw_landmarks"]
+    handcrafted_best = (
+        min(handcrafted_eligible, key=lambda k: results[k]["rotation_fp_pct"])
+        if handcrafted_eligible else None
+    )
+    raw_best = min(raw_eligible, key=lambda k: results[k]["rotation_fp_pct"]) if raw_eligible else None
+    if handcrafted_best is None:
+        winner = raw_best
+    elif raw_best is None:
+        winner = handcrafted_best
+    elif results[raw_best]["rotation_fp_pct"] < results[handcrafted_best]["rotation_fp_pct"] - 2.0:
+        winner = raw_best
+    else:
+        winner = handcrafted_best
     win = results[winner]
-    print(f"\nWinner: {winner}")
+    print(f"\nWinner: {winner} (rotation_fp={win['rotation_fp_pct']:.1f}%, test_f1={win['test']['f1']:.3f}) "
+          f"-- selected by rotation robustness, not aggregate F1 alone")
     with open(WEIGHTS_OUT, "w", encoding="utf-8") as f:
         json.dump(win["model"].to_json(win["feature_names"], win["representation"]), f, indent=2)
     print(f"Saved weights -> {WEIGHTS_OUT}")

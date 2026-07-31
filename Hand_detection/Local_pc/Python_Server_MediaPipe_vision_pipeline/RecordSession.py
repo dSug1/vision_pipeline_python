@@ -28,7 +28,11 @@ from mediapipe.tasks.python import vision
 
 RESOURCES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Resources")
 MODEL_PATH = os.path.join(RESOURCES_DIR, "hand_landmarker.task")
-RECORDINGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recordings")
+
+# Recordings live on the external drive, not the local disk (2026-07-31) --
+# keeps the growing raw-capture corpus off the PC. If this path isn't
+# reachable, the external drive is probably unplugged.
+RECORDINGS_DIR = r"E:\Python\Recordings for vision_pipeline"
 
 DEFAULT_DURATION_S = 4.0
 COUNTDOWN_S = 3.0
@@ -63,6 +67,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    drive_root = os.path.splitdrive(RECORDINGS_DIR)[0] + os.sep
+    if not os.path.isdir(drive_root):
+        raise RuntimeError(
+            f"{drive_root} isn't reachable -- is the external drive plugged in? "
+            f"(RECORDINGS_DIR = {RECORDINGS_DIR})"
+        )
     os.makedirs(RECORDINGS_DIR, exist_ok=True)
 
     base_options = python.BaseOptions(model_asset_path=MODEL_PATH)
@@ -156,7 +166,7 @@ def main() -> None:
     out_name = f"{args.label}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     out_path = os.path.join(RECORDINGS_DIR, out_name)
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump({"label": args.label, "frames": frames}, f)
+        json.dump({"label": args.label, "duration_s": args.duration, "frames": frames}, f)
 
     print(f"[RecordSession] Saved {len(frames)} frames to {out_path}")
 

@@ -150,10 +150,13 @@ future gesture the same way.
   string from the pre-defined taxonomy** — not an improvised name.
 - **At least 2–3 sessions per class×orientation cell**, so stage 3 can hold
   out whole sessions for testing rather than splitting within one.
-- `recordings/` stays gitignored (raw capture data, not source) and is
-  currently **empty** — all prior recordings were deleted with the
-  rule-based approach (they used the old cyclic-session labeling and can't
-  be reused as supervised training data).
+- **Recordings are stored on the external drive, not the local disk**
+  (`E:\Python\Recordings for vision_pipeline`, changed 2026-07-31 to avoid
+  the raw-capture corpus growing on the PC — both `RecordSession.py`'s
+  `RECORDINGS_DIR` and `train_pinch_classifier.py`'s `RECORDINGS_DIR` point
+  there; keep the two in sync if this ever moves again). Not
+  git-tracked either way (raw capture data, not source) — this just moves
+  where "not tracked" physically lives.
 
 ### Stage 2 — Benchmark against state-of-the-art literature
 
@@ -284,6 +287,118 @@ wrist-relative and hand-size-normalized). Held-out test F1:
   `W1`/`b1`/`W2`/`b2`) — portable per Specification.md §7.1, ready for a
   hand-rolled JS forward-pass port later without retraining.
 
+#### Re-run (2026-07-31): after adding a second, farther-camera-distance corpus — a regression, not an improvement
+
+Per §3.2.2 below, 55 more sessions were recorded (full taxonomy again, all 6
+orientations, all classes — not just `pinch`) with the camera moved farther
+from the hands, then the classifier was retrained on the combined 108-session
+corpus (53 near + 55 far). **This made held-out test performance worse, not
+better** — reported here in full per §3.2.2's own rule not to silently
+overwrite prior numbers.
+
+| Architecture / representation | Accuracy | Precision | Recall | F1 |
+|---|---|---|---|---|
+| **MLP / hand-crafted features (new winner)** | 0.809 | 0.767 | 0.516 | **0.617** |
+| Logistic regression / hand-crafted features | 0.814 | 0.825 | 0.479 | 0.606 |
+| MLP / raw landmarks (previous winner, was 0.857) | 0.760 | 0.648 | 0.426 | 0.514 |
+| Logistic regression / raw landmarks | 0.703 | 0.507 | 0.213 | 0.300 |
+
+- **The representation ranking flipped.** Raw landmarks beat hand-crafted
+  features in the near-only corpus (§3.2.1's original table); with the far
+  corpus added, hand-crafted features now win, and raw landmarks took by far
+  the bigger hit (0.857 → 0.514, a ~40% relative drop) versus hand-crafted's
+  milder one (0.657 → 0.617, roughly stable). Since the session-level split
+  always holds out the *most recently recorded* session per cell as test,
+  and the far-distance sessions were recorded most recently, **every test
+  session this run is a far-distance session** — this is measuring
+  generalization from a near+far training mix to unseen far-distance data
+  specifically, not a random mix.
+- **Root cause, measured, not guessed**: compared `hand_size_ref` (the
+  wrist-to-middle-MCP distance `features.py` uses to normalize everything)
+  between near and far `open_hand_front` recordings. The mean stayed close
+  (0.092 vs 0.098 — MediaPipe's metric world-landmark scale does hold up
+  reasonably well across distance, as it should) but **the standard
+  deviation nearly tripled** (0.0023 near vs 0.0062 far). This is the
+  expected signature of a real, literature-consistent effect: a hand
+  occupying fewer pixels gives MediaPipe less information to localize each
+  landmark precisely, so per-frame landmark noise increases with distance,
+  even though the underlying detection still works (§3.2.1's original
+  smoke test confirmed high detection confidence at the new distance —
+  confidence and precision are different things).
+- **Why this explains the representation flip**: raw landmark coordinates
+  feed all 21 points' noisy `x,y,z` directly into the model (63 independent
+  noisy values); hand-crafted features are ratios and angles computed
+  *across* multiple points, which partially averages out independent
+  per-point noise the same way averaging any noisy measurements reduces
+  variance. Raw landmarks had no such averaging to fall back on, so the
+  added noise from far-distance sessions hit that representation much
+  harder — consistent with, not contradicting, §6.2's original motivation
+  for testing raw landmarks in the first place (MediaPipe's own embedding
+  network does use raw landmarks, but it's trained on vastly more data than
+  this project's corpus, which is exactly the condition under which
+  hand-crafted features' built-in noise-averaging matters more).
+- **Checked against state-of-the-art literature (2026-07-31) — not a
+  project-specific singularity, this is the expected, documented behavior**,
+  on two independent fronts:
+  - **General ML: hand-crafted features are the known-better choice for
+    small models on small/noisy datasets.** "Hand-crafted features
+    outperform CNNs for smaller sample sizes," and critically, research
+    comparing hand-designed features against raw input found *no*
+    improvement from hand-designed features when the model was large, but
+    **small models specifically benefit from hand-designed input** —
+    exactly this project's regime (`TinyMLP`, a few thousand params, per
+    Specification.md §7.1's deliberate size budget). The mechanism cited:
+    raw input has a lower signal-to-noise ratio, and "training data with
+    high noise levels can cause models to erroneously learn noise
+    patterns," which takes a much larger training set to overcome than
+    this project's 108 sessions provide.
+  - **Pose-estimation literature: geometric features (joint angles,
+    inter-point ratios) are specifically documented as robust to camera
+    distance/viewing-angle changes, unlike raw coordinates.** Found
+    directly on point: "joint angles offer increased robustness to global
+    jitter, minor translation noise, and scaling inconsistencies compared
+    to raw coordinates, because they are derived from relative geometric
+    relationships between neighboring keypoints rather than relying on
+    absolute positional coordinates," and this specifically "solves the
+    issue of inter-frame inconsistency... aris[ing] from changes in
+    shooting distance and viewing angle" — a near-exact description of
+    what this project just measured, not an analogy. The general
+    statistical mechanism (averaging/combining multiple noisy measurements
+    reduces variance versus using one raw measurement) is standard signal
+    processing, not specific to this domain.
+  - **Also consistent with this project's own earlier, independently-made
+    observation**: `PART_ONE.md` §2 already flagged MediaPipe's `z`
+    coordinate as "the least reliable of the three coordinates
+    monocularly," before this experiment was ever run — raw landmarks
+    include `z` directly (21 of 63 values), hand-crafted features only use
+    it indirectly through already-noisy-averaging distance/angle
+    computations. A GitHub-documented MediaPipe issue and a hand-tracking
+    validation paper both confirm single-view depth estimation is a known
+    weak point, generally, not specific to this project's data.
+  - **Conclusion**: the `hand_size_ref` variance measurement (one cell) is
+    still just one data point, but the *direction* of the effect — raw
+    landmarks degrading more than hand-crafted features under added
+    distance-related noise, for a small model on a small dataset — is
+    exactly what independent literature predicts, from two unrelated
+    fields (general ML small-data practice, and pose-estimation-specific
+    geometric-feature robustness). This changes the earlier "hypothesis,
+    not proven" framing: it's now a **literature-confirmed expectation**,
+    not a coincidence needing more internal verification before acting on
+    it.
+- **Decided, not just flagged**: hand-crafted features become this
+  project's **default** representation going forward, not merely "whichever
+  wins a given retrain." §3 stage 3's instruction to empirically compare
+  representations each time a gesture is built is still followed (checking
+  is cheap and this project's own §2 discipline requires it), but the prior
+  expectation should now be that hand-crafted features win under small/noisy
+  data, with raw landmarks only worth reaching for once the corpus is large
+  enough to approach the regime real embedding-network approaches
+  (MediaPipe's own gesture classifier, §6.2) are trained on. Growing the
+  corpus (more far-distance sessions, more of the originally-flagged weak
+  cells) remains worthwhile regardless — it's what would eventually let raw
+  landmarks close the gap, if that's ever wanted — but isn't required to
+  keep building on top of the current hand-crafted-features classifier.
+
 ### 3.2.2 Adding more recordings later and retraining (a repeatable workflow)
 
 Accuracy here is not a one-shot number — §3.2.1 already flagged two weak
@@ -316,15 +431,15 @@ gesture built under this same pipeline.
      Stage 1 pass did (load the JSON, count `len(frame["hands"])==2` per
      frame) before trusting it — delete and redo anything meaningfully
      below full coverage, the same QA bar used throughout Stage 1.
-  2. Drop the new JSON files into `recordings/` — `RecordSession.py`
-     already saves there by default, no extra step needed. The folder
-     stays gitignored; nothing here is source-controlled except the code
-     and the exported weights.
+  2. New JSON files land in `E:\Python\Recordings for vision_pipeline` —
+     `RecordSession.py` already saves there by default, no extra step
+     needed. Not source-controlled either way; nothing here is tracked
+     except the code and the exported weights.
   3. **If the new sessions are just additional reps for an existing
      (class, orientation) cell** (e.g. topping up `open_hand_palmup` or
      `pinch_palmout` per §8's flagged weak cells): re-run
      `train_pinch_classifier.py` with no code changes. It auto-discovers
-     every file in `recordings/`, so the session-level split and both
+     every file in that folder, so the session-level split and both
      architecture/representation comparisons automatically pick up the new
      data.
   4. **If adding an entirely new cell** (a class or orientation not
@@ -355,7 +470,109 @@ gesture built under this same pipeline.
   exported file is always the direct, reproducible output of one training
   run over an inspectable dataset, not a hand-patched artifact.
 
-### Stage 3.3 — Event-detection layer (episodic gestures only)
+### 3.2.3 Stage 3 redesign (2026-07-31): windowed/derivative features — literature-grounded, but an honest non-fix
+
+Triggered by a direct question: given §3.3.2 found the base classifier
+spikes to near-1.0 confidence during pure rotation (no pinching), is this
+solvable at all by a trained model, and if so, how — bigger model, or
+different input?
+
+**Literature check, done before writing any code** (per §2's discipline):
+two independent bodies of research say the same thing. Gesture-recognition
+literature: "dynamic gestures that pass through similar static poses can
+convey different meanings — clockwise and counterclockwise circular
+motions share similar intermediate poses, but their temporal order
+distinguishes their respective meanings" — a near-exact description of
+this project's rotation/pinch confusion, and proof by example that no
+amount of single-frame model capacity can disambiguate two inputs whose
+disambiguating information (direction of change) isn't present in one
+frame. Biological-motion-perception literature: humans attribute intention
+specifically from **motion cues, not static snapshots** — demonstrated with
+point-light displays stripped of all static visual information, where
+people still perceive intention, driven by a dedicated brain system (the
+superior temporal sulcus) for motion-over-time processing. Both point the
+same direction: **the fix is temporal input, not a bigger single-frame
+model** — consistent with (not contradicting) the project's small-model
+portability budget (Specification.md §7.1), since literature also reports
+"properly designed small models can achieve competitive results" with
+windowed/temporal input specifically.
+
+**Window size, measured not guessed**: `analyze_transition_window.py`
+detects real open↔pinch cycles in the `pinch_cycles` recordings (via
+`scipy.signal.find_peaks` on `pinch_ratio`, prominence=0.2 — chosen
+empirically to match ~6 extrema/session = 3 cycles, per the "repeated ~3
+times" recording protocol) and measures how long each transition actually
+takes, converting frames to real time via each session's own measured fps
+(frame count ÷ known `--duration`, since capture fps varies with hardware
+load — ~15fps near-distance vs ~27fps far-distance, not a fixed 30fps).
+Results: onset (open→pinch) median 667-967ms depending on distance, offset
+(pinch→open) median 724-733ms, p25 220-440ms across both. **Window chosen:
+300ms** — near the p25 mark, short enough to trigger before a slow
+transition fully completes, long enough to carry signal above frame-to-
+frame noise. `RecordSession.py` now stores `duration_s` in every new
+recording so this stops depending on hardcoded label-based duration
+assumptions (`train_pinch_classifier.py`'s `session_duration_s()` falls
+back to a lookup table only for recordings made before this change).
+
+**Implementation**: `features.py` gained `extract_delta_features()` (a
+pure function over two landmark snapshots — Δ`pinch_ratio` and
+Δ`curl_worst_deg`) and windowed variants of both representations
+(`extract_handcrafted_windowed_features()` → 9 values,
+`extract_raw_windowed_features()` → 65 values).
+`train_pinch_classifier.py` was reworked to build examples per-hand in
+strict temporal order (not shuffled single frames) and pair each frame
+with one ~300ms earlier, skipping each hand's warm-up period before a full
+window exists.
+
+**Honest result: this did not fix the target problem.** Measured the same
+rotation stress test (percent of frames with confidence >0.5 during pure
+`rotating_no_pinch`, averaged across all 5 sessions / 10 hand-sequences —
+not just the one held-out test session, since that would only sample a
+fraction of the negative data):
+
+| Model | Rotation false-positive rate |
+|---|---|
+| Non-windowed hand-crafted (§3.2.1 baseline, re-measured on the same full 10-sequence set for a fair comparison) | 27.2% |
+| **Windowed hand-crafted** | **26.9%** — a negligible change |
+| Windowed raw landmarks | 31.3% — worse |
+
+Two delta features carried essentially no rotation-robustness benefit.
+**This is consistent with, not contradicted by, this project's own prior
+history**: the abandoned rule-based classifier's closing-velocity approach
+(`PART_ONE.md` §7.2) also only partially helped (62.2%→22.2% false
+positives on its own rotation test) and was explicitly diagnosed as
+limited because "the two classes overlap in timing because the training
+data doesn't have a clean timing signature to key off of, not because the
+velocity approach is wrong." The same limitation plausibly applies here: a
+real 3D hand rotation moves many geometric relationships at once, so
+`pinch_ratio` and `curl_worst_deg` can both shift in a pinch-like direction
+during incidental rotation too, not just during a genuine pinch — the 2
+chosen delta signals may simply not carry exclusive information, not that
+windowing-in-general is the wrong idea.
+
+**A real bug found and fixed along the way, worth keeping as a permanent
+guard**: naively selecting the "best" model by rotation false-positive rate
+alone picked `logreg/raw_landmarks` — which achieved the *lowest* rotation
+FP (18.9%) by being nearly degenerate (recall 0.250, missing 3 of 4 real
+pinches) — a model that rarely predicts "pinch" at all trivially avoids
+false positives everywhere, including during rotation. `train_pinch_classifier.py`
+now gates on `MIN_RECALL = 0.4` before considering rotation robustness, and
+runs the full rotation stress test (not just the held-out test session, which
+under-samples `rotating_no_pinch`) as a standard part of every training
+run, printed alongside F1 for every architecture/representation
+combination. Current winner under this corrected selection:
+**`logreg/handcrafted`** (rotation FP 22.0%, test F1 0.605, recall 0.479) —
+notably not the MLP this time, and not raw landmarks; still hand-crafted,
+consistent with §8's decided default.
+
+**Kept, not reverted**: the windowed-feature infrastructure
+(`extract_delta_features`, the windowed extraction functions, the
+per-session-fps-aware windowing in `train_pinch_classifier.py`,
+`analyze_transition_window.py`, the rotation stress test now built into
+every training run) — the design is literature-grounded and technically
+sound, the *specific 2 signals chosen* just didn't carry enough exclusive
+information for this problem. Worth revisiting with different/more delta
+signals before concluding the approach itself is wrong (see §8).
 
 This is new, added in response to a direct question about whether
 state-of-the-art literature uses time-derivative approaches — it does, but
@@ -467,6 +684,70 @@ automatically works in reverse for offset.
   event layer enough data to fit offset detection on its own terms, not
   just reuse whatever window/threshold fit onset best — see §5's updated
   taxonomy below for what that means for recording.
+
+### 3.3.2 Implementation attempt and finding (2026-07-31): blocked on base-classifier quality, not event-layer tuning
+
+Built `Resources/event_layer.py` (`PinchEventTracker`, a per-hand state
+machine over `idle`/`apex`, confirming onset/offset via derivative
+agreement between the base classifier's confidence and the raw
+`pinch_ratio`, both over a shared window — exactly §3.3's design) and
+`tune_event_layer.py` (loads `pinch_cycles`/`pinch_rotate_release` in
+temporal per-hand order, per §3.3's rule, and sweeps window size +
+onset/offset thresholds, scored against: cycle sessions should show ~3
+onset/offset pairs each — matching the "repeated ~3 times" recording
+protocol — and `rotating_no_pinch` sessions should show zero).
+
+**No threshold combination found both targets at once — this is a real
+ceiling, not an under-tuned parameter.** Tightening thresholds enough to
+suppress false positives on `rotating_no_pinch` also suppressed true
+detections on `pinch_cycles` (down to ~1 of the expected ~3 per session);
+loosening them to recover true detections pushed `rotating_no_pinch` false
+positives up in lockstep (34–46 false onset/offset events across just 10
+negative session-hand-sequences, at the loosest tested settings) — a
+precision/recall tradeoff with no good operating point in the range swept.
+
+**Root cause, checked directly, not assumed**: measured the base
+classifier's confidence output during a pure `rotating_no_pinch` session
+(no pinching at all) — it swings from 0.02 to **0.90**, with 6.8%–50.3% of
+frames per session exceeding 0.5 ("would call it a pinch"), and sustained
+false-high runs up to 28 consecutive frames. **This is the same
+rotation-false-positive failure mode that killed the original rule-based
+classifier (§1's 38.5% figure), not fixed by moving to a trained model —
+just less visible, because it was hiding inside an aggregate F1=0.617
+metric rather than being isolated against a pure-rotation stress test the
+way §1's evidence trail specifically did.** No event-layer parameter choice
+can fully route around a base signal that itself spikes to near-1.0
+confidence during genuine non-pinch motion; the derivative-agreement
+technique reduces sensitivity to *brief* noise, but a real, multi-frame
+false-confidence excursion (up to 28 frames here) can still look enough
+like a genuine transition to satisfy an agreement check loose enough to
+also catch real pinches.
+
+**A related, separate finding surfaced along the way**: at the `palm_away`
+orientation specifically, the base classifier's confidence tracks pinch
+correctly (swings 0.15→0.77 across a real cycle), but the raw
+`pinch_ratio` signal barely moves (0.43-0.54, versus ~0.16-0.65 at
+`front`) — a real, orientation-dependent effect on the underlying geometry
+at that orientation, not a bug in `pinch_ratio`'s computation. This meant
+`palm_away` produced zero detected events at every threshold tight enough
+to say anything about a fixed ratio-magnitude gate — a second reason (on
+top of the rotation-noise ceiling above) the "fixed thresholds across all
+orientations" design needs revisiting, not just retuning.
+
+**Per §2's discipline, explicitly not treated as an event-layer parameter
+problem to keep tuning around**: the fix for "the base classifier isn't
+accurate/stable enough yet" is more/better classifier training data (§3.2.1
+/ §3.2.2's already-flagged open items — more far-distance sessions,
+resolving the near/far regression), not a tighter event-layer threshold or
+a bolted-on special case for rotation or for `palm_away`. **Event-layer
+tuning is blocked on base-classifier improvement, not the other way
+around** — this is new information for Stage 1/Stage 3, exactly per §3.3's
+own closing rule ("if the event layer misfires on a case Stage 1 didn't
+anticipate... never a reason to add a rule on top of the... output").
+`event_layer.py` and `tune_event_layer.py` are kept (the design and tuning
+mechanics are sound and reusable), but no threshold values from this pass
+are treated as final — re-run `tune_event_layer.py` once the base
+classifier's rotation-robustness improves, not before.
 
 ### Stage 4 — Live debug/run tool
 
@@ -735,30 +1016,77 @@ the same-model-different-platform problem.
 - ~~Confirm or adjust §5's taxonomy before recording anything.~~ Done —
   §5's 6-orientation taxonomy recorded in full (53 sessions), see the
   Stage 1 recording session for the corpus inventory.
-- ~~Logistic regression vs. small MLP~~ / ~~raw landmarks vs. hand-crafted
-  features~~ — both decided empirically, see §3.2.1: MLP beat logistic
-  regression, raw landmarks beat hand-crafted features, on held-out test
-  F1 (0.857 winner). Not a one-time answer though — re-check if a future
-  gesture's data looks structurally different (e.g. more separable, might
-  not need the MLP's extra capacity).
-- **Grow the corpus for the two flagged weak cells**: `open_hand_palmup`
-  (Right hand, 60/60 test frames misclassified as pinch) and
-  `pinch_palmout` (Right hand, 59/60 misclassified as not-pinch) — see
-  §3.2.1. Record 1-2 more sessions for each specifically, per §2's rule
-  that the fix for a measured misclassification is more/better data, not a
-  patch on the classifier's output.
-- **Seed sensitivity** (§3.2.1): test F1 ranged 0.737-0.859 across 6 random
-  inits of the same architecture/hyperparameters. Revisit once the corpus
-  is larger — if the spread shrinks with more data, that confirms it was a
-  small-dataset symptom; if it doesn't, that's a different problem
-  (model capacity vs. data mismatch) worth its own investigation.
-- **Event layer (§3.3) specifics, all to decide empirically against the
-  `pinch_cycles` recordings, not guess**: window size for the derivative
-  computation; which signals besides the confidence score itself to check
-  for derivative agreement (the raw thumb-index distance is the obvious
-  first candidate, per §3.3); the actual agreement threshold; whether
-  orientation affects the event layer's behavior enough to need its own
-  `pinch_cycles` variants beyond `front` (recorded — see the Stage 1
-  session — the event layer itself is not yet built).
+- ~~Logistic regression vs. small MLP~~ — decided empirically, MLP beat
+  logistic regression in both the near-only and near+far runs.
+- ~~Raw landmarks vs. hand-crafted features~~ — raw landmarks won on the
+  near-only corpus (F1 0.857) but hand-crafted features won once
+  far-distance data was added (F1 0.617 vs 0.514), and that flip is
+  **confirmed by independent literature, not a project-specific fluke**
+  (small-model/small-data practice, and pose-estimation-specific
+  geometric-feature robustness to distance/viewing-angle changes — both
+  found on direct search, see the "Re-run (2026-07-31)" note above).
+  **Decided**: hand-crafted features are this project's default
+  representation going forward; still re-check empirically per gesture
+  (§3 stage 3 requires it), but no longer a coin-flip open question.
+- **Grow the corpus, especially far-distance data** — not to chase raw
+  landmarks catching up (deprioritized per the decision above), but because
+  108 sessions is still small by the literature's own standard for when
+  raw/learned representations start to work well, and more data narrows
+  the seed-sensitivity spread (next item) regardless of which
+  representation is used.
+- **Grow the corpus for the originally flagged weak cells**:
+  `open_hand_palmup` and `pinch_palmout` (both Right hand) — flagged in the
+  near-only run (§3.2.1's original table); re-check whether they're still
+  specifically weak now that far-distance data and a different winning
+  representation are in the mix, rather than assuming the original
+  diagnosis still applies unchanged.
+- **Seed sensitivity** (§3.2.1's original near-only run): test F1 ranged
+  0.737-0.859 across 6 random inits of the same architecture/
+  hyperparameters. Not yet re-checked against the current hand-crafted
+  winner or the combined corpus — do that before trusting 0.617 as more
+  than a single point estimate, same caveat as before.
+- **Top-priority blocker, still open after the §3.2.3 windowed-feature
+  attempt: the base classifier still isn't rotation-robust.** Rotation
+  stress test (mean false-positive rate across all `rotating_no_pinch`
+  sessions) sits at 22.0% for the current best model
+  (`logreg/handcrafted`, windowed) — better than the original 27.2%
+  non-windowed baseline, but not the fix hoped for, and still far from
+  solved. **This blocks reliable event-layer tuning (§3.3.2), which is
+  downstream of it** — don't resume §3.3's threshold sweep until this
+  improves substantially. Concrete next steps, in the order §2's
+  discipline suggests trying them:
+  1. **More rotation-specific training data first** — the cheapest lever,
+     per §2's default fix for a measured misclassification. The existing
+     5 `rotating_no_pinch` sessions may simply not cover enough of the
+     false-positive-prone pose space; record more, varied in speed and
+     rotation path.
+  2. **Try different/more delta signals** before concluding windowing
+     itself doesn't work — §3.2.3 only tried Δ`pinch_ratio` and
+     Δ`curl_worst_deg`, and found via `PART_ONE.md` §7.2's own precedent
+     that a real 3D rotation can move many geometric relationships in a
+     pinch-like direction simultaneously, so these 2 signals may not be
+     exclusive enough. Candidates worth testing: per-finger curl deltas
+     individually (not just the worst), wrist-orientation velocity
+     (would need `world_landmarks`' orthonormal frame, already computed
+     conceptually for rotation, `PART_ONE.md` §2), or a longer/shorter
+     window than the 300ms chosen (that value was picked from pinch
+     *transition* timing, not validated against what best separates
+     rotation from pinch specifically — those may not be the same
+     timescale).
+  3. Only after (1) and (2) are exhausted, reconsider the feature set or
+     model architecture more fundamentally.
+- **`palm_away`-specific finding (§3.3.2)**: `pinch_ratio` barely moves at
+  this orientation even during a real pinch (0.43-0.54 vs ~0.16-0.65 at
+  `front`), while classifier confidence still tracks correctly — a fixed
+  ratio-magnitude threshold across all orientations can't work for this
+  cell. Worth designing around before the event layer is considered done
+  for all 6 orientations, not just `front`.
+- **Event layer (§3.3.2)**: `PinchEventTracker` and `tune_event_layer.py`
+  are built and the design/tuning mechanics work — what's blocked is
+  finding threshold values that hold up, which per the two items above
+  needs base-classifier and possibly per-orientation-signal changes first,
+  not more sweeping over the current inputs.
 - Stage 4 (live debug tool) not yet built — needed before pinch counts as
-  done per §2/§3's own rule ("not optional polish").
+  done per §2/§3's own rule ("not optional polish"). Building it now would
+  mean debugging a classifier already known to be rotation-fragile, so
+  probably sequenced after the blocker above, not before.
