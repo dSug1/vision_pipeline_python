@@ -246,3 +246,34 @@ def extract_handcrafted_full_features(landmarks_t2, landmarks_t1, landmarks_now)
         + extract_delta_features(landmarks_now, landmarks_t1)
         + extract_prediction_error_features(landmarks_t2, landmarks_t1, landmarks_now)
     )
+
+
+# Fused representation (2026-07-31, GESTURE_PIPELINE_SPEC.md §3.2.7):
+# neither pure raw landmarks nor pure 7-dim hand-crafted features have won
+# on every axis this project cares about -- raw landmarks keep recall up as
+# the rotating_no_pinch corpus grows (§3.2.6 found the 7-dim hand-crafted
+# representation's recall collapses, static or windowed alike, while raw
+# landmarks did not), but hand-crafted features generalize better across
+# camera distance (§3.2.1's near/far re-run). Concatenating both into one
+# input vector -- rather than picking one -- has direct literature
+# precedent in pose/sign-language recognition: models built from "a flat
+# vector representation of pose concatenated with the 2D angle and length
+# of every limb" are a documented, standard pattern, not a novel idea. This
+# is a model *input representation* choice, explicitly not covered by §2's
+# "no heuristic pile-up" rule (§6.2 already carves this out: choosing input
+# representation by literature + held-out validation is normal ML
+# practice, unlike patching a trained model's output).
+
+
+def extract_raw_plus_handcrafted_features(landmarks, handedness=None):
+    """63 raw landmark values + 7 hand-crafted features -> 70 values.
+    Deliberately static (no delta/prediction-error terms) -- isolates the
+    spatial-fusion question from the temporal-window question §3.2.3/§3.2.6
+    already investigated separately and found inconclusive-to-negative, so
+    this experiment doesn't reintroduce that confound."""
+    return extract_raw_features(landmarks, handedness) + extract_handcrafted_features(landmarks)
+
+
+RAW_PLUS_HANDCRAFTED_FEATURE_NAMES = (
+    [f"lm{i}_{axis}" for i in range(21) for axis in ("x", "y", "z")] + HANDCRAFTED_FEATURE_NAMES
+)

@@ -760,6 +760,203 @@ checking — see §8's next-step ordering.
 one-off tuning script, same category as `analyze_transition_window.py`, not
 run automatically as part of every retrain.
 
+**Follow-up, same day: `handcrafted_static` checked and found to share the
+collapse — no new experiment needed, already in this section's own 11-
+session retrain output.** `handcrafted_static` has no window and no
+derivative at all — just the 7-dim ratio/curl-angle features from a single
+frame — so it's the cleanest test of whether the recall collapse is
+specific to windowing/derivatives. It isn't: `mlp/handcrafted_static`
+scored recall **0.214**, `logreg/handcrafted_static` **0.172** — both
+squarely inside the same 0.11–0.28 collapsed range every windowed variant
+showed in the sweep above, nowhere near `MIN_RECALL=0.4`. **This rules out
+"it's something about computing deltas/prediction-error specifically" as
+the mechanism** — the collapse affects the underlying 7-dim hand-crafted
+representation itself (ratio + curl angles), static or windowed alike, not
+something introduced by temporal feature engineering.
+
+**This creates a real tension with §8's decided default** (hand-crafted
+features preferred over raw landmarks, based on the near/far-distance
+generalization experiment and matching literature on small-model/small-data
+robustness). That decision was correct *for the problem it was measured
+against* (distance-generalization noise) — but under the current, different
+problem (recall as `rotating_no_pinch`'s negative-class volume grows), the
+7-dim hand-crafted representation is now the one struggling, raw landmarks
+the one holding up. Both findings are real and don't contradict each other,
+they're about different failure modes — but it means "hand-crafted features
+are the default" can no longer be treated as settled for every situation;
+whoever picks this up next should weigh both axes (distance robustness vs.
+recall-under-class-imbalance) explicitly rather than defaulting to the
+older decision without re-checking it against the current corpus.
+
+### 3.2.7 Follow-up (2026-07-31): a fused raw+hand-crafted representation — the best result yet, on every metric
+
+Triggered by §3.2.6's finding that neither pure representation wins
+outright: raw landmarks keep recall up as `rotating_no_pinch` grows, but
+lose to hand-crafted features on camera-distance generalization (§3.2.1).
+Rather than picking one, checked whether concatenating both into a single
+input vector is a real, literature-backed pattern before building it
+(§2's discipline) — it is: pose/sign-language recognition work builds
+models from "a flat vector representation of pose concatenated with the
+2D angle and length of every limb," a documented standard pattern, not a
+novel idea specific to this project.
+
+**Built**: `features.py::extract_raw_plus_handcrafted_features()` — the
+existing 63-dim raw landmark vector concatenated with the existing 7-dim
+hand-crafted vector (70 dims total), static only (no delta/prediction-error
+terms, deliberately — keeps this experiment isolated from the temporal-
+window question §3.2.3/§3.2.6 already investigated separately). Added as
+`raw_plus_handcrafted` to `train_pinch_classifier.py`'s `REPRESENTATIONS`.
+The winner-selection logic's "prefer hand-crafted within 2 points" rule
+(§8's decided default) was narrowed to apply only to the pure 7-dim
+hand-crafted family, not this fused representation — it's 90% raw
+landmarks by dimension count, so it shouldn't get an automatic bonus meant
+for the pure hand-crafted case.
+
+**Result: `mlp/raw_plus_handcrafted` beats `mlp/raw_landmarks` (the
+previous winner) on every metric, not a tradeoff**:
+
+| Model | Rotation FP | Test F1 | Recall | Precision |
+|---|---|---|---|---|
+| `mlp/raw_landmarks` (previous winner) | 13.2% | 0.625 | 0.540 | 0.743 |
+| **`mlp/raw_plus_handcrafted` (new winner)** | **11.4%** | **0.713** | **0.576** | **0.936** |
+
+This is the best rotation-FP result in the project's history (previous
+best 13.2%, before that 14.7%/22.0%/27.2%) and the first round where
+recall, F1, and rotation-FP all improved together rather than trading off
+against each other — unlike every attempted fix in §3.2.5 (class
+weighting) and implicitly in §3.2.6 (windowing), which improved one metric
+by sacrificing another. Precision also jumped sharply (0.743→0.936),
+consistent with the fused input carrying enough of the hand-crafted
+features' rotation-robustness signal to cut down the false-positive rate
+raw landmarks alone couldn't reach, while keeping enough of raw landmarks'
+full information to avoid the recall collapse the pure 7-dim
+representation suffered.
+
+**Not yet at §9.3's working target** (rotation FP <~10%, recall
+>~0.6-0.7) — 11.4%/0.576 is close on both axes but hasn't cleared either
+threshold. The natural next lever, per §9's own loop, is more data
+(especially more `rotating_no_pinch` variety, still not confirmed
+exhausted per §3.2.6's one below-threshold round) now applied on top of
+this better-performing representation, rather than further feature
+engineering — consistent with this project's repeated finding that corpus
+growth outperforms feature changes.
+
+**Exported**: `Resources/pinch_classifier_weights.json` now holds
+`mlp/raw_plus_handcrafted`'s weights (`architecture: "mlp"`,
+`representation: "raw_plus_handcrafted"`, 70 input dims) — same flat-JSON
+portability shape as every prior export (§7.1).
+
+### 3.2.8 Follow-up (2026-07-31): a third ("medium") distance set, a controlled learning-curve ablation, and a fusion-representation reversal
+
+Triggered by a direct question: would a full third recording set (matching
+the near/far protocol's density, at yet another camera distance) push the
+classifier to the §9.3 working target, and separately, would tracking
+performance vs. training-set size directly (not just round-over-round
+deltas) reveal whether the "more data" lever is hitting diminishing
+returns? Both pursued together, deliberately: recording the third set
+naturally supplies the third point a real learning curve needs (a single
+1→2 delta, as in every round through §3.2.6, can't distinguish "still
+improving" from "diminishing returns" as reliably as a 3-point trend can).
+
+**Recorded**: 34 clean sessions at a new, "medium" camera distance — full
+6-orientation × {pinch, open_hand, fist} taxonomy (2 reps/cell, matching
+the near/far sets' density) plus 3 new `rotating_no_pinch` sessions.
+**Two accepted gaps**: `pinch_palmout` and `fist_palmout` have zero clean
+sessions at this distance — `palm_out` produced a near-total both-hands-
+detection failure (0-8%) across 4 repositioning attempts for `fist_palmout`
+specifically, and after some improvement still fell short for
+`pinch_palmout` (52.9% best attempt). This is the same kind of
+camera-framing problem already flagged for `fist_palmout` at other
+distances (§9.2) — accepted as a known gap per that same precedent, not
+pursued further. `open_hand_palmout` has 1 clean session (98.1%).
+Corpus: **148 recordings total** (up from 114).
+
+**Ablation design** (`train_set_ablation.py`, new): distance-set membership
+isn't recorded in any label or JSON field — only inferable from capture
+timestamp (near = 2026-07-30, far = 2026-07-31 07:14-07:27, medium =
+2026-07-31 10:15+, confirmed by manually inspecting the corpus's timestamp
+clusters before writing the script). Built a genuine learning curve: **one
+fixed held-out test split** (computed once against the complete final
+corpus, then held constant), against which three cumulative training pools
+are compared — set 1 (near) only, sets 1+2 (near+far), sets 1+2+3
+(near+far+medium). `rotating_no_pinch` is deliberately held **constant**
+(the full current pool, minus whichever session the global split holds out
+as test) across all three runs — it's a separate axis (negative-class
+coverage, tracked independently via §9), and holding it fixed isolates one
+variable: does held-state (pinch/open_hand/fist) distance diversity help,
+independent of rotation-data growth. All three runs use the current
+winning representation (`mlp/raw_plus_handcrafted`, §3.2.7).
+
+**Result: F1/recall/precision all improve monotonically, but rotation-FP
+gets WORSE, not better — a real trade-off, not a fix**:
+
+| Sets included | Held-state sessions | Test F1 | Recall | Precision | Rotation FP |
+|---|---|---|---|---|---|
+| 1 (near) | 35 | 0.190 | 0.126 | 0.387 | **2.4%** |
+| 1+2 (near+far) | 69 | 0.386 | 0.335 | 0.456 | 11.1% |
+| 1+2+3 (near+far+medium) | 84 | 0.514 | 0.494 | 0.536 | 13.9% |
+
+More held-state distance diversity makes the classifier measurably better
+at discriminating pinch from open_hand/fist (F1 +0.196 then +0.128 per
+round, recall +0.209 then +0.159) — but it does this by making the
+decision boundary less conservative, which lets in more rotation-induced
+false positives too, even with the rotation-negative training data held
+perfectly constant throughout. This is the same recall-vs-rotation-FP
+tension §3.2.5 found with class weighting, surfacing again from a
+completely different lever (held-state data diversity instead of loss
+reweighting) — reinforcing that this is a structural property of the
+problem, not an artifact of any one fix attempted so far. One qualified
+positive: the rotation-FP degradation itself is slowing (+8.7 points then
++2.8 points per round) — right at §9.3's diminishing-returns threshold,
+worth re-checking on a future round rather than assuming it continues
+accelerating.
+
+**A second, unexpected finding surfaced by the same corpus growth: the
+`raw_plus_handcrafted` fusion representation's §3.2.7 win did not hold up
+once the medium-distance set was added — it got substantially worse, while
+plain raw landmarks improved.** Retraining the full pipeline (all
+representations, all architectures) on the complete 148-recording corpus:
+
+| Model | Rotation FP | Test F1 | Recall | Precision |
+|---|---|---|---|---|
+| §3.2.7 (108 sessions, pre-medium): `mlp/raw_plus_handcrafted` | 11.4% | 0.713 | 0.576 | 0.936 |
+| Now (148 sessions): `mlp/raw_plus_handcrafted` | 13.9% | 0.514 | 0.494 | 0.536 |
+| **Now (148 sessions): `mlp/raw_landmarks` (new winner)** | **11.2%** | 0.657 | **0.643** | 0.671 |
+
+`raw_landmarks` alone *improved* with the added corpus (F1 0.625→0.657,
+recall 0.540→0.643, rotation FP 13.2%→11.2%, comparing against §3.2.6's
+pre-fusion baseline), while the fused representation that beat it a round
+ago now underperforms it on every axis except precision. Plausible
+mechanism, not yet directly verified: §3.2.1 already measured that the
+7-dim hand-crafted features get noisier with camera distance (`hand_size_
+ref`'s variance nearly tripled near→far); a third, different distance
+regime may be adding a new noise pattern the small hand-crafted component
+can't average out as cleanly as it did across just two distances, and with
+only `hidden_units=4`, the fused model doesn't have much capacity to learn
+around a degraded sub-component. **Not investigated further this round —
+flagged as an open item (§8)** rather than chased immediately, since the
+practical outcome (raw landmarks winning again) already gives the best
+result of the two.
+
+**Net result — new best-ever rotation FP and recall, though not the best
+F1**: **`mlp/raw_landmarks`, rotation FP 11.2% (previous best 11.4%),
+recall 0.643 (previous best 0.576, and the first result to clear §9.3's
+recall >0.6 bar)**, F1 0.657 (below §3.2.7's now-degraded 0.713, because
+precision dropped to 0.671 from 0.936). **Still short of §9.3's full
+combined working target** (rotation FP <~10% AND recall >~0.6-0.7) — recall
+now clears its half, rotation FP (11.2%) is the closest it's ever been to
+its half but hasn't crossed it. This directly answers the round's opening
+question: a full new distance set was worth doing (new best-ever numbers on
+two axes), but it did **not** cleanly resolve the working target — it
+traded F1/precision for recall/rotation-FP-adjacent gains, consistent with
+this round's own learning-curve finding that the two sides of the target
+pull in different directions as held-state data grows.
+
+**Kept, not reverted**: `train_set_ablation.py` — the fixed-test-split,
+cumulative-training-pool pattern is reusable for any future learning-curve
+question (e.g. re-running this exact ablation once a 4th set exists, to see
+if the rotation-FP-degradation slowdown continues).
+
 ### Stage 3.3 — Event-detection layer (episodic gestures only)
 
 This is new, added in response to a direct question about whether
@@ -1258,21 +1455,43 @@ the same-model-different-platform problem.
      first time. Not yet conclusively exhausted (one round isn't a trend),
      but worth watching closely on the next round rather than assumed
      inexhaustible.
-  3. ~~Isolate the prediction-error features' own contribution~~ —
-     **partially done (§3.2.6): window size is ruled out as the cause of
-     the recall collapse**, not just confirmed as fine. A full 100-1200ms
-     sweep found recall stuck at 0.11-0.28 for every window-dependent
-     hand-crafted representation, never approaching `MIN_RECALL=0.4`. This
-     narrows the recall collapse to something more fundamental than a
-     tuning problem (neither class weighting §3.2.5 nor window size §3.2.6
-     fixes it) — still not conclusively diagnosed to a root cause, but two
-     hyperparameter explanations are now closed off. `handcrafted_static`
-     (no window) wasn't covered by this sweep and shouldn't be assumed to
-     share the finding without checking.
-  4. Only after (1)-(3), reconsider the feature set or model architecture
-     more fundamentally — closer now than before, since two of the three
-     "maybe it's just tuning" explanations (class weighting, window size)
-     have been tried and ruled out.
+  3. ~~Isolate the prediction-error features' own contribution~~ — **done
+     (§3.2.6): window size is ruled out as the cause, and so is
+     windowing/derivatives generally.** A full 100-1200ms sweep found
+     recall stuck at 0.11-0.28 for every window-dependent hand-crafted
+     representation; `handcrafted_static` (no window, no derivative — just
+     the 7-dim ratio/curl-angle features from one frame) was then checked
+     against the same 11-session retrain's own output and found to score
+     recall 0.172-0.214, in that same collapsed range. **All three
+     "training-procedure/hyperparameter" explanations (class weighting
+     §3.2.5, window size, windowing/derivatives themselves §3.2.6) are now
+     closed off** — the recall collapse is a property of the 7-dim
+     hand-crafted representation itself, static or windowed alike, not
+     fixable by retuning around it.
+  4. ~~Reconsider the feature set or model architecture more
+     fundamentally~~ — **done (§3.2.7)**: a fused `raw_plus_handcrafted`
+     representation (63-dim raw + 7-dim hand-crafted concatenated,
+     literature-precedented) beat pure raw landmarks on every metric at
+     once at the time (rotation FP 13.2%→11.4%, F1 0.625→0.713, recall
+     0.540→0.576, precision 0.743→0.936) — the first improvement that
+     didn't trade one metric for another. **Superseded by item 5 below —
+     this win did not hold up once more corpus was added.**
+  5. **New, unresolved (§3.2.8): the fusion representation's win reversed
+     once a third ("medium") distance set was added — not yet root-caused.**
+     `raw_plus_handcrafted` degraded sharply on the 148-recording corpus
+     (F1 0.713→0.514, recall 0.576→0.494, rotation FP 11.4%→13.9%) while
+     plain `raw_landmarks` *improved* on the same corpus growth (rotation FP
+     13.2%→11.2%, recall 0.540→0.643) and is the new winner. Plausible but
+     **unverified** mechanism: the third distance may add a noise pattern
+     the small (7-dim) hand-crafted component can't average out as cleanly
+     as it did across only two distances, with `hidden_units=4` leaving
+     little capacity to route around a degraded sub-component. Worth
+     directly checking (e.g. `hand_size_ref` variance at the medium
+     distance, mirroring §3.2.1's near/far diagnostic) before the next
+     representation decision, rather than re-guessing. Current winner:
+     **`mlp/raw_landmarks`, rotation FP 11.2% (best-ever), recall 0.643
+     (best-ever, first to clear the >0.6 target half)**, F1 0.657 — still
+     short of the combined working target (rotation FP <~10% not yet met).
 - **`palm_away`-specific finding (§3.3.2)**: `pinch_ratio` barely moves at
   this orientation even during a real pinch (0.43-0.54 vs ~0.16-0.65 at
   `front`), while classifier confidence still tracks correctly — a fixed
@@ -1351,7 +1570,16 @@ once these are addressed, this list is a snapshot, not a permanent plan:
    detected, camera framing issue at that specific orientation, not
    pursued further at the time). Low priority (negative class, well
    covered at every other orientation) but cheap to fix if revisiting
-   camera framing anyway.
+   camera framing anyway. **Confirmed reproducible at a second distance
+   (§3.2.8)**: `fist_palmout` also failed at the new "medium" distance (0%
+   both-hands across all attempts) — `palm_out` specifically, not this one
+   camera setup, appears to be a structurally hard orientation for
+   both-hands framing. `pinch_palmout` has the same gap at medium distance
+   (best attempt only 52.9% both-hands, after 4 tries) — genuinely 0 clean
+   medium-distance sessions for both `pinch_palmout` and `fist_palmout`,
+   not just thin coverage. Worth a deliberately different capture setup
+   (e.g. wider frame, hands closer to center) next time this is revisited,
+   rather than assuming the next attempt at any given distance will work.
 4. **`palm_away` orientation generally**, for whichever gesture is being
    built — independently flagged twice now as tracking-degraded (§5's
    original taxonomy note, self-occlusion) and dynamics-different

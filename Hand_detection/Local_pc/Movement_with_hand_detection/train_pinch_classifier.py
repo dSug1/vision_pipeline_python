@@ -120,8 +120,15 @@ def hand_landmark_sequence(data, handedness):
 # negligible rotation-robustness improvement, 27.2%->26.9%)? All computed
 # from the SAME (t-2W, t-W, t) triple per example so the comparison is
 # apples-to-apples, not confounded by different example counts.
+#
+# raw_plus_handcrafted added 2026-07-31 (§3.2.7): §3.2.6 found the 7-dim
+# hand-crafted representation's recall collapses (static or windowed alike)
+# as rotating_no_pinch grows, while raw landmarks don't -- but hand-crafted
+# features generalize better across camera distance (§3.2.1). Concatenating
+# both, rather than picking one, has direct literature precedent (see
+# features.extract_raw_plus_handcrafted_features's docstring).
 REPRESENTATIONS = ["handcrafted_static", "handcrafted_velocity", "handcrafted_prederror",
-                    "handcrafted_full", "raw_landmarks"]
+                    "handcrafted_full", "raw_landmarks", "raw_plus_handcrafted"]
 
 
 def sessions_to_windowed_examples(session_list):
@@ -155,6 +162,7 @@ def sessions_to_windowed_examples(session_list):
                     + features.extract_prediction_error_features(t2, t1, now),
                     "handcrafted_full": features.extract_handcrafted_full_features(t2, t1, now),
                     "raw_landmarks": features.extract_raw_windowed_features(now, t1, handedness=handedness),
+                    "raw_plus_handcrafted": features.extract_raw_plus_handcrafted_features(now, handedness=handedness),
                 }
                 examples.append((feats, y, {
                     "base_class": base_class, "orientation": orientation,
@@ -312,6 +320,8 @@ def _extract_by_representation(representation, t2, t1, now, handedness):
         return features.extract_handcrafted_full_features(t2, t1, now)
     if representation == "raw_landmarks":
         return features.extract_raw_windowed_features(now, t1, handedness=handedness)
+    if representation == "raw_plus_handcrafted":
+        return features.extract_raw_plus_handcrafted_features(now, handedness=handedness)
     raise ValueError(representation)
 
 
@@ -389,6 +399,7 @@ def main():
         "handcrafted_prederror": features.HANDCRAFTED_FEATURE_NAMES + features.PREDICTION_ERROR_FEATURE_NAMES,
         "handcrafted_full": features.HANDCRAFTED_FULL_FEATURE_NAMES,
         "raw_landmarks": [f"lm{i}_{axis}" for i in range(21) for axis in ("x", "y", "z")] + features.DELTA_FEATURE_NAMES,
+        "raw_plus_handcrafted": features.RAW_PLUS_HANDCRAFTED_FEATURE_NAMES,
     }
 
     results = {}
@@ -458,12 +469,19 @@ def main():
               f"falling back to the best test F1 (all candidates are weak).")
         eligible = list(results)
     best_overall = min(eligible, key=lambda k: results[k]["rotation_fp_pct"])
-    # Prefer a hand-crafted-family variant over raw_landmarks when close
+    # Prefer a pure hand-crafted-family variant over raw_landmarks when close
     # (within 2 points), per §8's decided default (raw landmarks are more
-    # noise-sensitive on this small dataset).
-    handcrafted_eligible = [k for k in eligible if results[k]["representation"] != "raw_landmarks"]
+    # noise-sensitive on this small dataset) -- but §3.2.7's fused
+    # raw_plus_handcrafted representation is NOT part of this "prefer
+    # hand-crafted" bucket: it's 63/70ths raw landmarks by dimension, and
+    # the whole point of testing it is to see whether it stands on its own
+    # merits against both pure representations, not get an automatic bonus
+    # meant for the pure 7-dim feature set.
+    PURE_HANDCRAFTED = {"handcrafted_static", "handcrafted_velocity",
+                         "handcrafted_prederror", "handcrafted_full"}
+    handcrafted_eligible = [k for k in eligible if results[k]["representation"] in PURE_HANDCRAFTED]
     winner = best_overall
-    if results[best_overall]["representation"] == "raw_landmarks" and handcrafted_eligible:
+    if results[best_overall]["representation"] not in PURE_HANDCRAFTED and handcrafted_eligible:
         hc_best = min(handcrafted_eligible, key=lambda k: results[k]["rotation_fp_pct"])
         if results[hc_best]["rotation_fp_pct"] <= results[best_overall]["rotation_fp_pct"] + 2.0:
             winner = hc_best
