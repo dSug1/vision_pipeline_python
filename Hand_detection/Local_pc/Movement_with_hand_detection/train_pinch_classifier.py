@@ -163,6 +163,25 @@ def sessions_to_windowed_examples(session_list):
     return examples
 
 
+def sample_weights(y, class_weight):
+    """Per-example loss weights. class_weight=None -> all 1 (unweighted,
+    original behavior). class_weight='balanced' -> sklearn-style inverse-
+    frequency weighting (n / (2 * n_class)), so the positive (pinch) class
+    isn't drowned out as the negative classes' session count grows (added
+    2026-07-31 to address the recall collapse across hand-crafted variants
+    once rotating_no_pinch grew to 9 sessions -- GESTURE_PIPELINE_SPEC.md
+    §3.2.4/§8's flagged top-priority item: a training-procedure fix for
+    class imbalance, not a feature or architecture change)."""
+    if class_weight is None:
+        return np.ones(len(y))
+    if class_weight == "balanced":
+        n_pos = max(int(np.sum(y == 1)), 1)
+        n_neg = max(int(np.sum(y == 0)), 1)
+        n = len(y)
+        return np.where(y == 1, n / (2.0 * n_pos), n / (2.0 * n_neg))
+    raise ValueError(class_weight)
+
+
 class LogisticRegression:
     """Plain-numpy logistic regression -- no ML framework dependency, per
     spec stage 3's portability requirement (weights export as flat JSON,
@@ -177,7 +196,7 @@ class LogisticRegression:
     def _standardize(self, X):
         return (X - self.mean) / self.std
 
-    def fit(self, X, y, epochs=3000, lr=0.1, l2=0.01):
+    def fit(self, X, y, epochs=3000, lr=0.1, l2=0.01, class_weight=None):
         X = np.asarray(X, dtype=np.float64)
         y = np.asarray(y, dtype=np.float64)
         self.mean = X.mean(axis=0)
@@ -185,11 +204,13 @@ class LogisticRegression:
         self.std[self.std == 0] = 1.0
         Xs = self._standardize(X)
         n = len(y)
+        sw = sample_weights(y, class_weight)
         for _ in range(epochs):
             z = Xs @ self.w + self.b
             p = 1.0 / (1.0 + np.exp(-z))
-            grad_w = Xs.T @ (p - y) / n + l2 * self.w
-            grad_b = np.sum(p - y) / n
+            resid = sw * (p - y)
+            grad_w = Xs.T @ resid / n + l2 * self.w
+            grad_b = np.sum(resid) / n
             self.w -= lr * grad_w
             self.b -= lr * grad_b
 
@@ -238,7 +259,7 @@ class TinyMLP:
         p = 1.0 / (1.0 + np.exp(-z))
         return h, p
 
-    def fit(self, X, y, epochs=4000, lr=0.05, l2=0.001):
+    def fit(self, X, y, epochs=4000, lr=0.05, l2=0.001, class_weight=None):
         X = np.asarray(X, dtype=np.float64)
         y = np.asarray(y, dtype=np.float64)
         self.mean = X.mean(axis=0)
@@ -246,9 +267,10 @@ class TinyMLP:
         self.std[self.std == 0] = 1.0
         Xs = self._standardize(X)
         n = len(y)
+        sw = sample_weights(y, class_weight)
         for _ in range(epochs):
             h, p = self._forward(Xs)
-            dz = (p - y) / n
+            dz = sw * (p - y) / n
             grad_W2 = h.T @ dz + l2 * self.W2
             grad_b2 = np.sum(dz)
             dh = np.outer(dz, self.W2) * (1 - h ** 2)
@@ -386,6 +408,16 @@ def main():
             # 0.2-0.3); this config had the best test-set generalization.
             ("mlp", lambda: TinyMLP(n_features=len(X_train[0]), hidden_units=4),
              {"l2": 0.001}),
+            # Balanced class weighting was tried here (2026-07-31) and
+            # measured to be a strictly worse operating point, not left in
+            # the default sweep -- see GESTURE_PIPELINE_SPEC.md §3.2.5. It
+            # does fix the hand-crafted recall collapse (0.2 -> 0.7-0.9) but
+            # only by shifting the decision threshold toward "pinch" overall,
+            # which raises rotation false-positives right along with it
+            # (9-17% -> 35-53%). The `class_weight="balanced"` capability on
+            # LogisticRegression.fit/TinyMLP.fit is kept (sample_weights()
+            # above) in case a smarter weighting scheme is worth trying
+            # later, just not exercised by default.
         ]:
             key = f"{arch_name}/{representation}"
             print(f"\n=== {key} ===")

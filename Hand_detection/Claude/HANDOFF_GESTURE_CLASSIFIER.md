@@ -69,26 +69,39 @@ its isolated effect isn't yet cleanly measured, §3.2.4).
 
 ## 4. Prioritized next steps (in order)
 
-1. **Try class-weighted training** to address the recall-collapse issue
-   (§3 above / `GESTURE_PIPELINE_SPEC.md` §8's top item and §9.3). This is
-   a training-procedure change, not a new feature or architecture — cheap
-   to try, and might restore hand-crafted features as the practical
-   winner, which matters for the literature-grounded reasons already
-   established (small-model/noisy-data robustness, §8).
-2. **Continue the continuous-improvement data loop**
-   (`GESTURE_PIPELINE_SPEC.md` §9, new this session) — record 2-4 targeted
-   sessions for the current priority queue (§9.2: more `rotating_no_pinch`
-   variety first, then `open_hand_palmup`/`pinch_palmout`/`palm_away`
-   density), re-run `train_pinch_classifier.py` unchanged, log the result
-   the same way the last three rounds were logged. **This loop is
-   explicitly data + retrain only — no feature/architecture/hyperparameter
-   changes as part of it.** §9.3 has the diminishing-returns criteria for
-   knowing when to stop this loop and do something else.
+1. ~~Try class-weighted training~~ — **done, 2026-07-31, and rejected**
+   (`GESTURE_PIPELINE_SPEC.md` §3.2.5): balanced class weighting does fix
+   the hand-crafted recall collapse (0.2–0.29 → 0.7–0.86) but only by
+   shifting the decision threshold toward predicting "pinch" more often
+   globally, which raises rotation false positives right along with it
+   (9–17% → 35–53%, worse than the original abandoned rule-based
+   classifier's 38.5%, §1). Not adopted. Current winner is unchanged:
+   `mlp/raw_landmarks`, rotation FP 14.7%, recall 0.594, F1 0.654. The
+   `class_weight="balanced"` capability is kept in the code (not deleted)
+   in case a smarter, more targeted weighting scheme is worth trying later
+   — but that's a new idea, not a re-run of what was just measured.
+1b. ~~Isolate the prediction-error features' contribution~~ — **partially
+   done, 2026-07-31, via a window-size sweep** (`GESTURE_PIPELINE_SPEC.md`
+   §3.2.6, `sweep_prediction_error_window.py`): swept 100-1200ms ×
+   velocity/prederror/full × logreg/MLP (48 runs). **Window size is ruled
+   out as the cause of the recall collapse** — recall stayed stuck at
+   0.11-0.28 across the entire range for every window-dependent
+   representation, never near `MIN_RECALL=0.4`. Combined with §3.2.5
+   (class weighting also doesn't fix it), two of three "maybe it's just a
+   tuning problem" explanations are now closed off, narrowing toward a more
+   fundamental representational limitation of these features under the
+   current corpus. `handcrafted_static` (no window) not covered — check
+   separately before assuming it shares this finding.
+2. **Continue the continuous-improvement data loop** (`GESTURE_PIPELINE_SPEC.md`
+   §9) — one round done since, 2026-07-31: 9→11 `rotating_no_pinch` sessions
+   (added a large-amplitude circular path and rapid direction-reversal
+   twisting), retrained. Rotation FP 14.7%→13.2%, only ~1.5 points — below
+   §9.3's 2-3-point diminishing-returns bar for the first time. Not yet a
+   confirmed trend (one round), but watch closely on the next round.
+   Winner unchanged: `mlp/raw_landmarks`.
 3. **Working target before moving on**: base classifier rotation FP below
-   ~10% and recall above ~0.6-0.7 (§9.3's reasoning for why the classifier
-   doesn't need to be near-perfect alone — the event layer's multi-frame
-   agreement requirement does further filtering on top). Not there yet
-   (14.7% / 0.594).
+   ~10% and recall above ~0.6-0.7. Not there yet (13.2% / 0.540, current
+   winner `mlp/raw_landmarks`).
 4. **Once that target is met (or the data loop plateaus per §9.3), resume
    event-layer tuning** (`GESTURE_PIPELINE_SPEC.md` §3.3.2,
    `tune_event_layer.py`) — built, and the design/tuning mechanics work,

@@ -654,6 +654,112 @@ growing negative-class volume is shifting the decision boundary more than
 intended, which class-weighting during training (not yet tried) could
 address directly, rather than something to fix by further feature changes.
 
+### 3.2.5 Follow-up (2026-07-31): class-weighted training tried — measured, and rejected
+
+Triggered directly by §3.2.4/§8's top-priority item: is the recall collapse
+across hand-crafted representations (every hand-crafted variant dropping
+below `MIN_RECALL=0.4` once `rotating_no_pinch` grew to 9 sessions) a
+training-procedure problem — fixable by reweighting the loss for class
+imbalance — rather than a feature or architecture one?
+
+**Built**: `sample_weights()` in `train_pinch_classifier.py`, sklearn-style
+balanced inverse-frequency weighting (`n / (2 * n_class)`), plumbed into
+both `LogisticRegression.fit` and `TinyMLP.fit` as an optional
+`class_weight="balanced"` argument. Ran every representation × architecture
+combination twice — unweighted (existing) and balanced (new) — so the
+comparison was measured against the same data/split, not assumed.
+
+**Result: balanced weighting fixes recall, but at a cost that makes it a
+strictly worse choice for this project's actual priority.** Hand-crafted
+recall did recover (from ~0.2–0.29 unweighted up to 0.7–0.86 balanced —
+exactly the intended effect). But rotation false-positive rate got
+dramatically worse across every balanced variant: 9–17% unweighted →
+35–53% balanced. `mlp_bal/handcrafted_prederror` had the best test F1 of
+any run so far (0.807, recall 0.814) but a 50.4% rotation false-positive
+rate — worse than even the original abandoned rule-based classifier's
+38.5% (§1).
+
+**Why, mechanistically**: class weighting doesn't add information that
+separates genuine pinch from rotation-induced false pinch-like poses — it
+just reweights the loss to penalize missing the (now-underrepresented)
+positive class more, which shifts the decision threshold toward predicting
+"pinch" more often globally. That recovers true positives and false
+positives together, indiscriminately — including during
+`rotating_no_pinch`, which is exactly the failure mode this project has
+been trying to suppress since §1. This is the same lesson §3.2.3 already
+drew from a different angle (a model that trivially avoids rotation false
+positives by rarely predicting pinch at all isn't a real fix either) — here
+it's the mirror case: a model tuned to *never* miss a real pinch isn't a
+real fix either, if it does so by predicting pinch more often everywhere.
+
+**Decided**: the `_bal` variants are not part of the default sweep in
+`main()` — a measured, strictly worse operating point for this project's
+current priority doesn't need to run on every future retrain. The
+`class_weight` capability (`sample_weights()`, the `fit()` parameter) is
+kept, not deleted, in case a smarter weighting scheme is worth trying later
+(e.g. weighting `rotating_no_pinch` specifically rather than "all negative
+classes," which plain balanced weighting can't express) — but that would be
+a new, separately-justified idea, not a re-run of what was just measured
+here.
+
+**This closes §8/§4's "try class-weighted training" item as tried and
+rejected, not as still-open.** Per §9.1's own next step, the priority queue
+reverts to §9.2's data-recording loop (more `rotating_no_pinch` variety
+first) as the more promising lever, consistent with §3.2.4's own finding
+that corpus growth — not any feature or training-procedure change tried so
+far — has been the dominant driver of every real rotation-robustness
+improvement to date.
+
+### 3.2.6 Follow-up (2026-07-31): 11-session retrain, then a prediction-error window-size sweep — window size ruled out as the cause of the recall collapse
+
+Two rounds, both per §9.1's loop.
+
+**Retrain, 9→11 `rotating_no_pinch` sessions** (2 new: a large-amplitude
+circular/orbital rotation path, and rapid direction-reversal wrist
+twisting — both clean, 100% both-hands-detected). Rotation FP 14.7% →
+**13.2%**, a ~1.5-point gain — below §9.3's 2-3-point diminishing-returns
+bar for this specific lever (more `rotating_no_pinch` variety). Recall also
+dipped slightly, 0.594 → 0.540. Winner unchanged: `mlp/raw_landmarks`.
+
+**Prediction-error window-size sweep** (`sweep_prediction_error_window.py`,
+new): triggered by a direct question — §3.2.4 built the prediction-error
+features at a single fixed 300ms window, but that number came from
+`analyze_transition_window.py`'s measurement of real onset/offset
+*transition timing*, never validated against classifier performance
+directly. Swept window size (100/150/200/300/450/600/900/1200ms) ×
+representation (`handcrafted_velocity`/`handcrafted_prederror`/
+`handcrafted_full`) × architecture (logreg/MLP) = 48 runs, same held-out
+session-level split and same two metrics (test recall/F1, rotation stress
+test) `train_pinch_classifier.py` already selects on.
+
+**Result: no window size fixes it — this rules out window mis-tuning as
+the cause of the recall collapse, it does not just confirm 300ms was fine.**
+Across the entire 100–1200ms range, every window-dependent hand-crafted
+representation stayed at recall 0.11–0.28 — never approaching the
+`MIN_RECALL=0.4` gate, let alone the raw-landmarks winner's 0.540. Rotation
+FP looked good in isolation (as low as 1.5% at 1200ms) but precision was
+simultaneously near-perfect everywhere (0.94–1.0) — exactly the degenerate,
+overly-conservative-model signature §3.2.3 already identified and built
+`MIN_RECALL` specifically to catch: a model that rarely predicts "pinch" at
+all trivially posts a low rotation-FP number without solving anything. Both
+shorter windows (closer to per-frame noise) and longer windows (further
+from the ~220-967ms real transition timing §3.2.3 measured) failed
+identically — there's no sweet spot in between.
+
+**What this narrows down**: the recall collapse across hand-crafted
+window-dependent features is not a hyperparameter-tuning problem (neither
+window size, §3.2.6, nor class weighting, §3.2.5, fixes it) — it's
+consistent with (not proof of) a more fundamental representational
+limitation of ratio/angle-delta features specifically, under the current
+corpus's negative-class volume and composition. Static hand-crafted
+features (`handcrafted_static`, no window) are a separate case not covered
+by this sweep and shouldn't be assumed to share this finding without
+checking — see §8's next-step ordering.
+
+**Kept, not reverted**: `sweep_prediction_error_window.py` — a reusable
+one-off tuning script, same category as `analyze_transition_window.py`, not
+run automatically as part of every retrain.
+
 ### Stage 3.3 — Event-detection layer (episodic gestures only)
 
 This is new, added in response to a direct question about whether
@@ -1137,24 +1243,36 @@ the same-model-different-platform problem.
   prediction-error features tried alongside it (§3.2.4). **This still
   blocks reliable event-layer tuning (§3.3.2)** — 14.7% is progress, not a
   green light to resume. Concrete next steps, in priority order:
-  1. **Investigate the recall collapse across hand-crafted variants**
-     (§3.2.4) — every hand-crafted representation dropped below
-     `MIN_RECALL=0.4` this round, leaving raw landmarks as the only
-     eligible winner (in tension with §8's general hand-crafted
-     preference). Try class-weighted training (not yet done) before
-     assuming this means hand-crafted features are now worse in general —
-     it may just mean the growing negative-class volume needs rebalancing
-     during training, a training-procedure fix, not a feature or
-     architecture one.
-  2. **Keep growing `rotating_no_pinch`** — this round's biggest lever by
-     far; no sign yet that it's exhausted.
-  3. **Isolate the prediction-error features' own contribution** — this
-     round's comparison was confounded by simultaneous corpus growth.
-     Worth a controlled re-run (same corpus, features on vs. off) once (1)
-     is addressed, before concluding prediction error either helps or
-     doesn't.
+  1. ~~Investigate the recall collapse across hand-crafted variants~~ —
+     **done and closed (§3.2.5): class-weighted training was tried and
+     measured to be a strictly worse operating point**, not the fix hoped
+     for. It does recover recall (0.2–0.29 → 0.7–0.86) but only by shifting
+     the decision threshold toward "pinch" globally, which raises rotation
+     false positives right alongside it (9–17% → 35–53%, worse than the
+     original abandoned rule-based classifier's 38.5%). Not adopted; the
+     recall collapse is not currently understood to be a simple
+     training-procedure/imbalance fix.
+  2. **Keep growing `rotating_no_pinch`** — was the biggest lever by far
+     through §3.2.4, but §3.2.6's 9→11 session round only bought ~1.5
+     points (14.7%→13.2%), below §9.3's diminishing-returns bar for the
+     first time. Not yet conclusively exhausted (one round isn't a trend),
+     but worth watching closely on the next round rather than assumed
+     inexhaustible.
+  3. ~~Isolate the prediction-error features' own contribution~~ —
+     **partially done (§3.2.6): window size is ruled out as the cause of
+     the recall collapse**, not just confirmed as fine. A full 100-1200ms
+     sweep found recall stuck at 0.11-0.28 for every window-dependent
+     hand-crafted representation, never approaching `MIN_RECALL=0.4`. This
+     narrows the recall collapse to something more fundamental than a
+     tuning problem (neither class weighting §3.2.5 nor window size §3.2.6
+     fixes it) — still not conclusively diagnosed to a root cause, but two
+     hyperparameter explanations are now closed off. `handcrafted_static`
+     (no window) wasn't covered by this sweep and shouldn't be assumed to
+     share the finding without checking.
   4. Only after (1)-(3), reconsider the feature set or model architecture
-     more fundamentally.
+     more fundamentally — closer now than before, since two of the three
+     "maybe it's just tuning" explanations (class weighting, window size)
+     have been tried and ruled out.
 - **`palm_away`-specific finding (§3.3.2)**: `pinch_ratio` barely moves at
   this orientation even during a real pinch (0.43-0.54 vs ~0.16-0.65 at
   `front`), while classifier confidence still tracks correctly — a fixed
