@@ -202,3 +202,47 @@ def extract_raw_windowed_features(current_landmarks, past_landmarks, handedness=
     return extract_raw_features(current_landmarks, handedness) + extract_delta_features(
         current_landmarks, past_landmarks
     )
+
+
+PREDICTION_ERROR_FEATURE_NAMES = ["prederr_pinch_ratio", "prederr_curl_worst_deg"]
+HANDCRAFTED_FULL_FEATURE_NAMES = (
+    HANDCRAFTED_FEATURE_NAMES + DELTA_FEATURE_NAMES + PREDICTION_ERROR_FEATURE_NAMES
+)
+
+
+def extract_prediction_error_features(landmarks_t2, landmarks_t1, landmarks_now):
+    """2 prediction-error ("surprise") features -- Stage 3 redesign,
+    2026-07-31 follow-up after the plain velocity-delta features (above)
+    failed to fix the rotation/pinch confusion (GESTURE_PIPELINE_SPEC.md
+    §3.2.3). Different mechanism, not just a bigger window: a simple
+    constant-velocity extrapolation from two past snapshots (t2, t1,
+    equally spaced) predicts where pinch_ratio/curl_worst "should" be now
+    if the hand keeps doing whatever it was already doing; the signed
+    residual (actual - predicted) is the feature. Directly modeled on
+    forward-model/efference-copy accounts of biological motion perception
+    and predictive-coding anomaly detection (PredNet and related video
+    next-frame-prediction work): smooth, continuous motion (e.g. ambient
+    rotation) is well predicted by its own recent trajectory -> low
+    residual; a genuine voluntary action (a pinch closing) breaks from
+    whatever trajectory preceded it -> high residual, precisely at onset.
+    This is a second-order ("did the *trend* change") signal, distinct
+    from extract_delta_features' first-order ("did the *value* change")
+    signal -- smooth rotation can still have nonzero velocity, but should
+    have close to zero prediction error since it's the same velocity
+    continuing."""
+    predicted_ratio = 2 * pinch_ratio(landmarks_t1) - pinch_ratio(landmarks_t2)
+    predicted_curl = 2 * curl_worst_deg(landmarks_t1) - curl_worst_deg(landmarks_t2)
+    return [
+        pinch_ratio(landmarks_now) - predicted_ratio,
+        curl_worst_deg(landmarks_now) - predicted_curl,
+    ]
+
+
+def extract_handcrafted_full_features(landmarks_t2, landmarks_t1, landmarks_now):
+    """7 static + 2 velocity-delta + 2 prediction-error -> 11 values, in
+    HANDCRAFTED_FULL_FEATURE_NAMES order."""
+    return (
+        extract_handcrafted_features(landmarks_now)
+        + extract_delta_features(landmarks_now, landmarks_t1)
+        + extract_prediction_error_features(landmarks_t2, landmarks_t1, landmarks_now)
+    )

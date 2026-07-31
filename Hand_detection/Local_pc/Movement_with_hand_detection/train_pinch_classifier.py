@@ -114,37 +114,49 @@ def hand_landmark_sequence(data, handedness):
     return seq
 
 
+# Named feature sets compared this round (2026-07-31 follow-up): does a
+# prediction-error ("surprise") signal succeed where a plain velocity delta
+# didn't (GESTURE_PIPELINE_SPEC.md §3.2.3 found velocity-only gave a
+# negligible rotation-robustness improvement, 27.2%->26.9%)? All computed
+# from the SAME (t-2W, t-W, t) triple per example so the comparison is
+# apples-to-apples, not confounded by different example counts.
+REPRESENTATIONS = ["handcrafted_static", "handcrafted_velocity", "handcrafted_prederror",
+                    "handcrafted_full", "raw_landmarks"]
+
+
 def sessions_to_windowed_examples(session_list):
     """Expands (cell, path, data) session entries into one example per
-    hand-frame: (handcrafted_windowed_features, raw_windowed_features, y,
-    meta). Each example pairs the current frame with a frame
-    ~features.DELTA_WINDOW_MS earlier (Stage 3 redesign, 2026-07-31 --
-    static single-frame classification can't distinguish genuine pinch
-    from incidental rotation-induced poses, see
-    GESTURE_PIPELINE_SPEC.md §3.3.2/§3 stage-3-redesign note; these delta
-    features give the classifier real temporal signal). The window is
-    converted from milliseconds to frames per-session, using that
-    session's own measured fps (frame count / duration) -- NOT a fixed
+    hand-frame: (features_by_representation dict, y, meta). Each example is
+    anchored at a frame t, paired with frames ~features.DELTA_WINDOW_MS and
+    ~2*features.DELTA_WINDOW_MS earlier (t-W, t-2W) -- needed for the
+    prediction-error features (extrapolate from t-2W/t-W, compare to t).
+    The window is converted from milliseconds to frames per-session using
+    that session's own measured fps (frame count / duration), NOT a fixed
     frame count, since capture fps varies with hardware load (measured
     ~15fps near-distance vs ~27fps far-distance sessions). The first
-    window_frames of each hand's sequence are skipped (no valid "past"
-    frame yet), the same warm-up skip a live rolling-buffer tracker would
-    naturally have."""
+    2*window_frames of each hand's sequence are skipped (no valid t-2W yet),
+    the same warm-up skip a live rolling-buffer tracker would have."""
     examples = []
     for (base_class, orientation), path, data in session_list:
         y = 1 if base_class == "pinch" else 0
         duration_s = session_duration_s(data)
         for handedness in ("Left", "Right"):
             seq = hand_landmark_sequence(data, handedness)
-            if len(seq) < 2:
+            if len(seq) < 3:
                 continue
             fps = len(seq) / duration_s
             window_frames = max(1, round(fps * features.DELTA_WINDOW_MS / 1000))
-            for i in range(window_frames, len(seq)):
-                current, past = seq[i], seq[i - window_frames]
-                hc = features.extract_handcrafted_windowed_features(current, past)
-                raw = features.extract_raw_windowed_features(current, past, handedness=handedness)
-                examples.append((hc, raw, y, {
+            for i in range(2 * window_frames, len(seq)):
+                now, t1, t2 = seq[i], seq[i - window_frames], seq[i - 2 * window_frames]
+                feats = {
+                    "handcrafted_static": features.extract_handcrafted_features(now),
+                    "handcrafted_velocity": features.extract_handcrafted_windowed_features(now, t1),
+                    "handcrafted_prederror": features.extract_handcrafted_features(now)
+                    + features.extract_prediction_error_features(t2, t1, now),
+                    "handcrafted_full": features.extract_handcrafted_full_features(t2, t1, now),
+                    "raw_landmarks": features.extract_raw_windowed_features(now, t1, handedness=handedness),
+                }
+                examples.append((feats, y, {
                     "base_class": base_class, "orientation": orientation,
                     "handedness": handedness, "file": os.path.basename(path),
                 }))
@@ -267,6 +279,20 @@ class TinyMLP:
         }
 
 
+def _extract_by_representation(representation, t2, t1, now, handedness):
+    if representation == "handcrafted_static":
+        return features.extract_handcrafted_features(now)
+    if representation == "handcrafted_velocity":
+        return features.extract_handcrafted_windowed_features(now, t1)
+    if representation == "handcrafted_prederror":
+        return features.extract_handcrafted_features(now) + features.extract_prediction_error_features(t2, t1, now)
+    if representation == "handcrafted_full":
+        return features.extract_handcrafted_full_features(t2, t1, now)
+    if representation == "raw_landmarks":
+        return features.extract_raw_windowed_features(now, t1, handedness=handedness)
+    raise ValueError(representation)
+
+
 def rotation_stress_test(model_json, representation):
     """Runs the trained model against EVERY rotating_no_pinch recording
     (not just the one held-out test session) and reports the fraction of
@@ -282,17 +308,14 @@ def rotation_stress_test(model_json, representation):
         duration_s = session_duration_s(data)
         for handedness in ("Left", "Right"):
             seq = hand_landmark_sequence(data, handedness)
-            if len(seq) < 2:
+            if len(seq) < 3:
                 continue
             fps = len(seq) / duration_s
             window_frames = max(1, round(fps * features.DELTA_WINDOW_MS / 1000))
             confs = []
-            for i in range(window_frames, len(seq)):
-                current, past = seq[i], seq[i - window_frames]
-                if representation == "handcrafted":
-                    x = features.extract_handcrafted_windowed_features(current, past)
-                else:
-                    x = features.extract_raw_windowed_features(current, past, handedness=handedness)
+            for i in range(2 * window_frames, len(seq)):
+                now, t1, t2 = seq[i], seq[i - window_frames], seq[i - 2 * window_frames]
+                x = _extract_by_representation(representation, t2, t1, now, handedness)
                 confs.append(classifier.predict_from_features(model_json, x))
             pcts.append(100.0 * float(np.mean(np.array(confs) > 0.5)))
     return float(np.mean(pcts)) if pcts else float("nan")
@@ -338,16 +361,21 @@ def main():
     print(f"\nHand-frame examples (windowed, {features.DELTA_WINDOW_MS}ms window): "
           f"train={len(train_ex)} test={len(test_ex)}")
 
+    feature_names_by_repr = {
+        "handcrafted_static": features.HANDCRAFTED_FEATURE_NAMES,
+        "handcrafted_velocity": features.HANDCRAFTED_WINDOWED_FEATURE_NAMES,
+        "handcrafted_prederror": features.HANDCRAFTED_FEATURE_NAMES + features.PREDICTION_ERROR_FEATURE_NAMES,
+        "handcrafted_full": features.HANDCRAFTED_FULL_FEATURE_NAMES,
+        "raw_landmarks": [f"lm{i}_{axis}" for i in range(21) for axis in ("x", "y", "z")] + features.DELTA_FEATURE_NAMES,
+    }
+
     results = {}
-    for representation, idx in [("handcrafted", 0), ("raw_landmarks", 1)]:
-        X_train = [ex[idx] for ex in train_ex]
-        y_train = [ex[2] for ex in train_ex]
-        X_test = [ex[idx] for ex in test_ex]
-        y_test = [ex[2] for ex in test_ex]
-        feature_names = (
-            features.HANDCRAFTED_WINDOWED_FEATURE_NAMES if representation == "handcrafted"
-            else [f"lm{i}_{axis}" for i in range(21) for axis in ("x", "y", "z")] + features.DELTA_FEATURE_NAMES
-        )
+    for representation in REPRESENTATIONS:
+        X_train = [ex[0][representation] for ex in train_ex]
+        y_train = [ex[1] for ex in train_ex]
+        X_test = [ex[0][representation] for ex in test_ex]
+        y_test = [ex[1] for ex in test_ex]
+        feature_names = feature_names_by_repr[representation]
 
         for arch_name, make_model, fit_kwargs in [
             ("logreg", lambda: LogisticRegression(n_features=len(X_train[0])), {}),
@@ -363,8 +391,8 @@ def main():
             print(f"\n=== {key} ===")
             model = make_model()
             model.fit(X_train, y_train, **fit_kwargs)
-            evaluate(model, X_train, y_train, [ex[3] for ex in train_ex], "train")
-            test_report = evaluate(model, X_test, y_test, [ex[3] for ex in test_ex], "test")
+            evaluate(model, X_train, y_train, [ex[2] for ex in train_ex], "train")
+            test_report = evaluate(model, X_test, y_test, [ex[2] for ex in test_ex], "test")
             model_json = model.to_json(feature_names, representation)
             rotation_fp_pct = rotation_stress_test(model_json, representation)
             print(f"  [rotation stress test] mean false-positive rate during pure "
@@ -397,21 +425,16 @@ def main():
         print(f"\nWARNING: no candidate reached recall >= {MIN_RECALL}; "
               f"falling back to the best test F1 (all candidates are weak).")
         eligible = list(results)
-    handcrafted_eligible = [k for k in eligible if results[k]["representation"] == "handcrafted"]
-    raw_eligible = [k for k in eligible if results[k]["representation"] == "raw_landmarks"]
-    handcrafted_best = (
-        min(handcrafted_eligible, key=lambda k: results[k]["rotation_fp_pct"])
-        if handcrafted_eligible else None
-    )
-    raw_best = min(raw_eligible, key=lambda k: results[k]["rotation_fp_pct"]) if raw_eligible else None
-    if handcrafted_best is None:
-        winner = raw_best
-    elif raw_best is None:
-        winner = handcrafted_best
-    elif results[raw_best]["rotation_fp_pct"] < results[handcrafted_best]["rotation_fp_pct"] - 2.0:
-        winner = raw_best
-    else:
-        winner = handcrafted_best
+    best_overall = min(eligible, key=lambda k: results[k]["rotation_fp_pct"])
+    # Prefer a hand-crafted-family variant over raw_landmarks when close
+    # (within 2 points), per §8's decided default (raw landmarks are more
+    # noise-sensitive on this small dataset).
+    handcrafted_eligible = [k for k in eligible if results[k]["representation"] != "raw_landmarks"]
+    winner = best_overall
+    if results[best_overall]["representation"] == "raw_landmarks" and handcrafted_eligible:
+        hc_best = min(handcrafted_eligible, key=lambda k: results[k]["rotation_fp_pct"])
+        if results[hc_best]["rotation_fp_pct"] <= results[best_overall]["rotation_fp_pct"] + 2.0:
+            winner = hc_best
     win = results[winner]
     print(f"\nWinner: {winner} (rotation_fp={win['rotation_fp_pct']:.1f}%, test_f1={win['test']['f1']:.3f}) "
           f"-- selected by rotation robustness, not aggregate F1 alone")

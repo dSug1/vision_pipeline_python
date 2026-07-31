@@ -574,6 +574,88 @@ sound, the *specific 2 signals chosen* just didn't carry enough exclusive
 information for this problem. Worth revisiting with different/more delta
 signals before concluding the approach itself is wrong (see §8).
 
+### 3.2.4 Follow-up (2026-07-31): more rotation data + a prediction-error feature — real progress, from an unexpected lever
+
+Two follow-ups after §3.2.3's non-fix, both requested directly: (1) record
+more `rotating_no_pinch` data (the cheapest lever per §2, and §3.2.3's own
+"next steps"), (2) check whether literature on brain-inspired intention
+detection suggests a fundamentally different feature, and build it if so.
+
+**Corpus growth**: 4 new `rotating_no_pinch` sessions recorded (9 total, up
+from 5), deliberately varied — slow deliberate rotation, fast rapid
+wrist-twisting, small quick twitches (mimicking incidental fidgeting), and
+rotation while translating the hand through space (not just twisting in
+place). All clean (100% both-hands detected). `RecordSession.py`'s new
+`duration_s` field (added in §3.2.3) confirmed working on these.
+
+**Literature check on "mimicking the brain," done before writing code**:
+found a mechanistically different, well-established computational pattern.
+Neuroscience literature on voluntary-action-onset detection: prediction
+error is described as "a sudden violation of predicted" trajectory, and
+this is literally how the brain is modeled to flag a voluntary movement
+against a backdrop of continuous motion — via **forward models / efference
+copy** (the brain predicts the sensory consequences of ongoing motion; a
+genuine new action produces a prediction-error spike where continuing the
+same motion wouldn't). The computational analog for *observing* motion
+(not just self-generated) is **predictive coding** — literature describes
+biological-motion perception itself as predictive ("self-knowledge is
+utilized to recognize similar motion patterns and predict their
+progress"), and the equivalent engineering pattern is well-established:
+**PredNet**-style next-frame-prediction networks, where "anomaly detection
+is triggered by deviations between actual and predicted behavior," and
+critically, "predictive coding networks using **smaller** neural
+architectures can effectively identify when actual pose deviates from
+predicted pose." This is a different mechanism from §3.2.3's plain
+velocity delta (a first-order "did the value change" signal) — prediction
+error is second-order ("did the *trend* change"), which matters because
+smooth continuous rotation has nonzero velocity throughout but should have
+*near-zero prediction error*, since a simple extrapolation of "keep doing
+what you were doing" tracks it well; a genuine pinch onset breaks from
+whatever trajectory preceded it.
+
+**Built**: `features.py` gained `extract_prediction_error_features()` — a
+pure function over three landmark snapshots (t-2W, t-1W, now), computing a
+constant-velocity extrapolation from the two past points and returning the
+signed residual (actual − predicted) for `pinch_ratio` and
+`curl_worst_deg`. `extract_handcrafted_full_features()` combines static +
+velocity-delta + prediction-error (11 values). `train_pinch_classifier.py`
+was generalized to compare 5 named representations
+(`handcrafted_static`/`velocity`/`prederror`/`full`/`raw_landmarks`) on
+**identical example sets** (all anchored at the same (t-2W, t-1W, now)
+triples), so the comparison isolates which *features* help, not which
+examples got used.
+
+**Result — real progress, but from the data, not (visibly) from the new
+feature**: rotation false-positive rate dropped substantially across
+**every** representation tested, including static-only and plain-velocity
+variants that don't touch prediction-error at all — from the §3.2.3
+baseline of ~22-31% down to 8-17% depending on representation. This
+strongly indicates **the corpus growth (5→9 sessions, deliberately varied
+speed/path) was the dominant driver**, consistent with §2's "more/better
+data" being the default fix, more clearly here than the feature-engineering
+attempt demonstrated. The prediction-error features' own isolated
+contribution is hard to see in this pass: `handcrafted_full` (velocity +
+prederror) got the single best rotation FP among hand-crafted variants for
+logistic regression (9.3%), but at recall 0.230 — too confounded with a
+recall collapse to call it a clean win for the new feature specifically.
+
+**A precision/recall shift surfaced, not yet resolved**: with 9
+`rotating_no_pinch` sessions now in the corpus, every hand-crafted-family
+model's recall dropped below the `MIN_RECALL=0.4` eligibility gate
+(§3.2.3) — only `mlp/raw_landmarks` (recall 0.594, rotation FP 14.7%, F1
+0.654) cleared it, and became the winner. This is a real, measured
+best-yet result (previous best rotation FP was 22.0%), but it means the
+current winner is raw landmarks again, not hand-crafted — **not a reversal
+of §8's literature-grounded default**, just what the eligibility gate found
+this specific run; re-check whenever the corpus changes again, per that
+same section's own rule. The recall collapse across hand-crafted variants
+is itself worth investigating before the next retrain — plausibly the
+growing negative-class volume is shifting the decision boundary more than
+intended, which class-weighting during training (not yet tried) could
+address directly, rather than something to fix by further feature changes.
+
+### Stage 3.3 — Event-detection layer (episodic gestures only)
+
 This is new, added in response to a direct question about whether
 state-of-the-art literature uses time-derivative approaches — it does, but
 as a layer on top of a per-frame classifier, not a replacement for one, and
@@ -1045,36 +1127,34 @@ the same-model-different-platform problem.
   hyperparameters. Not yet re-checked against the current hand-crafted
   winner or the combined corpus — do that before trusting 0.617 as more
   than a single point estimate, same caveat as before.
-- **Top-priority blocker, still open after the §3.2.3 windowed-feature
-  attempt: the base classifier still isn't rotation-robust.** Rotation
-  stress test (mean false-positive rate across all `rotating_no_pinch`
-  sessions) sits at 22.0% for the current best model
-  (`logreg/handcrafted`, windowed) — better than the original 27.2%
-  non-windowed baseline, but not the fix hoped for, and still far from
-  solved. **This blocks reliable event-layer tuning (§3.3.2), which is
-  downstream of it** — don't resume §3.3's threshold sweep until this
-  improves substantially. Concrete next steps, in the order §2's
-  discipline suggests trying them:
-  1. **More rotation-specific training data first** — the cheapest lever,
-     per §2's default fix for a measured misclassification. The existing
-     5 `rotating_no_pinch` sessions may simply not cover enough of the
-     false-positive-prone pose space; record more, varied in speed and
-     rotation path.
-  2. **Try different/more delta signals** before concluding windowing
-     itself doesn't work — §3.2.3 only tried Δ`pinch_ratio` and
-     Δ`curl_worst_deg`, and found via `PART_ONE.md` §7.2's own precedent
-     that a real 3D rotation can move many geometric relationships in a
-     pinch-like direction simultaneously, so these 2 signals may not be
-     exclusive enough. Candidates worth testing: per-finger curl deltas
-     individually (not just the worst), wrist-orientation velocity
-     (would need `world_landmarks`' orthonormal frame, already computed
-     conceptually for rotation, `PART_ONE.md` §2), or a longer/shorter
-     window than the 300ms chosen (that value was picked from pinch
-     *transition* timing, not validated against what best separates
-     rotation from pinch specifically — those may not be the same
-     timescale).
-  3. Only after (1) and (2) are exhausted, reconsider the feature set or
-     model architecture more fundamentally.
+- **Top-priority blocker, real progress but still open (§3.2.4): the base
+  classifier is more rotation-robust but not solved, and a new
+  precision/recall tension appeared.** Rotation stress test (mean
+  false-positive rate across all 9 `rotating_no_pinch` sessions, up from
+  5) sits at 14.7% for the current best model (`mlp/raw_landmarks`) — the
+  best result yet (was 22.0% → 27.2% → original ~27-38%), driven mainly by
+  **corpus growth** (more/varied `rotating_no_pinch` data), not by the
+  prediction-error features tried alongside it (§3.2.4). **This still
+  blocks reliable event-layer tuning (§3.3.2)** — 14.7% is progress, not a
+  green light to resume. Concrete next steps, in priority order:
+  1. **Investigate the recall collapse across hand-crafted variants**
+     (§3.2.4) — every hand-crafted representation dropped below
+     `MIN_RECALL=0.4` this round, leaving raw landmarks as the only
+     eligible winner (in tension with §8's general hand-crafted
+     preference). Try class-weighted training (not yet done) before
+     assuming this means hand-crafted features are now worse in general —
+     it may just mean the growing negative-class volume needs rebalancing
+     during training, a training-procedure fix, not a feature or
+     architecture one.
+  2. **Keep growing `rotating_no_pinch`** — this round's biggest lever by
+     far; no sign yet that it's exhausted.
+  3. **Isolate the prediction-error features' own contribution** — this
+     round's comparison was confounded by simultaneous corpus growth.
+     Worth a controlled re-run (same corpus, features on vs. off) once (1)
+     is addressed, before concluding prediction error either helps or
+     doesn't.
+  4. Only after (1)-(3), reconsider the feature set or model architecture
+     more fundamentally.
 - **`palm_away`-specific finding (§3.3.2)**: `pinch_ratio` barely moves at
   this orientation even during a real pinch (0.43-0.54 vs ~0.16-0.65 at
   `front`), while classifier confidence still tracks correctly — a fixed
@@ -1090,3 +1170,114 @@ the same-model-different-platform problem.
   done per §2/§3's own rule ("not optional polish"). Building it now would
   mean debugging a classifier already known to be rotation-fragile, so
   probably sequenced after the blocker above, not before.
+
+## 9. Continuous improvement playbook (data + retrain only — not a strategy change)
+
+Written 2026-07-31, after three successive retrains (§3.2.1 → §3.2.3 →
+§3.2.4) each measurably moved the rotation false-positive rate (27.2% →
+22.0% → 14.7%) using the *same* pipeline shape — more/better recordings,
+then `train_pinch_classifier.py` re-run unchanged. **This section is that
+loop, formalized**: a repeatable maintenance procedure for whoever picks
+this up next, explicitly scoped to data + retraining only. **It is not
+where feature-set, architecture, or hyperparameter changes belong** — those
+are deliberate backbone decisions, live in §8's open items, and should only
+be reached for once this loop's own diminishing-returns signal (below)
+says so, not swapped in casually mid-loop.
+
+### 9.1 The iteration procedure
+
+1. **Look at the last training run's own diagnostics** — `train_pinch_classifier.py`
+   already prints everything needed: the rotation stress test percentage,
+   and the "misclassified by (class, orientation, hand)" breakdown per
+   representation. Don't guess which cell is weak; read it off the last
+   run's output (or §3.2.1/§3.2.3/§3.2.4's logged tables if picking this up
+   fresh).
+2. **Record 2-4 new sessions targeting the weakest cell(s) specifically**
+   — not a scattershot re-recording of everything. §9.2 below is the
+   current priority order; re-derive it from fresh diagnostics once this
+   round's items are addressed, don't keep using a stale list.
+3. **Re-run `train_pinch_classifier.py` unchanged** — no code edits. It
+   auto-discovers the combined corpus, re-splits at the session level,
+   retrains all representations, and picks a winner via the existing
+   recall-gated rotation-robustness selection (§3.2.3's degenerate-model
+   fix). Don't hand-pick a representation or architecture; let the
+   existing selection logic run, and only override it if it's visibly
+   broken again the way the degenerate-model case was.
+4. **Compare against the previous logged result, and log the new one** —
+   append a new dated entry following §3.2.1/§3.2.3/§3.2.4's pattern
+   (what changed, what the numbers did, one honest sentence on why).
+   Silently overwriting the previous numbers with no record of the delta
+   is explicitly against §3.2.2's rule.
+5. **Check the diminishing-returns signal (§9.3)** before starting another
+   round. If it says stop, stop — move attention to the event layer
+   (§3.3.2) or Stage 4, not another data round for its own sake.
+
+### 9.2 Current priority queue for future recordings (re-derive when stale)
+
+In descending priority as of 2026-07-31 — re-derive from fresh diagnostics
+once these are addressed, this list is a snapshot, not a permanent plan:
+
+1. **More `rotating_no_pinch` variety** — the single biggest lever
+   measured so far (§3.2.4: 5→9 sessions dropped rotation FP by ~7-15
+   points depending on representation, more than any feature change
+   tried). Keep prioritizing *variety* (speed, path, amplitude) over
+   volume of similar-looking sessions — a 10th session that looks like
+   the first nine is worth much less than one covering a genuinely new
+   motion pattern.
+2. **`open_hand_palmup` and `pinch_palmout`** (both Right hand) — flagged
+   since §3.2.1's original near-only run as specifically weak cells; not
+   yet re-confirmed as still-weak now that the corpus and winning
+   representation have both changed since (§8's own note on this).
+3. **`fist_palmout`** — sits at 1 clean recorded rep instead of 2 (Stage 1
+   recording session: 4 straight redo attempts came back with 0 hands
+   detected, camera framing issue at that specific orientation, not
+   pursued further at the time). Low priority (negative class, well
+   covered at every other orientation) but cheap to fix if revisiting
+   camera framing anyway.
+4. **`palm_away` orientation generally**, for whichever gesture is being
+   built — independently flagged twice now as tracking-degraded (§5's
+   original taxonomy note, self-occlusion) and dynamics-different
+   (§3.3.2: `pinch_ratio` barely moves there even during a real pinch).
+   Worth extra recording density here specifically, not just equal
+   coverage with the other 5 orientations.
+
+### 9.3 Diminishing returns — how to tell when more data of the same kind has stopped helping
+
+- **Track the rotation-FP delta per round, not just the absolute number.**
+  Logged so far: 27.2% → 22.0% (round 1, −5.2) → 14.7% (round 2, −7.3).
+  **Rule of thumb: once a round of 4-5 new targeted sessions buys less
+  than ~2-3 points of improvement on the metric it targeted**, that
+  specific data axis (e.g. "more rotation variety") has likely hit
+  diminishing returns — move to a different weak cell (§9.2) rather than
+  recording more of the same kind, or conclude the loop for now.
+- **Seed sensitivity as a second, independent diminishing-returns signal**
+  (§3.2.1's method: retrain the same winning config across ~6 random
+  seeds, look at the test-metric spread). A shrinking spread as the corpus
+  grows means more data is still buying real stability, not just a lucky
+  draw. A spread that stays wide despite several rounds of added data
+  means the bottleneck has likely shifted away from data volume — that's
+  the signal to stop this loop and consider a §8 backbone item instead,
+  not a reason to keep adding data of the same kind.
+- **A concrete "good enough" target, set at the system level, not the
+  classifier alone.** The classifier doesn't need to approach 0%
+  per-frame rotation false-positive rate before the *product* is
+  reliable — the event layer (§3.3, once unblocked) requires **sustained
+  derivative agreement across several consecutive frames**, not a single
+  frame's confidence, before it fires an onset/offset event. A brief 1-2
+  frame false spike at 10-15% per-frame FP is exactly the kind of noise
+  the event layer's window is designed to reject; it doesn't need a
+  perfect base signal to do that. **Working target: base classifier
+  rotation FP below ~10% and recall above ~0.6-0.7** — once both are
+  met, the better use of further effort is very likely resuming
+  event-layer tuning (§3.3.2) rather than continuing to chase base-classifier
+  accuracy in isolation, since at that point the event layer's own
+  multi-frame filtering is doing real, multiplicative work on top of an
+  already-decent signal. This target is a working estimate, not a proven
+  threshold — revise it once the event layer is actually re-tuned against
+  a classifier in this range and its own false-event rate is measured.
+- **What this loop explicitly does not cover**: if diminishing returns are
+  hit and the working target still isn't met, that is the signal to open
+  a §8 backbone item (class-weighted training, isolating the
+  prediction-error features' real contribution, or a more fundamental
+  feature/architecture change) — a deliberate, logged decision, not
+  something to slide into mid-way through a data-recording round.
