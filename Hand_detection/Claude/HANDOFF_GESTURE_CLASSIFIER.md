@@ -6,6 +6,10 @@ then `GESTURE_PIPELINE_SPEC.md` — that document is the living technical
 spec and source of truth for everything below; this file is only an
 orientation pointer plus a prioritized action list.
 
+**Repo state**: working tree clean, everything described below is
+committed (up to and including `ef8da56`, "continue build"). Nothing
+pending to commit at handoff time.
+
 ## 1. Where the project stands
 
 - **Part Zero** (PC, cube follows fingertip) and **Part Zero-bis** (browser
@@ -21,11 +25,13 @@ orientation pointer plus a prioritized action list.
   rotation events down from 16/8 to 6/3) but has **not** yet hit its own
   ~3-onset-per-cycle target — the remaining gap looks structural (one fixed
   threshold can't work at every orientation, `palm_away` specifically) not
-  a classifier-quality problem anymore. Stage 4 (live debug tool) not
-  started. A **forward-looking design note (§10 of the spec)** for a
-  context/prior-weighted layer was written this session, for later — no
-  code yet, deliberately staged until real object-interaction state exists
-  to condition on.
+  a classifier-quality problem anymore. **Stage 4 (live debug tool) is now
+  built** (`LiveGestureDebug.py` + `debug.bat`, this session) but not yet
+  visually validated against a live hand — see §4 item 1 below. A
+  **forward-looking design note (§10, plus §10.1 refinement, of the spec)**
+  for a context/prior-weighted layer was written this session, for later —
+  no code yet, deliberately staged until real object-interaction state
+  exists to condition on.
 
 ## 2. Stage 1 — recording corpus (done, mature)
 
@@ -81,7 +87,23 @@ finger-articulation feature — §3.2.1 through §3.2.10 in the spec.
 
 ## 4. Prioritized next steps (in order)
 
-1. **Event-layer tuning is in progress, not finished** (§3.3.4) — re-tuned
+1. **Validate the new Stage 4 live debug tool against a real hand** —
+   `LiveGestureDebug.py`/`debug.bat` (built this session, in
+   `Local_pc/Movement_with_hand_detection/`) opens the webcam, runs
+   `HandLandmarker`, and overlays live confidence/`pinch_ratio`/event-layer
+   state, console-logging onset/offset transitions. It's been smoke-tested
+   (imports cleanly, model/weights paths resolve, ran the live capture loop
+   for several seconds with no traceback) but **not watched with an actual
+   hand in frame** — that's the one thing this session couldn't do itself,
+   and per the spec's own Stage 4 rule ("not optional polish"), it's what
+   actually validates the live MediaPipe→model data path and the
+   classifier's/event layer's real-world feel, which held-out test data
+   structurally cannot. Run it (`debug.bat`, or `debug.bat <camera_index>`
+   for a non-default camera) and check whether confidence/state track a
+   real pinch the way the recorded metrics (§3.2.10, §3.3.4) suggest — if it
+   reveals a systematic failure mode, that's new information for Stage 1/3.3
+   per §3's own rule, not something to patch around in the live tool.
+2. **Event-layer tuning is in progress, not finished** (§3.3.4) — re-tuned
    against the current classifier, real measured progress (rotation false
    onsets 16→6, offsets 8→3; cycle onset/offset means climbing each round:
    0.79→1.07→1.15 onset, 0.67→0.96→1.00 offset), but still below the
@@ -89,21 +111,42 @@ finger-articulation feature — §3.2.1 through §3.2.10 in the spec.
    onsets/offsets across every single session (already known —
    `pinch_ratio` barely moves there, not fixable by classifier quality).
    The fixed-threshold event layer design is the ceiling now, not the
-   classifier. Next lever: either accept the current numbers and move to
-   Stage 4, or build the orientation-aware prior layer (§10) early to
-   directly address this — a deliberate choice, not a default.
-2. **The context/prior-weighted layer (§10, new, design-only)** — a
+   classifier. Next lever: either accept the current numbers (Stage 4 is
+   now built, so this no longer blocks moving on), or build the
+   orientation-aware prior layer (§10) early to directly address this — a
+   deliberate choice, not a default.
+3. **The context/prior-weighted layer (§10/§10.1, new, design-only)** — a
    product-of-experts fusion of the classifier's output with a
-   context-dependent prior (orientation, grab-state, eventually
-   proximity-to-object), literature-grounded (Bayesian grasp-intent fusion,
-   "Context as Prior," Bayesian HMM gesture priors, reach-to-grasp
-   object-directedness). Explicitly **not implemented** — staged for when
-   the object-control pipeline integration gives real context to condition
-   on. `palm_away`'s event-layer gap is the concrete first use case
-   identified for it.
-3. **Then Stage 4** — the live debug tool. Not built yet; required before
-   pinch counts as "done" per the spec's own rule.
-4. **Lower priority, still open**: `open_hand_palmup` density (§9.2).
+   context-dependent prior (orientation, grab-state, proximity-to-object),
+   literature-grounded (Bayesian grasp-intent fusion, "Context as Prior,"
+   Bayesian HMM gesture priors, reach-to-grasp object-directedness).
+   **§10.1 adds a specific, literature-checked orientation prior**: grip
+   axis (thumb-index line) aligns with an object's *minor* (short) axis,
+   hand orientation with its *major* (long) axis — a biomechanical-
+   stability finding (*J Neurophysiol*, "On the Relation Between Object
+   Shape and Grasping Kinematics"), which for most tabletop objects means
+   grabbing along the long dimension, orthogonal to gravity. Child
+   development literature (rod-orientation studies, Newell 1993) shows this
+   hand-to-object orientation matching is learned from ~5 months and becomes
+   *anticipatory* by 10-12 months. Concrete mechanism proposed: precompute
+   each grabbable object's principal axes, derive an expected pinch
+   orientation from them, and let `P(pinch|context)` measure how closely
+   observed hand orientation matches that *object-specific* expectation —
+   not a flat 6-orientation lookup table. Explicitly **not implemented** —
+   staged for when the object-control pipeline integration gives real
+   object geometry/positions to condition on. `palm_away`'s event-layer gap
+   is the concrete first use case identified for the base layer.
+4. **A literature scan of event-layer alternatives (§11, new, not
+   implemented)** — done proactively (2026-07-31) in response to a direct
+   ask, logging CUSUM/Page-Hinkley online change-point detection,
+   Caramiaux et al.'s particle-filter-based adaptive gesture tracking, and
+   rolling-baseline thresholding as options for the `palm_away` ceiling
+   beyond §10's context/prior layer. **Notably, the change-point option
+   doesn't need real object context and so is buildable independently of
+   §10** — but per explicit direction the same day, none of this is being
+   built now either: object-scene integration is still too early, and focus
+   is moving to the next gesture(s) instead. Revisit §10/§11 together later.
+5. **Lower priority, still open**: `open_hand_palmup` density (§9.2).
 
 ## 5. Environment notes
 
@@ -124,7 +167,9 @@ finger-articulation feature — §3.2.1 through §3.2.10 in the spec.
   now supports windowed representations via an explicit
   `WINDOWED_REPRESENTATIONS` set, not just static ones), `train_set_
   ablation.py` (learning-curve ablation, §3.2.8), `sweep_prediction_error_
-  window.py` (§3.2.6, superseded finding but kept).
+  window.py` (§3.2.6, superseded finding but kept), `LiveGestureDebug.py` +
+  `debug.bat` (Stage 4, new this session — live webcam confidence/event-state
+  overlay, not yet visually validated, see §4 item 1).
 - Trained weights: `Resources/pinch_classifier_weights.json` — currently
   `raw_plus_handcrafted_plus_articulation`, 72 input dims, `hidden_units=24`
   (1,825 params) — always regenerated by retraining, never hand-edited.

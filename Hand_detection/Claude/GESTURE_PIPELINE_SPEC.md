@@ -1383,6 +1383,28 @@ the same fixed-constant design.
   output.** This is §2's discipline, operationalized at the exact point
   where the temptation to patch instead of retrain is strongest.
 
+**Built (2026-07-31)**: `LiveGestureDebug.py` (+ `debug.bat`), in
+`Local_pc/Movement_with_hand_detection/`. Webcam → `HandLandmarker` (VIDEO
+mode, same DSHOW-backend convention as `RecordSession.py`/
+`VisionPipeline.py`) → loads `Resources/pinch_classifier_weights.json` →
+per-hand forward pass → live overlay of continuous confidence, `pinch_ratio`,
+and `PinchEventTracker` state, with onset/offset events console-logged on
+transition only. Handles the current windowed winner
+(`raw_plus_handcrafted_plus_articulation`) via a real wall-clock (not
+frame-count) delta lookup — a small rolling per-hand history buffer finds
+the frame closest to `now - DELTA_WINDOW_MS`, which is more robust to a live
+capture rate that isn't exactly the 30fps the training/tuning scripts
+estimate from recorded-session duration, and doesn't need a live fps
+estimate at all. Falls back to `classifier.predict_from_landmarks` for any
+future static-representation winner, same as `tune_event_layer.py`'s
+dispatch. Smoke-tested (imports, model/weights paths resolve, runs the live
+capture loop for several seconds with no traceback) but **not yet visually
+validated against a live hand** — that human-in-the-loop check (does it
+feel right, does confidence/state track a real pinch the way the recorded
+metrics suggest) is the one thing this session couldn't do and is the
+immediate next step for whoever picks this up, per this section's own "not
+optional polish" rule.
+
 ## 4. What's reusable from the old attempt, and what was deleted
 
 **Kept:**
@@ -2008,3 +2030,53 @@ point real interaction-state and object-position signals exist to condition
 on — building this against synthetic/assumed context now would violate the
 same "measured, not guessed" discipline that's governed every other
 decision in this document.
+
+## 11. Literature scan (2026-07-31): alternatives to a single fixed event-layer threshold
+
+Written in direct response to a request to search proactively — not after
+being pointed at a specific idea (see the `feedback_proactive_literature_
+search` memory) — for approaches to the event layer's `palm_away` ceiling
+(§3.3.4) beyond §10's context/prior layer. **Not implemented, per explicit
+direction the same day**: object-scene integration is still too early, and
+near-term effort is moving to the next gesture(s) in Part One's matrix
+instead. Logged here purely so the option is on record when event-layer
+work is picked up again.
+
+- **CUSUM / Page-Hinkley online change-point detection** (classical
+  sequential-analysis/statistical-process-control tests). Both accumulate a
+  signal's deviation from its own recent running mean and fire when that
+  cumulative sum crosses a bound, rather than comparing the raw signal to
+  one fixed magnitude threshold — lightweight, single-pass, designed for
+  exactly this streaming/real-time setting. **Directly relevant to
+  `palm_away`**: since `pinch_ratio`'s own baseline differs by orientation
+  (§3.3.2/§3.3.4's finding, not new here), a change-point test keyed to each
+  hand's own recent trajectory would not need a separate hand-picked
+  constant per orientation the way the current derivative-agreement design
+  does. This is a structurally different route to the same "adapts per
+  orientation" goal §10's prior layer targets — and notably **doesn't
+  require real object context to condition on**, only the signal's own
+  recent history, so it's buildable independently of the object-pipeline
+  integration §10 is staged behind. Logged as an option, not started, per
+  the direction above.
+- **Caramiaux, Montecchio, Tanaka & Bevilacqua, "Adaptive Gesture
+  Recognition with Variation Estimation for Interactive Systems"** (*ACM
+  Transactions on Interactive Intelligent Systems*, 2014) — a template-based
+  recognizer using Sequential Monte Carlo (particle-filter) inference that
+  continuously tracks a gesture's progress and variation in real time,
+  rather than firing a boolean at a threshold crossing. A genuinely
+  different paradigm from this project's onset/apex/offset state machine —
+  continuous probabilistic progress-tracking instead of discrete event
+  detection — evidence that "adaptive, continuously re-estimated"
+  recognition is an established alternative design point in this
+  literature, not a novel idea being reached for.
+- **Rolling-baseline/adaptive thresholding** (applied signal-processing
+  practice and gesture-input patents: periodically recomputing a threshold
+  from a window of the signal's own recent range/SNR, rather than a fixed
+  constant). The cheapest version of the same idea, and the lowest-effort
+  next experiment if this line is picked up before reaching for CUSUM/
+  Page-Hinkley's more principled but heavier machinery.
+
+**Status**: all three are options for a future session, not this one —
+current priority is the next gesture(s), per direction, with §10 and this
+section both left as staged, literature-grounded starting points for
+whenever event-layer work resumes.
