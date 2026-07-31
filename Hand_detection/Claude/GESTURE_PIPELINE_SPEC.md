@@ -1043,6 +1043,76 @@ blocker is now lifted. Re-running `tune_event_layer.py` against this
 classifier (not the older, worse one §3.3.2 tested against) is the
 natural next step, not further base-classifier work.
 
+### 3.2.10/3.3.3 Follow-up (2026-07-31): finger-articulation features — a decisive win, both target axes improve together again
+
+Triggered directly by a question during event-layer re-tuning: nothing in
+this project's feature set explicitly measures whether fingers move
+*together* (rigid whole-hand motion, e.g. rotation) or *independently*
+(a genuine pinch, where thumb+index move while the other three stay
+relatively still). Two independent literatures were searched and found to
+converge on this being the right signal, **before** building anything —
+computer-vision **rigid-vs-articulated motion segmentation** (points on a
+rigid body share one low-dimensional motion pattern; independently-moving
+parts deviate from it — "A General Framework for Motion Segmentation:
+Independent, Articulated, Rigid, Non-rigid, Degenerate and Non-degenerate,"
+Yan & Pollefeys) and hand-biomechanics **postural-synergy** research (finger
+joints move together during grasping in patterns distinguishable from
+whole-hand/wrist movement via correlation analysis; wrist-hand coordination
+is measurably lower than within-hand coordination — Analysis of Hand and
+Wrist Postural Synergies in Tolerance Grasping, PMC5007036).
+
+**Built**: `features.py::extract_finger_articulation_features()`. Uses the
+5 MCP knuckles (already this project's `hand_size_ref` anchor) as a proxy
+for the hand's *rigid* motion — they move together under any whole-hand
+translation/rotation, since the palm itself doesn't independently deform.
+Each fingertip's displacement is then measured *relative to* that rigid
+reference (mean MCP displacement subtracted out): near zero if a finger is
+just along for the ride, large if it's independently articulating. Two
+features: `thumb_index_articulation`, `other_fingers_articulation`. Added
+on top of the current winner as `raw_plus_handcrafted_plus_articulation`
+(72 dims) — deliberately tested against the practically-relevant baseline,
+not in isolation.
+
+**Result: every metric that matters moved together, again** —
+
+| Model | Rotation FP | Recall | F1 | Precision |
+|---|---|---|---|---|
+| §3.2.9 winner: `mlp/raw_plus_handcrafted` | 5.5% | 0.724 | 0.748 | 0.773 |
+| **New winner: `mlp/raw_plus_handcrafted_plus_articulation`** | **2.7%** | **0.739** | 0.679 | 0.628 |
+
+Rotation FP more than halved (5.5%→2.7% — the best result across the
+project's entire history by a wide margin) **and** recall improved
+(0.724→0.739) **simultaneously** — the model became both more willing to
+say "pinch" and dramatically less confused by rotation at the same time,
+exactly the two-independent-literatures hypothesis's predicted effect (not
+a coincidence this feature happened to help — it's the first time in this
+project's history a change improved rotation-robustness by giving the
+model new *discriminating* information, rather than by shifting a decision
+threshold, which is what every previous rotation-FP-improving lever
+—class weighting §3.2.5, held-state data growth §3.2.8—was actually doing
+under the hood). F1 dropped slightly (0.748→0.679, precision 0.773→0.628)
+— a real, honestly-reported cost, but on the two axes this project has been
+tracking as the working target (§9.3: rotation FP, recall), this is an
+unambiguous improvement, not a trade-off.
+
+**Also fixed along the way**: `Resources/classifier.py::predict_from_
+landmarks()` only supported the original two static representations
+(`handcrafted`, raw) — a real integration gap, caught exactly the way §7.1
+warned it would be (live/tuning code paths not exercised by the training
+loop's own test-set evaluation). Extended to cover every static
+representation this project has actually shipped a winner from
+(`raw_plus_handcrafted` too). `tune_event_layer.py`'s `hand_sequence()` was
+separately extended to support *windowed* representations (needed for
+`raw_plus_handcrafted_plus_articulation`, which requires a past+now
+landmark pair) — using the same fps-derived `window_frames` scheme
+`train_pinch_classifier.py` trains against, so live/tuning behavior
+actually matches what the model was evaluated on.
+
+**Exported**: `Resources/pinch_classifier_weights.json` now holds
+`mlp/raw_plus_handcrafted_plus_articulation` (72 input dims,
+`hidden_units=24`, 72×24+24+24+1 = 1,825 params — still well inside the
+JS-portability budget).
+
 ### Stage 3.3 — Event-detection layer (episodic gestures only)
 
 This is new, added in response to a direct question about whether
@@ -1219,6 +1289,74 @@ anticipate... never a reason to add a rule on top of the... output").
 mechanics are sound and reusable), but no threshold values from this pass
 are treated as final — re-run `tune_event_layer.py` once the base
 classifier's rotation-robustness improves, not before.
+
+### 3.3.4 Re-tuned against the improved classifier (2026-07-31): real progress, but a fixed-threshold ceiling — and the connection to a future context/prior layer
+
+Direct follow-up once §3.2.9/§3.2.10 lifted the base-classifier blocker.
+Fixed a real integration gap first: `tune_event_layer.py` called the
+single-snapshot `classifier.predict_from_landmarks`, which didn't support
+either of this session's newer representations (`raw_plus_handcrafted`,
+then the windowed `raw_plus_handcrafted_plus_articulation`) — extended
+`predict_from_landmarks` for static representations and added a windowed
+path to `tune_event_layer.py`'s `hand_sequence()`, using the same
+fps-derived `window_frames` scheme `train_pinch_classifier.py` trains
+against (§3.3.3).
+
+Also recorded a fresh `pinch_cycles`/`pinch_rotate_release` set at the
+medium distance (10 of 12 orientations clean — `pinch_cycles_palmout`
+failed both-hands detection again at this distance after 2 attempts,
+accepted per the same precedent as the held-state gap, §3.2.8) — the
+original data only covered near/far, never the distance the classifier now
+performs best at.
+
+**Three re-tunes, tracking each classifier improvement**:
+
+| Classifier | Cycle onset mean | Cycle offset mean | Rotation false onsets/offsets |
+|---|---|---|---|
+| §3.3.2 (original, blocked) | not measurable at any threshold | — | 34-46 (loosest tested) |
+| §3.2.9 winner (`raw_plus_handcrafted`, near+far cycles only) | 0.79 | 0.67 | 16 / 8 |
+| + medium-distance cycles added | 1.07 | 0.96 | 16 / 8 (unchanged, same classifier) |
+| §3.2.10 winner (`+articulation`) | **1.15** | **1.00** | **6 / 3** |
+
+Real, consistent progress — false events dropped in near-lockstep with the
+classifier's own rotation-FP improvement (5.5%→2.7%), confirming the event
+layer's remaining error is now downstream of, not independent from, base
+classifier quality. **But detection is still well below the ~3-per-session
+target** (target: matching the "repeated ~3 times" recording protocol).
+
+**Root cause of the remaining gap, checked directly**: per-session
+breakdown shows `palm_away` at **zero onsets/offsets across every single
+session, both hands, no exceptions** — not new, this is exactly §3.3.2's
+already-documented finding (`pinch_ratio` barely moves at that
+orientation) reproduced with the better classifier, confirming it's a
+structural property of the ratio-fall trigger at that orientation, not a
+classifier-quality artifact that better training fixes. Elsewhere,
+detection is inconsistent but not zero (several `front`/`palmdown`/
+`palmout` cells already hit or exceed 3). **This points at the event
+layer's single fixed threshold set, applied uniformly across all 6
+orientations, as the actual remaining ceiling** — not further
+classifier-quality work, and not (per §2's discipline) a special-cased
+"palm_away exception" bolted onto the derivative-agreement check.
+
+**This is the concrete, immediate use case for the context/prior-weighted
+layer proposed the same session** (see the forward-looking design note,
+§10, if written by the time this is read): an orientation-conditioned
+prior/threshold — instead of one global `onset_ratio_fall` constant — is a
+principled, literature-grounded way to let `palm_away` (and any other
+orientation-specific dynamics) use a different effective trigger without
+writing a per-orientation if/else into `event_layer.py`. Not implemented
+this session (deliberately staged for when the pipeline integrates with
+the actual object-control game, per the user's framing), but the tuning
+data collected here (per-orientation onset/offset counts, per-orientation
+`pinch_ratio` dynamics) is exactly what would be needed to estimate that
+prior empirically rather than guess it.
+
+**Not yet fully resolved — an honest open item, not a finished Stage 3.3**:
+event-layer tuning is closer than it's ever been (best-yet numbers on every
+tracked metric) but hasn't hit the ~3-per-cycle target. Whoever picks this
+up next should treat "orientation-aware thresholds" (via the prior layer,
+once built) as the next lever, not another blind threshold re-sweep over
+the same fixed-constant design.
 
 ### Stage 4 — Live debug/run tool
 
@@ -1712,3 +1850,161 @@ once these are addressed, this list is a snapshot, not a permanent plan:
   prediction-error features' real contribution, or a more fundamental
   feature/architecture change) — a deliberate, logged decision, not
   something to slide into mid-way through a data-recording round.
+
+## 10. Future design note (not yet implemented): a context/prior-weighted layer for object-pipeline integration
+
+Written 2026-07-31, in response to a direct question about the eventual
+integration point: once the gesture pipeline is wired into the actual
+object-control game (Specification.md's broader architecture), the
+classifier and event layer stop operating in a context vacuum — some
+things become much more or less likely given what's actually happening in
+the interaction (a pinch onset is far more likely at `front`, the natural
+reach-to-grasp posture, than at `palm_out`; a rotation-shaped signal is
+essentially never a genuine grab attempt if nothing is currently held,
+since there's no reason to rotate before grabbing). **This section is a
+design proposal for later, not code written this session** — deliberately
+staged for when real object positions/interaction state exist to condition
+on, per the discipline that follows.
+
+**Literature check, done before proposing anything (§2's discipline
+applied to a not-yet-built layer, same as every feature built this
+session)**: two independent bodies of work converge on the same pattern.
+Bayesian evidence-fusion frameworks for grasp-intent inference (prosthetics
+/HRI: a vision-based grasp-probability classifier fused with an independent
+signal via explicit Bayesian combination) establish the precedent that a
+trained classifier's output is one likelihood term to combine, not
+necessarily the final answer. "Context as Prior" work formalizes context as
+a prior-like feasibility constraint P(y|c) — their own example
+(P(EXIT|near_door) high, P(FOOD|near_door) negligible) is structurally
+identical to this project's P(pinch|front) high, P(pinch|palm_out) low —
+combined with the classifier's evidence via **prior-guided
+product-of-experts fusion**, with a tunable parameter controlling how much
+weight the prior gets, not a hard override. Bayesian HMMs in gesture
+recognition already incorporate prior probability distributions over
+gesture states, the same mechanism the "gesture spotting" garbage-model
+literature (§3.3.3's search) uses, extended here to make the prior
+context-dependent. Reach-to-grasp is independently well-established in
+psychology/neuroscience/robotics literature as an object-directed,
+two-phase movement — supporting that hand orientation *relative to a
+target object* (not orientation in isolation) becomes a legitimate,
+literature-grounded signal once real object positions exist to condition
+on, not a guessed heuristic.
+
+**Proposed mechanism**: a prior-weighted fusion layer between Stage 3 (base
+classifier) and Stage 3.3 (event layer), not a hard gate:
+
+```
+posterior_logit = logit(classifier_confidence) + β × log( P(pinch | context) / P(not_pinch | context) )
+```
+
+— a product-of-experts in probability space, log-odds addition in
+practice: trivial arithmetic, no new dependency, stays inside
+Specification.md §7.1/§7.3's portability budget the same way every other
+feature in this pipeline does. `β` (prior strength) is the load-bearing
+parameter: β→0 recovers today's classifier-only behavior; a hard veto
+(β→∞, or a literal `if orientation == "palm_out": return False`) would be
+exactly the kind of special-case §2's "no heuristic pile-up" rule rejects
+— it would break the rare-but-real case of someone grabbing at an unusual
+angle. Keeping `β` small and tunable (or eventually learned/estimated, not
+hand-picked) keeps the classifier as the primary evidence source and
+context as a nudge, auditable rather than hard-coded.
+
+**Concrete context signals available once integrated**:
+- **Orientation prior** `P(pinch onset | orientation)` — estimable
+  directly from this project's own `pinch_cycles` corpus (which
+  orientations onset events actually occurred at during this session's
+  event-layer tuning, §3.3.4), not guessed from first principles alone.
+- **Grab-state prior** — this project's existing idle→hover→grabbed→
+  released state machine (`PART_ONE.md` §2/Specification.md's interaction
+  matrix) already has exactly the state notion needed: while nothing is
+  held, a rotation-shaped signal's prior should be strongly suppressed
+  (matches §3.3.2/§3.3.4's own rotation-false-positive history directly);
+  once holding, the offset prior changes shape entirely — the same
+  onset/offset asymmetry §3.3.1 already found from prehension-kinematics
+  literature, made explicit and probabilistic instead of two independently
+  fit-but-still-fixed threshold sets.
+- **Proximity/orientation-to-object prior** — once real object positions
+  exist in the game, reach-to-grasp's established object-directedness
+  means a pinch performed near a grabbable object is intrinsically more
+  likely to be genuine intent than the same gesture performed nowhere near
+  anything. §10.1 below refines this from "near an object" to a specific,
+  literature-grounded predicted orientation, not just proximity.
+
+### 10.1 A more specific orientation prior: grasp axis vs. object geometry and gravity
+
+The orientation prior above was framed as a flat lookup over this
+project's 6 recorded canonical orientations. A more principled version —
+asked for directly, and checked against literature rather than assumed —
+is that grasp orientation isn't really about the hand's orientation in
+isolation; it's about the hand's orientation *relative to the geometry of
+the object being grabbed*, and this relationship is well-studied in both
+adult biomechanics and child motor development.
+
+**Adult biomechanics — grip axis aligns with the object's minor axis, not
+the major one.** "On the Relation Between Object Shape and Grasping
+Kinematics" (*Journal of Neurophysiology*) found that when grasping
+elongated (non-circular) objects, final hand orientation at contact closely
+matches one of the object's principal axes — and specifically, subjects
+chose the grip axis (the thumb-index contact line) along the object's
+**minor (short) axis in 68% of trials**, not the major one. This isn't an
+arbitrary preference: it's a biomechanical-stability result — gripping
+along the minor axis is the only orientation where the fingers' surface
+normals align with the grip direction; any other angle lets the object
+slip along the surface in the short-axis direction. Translated to this
+project's terms: for an elongated grabbable object, the **pinch grip axis
+(thumb-index line) should align with the object's short dimension, and the
+hand's overall orientation/approach with the object's long dimension** —
+the opposite pairing from what "grab along the long dimension" might
+naively suggest, though it amounts to the same geometric picture the user
+described (hand oriented along the object's longest extent, fingers
+closing across the short one).
+
+**Child motor development — this orientation-matching is learned early,
+and becomes anticipatory, not just reactive.** Studies presenting infants
+with horizontal/vertical rods found hand-orientation adjustment to object
+orientation present from as early as ~5 months, improving through the
+first year; by 10-12 months, infants show **anticipatory** (pre-contact)
+orientation matching, not just haptic correction after contact — precisely
+the "how a small child learns to orient their hand before grabbing a
+Lego brick" mechanism asked about. Newell's (1993) developmental framework
+for infant reach/grasp coordination explicitly includes **the direction of
+gravity as a physical task constraint** alongside object size/shape, not a
+detail specific to this project's use case — it's a standard variable in
+that literature.
+
+**Why "orthogonal to gravity" follows, not just object shape alone**: most
+grabbable objects rest on a surface and are manipulated from above or the
+side, so their long axis is typically horizontal — orthogonal to gravity —
+by default, unless the object or scene deliberately breaks that assumption
+(e.g. a tall, upright object). This isn't a separate mechanism from the
+grasp-axis-alignment finding above; it's the default *value* that finding
+takes for most objects in a typical tabletop/game layout — "grab along the
+object's longest dimension, orthogonal to gravity" is the practically
+correct summary even though the more precise biomechanical claim is that
+the *grip axis* is perpendicular to that long dimension.
+
+**Concretely, once integrated**: for each grabbable object, precompute its
+principal axes (bounding-box or PCA over its mesh) and derive an *expected*
+pinch orientation — the hand orientation whose grip axis would run
+perpendicular to the object's longest dimension in the plane orthogonal to
+gravity. The `P(pinch | context)` term in §10's product-of-experts formula
+becomes a function of how closely the *observed* hand orientation matches
+that *object-specific expected* orientation, rather than a fixed lookup
+table over 6 recorded labels — a genuinely predictive prior, not just a
+descriptive one, and the natural refinement of the orientation-prior bullet
+above once real object geometry exists to condition on.
+
+**Immediate, already-identified use case (§3.3.4)**: `palm_away`'s
+structural zero-detection problem (pinch_ratio barely moves there, a
+geometry fact no amount of classifier improvement fixes) is the first
+concrete thing an orientation-conditioned prior/threshold would address —
+letting that orientation use a different effective trigger without writing
+a per-orientation special case into `event_layer.py`'s derivative-agreement
+logic.
+
+**Explicitly not started**: no code for this layer exists yet. Revisit
+when the object-control integration is actually being built, at which
+point real interaction-state and object-position signals exist to condition
+on — building this against synthetic/assumed context now would violate the
+same "measured, not guessed" discipline that's governed every other
+decision in this document.

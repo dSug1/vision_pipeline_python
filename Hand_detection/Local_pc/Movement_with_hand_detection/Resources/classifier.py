@@ -37,9 +37,18 @@ def predict_from_features(model, feature_vector):
 def predict_from_landmarks(model, landmarks, handedness=None):
     """landmarks: world_landmarks, this module's {"x","y","z"} dict shape
     (features.to_dict_landmarks() first if converting from a live
-    MediaPipe result)."""
-    if model["representation"] == "handcrafted":
+    MediaPipe result). Covers every static (non-windowed) representation
+    train_pinch_classifier.py can export -- windowed/delta/prediction-error
+    representations need the caller's own rolling buffer (see
+    tune_event_layer.py's hand_sequence for the single-snapshot case this
+    function handles) and aren't dispatched here."""
+    representation = model["representation"]
+    if representation == "handcrafted" or representation == "handcrafted_static":
         x = features.extract_handcrafted_features(landmarks)
-    else:
+    elif representation == "raw_plus_handcrafted":
+        x = features.extract_raw_plus_handcrafted_features(landmarks, handedness=handedness)
+    elif representation == "raw_landmarks":
         x = features.extract_raw_features(landmarks, handedness=handedness)
+    else:
+        raise ValueError(f"predict_from_landmarks: unsupported static representation {representation!r}")
     return predict_from_features(model, x)

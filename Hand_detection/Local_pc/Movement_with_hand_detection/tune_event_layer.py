@@ -5,6 +5,7 @@ import os
 import numpy as np
 
 from Resources import classifier, event_layer, features
+from train_pinch_classifier import hand_landmark_sequence, session_duration_s
 
 # Stage 3.3 of Claude/GESTURE_PIPELINE_SPEC.md: tune the onset/offset
 # event-detection layer against the pinch_cycles (+ pinch_rotate_release)
@@ -17,19 +18,49 @@ WEIGHTS_PATH = os.path.join(
 )
 MODEL = classifier.load(WEIGHTS_PATH)
 
+# Windowed representations (need a past + now landmark pair, per the same
+# fps-derived window_frames math train_pinch_classifier.py uses) vs. static
+# ones (single snapshot, classifier.predict_from_landmarks handles them
+# directly). Kept as an explicit set rather than a static/windowed flag on
+# the model JSON itself -- cheap to extend when a new representation is
+# added, and fails loudly (KeyError-free explicit branch) instead of
+# silently mis-predicting if a representation is missing from both paths.
+WINDOWED_REPRESENTATIONS = {"raw_plus_handcrafted_plus_articulation"}
+
 
 def hand_sequence(path, handedness):
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
+    representation = MODEL["representation"]
+    if representation not in WINDOWED_REPRESENTATIONS:
+        seq = []
+        for frame in data["frames"]:
+            for hand in frame["hands"]:
+                if hand["handedness"] == handedness:
+                    lm = hand["world_landmarks"]
+                    conf = classifier.predict_from_landmarks(MODEL, lm, handedness=handedness)
+                    ratio = features.pinch_ratio(lm)
+                    seq.append((conf, ratio))
+                    break
+        return seq
+
+    # Windowed path: same (fps-derived window_frames, warm-up skip) scheme
+    # as train_pinch_classifier.sessions_to_windowed_examples, so live/tuning
+    # behavior matches what the model was actually trained and evaluated on.
+    lm_seq = hand_landmark_sequence(data, handedness)
+    if len(lm_seq) < 2:
+        return []
+    duration_s = session_duration_s(data)
+    fps = len(lm_seq) / duration_s
+    window_frames = max(1, round(fps * features.DELTA_WINDOW_MS / 1000))
     seq = []
-    for frame in data["frames"]:
-        for hand in frame["hands"]:
-            if hand["handedness"] == handedness:
-                lm = hand["world_landmarks"]
-                conf = classifier.predict_from_landmarks(MODEL, lm, handedness=handedness)
-                ratio = features.pinch_ratio(lm)
-                seq.append((conf, ratio))
-                break
+    for i in range(window_frames, len(lm_seq)):
+        now, past = lm_seq[i], lm_seq[i - window_frames]
+        if representation == "raw_plus_handcrafted_plus_articulation":
+            x = features.extract_raw_plus_handcrafted_plus_articulation_features(past, now, handedness=handedness)
+        conf = classifier.predict_from_features(MODEL, x)
+        ratio = features.pinch_ratio(now)
+        seq.append((conf, ratio))
     return seq
 
 

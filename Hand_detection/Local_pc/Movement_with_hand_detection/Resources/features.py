@@ -277,3 +277,65 @@ def extract_raw_plus_handcrafted_features(landmarks, handedness=None):
 RAW_PLUS_HANDCRAFTED_FEATURE_NAMES = (
     [f"lm{i}_{axis}" for i in range(21) for axis in ("x", "y", "z")] + HANDCRAFTED_FEATURE_NAMES
 )
+
+
+# Finger-articulation features (2026-07-31, GESTURE_PIPELINE_SPEC.md
+# §3.3.3): none of this project's features so far explicitly measure
+# whether fingers move TOGETHER (rigid whole-hand motion -- rotation) or
+# INDEPENDENTLY (one finger articulating relative to the rest -- a genuine
+# pinch). Two independent literatures converge on this being the right
+# signal: computer-vision rigid-vs-articulated motion segmentation (points
+# on a rigid body share one low-dimensional motion pattern; independently
+# moving parts deviate from it) and hand biomechanics postural-synergy
+# research (finger joints move together during grasping in patterns
+# distinguishable from whole-hand/wrist movement via correlation analysis,
+# with wrist-hand coordination measurably lower than within-hand
+# coordination). The 5 MCP knuckles (already this project's `hand_size_ref`
+# anchor) are used as a proxy for the hand's RIGID motion -- they move
+# together under any whole-hand translation/rotation, since the palm itself
+# doesn't independently deform. Each fingertip's displacement is then
+# measured RELATIVE to that rigid reference: near zero if the finger is
+# just along for the ride (rotation), large if it's independently
+# articulating (a real pinch/curl) -- directly operationalizing "common
+# fate" instead of assuming it.
+MCP_JOINTS = [THUMB_MCP, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP]
+FINGERTIPS = [THUMB_TIP, INDEX_TIP, MIDDLE_TIP, RING_TIP, PINKY_TIP]
+FINGER_ARTICULATION_FEATURE_NAMES = ["thumb_index_articulation", "other_fingers_articulation"]
+
+
+def extract_finger_articulation_features(landmarks_past, landmarks_now):
+    """2 features: how much the thumb+index tips move relative to the
+    hand's rigid (MCP-based) motion, and how much the other three fingers
+    do. A genuine pinch onset should show HIGH thumb_index_articulation
+    (independent closing motion) and LOW other_fingers_articulation
+    (those fingers stay relatively still, just riding along with whatever
+    rigid motion exists). Pure rotation should show both LOW -- every
+    fingertip's motion is explained by the same rigid reference, since nothing
+    is independently articulating."""
+    size_ref = hand_size_ref(landmarks_now)
+    if size_ref == 0:
+        size_ref = 1.0
+    mcp_displacements = [_vec(landmarks_past[j], landmarks_now[j]) for j in MCP_JOINTS]
+    rigid = tuple(sum(d[axis] for d in mcp_displacements) / len(mcp_displacements) for axis in range(3))
+    residuals = []
+    for tip in FINGERTIPS:
+        d = _vec(landmarks_past[tip], landmarks_now[tip])
+        relative_to_rigid = (d[0] - rigid[0], d[1] - rigid[1], d[2] - rigid[2])
+        residuals.append(_norm(relative_to_rigid) / size_ref)
+    thumb_index_articulation = (residuals[0] + residuals[1]) / 2
+    other_fingers_articulation = (residuals[2] + residuals[3] + residuals[4]) / 3
+    return [thumb_index_articulation, other_fingers_articulation]
+
+
+RAW_PLUS_HANDCRAFTED_PLUS_ARTICULATION_FEATURE_NAMES = (
+    RAW_PLUS_HANDCRAFTED_FEATURE_NAMES + FINGER_ARTICULATION_FEATURE_NAMES
+)
+
+
+def extract_raw_plus_handcrafted_plus_articulation_features(landmarks_past, landmarks_now, handedness=None):
+    """70-dim raw_plus_handcrafted (static, at `now`) + 2 finger-
+    articulation features (need both `now` and `past`) -> 72 values."""
+    return (
+        extract_raw_plus_handcrafted_features(landmarks_now, handedness)
+        + extract_finger_articulation_features(landmarks_past, landmarks_now)
+    )

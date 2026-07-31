@@ -127,8 +127,16 @@ def hand_landmark_sequence(data, handedness):
 # features generalize better across camera distance (§3.2.1). Concatenating
 # both, rather than picking one, has direct literature precedent (see
 # features.extract_raw_plus_handcrafted_features's docstring).
+#
+# raw_plus_handcrafted_plus_articulation added 2026-07-31 (§3.3.3): adds
+# features.extract_finger_articulation_features -- whether fingers move
+# TOGETHER (rigid whole-hand motion) or INDEPENDENTLY (a real pinch),
+# grounded in rigid-vs-articulated motion segmentation (CV) and hand
+# postural-synergy (biomechanics) literature. Tested on top of the current
+# winner, not in isolation, since that's the practically relevant question.
 REPRESENTATIONS = ["handcrafted_static", "handcrafted_velocity", "handcrafted_prederror",
-                    "handcrafted_full", "raw_landmarks", "raw_plus_handcrafted"]
+                    "handcrafted_full", "raw_landmarks", "raw_plus_handcrafted",
+                    "raw_plus_handcrafted_plus_articulation"]
 
 
 def sessions_to_windowed_examples(session_list):
@@ -163,6 +171,8 @@ def sessions_to_windowed_examples(session_list):
                     "handcrafted_full": features.extract_handcrafted_full_features(t2, t1, now),
                     "raw_landmarks": features.extract_raw_windowed_features(now, t1, handedness=handedness),
                     "raw_plus_handcrafted": features.extract_raw_plus_handcrafted_features(now, handedness=handedness),
+                    "raw_plus_handcrafted_plus_articulation":
+                        features.extract_raw_plus_handcrafted_plus_articulation_features(t1, now, handedness=handedness),
                 }
                 examples.append((feats, y, {
                     "base_class": base_class, "orientation": orientation,
@@ -322,6 +332,8 @@ def _extract_by_representation(representation, t2, t1, now, handedness):
         return features.extract_raw_windowed_features(now, t1, handedness=handedness)
     if representation == "raw_plus_handcrafted":
         return features.extract_raw_plus_handcrafted_features(now, handedness=handedness)
+    if representation == "raw_plus_handcrafted_plus_articulation":
+        return features.extract_raw_plus_handcrafted_plus_articulation_features(t1, now, handedness=handedness)
     raise ValueError(representation)
 
 
@@ -400,6 +412,7 @@ def main():
         "handcrafted_full": features.HANDCRAFTED_FULL_FEATURE_NAMES,
         "raw_landmarks": [f"lm{i}_{axis}" for i in range(21) for axis in ("x", "y", "z")] + features.DELTA_FEATURE_NAMES,
         "raw_plus_handcrafted": features.RAW_PLUS_HANDCRAFTED_FEATURE_NAMES,
+        "raw_plus_handcrafted_plus_articulation": features.RAW_PLUS_HANDCRAFTED_PLUS_ARTICULATION_FEATURE_NAMES,
     }
 
     results = {}
