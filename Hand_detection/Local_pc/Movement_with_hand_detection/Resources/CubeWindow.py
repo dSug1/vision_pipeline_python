@@ -18,13 +18,13 @@ SNAP_BORDER_COLOR = (255, 255, 255)
 SNAP_BORDER_WIDTH = 3
 CUBE_EDGE_COLOR = (20, 20, 20)  # normal (unsnapped) face-outline color
 
-# Real 3D cube rendering (2026-08-01, direct request — replaces the earlier
-# flat pygame.Rect + orientation-gizmo placeholder now that rotation is
-# confirmed working end-to-end, see GESTURE_PIPELINE_SPEC.md §13.7). Each
-# cube's orientation quaternion rotates 8 local vertices, perspective-
-# projects them, and 6 faces (colored in 3 opposite-pair color families,
-# one darker than the other per pair) are backface-culled and painter's-
-# algorithm sorted (farthest drawn first, nearest last/on top).
+# Real 3D rendering (2026-08-01, direct request — replaces the earlier flat
+# pygame.Rect + orientation-gizmo placeholder now that rotation is confirmed
+# working end-to-end, see GESTURE_PIPELINE_SPEC.md §13.7). An object's
+# orientation quaternion rotates its Mesh's local vertices, perspective-
+# projects them, and its faces (each carrying its own color + local normal)
+# are backface-culled and painter's-algorithm sorted (farthest drawn first,
+# nearest last/on top).
 #
 # BUG FOUND LIVE (2026-08-01) and fixed: the first version scaled each
 # vertex by 1/(1+K*rz/half) -- a formula only ever safe for a single point
@@ -38,38 +38,15 @@ CUBE_EDGE_COLOR = (20, 20, 20)  # normal (unsnapped) face-outline color
 # cube doesn't stay a cube."
 #
 # Fixed with a proper, bounded perspective projection instead: a virtual
-# camera at a FIXED distance (CUBE_PERSPECTIVE_DISTANCE_RATIO * cube.size,
-# comfortably larger than the cube's own half-diagonal) using the standard
+# camera at a FIXED distance (CUBE_PERSPECTIVE_DISTANCE_RATIO * object.size,
+# comfortably larger than the object's own half-diagonal) using the standard
 # pinhole-camera divide `scale = camera_distance / (camera_distance + rz)`.
 # This is a real, physically-correct perspective transform of a rigid
-# body -- it cannot morph a cube, only foreshorten it correctly, and the
-# denominator is verified (numerically swept across full rotations on 7
-# different axes, both cube sizes) to never drop below ~0.71x
+# body -- it cannot morph a rigid mesh, only foreshorten it correctly, and
+# the denominator is verified (numerically swept across full rotations on
+# 7+ different axes, both cube sizes) to never drop below ~0.71x
 # camera_distance, nowhere near the zero-crossing that caused the bug.
-CUBE_PERSPECTIVE_DISTANCE_RATIO = 3.0  # virtual camera distance = cube.size * this
-
-CUBE_VERTICES: Tuple[Tuple[float, float, float], ...] = (
-    (-1.0, -1.0, -1.0),  # 0
-    (1.0, -1.0, -1.0),   # 1
-    (1.0, 1.0, -1.0),    # 2
-    (-1.0, 1.0, -1.0),   # 3
-    (-1.0, -1.0, 1.0),   # 4
-    (1.0, -1.0, 1.0),    # 5
-    (1.0, 1.0, 1.0),     # 6
-    (-1.0, 1.0, 1.0),    # 7
-)
-
-# Each face: outward local normal (used for backface culling after rotation)
-# and its 4 vertex indices (winding doesn't matter, only used for a filled
-# polygon + outline, not lit/shaded).
-CUBE_FACES: Tuple[Dict, ...] = (
-    {"key": "+x", "normal": (1.0, 0.0, 0.0), "verts": (1, 2, 6, 5)},
-    {"key": "-x", "normal": (-1.0, 0.0, 0.0), "verts": (0, 3, 7, 4)},
-    {"key": "+y", "normal": (0.0, 1.0, 0.0), "verts": (3, 2, 6, 7)},
-    {"key": "-y", "normal": (0.0, -1.0, 0.0), "verts": (0, 1, 5, 4)},
-    {"key": "+z", "normal": (0.0, 0.0, 1.0), "verts": (4, 5, 6, 7)},
-    {"key": "-z", "normal": (0.0, 0.0, -1.0), "verts": (0, 1, 2, 3)},
-)
+CUBE_PERSPECTIVE_DISTANCE_RATIO = 3.0  # virtual camera distance = object.size * this
 
 
 def _darken(color: Tuple[int, int, int], factor: float = 0.45) -> Tuple[int, int, int]:
@@ -79,16 +56,58 @@ def _darken(color: Tuple[int, int, int], factor: float = 0.45) -> Tuple[int, int
     return tuple(max(0, int(c * factor)) for c in color)
 
 
-def _face_colors(color_x: Tuple[int, int, int], color_y: Tuple[int, int, int], color_z: Tuple[int, int, int]) -> Dict[str, Tuple[int, int, int]]:
-    """Assigns one color family per local axis (three opposite face pairs),
-    the lighter shade on the + side, darker on the - side. Which physical
-    axis gets which color is arbitrary -- only the pairing (same color
-    family on opposite faces, one darker) was the actual request."""
-    return {
-        "+x": color_x, "-x": _darken(color_x),
-        "+y": color_y, "-y": _darken(color_y),
-        "+z": color_z, "-z": _darken(color_z),
-    }
+@dataclass(frozen=True)
+class MeshFace:
+    """One planar face of a Mesh: which local vertex indices form it (ANY
+    polygon size -- 3 for a triangle, 4 for a quad, etc. -- so this scales
+    directly to a real imported mesh later, which will typically be all
+    triangles), its own LOCAL outward normal (for backface culling after
+    rotation), and its own color. Storing color per-face directly (rather
+    than the cube's original "+x"/"-x"/etc. axis-keyed lookup) is what
+    makes this representation object-agnostic -- an imported mesh's faces
+    will carry their own real per-face colors/materials the same way."""
+    vertex_indices: Tuple[int, ...]
+    normal: Tuple[float, float, float]
+    color: Tuple[int, int, int]
+
+
+@dataclass(frozen=True)
+class Mesh:
+    """Generic 3D geometry: local-space vertices (unit scale, roughly
+    -1..1 per axis -- multiplied by the owning object's own `size` at draw
+    time) and faces. This is the piece meant to be swapped out later for a
+    real imported 3D object's geometry (Claude/GESTURE_PIPELINE_SPEC.md
+    §13.8) -- everything downstream in CubeWindow.CubeWindow._draw_object_3d
+    (rotation, perspective projection, backface culling, depth sorting,
+    drawing) operates on ANY Mesh identically, with zero cube-specific
+    logic. `_make_cube_mesh` below is the ONE cube-specific construction
+    function in this file -- a future "import a 3D object" step only needs
+    an equivalent factory that builds a Mesh from the imported file, no
+    changes anywhere else."""
+    vertices: Tuple[Tuple[float, float, float], ...]
+    faces: Tuple[MeshFace, ...]
+
+
+def _make_cube_mesh(color_x: Tuple[int, int, int], color_y: Tuple[int, int, int], color_z: Tuple[int, int, int]) -> Mesh:
+    """Builds the placeholder cube Mesh: 8 vertices, 6 quad faces (one
+    color family per opposite pair, the - side a computed darker shade of
+    the + side, direct request 2026-08-01 -- see _darken). Which physical
+    axis gets which color is arbitrary, only the pairing was the actual
+    request."""
+    vertices = (
+        (-1.0, -1.0, -1.0), (1.0, -1.0, -1.0), (1.0, 1.0, -1.0), (-1.0, 1.0, -1.0),
+        (-1.0, -1.0, 1.0), (1.0, -1.0, 1.0), (1.0, 1.0, 1.0), (-1.0, 1.0, 1.0),
+    )
+    face_specs = (
+        ((1, 2, 6, 5), (1.0, 0.0, 0.0), color_x),
+        ((0, 3, 7, 4), (-1.0, 0.0, 0.0), _darken(color_x)),
+        ((3, 2, 6, 7), (0.0, 1.0, 0.0), color_y),
+        ((0, 1, 5, 4), (0.0, -1.0, 0.0), _darken(color_y)),
+        ((4, 5, 6, 7), (0.0, 0.0, 1.0), color_z),
+        ((0, 1, 2, 3), (0.0, 0.0, -1.0), _darken(color_z)),
+    )
+    faces = tuple(MeshFace(vertex_indices=vi, normal=n, color=c) for vi, n, c in face_specs)
+    return Mesh(vertices=vertices, faces=faces)
 
 
 # Large cube: yellow / violet / turquoise (direct request 2026-08-01).
@@ -119,24 +138,27 @@ def _quat_rotate_vector(q: Tuple[float, float, float, float], v: Tuple[float, fl
 
 @dataclass
 class Cube:
-    """One on-screen 3D cube, snappable to either hand. See
-    Hand_detection/Claude/GESTURE_PIPELINE_SPEC.md §13 for the current
+    """One on-screen 3D object, snappable to either hand. Named `Cube` for
+    historical/current reasons (every object today IS cube-shaped) but its
+    geometry lives entirely in `mesh` (a generic `Mesh`, see that class's
+    docstring) -- this is deliberately a PLACEHOLDER for future imported 3D
+    objects (direct request 2026-08-01, `GESTURE_PIPELINE_SPEC.md` §13.8):
+    swapping in a real imported object later means constructing a different
+    `Mesh` and assigning it here, no changes to any rendering/projection
+    code. See Hand_detection/Claude/GESTURE_PIPELINE_SPEC.md §13 for the
     gesture design (proximity snap, open-palm rotate, closed-fist release)
     that grew out of Part One's original grab/release/translate/depth/
     rotate matrix (`PART_ONE.md` §3) after pinch was archived 2026-08-01.
     `owner` is None (idle) or a handedness string ("Left"/"Right") —
-    either hand can snap either cube, no fixed pairing. `face_colors` maps
-    each of the 6 CUBE_FACES keys ("+x".."-z") to an RGB color (2026-08-01,
-    direct request: one color family per opposite face pair, one side
-    darker than the other -- see _face_colors)."""
-    face_colors: Dict[str, Tuple[int, int, int]]
+    either hand can snap either object, no fixed pairing."""
+    mesh: Mesh
     size: int
     position: Tuple[float, float] = (0.0, 0.0)
     owner: Optional[str] = None
     # Rotation-while-snapped state (§13.7) — orientation is a quaternion
     # (w,x,y,z), relative-to-grab baseline pair captured at the instant of
-    # grab so the cube keeps its OWN orientation at that moment rather than
-    # popping to match the hand's (both None while unowned). See
+    # grab so the object keeps its OWN orientation at that moment rather
+    # than popping to match the hand's (both None while unowned). See
     # HandsTriggeredActions.py's on_hands_frame docstring for the full
     # mechanism -- kept in sync with LiveSnapDebug.py's identical Cube
     # fields, live-verified there first.
@@ -146,20 +168,21 @@ class Cube:
 
 
 class CubeWindow:
-    """A local window with two 3D cubes, snappable to either tracked hand.
-    Part One's extension (Hand_detection/Claude/PART_ONE.md) of Part Zero's
-    single-cube CubeWindow (Hand_detection/Claude/PART_ZERO.md), now driven
-    by the proximity-snap/open-palm-rotate/closed-fist-release gesture set
+    """A local window with two 3D objects (cube-shaped placeholders for
+    now), snappable to either tracked hand. Part One's extension
+    (Hand_detection/Claude/PART_ONE.md) of Part Zero's single-cube
+    CubeWindow (Hand_detection/Claude/PART_ZERO.md), now driven by the
+    proximity-snap/open-palm-rotate/closed-fist-release gesture set
     (`GESTURE_PIPELINE_SPEC.md` §13) rather than the archived pinch design.
-    This class only holds/renders cube state and exposes ownership
+    This class only holds/renders object state and exposes ownership
     primitives — snap-radius decisions and hand-pose gating live in
     `HandsTriggeredActions.py`, which is the per-frame gesture logic.
 
-    Cube identifiers are "large" and "small" (renamed 2026-08-01 from the
+    Object identifiers are "large" and "small" (renamed 2026-08-01 from the
     old "blue"/"red" — those names stopped describing anything once each
-    cube got three face colors and different sizes; "large"/"small" is
+    object got three face colors and different sizes; "large"/"small" is
     what actually distinguishes them now, per direct request: the large
-    cube's every dimension is 2x the small cube's)."""
+    object's every dimension is 2x the small object's)."""
 
     def __init__(self, window_size: Tuple[int, int] = DEFAULT_WINDOW_SIZE, cube_size: int = DEFAULT_CUBE_SIZE):
         pygame.init()
@@ -171,12 +194,12 @@ class CubeWindow:
         small_size = cube_size
         self.cubes: Dict[str, Cube] = {
             "large": Cube(
-                face_colors=_face_colors(FACE_COLOR_YELLOW, FACE_COLOR_VIOLET, FACE_COLOR_TURQUOISE),
+                mesh=_make_cube_mesh(FACE_COLOR_YELLOW, FACE_COLOR_VIOLET, FACE_COLOR_TURQUOISE),
                 size=large_size,
                 position=self._centered_position(large_size),
             ),
             "small": Cube(
-                face_colors=_face_colors(FACE_COLOR_GREEN, FACE_COLOR_RED, FACE_COLOR_BLUE),
+                mesh=_make_cube_mesh(FACE_COLOR_GREEN, FACE_COLOR_RED, FACE_COLOR_BLUE),
                 size=small_size,
                 position=self._centered_position(small_size),
             ),
@@ -259,47 +282,51 @@ class CubeWindow:
         cube.grab_hand_orientation = None
         cube.grab_cube_orientation = None
 
-    def _draw_cube_3d(self, cube: Cube) -> None:
-        """Rotates the 8 local vertices by the cube's orientation
-        quaternion, perspective-projects them around the cube's screen
+    def _draw_object_3d(self, obj: Cube) -> None:
+        """Rotates `obj.mesh`'s local vertices by the object's orientation
+        quaternion, perspective-projects them around the object's screen
         center using a fixed virtual camera distance (see
         CUBE_PERSPECTIVE_DISTANCE_RATIO's comment for why -- a naive
-        per-vertex scale relative to the cube's own half-size broke down
+        per-vertex scale relative to the object's own half-size broke down
         for cube corners and made the cube visibly morph), backface-culls
         (a face is drawn only if its rotated normal points toward the
         viewer, negative Z per the established projection convention), and
         paints the remaining faces farthest-to-nearest (painter's
         algorithm) so nearer faces correctly cover farther ones. Edges are
-        highlighted when the cube is snapped, same visual role the old
-        flat-rect border played."""
-        cx, cy = self.cube_center_from(cube)
-        half = cube.size / 2.0
-        camera_distance = cube.size * CUBE_PERSPECTIVE_DISTANCE_RATIO
+        highlighted when the object is snapped, same visual role the old
+        flat-rect border played.
 
-        projected = []  # (screen_xy, rotated_z) per local vertex, in CUBE_VERTICES order
-        for v in CUBE_VERTICES:
+        Entirely generic over `obj.mesh` -- no cube-specific logic here at
+        all (see Mesh/MeshFace's docstrings); this is what makes swapping
+        in a real imported 3D object later a matter of building a
+        different Mesh, not touching this method."""
+        cx, cy = self.cube_center_from(obj)
+        half = obj.size / 2.0
+        camera_distance = obj.size * CUBE_PERSPECTIVE_DISTANCE_RATIO
+
+        projected = []  # (screen_xy, rotated_z) per local vertex, in obj.mesh.vertices order
+        for v in obj.mesh.vertices:
             local = (v[0] * half, v[1] * half, v[2] * half)
-            rx, ry, rz = _quat_rotate_vector(cube.orientation, local)
+            rx, ry, rz = _quat_rotate_vector(obj.orientation, local)
             scale = camera_distance / (camera_distance + rz)
             projected.append(((cx + rx * scale, cy + ry * scale), rz))
 
         visible_faces = []
-        for face in CUBE_FACES:
-            rn = _quat_rotate_vector(cube.orientation, face["normal"])
+        for face in obj.mesh.faces:
+            rn = _quat_rotate_vector(obj.orientation, face.normal)
             if rn[2] >= 0:
                 continue  # facing away from the viewer -- culled
-            verts = face["verts"]
-            avg_z = sum(projected[i][1] for i in verts) / len(verts)
-            pts = [projected[i][0] for i in verts]
-            visible_faces.append((avg_z, face["key"], pts))
+            avg_z = sum(projected[i][1] for i in face.vertex_indices) / len(face.vertex_indices)
+            pts = [projected[i][0] for i in face.vertex_indices]
+            visible_faces.append((avg_z, face.color, pts))
 
         visible_faces.sort(key=lambda f: f[0], reverse=True)  # farthest (largest z) first, nearest last/on top
 
-        edge_color = SNAP_BORDER_COLOR if cube.owner is not None else CUBE_EDGE_COLOR
-        edge_width = SNAP_BORDER_WIDTH if cube.owner is not None else 1
-        for _avg_z, key, pts in visible_faces:
+        edge_color = SNAP_BORDER_COLOR if obj.owner is not None else CUBE_EDGE_COLOR
+        edge_width = SNAP_BORDER_WIDTH if obj.owner is not None else 1
+        for _avg_z, color, pts in visible_faces:
             int_pts = [(int(x), int(y)) for x, y in pts]
-            pygame.draw.polygon(self.screen, cube.face_colors[key], int_pts)
+            pygame.draw.polygon(self.screen, color, int_pts)
             pygame.draw.polygon(self.screen, edge_color, int_pts, edge_width)
 
     def pump_and_draw(self) -> None:
@@ -320,7 +347,7 @@ class CubeWindow:
 
         self.screen.fill((30, 30, 30))
         for cube in self.cubes.values():
-            self._draw_cube_3d(cube)
+            self._draw_object_3d(cube)
         pygame.display.flip()
         self.clock.tick(60)
 

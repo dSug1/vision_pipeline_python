@@ -45,9 +45,16 @@ plain language, not implementation detail (link to the code instead).
    open-palm — that detector doesn't exist yet, see "Not yet built"
    below).
    - Ported to production (`Resources/HandsTriggeredActions.py`/
-     `Resources/CubeWindow.py`, wire protocol extended) 2026-08-01 —
-     offline-verified end-to-end but **not yet tested against a real
-     camera**. Full account: `GESTURE_PIPELINE_SPEC.md` §13.7.
+     `Resources/CubeWindow.py`, wire protocol extended) and **confirmed
+     working live against a real camera** 2026-08-01. Full account:
+     `GESTURE_PIPELINE_SPEC.md` §13.7.
+   - **Known issue (TODO, separate from below): the object currently
+     translates somewhat when the hand only rotates in place** (it
+     shouldn't). The tracked hand-position anchor (§13.3, wrist + 4 MCP
+     centroid) isn't exactly at the hand's true rotational pivot, so pure
+     wrist rotation still traces a small arc in image space. Candidate
+     fixes and a recording-based verification plan: `GESTURE_PIPELINE_SPEC.md`
+     §14.1. Not yet started.
    - **Known issue (TODO): rotation quality is still poor with the back
      of the hand facing the camera.** A pitch-crossing collinearity
      problem (rotation glitching when the hand rotates through edge-on,
@@ -68,25 +75,41 @@ plain language, not implementation detail (link to the code instead).
      software fix away. See `GESTURE_PIPELINE_SPEC.md`
      §13.7's last section before investigating further.
 
-5. **Cubes are real rotating 3D shapes, not flat squares.** Each cube has
-   6 colored faces in 3 opposite-pair color families, one side of each
-   pair a darker shade of the other. The **large** cube (yellow / violet /
-   turquoise) is exactly 2x the size of the **small** cube (green / red /
-   blue) in every dimension — snap radius scales with each cube's own
-   size accordingly (`PART_ONE.md` §5's long-open "grab radius scaled to
-   object size" item, resolved by this).
-   - `Resources/CubeWindow.py` (`_draw_cube_3d`, backface-culled +
-     painter's-algorithm depth-sorted), built 2026-08-01 once rotation was
-     confirmed working end-to-end — the flat-square + axis-gizmo
-     placeholder was no longer needed once real faces could show
-     orientation directly.
+5. **Cubes are real rotating 3D shapes, not flat squares — and the cube
+   itself is just a placeholder for future imported 3D objects.** Each
+   cube has 6 colored faces in 3 opposite-pair color families, one side of
+   each pair a darker shade of the other. The **large** cube (yellow /
+   violet / turquoise) is exactly 2x the size of the **small** cube
+   (green / red / blue) in every dimension — snap radius scales with each
+   cube's own size accordingly (`PART_ONE.md` §5's long-open "grab radius
+   scaled to object size" item, resolved by this). The rendering pipeline
+   itself is generic over ANY 3D mesh (verified live by swapping in a
+   completely different shape with zero code changes) — a real imported
+   3D object later is a matter of building a different mesh, not
+   rewriting any drawing/rotation code.
+   - `Resources/CubeWindow.py` (`_draw_object_3d`, backface-culled +
+     painter's-algorithm depth-sorted, mesh-generic), built 2026-08-01
+     once rotation was confirmed working end-to-end. A live-found morphing
+     bug (cube corners could flip to the wrong side at certain rotations)
+     was found and fixed the same day — full account and the
+     mesh-generalization design: `GESTURE_PIPELINE_SPEC.md` §13.7-§13.8.
 
 ## Not yet built
 
-- Release via closed fist (planned; blocked on finding a working
+- Release via closed fist (original plan; blocked on finding a working
   fist-detection approach — MediaPipe's built-in classifier was tried and
   reverted, see `GESTURE_PIPELINE_SPEC.md` §13.5).
+- **New candidate release trigger, proposed 2026-08-01, not yet built**:
+  unsnap by quickly fully opening the hand (fingers extending outward
+  fast while the wrist stays stable) — specifically designed to be
+  distinguishable from a future depth/Z-axis-translation gesture (moving
+  the whole hand toward/away from the camera, where fingers AND wrist
+  would scale together instead). Proposed recording-based discrimination
+  plan: `GESTURE_PIPELINE_SPEC.md` §14.2. Not yet confirmed whether this
+  replaces or complements the closed-fist plan above.
 - Open-palm rotation gating (rotation is currently ungated — see rule 4).
+- Object translation shouldn't couple to pure hand rotation — see rule 4's
+  TODO and `GESTURE_PIPELINE_SPEC.md` §14.1.
 
 ## Status
 

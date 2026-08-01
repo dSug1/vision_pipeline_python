@@ -100,30 +100,49 @@ ROTATION_SLERP_FACTOR = 0.35  # tune by feel once live, same discipline as GRAB_
 # comfortably larger than the cube's half-diagonal, never does).
 CUBE_PERSPECTIVE_DISTANCE_RATIO = 3.0  # virtual camera distance = cube.size * this
 
-CUBE_VERTICES: Tuple[Tuple[float, float, float], ...] = (
-    (-1.0, -1.0, -1.0), (1.0, -1.0, -1.0), (1.0, 1.0, -1.0), (-1.0, 1.0, -1.0),
-    (-1.0, -1.0, 1.0), (1.0, -1.0, 1.0), (1.0, 1.0, 1.0), (-1.0, 1.0, 1.0),
-)
-CUBE_FACES = (
-    {"key": "+x", "normal": (1.0, 0.0, 0.0), "verts": (1, 2, 6, 5)},
-    {"key": "-x", "normal": (-1.0, 0.0, 0.0), "verts": (0, 3, 7, 4)},
-    {"key": "+y", "normal": (0.0, 1.0, 0.0), "verts": (3, 2, 6, 7)},
-    {"key": "-y", "normal": (0.0, -1.0, 0.0), "verts": (0, 1, 5, 4)},
-    {"key": "+z", "normal": (0.0, 0.0, 1.0), "verts": (4, 5, 6, 7)},
-    {"key": "-z", "normal": (0.0, 0.0, -1.0), "verts": (0, 1, 2, 3)},
-)
-
 
 def _darken(color: Tuple[int, int, int], factor: float = 0.45) -> Tuple[int, int, int]:
     return tuple(max(0, int(c * factor)) for c in color)
 
 
-def _face_colors(color_x, color_y, color_z) -> Dict[str, Tuple[int, int, int]]:
-    return {
-        "+x": color_x, "-x": _darken(color_x),
-        "+y": color_y, "-y": _darken(color_y),
-        "+z": color_z, "-z": _darken(color_z),
-    }
+@dataclass(frozen=True)
+class MeshFace:
+    """One planar face: local vertex indices (ANY polygon size -- 3 for a
+    triangle, 4 for a quad, so this scales to a real imported mesh later),
+    its own local outward normal, and its own color -- mirrors production
+    CubeWindow.py's identical class (mesh-generic rendering, 2026-08-01,
+    direct request: the cube is a placeholder for future imported 3D
+    objects, see GESTURE_PIPELINE_SPEC.md §13.8)."""
+    vertex_indices: Tuple[int, ...]
+    normal: Tuple[float, float, float]
+    color: Tuple[int, int, int]
+
+
+@dataclass(frozen=True)
+class Mesh:
+    """Generic local-space geometry (unit scale, multiplied by the owning
+    cube's own size at draw time) -- mirrors production CubeWindow.py's
+    identical class. `_make_cube_mesh` below is the one cube-specific
+    construction function; `_draw_cube_3d` operates on ANY Mesh."""
+    vertices: Tuple[Tuple[float, float, float], ...]
+    faces: Tuple[MeshFace, ...]
+
+
+def _make_cube_mesh(color_x, color_y, color_z) -> Mesh:
+    vertices = (
+        (-1.0, -1.0, -1.0), (1.0, -1.0, -1.0), (1.0, 1.0, -1.0), (-1.0, 1.0, -1.0),
+        (-1.0, -1.0, 1.0), (1.0, -1.0, 1.0), (1.0, 1.0, 1.0), (-1.0, 1.0, 1.0),
+    )
+    face_specs = (
+        ((1, 2, 6, 5), (1.0, 0.0, 0.0), color_x),
+        ((0, 3, 7, 4), (-1.0, 0.0, 0.0), _darken(color_x)),
+        ((3, 2, 6, 7), (0.0, 1.0, 0.0), color_y),
+        ((0, 1, 5, 4), (0.0, -1.0, 0.0), _darken(color_y)),
+        ((4, 5, 6, 7), (0.0, 0.0, 1.0), color_z),
+        ((0, 1, 2, 3), (0.0, 0.0, -1.0), _darken(color_z)),
+    )
+    faces = tuple(MeshFace(vertex_indices=vi, normal=n, color=c) for vi, n, c in face_specs)
+    return Mesh(vertices=vertices, faces=faces)
 
 
 # Colors are BGR (cv2 convention here, vs. CubeWindow.py's RGB/pygame) --
@@ -206,7 +225,7 @@ def _reliability_alpha(conditioning_norm: float) -> float:
 
 @dataclass
 class Cube:
-    face_colors: Dict[str, Tuple[int, int, int]]
+    mesh: Mesh
     size: int
     position: Tuple[float, float]  # top-left corner, pixel coordinates
     owner: Optional[str] = None
@@ -267,12 +286,12 @@ class CubeState:
         if not self.cubes:
             self.cubes = {
                 "large": Cube(
-                    face_colors=_face_colors(FACE_COLOR_YELLOW, FACE_COLOR_VIOLET, FACE_COLOR_TURQUOISE),
+                    mesh=_make_cube_mesh(FACE_COLOR_YELLOW, FACE_COLOR_VIOLET, FACE_COLOR_TURQUOISE),
                     size=CUBE_SIZE_LARGE,
                     position=self._centered_position(CUBE_SIZE_LARGE),
                 ),
                 "small": Cube(
-                    face_colors=_face_colors(FACE_COLOR_GREEN, FACE_COLOR_RED, FACE_COLOR_BLUE),
+                    mesh=_make_cube_mesh(FACE_COLOR_GREEN, FACE_COLOR_RED, FACE_COLOR_BLUE),
                     size=CUBE_SIZE_SMALL,
                     position=self._centered_position(CUBE_SIZE_SMALL),
                 ),
@@ -731,40 +750,44 @@ def _draw_hand(frame, normalized_landmarks, handedness, thumb_outward, snap_allo
 
 
 def _draw_cube_3d(overlay, cube: Cube, screen_center: Tuple[float, float]):
-    """Real rotating 3D cube (2026-08-01, replaces the old flat-rect +
+    """Real rotating 3D object (2026-08-01, replaces the old flat-rect +
     axis-gizmo placeholder) -- ported from production CubeWindow.py's
-    `_draw_cube_3d`, same fixed-camera-distance perspective projection (see
-    CubeWindow.py's CUBE_PERSPECTIVE_DISTANCE_RATIO comment for the live-
-    found morphing bug this specifically avoids), same backface-cull +
+    `_draw_object_3d`, same fixed-camera-distance perspective projection
+    (see CubeWindow.py's CUBE_PERSPECTIVE_DISTANCE_RATIO comment for the
+    live-found morphing bug this specifically avoids), same backface-cull +
     painter's-algorithm depth sort, just drawn with cv2 primitives onto the
     (not-yet-blended) `overlay` canvas instead of pygame ones -- the
     alpha-blend with the real video frame happens once for both cubes
-    together in the caller, same as the old flat-rect version did."""
+    together in the caller, same as the old flat-rect version did.
+
+    Entirely generic over `cube.mesh` (see Mesh/MeshFace's docstrings) --
+    no cube-specific geometry here, mirroring production's identical
+    design (mesh-generic rendering, direct request 2026-08-01: the cube is
+    a placeholder for future imported 3D objects)."""
     half = cube.size / 2.0
     camera_distance = cube.size * CUBE_PERSPECTIVE_DISTANCE_RATIO
     cx, cy = screen_center
 
     projected = []
-    for v in CUBE_VERTICES:
+    for v in cube.mesh.vertices:
         local = (v[0] * half, v[1] * half, v[2] * half)
         rx, ry, rz = _quat_rotate_vector(cube.orientation, local)
         scale = camera_distance / (camera_distance + rz)
         projected.append(((cx + rx * scale, cy + ry * scale), rz))
 
     visible_faces = []
-    for face in CUBE_FACES:
-        rn = _quat_rotate_vector(cube.orientation, face["normal"])
+    for face in cube.mesh.faces:
+        rn = _quat_rotate_vector(cube.orientation, face.normal)
         if rn[2] >= 0:
             continue  # facing away from the viewer -- culled
-        verts = face["verts"]
-        avg_z = sum(projected[i][1] for i in verts) / len(verts)
-        pts = [projected[i][0] for i in verts]
-        visible_faces.append((avg_z, face["key"], pts))
+        avg_z = sum(projected[i][1] for i in face.vertex_indices) / len(face.vertex_indices)
+        pts = [projected[i][0] for i in face.vertex_indices]
+        visible_faces.append((avg_z, face.color, pts))
     visible_faces.sort(key=lambda f: f[0], reverse=True)  # farthest first, nearest last/on top
 
-    for _avg_z, key, pts in visible_faces:
+    for _avg_z, color, pts in visible_faces:
         int_pts = np.array([[int(x), int(y)] for x, y in pts], dtype=np.int32)
-        cv2.fillConvexPoly(overlay, int_pts, cube.face_colors[key])
+        cv2.fillConvexPoly(overlay, int_pts, color)
         cv2.polylines(overlay, [int_pts], True, CUBE_EDGE_COLOR, 1, cv2.LINE_AA)
 
 

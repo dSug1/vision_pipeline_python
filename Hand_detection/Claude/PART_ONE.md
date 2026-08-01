@@ -175,7 +175,8 @@ it actually belongs to), and cross-check §7.4's engine-agnostic
 | 4 | Release (un-snap) | each hand | `Closed_Fist` (row 2), or tracking loss | closed-fist detected on a hand holding a snapped cube **or** hand tracking lost | snapped → idle; cube frozen in place; ownership cleared; requires fresh proximity-snap to reacquire | **Tracking-loss release built and live-verified (2026-08-01)**; `Closed_Fist`-triggered release still pending row 2 |
 | 5 | Translation | each hand, while snapped | hand position (palm-center, image-space X/Y) | cube position = mapped(hand position), X/Y only | cube follows hand | **Built and live-verified (2026-08-01)** — replaces "pinch midpoint" with palm-center; mechanism otherwise unchanged |
 | 6 | Depth proxy → scale + color | each hand, while snapped | apparent hand span (image coords) vs. calibration baseline | `ratio = current_span / baseline_span` | cube scale ∝ ratio; color lerps light↔dark by ratio | **Dropped for now (2026-08-01)** — not part of the new gesture set as directed; not carried forward automatically, revisit only if explicitly wanted again |
-| 7 | Rotation (quaternion) | each hand, while snapped, **UNGATED** (confirmed 2026-08-01 — not gated on `Open_Palm`, see below) | `world_landmarks`: wrist(0), index_MCP(5), middle_MCP(9), pinky_MCP(17) | orthonormal frame → quaternion → predictive/reliability-weighted filter → relative delta-from-grab → slerp | cube orientation follows hand orientation | **Ported to production (2026-08-01)** — wire protocol extended (`hands_world` packet, §4's gap closed), `HandsTriggeredActions.py`/`CubeWindow.py` updated to match the debug-tool-verified design exactly. **NOT YET live-tested end-to-end with the real camera** — the world-landmark mirroring/x-negation convention (`utils_for_remapping...py`'s `remap_world_keypoints`) is a live-verify-before-trusting item, same discipline as every other sign convention this project has calibrated live. Known open TODO unchanged: rotation quality still poor with the back of the hand facing the camera (reduced, not eliminated) — full account in `GESTURE_PIPELINE_SPEC.md` §13.7 |
+| 7 | Rotation (quaternion) | each hand, while snapped, **UNGATED** (confirmed 2026-08-01 — not gated on `Open_Palm`, see below) | `world_landmarks`: wrist(0), index_MCP(5), middle_MCP(9), pinky_MCP(17) | orthonormal frame → quaternion → predictive/reliability-weighted filter → relative delta-from-grab → slerp | cube orientation follows hand orientation | **Ported to production and CONFIRMED WORKING LIVE (2026-08-01)** — wire protocol extended (`hands_world` packet, §4's gap closed), `HandsTriggeredActions.py`/`CubeWindow.py` match the debug-tool-verified design, tested end-to-end against a real camera. Rendering upgraded same day to real mesh-generic 3D objects (row 8 below) once rotation was confirmed. Known open TODOs: rotation quality still poor with the back of the hand facing the camera (reduced, not eliminated, `GESTURE_PIPELINE_SPEC.md` §13.7); object translates somewhat during pure hand rotation, candidate fixes proposed but not built (§14.1) |
+| 8 | 3D object rendering | n/a (visual only) | orientation quaternion (row 7) | mesh-generic: rotate vertices → perspective-project (fixed camera distance) → backface-cull → depth-sort → draw each face's own color | replaces the flat-square placeholder with a real rotating 3D shape; cube is a placeholder for a future imported object | **Built and confirmed working live (2026-08-01)** — `CubeWindow.py`'s `_draw_object_3d` (mirrored in `LiveSnapDebug.py`), fully generic over any `Mesh`/`MeshFace` (verified by swapping in a non-cube mesh at runtime with zero code changes). A live-found morphing bug (unsafe per-vertex scale formula) was found and fixed the same day. Two placeholder objects: **large** (yellow/violet/turquoise, 2x size) and **small** (green/red/blue) — grab radius now scales per-object size. Full account: `GESTURE_PIPELINE_SPEC.md` §13.7-§13.8. Real 3D-file import (OBJ/glTF) not yet built — scoped remaining gap noted in §13.8 |
 
 **Rows 2-4 replaced (2026-08-01)**: pinch's onset/offset event pair (the
 original rows 2/4, decomposed per the 2026-07-30 note below) is replaced
@@ -219,9 +220,11 @@ wired into `HandsTriggeredActions.py` for live use. Extend `VisionPipeline.py`
 
 - Pinch classification itself — archived, see the banner at the top of
   this file and `GESTURE_PIPELINE_SPEC.md` §13.
-- Exact grab-radius value (likely scaled to cube size) — still open,
-  applies to the new proximity-snap trigger now instead of the old
-  pinch-based one.
+- ~~Exact grab-radius value (likely scaled to cube size)~~ — **resolved
+  2026-08-01**: grab radius now scales to each candidate object's own
+  `size` (`_try_snap` in both `HandsTriggeredActions.py` and
+  `LiveSnapDebug.py`), a natural side effect of the large/small cube
+  rework, see `GESTURE_PIPELINE_SPEC.md` §13.8.
 - Tie-break rule if both hands' proximity triggers land on the same free
   cube in the same frame (currently unspecified — low-probability edge
   case, revisit only if it's actually hit in practice).
@@ -232,6 +235,16 @@ wired into `HandsTriggeredActions.py` for live use. Extend `VisionPipeline.py`
   questions (whether `Open_Palm`/`Closed_Fist` need custom training,
   whether snap should be blocked while closed-fist, whether rotation's
   `Open_Palm` gate is the right design).
+- **New, proposed 2026-08-01, not yet started** — object translates
+  somewhat when the hand only rotates in place (the tracked hand-position
+  anchor isn't exactly at the true rotational pivot); candidate fixes and
+  a recording-based verification plan: `GESTURE_PIPELINE_SPEC.md` §14.1.
+- **New, proposed 2026-08-01, not yet started** — a candidate release
+  trigger (unsnap by quickly fully opening the hand), designed to be
+  distinguishable from a future depth/Z-translation gesture; proposed
+  6-recordings-per-hand-position discrimination plan:
+  `GESTURE_PIPELINE_SPEC.md` §14.2. Not yet confirmed whether this
+  replaces or complements the closed-fist release plan.
 
 ## 6. Pinch classifier design basis (state-of-the-art check, 2026-07-30)
 

@@ -3274,3 +3274,193 @@ an accurate, synchronized stand-in for production while it's still in
 active use for testing (direct request 2026-08-01: keep this debug view
 around for now, remove only once final production no longer needs
 landmark-level debugging).
+
+### 13.8 Mesh-generic 3D rendering (2026-08-01) — the cube is a placeholder for future imported 3D objects
+
+Direct request, immediately after the morphing-bug fix above was
+confirmed live: "make sure what you have done for the 3d representation
+of the cube can be later applied to any 3d object which is imported into
+the scene. The cube should act as a placeholder for 3d complex objects
+which will be imported later on." This was a real architectural gap in
+the first version — `_draw_cube_3d` hardcoded the cube's 8 vertices and 6
+quad faces directly (`CUBE_VERTICES`/`CUBE_FACES` module constants) and
+looked up colors via a cube-specific `{"+x": color, "-x": color, ...}`
+dict keyed by axis-aligned face direction — none of which would extend to
+an arbitrary imported mesh (different vertex/face counts, triangulated
+faces, real per-face materials, no "+x"-style axis-alignment).
+
+**Refactored (both `CubeWindow.py` and its `LiveSnapDebug.py` mirror) to
+separate geometry from rendering**, so an imported object later needs
+only a new geometry constructor, not a single change to the
+rendering/projection/culling/sorting code:
+
+- **`MeshFace`**: `vertex_indices` (a tuple of ANY length — 3 for a
+  triangle, 4 for a quad, so this scales directly to real imported meshes,
+  which are almost always triangulated), a local outward `normal` (for
+  backface culling after rotation), and its own `color` stored directly on
+  the face (not looked up via an axis-keyed dict) — an imported mesh's
+  faces will carry real per-face colors/materials the same way.
+- **`Mesh`**: local-space (unit-scale, ±1-ish per axis) `vertices` +
+  `faces`. This is the piece meant to be swapped out later.
+- **`_make_cube_mesh(color_x, color_y, color_z) -> Mesh`**: the ONE
+  cube-specific construction function left in either file — builds the
+  placeholder cube's 8 vertices / 6 quad faces (darker-opposite color
+  pairing per `_darken`, unchanged from §13.7's cube-color work). A future
+  "import a 3D object" step needs an equivalent factory (e.g. loading an
+  OBJ/glTF file into vertices+faces+materials) — nothing else changes.
+- **`Cube.mesh: Mesh`** replaces the old `face_colors` dict field. `Cube`
+  keeps its name (every object today IS cube-shaped) but is really "the
+  snappable scene object, whatever `mesh` says it looks like."
+- **`CubeWindow._draw_object_3d`** (renamed from `_draw_cube_3d`) and
+  `LiveSnapDebug.py`'s mirrored `_draw_cube_3d` now iterate `obj.mesh.faces`
+  generically — rotate `obj.mesh.vertices`, perspective-project (same
+  fixed-camera-distance formula as §13.7's bug fix), backface-cull via each
+  face's own rotated `normal`, depth-sort, draw each face's own `color`.
+  Zero cube-specific logic remains in either drawing function.
+
+**Verified concretely, not just asserted**: after the refactor, all
+previously-passing checks (sizes, color pairing, no-pop-at-grab,
+rotation-vs-theory, rigidity) were re-run and still pass in both files.
+Additionally, in both `CubeWindow.py` and `LiveSnapDebug.py`, a completely
+different `Mesh` (a 4-vertex, 4-triangular-face tetrahedron, arbitrary
+per-face colors) was assigned to a live `Cube` instance at runtime and
+rendered successfully with **zero changes to any rendering code** — direct
+proof the pipeline is genuinely object-agnostic, not just cube-shaped code
+that happens to also technically accept other inputs.
+
+**What a real future "import a 3D object" step would still need** (not
+built, just the scoped remaining gap): (1) a loader for an actual 3D file
+format (OBJ is the simplest — plain text, vertex/face lists, easy to
+parse without a new dependency; glTF is more capable but needs a real
+parser library) that produces a `Mesh`; (2) if imported meshes are large
+(hundreds+ of triangles), the current O(faces) per-frame Python loop and
+painter's-algorithm sort may need a faster depth-sorting or GPU-backed
+approach — not a concern for a cube (6 faces) or anything of similarly
+modest complexity, but worth flagging before importing something detailed;
+(3) real per-face colors from the imported file's own materials, instead
+of `_make_cube_mesh`'s procedural light/dark color-family assignment.
+
+## 14. Next build targets, proposed 2026-08-01 (not yet started)
+
+Two build targets the user proposed immediately after confirming the 3D
+cube rendering worked, to be picked up in a fresh conversation (see
+`Claude/HANDOFF_SNAP_ROTATE_RELEASE.md`, refreshed the same session to
+point here).
+
+### 14.1 Hand-anchor/pivot point for translation — cube shouldn't drift when the hand only rotates
+
+**Problem, as reported**: "at the moment, the cube is located somewhere
+inside the palm/wrist and therefore it translates when the hand rotates:
+I would like the cube not to translate if the hand rotates cleanly." The
+current translation target (`_hand_position`, §13.3) is the centroid of
+`wrist(0)` + the four non-thumb MCPs (`index_MCP(5)`, `middle_MCP(9)`,
+`ring_MCP(13)`, `pinky_MCP(17)`) — chosen originally for stability
+(§13.3's own rationale: "more stable than the wrist alone... or any single
+MCP"), but stability against LANDMARK NOISE is a different property from
+being AT THE TRUE ROTATIONAL PIVOT. When a hand rotates in place (the
+user's intent: "just twisting my wrist, not moving my hand"), any tracked
+point that isn't exactly at the anatomical rotation center (roughly the
+wrist joint / forearm axis) will trace a real, non-zero arc in image space
+as a geometric consequence of the rotation itself — this is not
+noise/jitter, it would happen even with perfect, noise-free tracking,
+because the palm-center centroid is pulled toward the knuckles, offset
+from the true pivot.
+
+**Candidate approaches to test** (not yet chosen — the user's own
+suggestion first, plus alternatives, all should be verified empirically
+before committing, same discipline as everything else in this document):
+
+1. **User's own suggestion**: "center of gravity in the middle of all
+   volume created by the fingers and palm" — i.e. a centroid over a wider
+   set of landmarks (potentially all 21, or all MCP+PIP+DIP joints, not
+   just wrist+4 MCPs) intended to approximate the geometric center of the
+   hand's own enclosed volume when loosely closed around a grabbed object
+   — the physical point a real held object's center would occupy.
+2. **Wrist-anchored**: use the `wrist(0)` landmark alone (or a point very
+   close to it) as the translation target instead of a centroid — the
+   wrist joint is anatomically closer to the true rotational pivot for a
+   "twist your wrist in place" motion than the palm-center centroid is,
+   so it should exhibit LESS translation-from-rotation coupling, at the
+   cost of losing the original single-landmark noise-stability §13.3
+   flagged (may need to reconsider that tradeoff, or address noise a
+   different way, e.g. temporal smoothing on the position signal itself).
+3. **Weighted/adjusted centroid**: something between 1 and 2 — e.g. the
+   existing wrist+4-MCP centroid, but re-weighted toward the wrist, or
+   offset along the hand's own local "into the palm" axis (derivable from
+   the same orthonormal frame §13.7 already computes for rotation) toward
+   the anatomically-correct pivot rather than the raw landmark centroid.
+
+**Suggested verification methodology** (mirroring `RecordRotationDebug.py`'s
+proven approach this session): record a hand rotating in place (wrist
+twisting, translating the hand itself as little as possible) at a few
+different real-world positions/orientations, log ALL candidate anchor
+points' pixel positions per frame (already easy to extend the existing
+recorder, or build a similarly small one), and directly measure how much
+each candidate DRIFTS during a "pure rotation" recording — the candidate
+with the least drift for the same real motion is the answer, not a guess.
+Don't pick a fix by feel alone; this project's standing discipline (this
+document, throughout) is to verify against recorded data first.
+
+### 14.2 Unsnap by quickly fully opening the hand — new candidate release trigger
+
+**Design, as described**: while a hand holds a snapped object, rapidly and
+fully opening that hand (fingers extending outward quickly) unsnaps it —
+**provided the wrist/hand base does NOT translate much at the same time**.
+That qualifier is the whole design: it's there specifically to distinguish
+this gesture from a DIFFERENT, NOT YET BUILT future gesture — moving the
+hand closer to or farther from the camera to control translation along the
+camera's view axis (depth/Z). In that future depth-translation gesture,
+the WHOLE hand (fingers AND wrist together) would grow or shrink in the
+image as the hand physically approaches or recedes from the camera. In
+THIS release gesture, only the fingers extend/spread rapidly while the
+wrist's own image position and apparent size stay roughly stable. The
+discriminating signal is therefore expected to be something like:
+*rate of finger extension (curl-angle or fingertip-to-wrist distance,
+changing quickly) while wrist-relative hand scale/position stays
+roughly constant* — as opposed to depth-translation's *fingers AND wrist
+scale together*.
+
+**This is a NEW candidate for the release trigger, proposed 2026-08-01,
+alongside (not yet confirmed to replace) the earlier closed-fist release
+plan** (§13.4/§13.5 — blocked since inception on finding a working
+fist-detection approach, MediaPipe's built-in classifier tried and
+reverted). Unlike a static closed-fist POSE classifier, this is
+fundamentally a **transient, rate-of-change** gesture (a quick motion, not
+a held pose) — closer in spirit to how this project's pinch-release work
+(archived, §12) approached onset/offset detection than to a per-frame pose
+classifier, and plausibly easier: opening HANDS quickly is a large,
+coarse, fast motion (matching this project's own literature-grounded
+intuition, §13.5, that fist/open-palm-scale gestures should be
+structurally easier than pinch's fine-grained one), and the specific
+signal proposed (rate of finger extension vs. wrist stability) is a
+purely geometric, landmark-derived quantity — no pretrained classifier
+dependency at all, sidestepping the exact class of problem that blocked
+closed-fist. **Confirm with the user whether this supersedes or
+complements the closed-fist plan before building both** — not decided
+here, just proposed.
+
+**Proposed empirical approach, directly requested**: "we can take 6
+recordings in each hand position to record the gesture and see which
+finger and wrist data we can exploit to discriminate this gesture." Concrete
+plan for whoever picks this up:
+- Record short sessions (mirroring `RecordRotationDebug.py`'s pattern —
+  reuse or closely copy that tool's recording harness) of: (a) the target
+  gesture itself (grab an object, then quickly fully open the hand to
+  release it) and (b) the confound to rule out (moving the whole hand
+  toward/away from the camera without a release intent) — 6 recordings
+  each, across a few different real hand positions/distances from the
+  camera (per direct request), so whatever signal is found generalizes
+  across position, not just one convenient spot.
+- Log full landmark data (pixel AND world landmarks, all 21 points, both
+  hands) each frame, same schema `RecordRotationDebug.py` already uses.
+- Offline, compute candidate discriminating signals per frame across both
+  recording sets and compare: rate of change of a "hand openness" metric
+  (e.g. mean fingertip-to-wrist distance, or per-finger curl angle from
+  `features.py`'s existing finger-curl functions — already built for the
+  archived pinch work, potentially directly reusable) vs. rate of change
+  of overall hand scale (e.g. wrist-to-middle-MCP span, the same
+  depth-proxy metric `PART_ONE.md` §2 already designed for the dropped
+  depth-proxy row) — the target gesture should show HIGH finger-openness
+  rate-of-change with LOW wrist-scale rate-of-change; the confound gesture
+  should show both changing together. Verify this separation holds across
+  all 12 recordings before designing a threshold/classifier, not after.
