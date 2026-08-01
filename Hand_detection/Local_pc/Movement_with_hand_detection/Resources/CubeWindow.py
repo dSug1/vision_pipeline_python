@@ -1,6 +1,6 @@
 import pygame
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 # The vision server sends each hand's landmarks as mirrored webcam-frame pixel
 # coordinates (see VisionPipeline.py's remap_keypoints call, invert_x=True).
@@ -11,25 +11,39 @@ from typing import Dict, Tuple
 DEFAULT_WINDOW_SIZE: Tuple[int, int] = (640, 480)
 DEFAULT_CUBE_SIZE = 40
 
+# Snap/hover highlight (Claude/GESTURE_PIPELINE_SPEC.md §13.3, 2026-08-01):
+# a snapped cube gets a bright border so snap/release state is visible live
+# without needing a separate troubleshooting technique (the old depth-proxy
+# color effect was for exactly this kind of "is it working" visual check on
+# translation; this replaces that need directly for snap state).
+SNAP_BORDER_COLOR = (255, 255, 255)
+SNAP_BORDER_WIDTH = 4
+
 
 @dataclass
 class Cube:
-    """One on-screen square ('cube') driven by one hand. See
-    Hand_detection/Claude/PART_ONE.md for the full gesture matrix this will
-    grow into (grab/release, translation, depth-as-scale/color, rotation) —
-    step 1 only tracks a target position, unconditionally, the same way Part
-    Zero's single cube did."""
+    """One on-screen square ('cube'), snappable to either hand. See
+    Hand_detection/Claude/GESTURE_PIPELINE_SPEC.md §13 for the current
+    gesture design (proximity snap, open-palm rotate, closed-fist release)
+    that grew out of Part One's original grab/release/translate/depth/
+    rotate matrix (`PART_ONE.md` §3) after pinch was archived 2026-08-01.
+    `owner` is None (idle) or a handedness string ("Left"/"Right") —
+    either hand can snap either cube, no fixed pairing."""
     color: Tuple[int, int, int]
     size: int
     position: Tuple[float, float] = (0.0, 0.0)
+    owner: Optional[str] = None
 
 
 class CubeWindow:
-    """A local window with one 'cube' per tracked hand, each driven live by
-    that hand's index-fingertip position. Part One's extension
-    (Hand_detection/Claude/PART_ONE.md) of Part Zero's single-cube
-    CubeWindow (Hand_detection/Claude/PART_ZERO.md) to two independent
-    hands/cubes."""
+    """A local window with two 'cubes', snappable to either tracked hand.
+    Part One's extension (Hand_detection/Claude/PART_ONE.md) of Part Zero's
+    single-cube CubeWindow (Hand_detection/Claude/PART_ZERO.md), now driven
+    by the proximity-snap/open-palm-rotate/closed-fist-release gesture set
+    (`GESTURE_PIPELINE_SPEC.md` §13) rather than the archived pinch design.
+    This class only holds/renders cube state and exposes ownership
+    primitives — snap-radius decisions and hand-pose gating live in
+    `HandsTriggeredActions.py`, which is the per-frame gesture logic."""
 
     def __init__(self, window_size: Tuple[int, int] = DEFAULT_WINDOW_SIZE, cube_size: int = DEFAULT_CUBE_SIZE):
         pygame.init()
@@ -73,6 +87,43 @@ class CubeWindow:
         clamped_y = max(0.0, min(y, self.window_size[1] - cube.size))
         cube.position = (clamped_x, clamped_y)
 
+    def cube_center(self, cube_name: str) -> Tuple[float, float]:
+        """Center point of the named cube, for proximity/grab-radius checks
+        against a hand position (which is itself a single point, not a
+        rect) — comparing against the cube's center rather than its
+        top-left corner (`position`) is the geometrically correct proximity
+        check."""
+        cube = self.cubes[cube_name]
+        return (cube.position[0] + cube.size / 2, cube.position[1] + cube.size / 2)
+
+    def unowned_cube_names(self):
+        """Names of cubes with no current owner — candidates for a new
+        snap."""
+        return [name for name, cube in self.cubes.items() if cube.owner is None]
+
+    def cube_owned_by(self, handedness: str):
+        """The name of the cube currently snapped to `handedness`
+        ("Left"/"Right"), or None if that hand holds nothing. Either hand
+        can hold at most one cube at a time (sticky grab, one cube per
+        hand) — enforced by construction here since snap only ever assigns
+        an unowned cube."""
+        for name, cube in self.cubes.items():
+            if cube.owner == handedness:
+                return name
+        return None
+
+    def snap_cube(self, cube_name: str, handedness: str) -> None:
+        """Claim an unowned cube for `handedness`. Caller (`HandsTriggeredActions.py`)
+        is responsible for the proximity/arbitration check — this just
+        performs the assignment."""
+        self.cubes[cube_name].owner = handedness
+
+    def release_cube(self, cube_name: str) -> None:
+        """Clear ownership; the cube stays exactly where it is (frozen in
+        place), matching the sticky-grab release semantics `PART_ONE.md`
+        §2 already specified for pinch."""
+        self.cubes[cube_name].owner = None
+
     def pump_and_draw(self) -> None:
         """Process window events and redraw both cubes. Called once per
         received "hands" packet (~30fps from the server), after both cubes'
@@ -93,6 +144,8 @@ class CubeWindow:
         for cube in self.cubes.values():
             cube_rect = pygame.Rect(int(cube.position[0]), int(cube.position[1]), cube.size, cube.size)
             pygame.draw.rect(self.screen, cube.color, cube_rect)
+            if cube.owner is not None:
+                pygame.draw.rect(self.screen, SNAP_BORDER_COLOR, cube_rect, SNAP_BORDER_WIDTH)
         pygame.display.flip()
         self.clock.tick(60)
 

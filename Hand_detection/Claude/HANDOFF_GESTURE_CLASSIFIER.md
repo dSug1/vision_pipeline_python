@@ -1,18 +1,21 @@
 # Handoff — gesture classifier pipeline, current state and next steps
 
-> **⚠ ARCHIVED (2026-08-01).** Everything below documents the pinch
-> gesture's full fix arc, ending in a live Stage 4 test (§2 below, added
-> after this file's original writing) that found pinch still missed too
-> many real grabs/releases and had a perceptible input lag — a real
-> UX problem, not just an offline metric. **Pinch is archived** (code/
-> corpus/weights kept, not deleted — reusable if revisited later). The
-> project has pivoted to a new primary gesture set: proximity-based
-> object snapping, open-palm rotation, closed-fist release — full design
-> and state-of-the-art check in `GESTURE_PIPELINE_SPEC.md` §13,
-> build-sequence pointer in `PART_ONE.md`'s updated §3 matrix. This file
-> is kept as the historical record of the pinch arc — §0's lessons
-> learned are written to generalize past pinch and are worth reading
-> before starting the new gesture's build.
+> **⚠ ARCHIVED (2026-08-01). For current work, start from
+> `Claude/HANDOFF_SNAP_ROTATE_RELEASE.md` instead of this file.**
+> Everything below documents the pinch gesture's full fix arc, ending in a
+> live Stage 4 test (§2 below, added after this file's original writing)
+> that found pinch still missed too many real grabs/releases and had a
+> perceptible input lag — a real UX problem, not just an offline metric.
+> **Pinch is archived** (code/corpus/weights kept, not deleted — reusable
+> if revisited later). The project has pivoted to a new primary gesture
+> set: proximity-based object snapping (built), open-palm rotation (in
+> progress), closed-fist release (blocked, pending a working fist-
+> detection approach) — full design and state-of-the-art check in
+> `GESTURE_PIPELINE_SPEC.md` §13, plain-language rules in
+> `Claude/GAME_RULES.md`, build-sequence pointer in `PART_ONE.md`'s
+> updated §3 matrix. This file is kept as the historical record of the
+> pinch arc — §0's lessons learned are written to generalize past pinch
+> and are worth reading before continuing the new gesture's build.
 
 Written 2026-08-01 (supersedes all earlier versions of this file), for
 starting a **new** Claude Code conversation. Read this first, then

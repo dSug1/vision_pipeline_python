@@ -2674,6 +2674,11 @@ starting Stage 3/3.3 work on any future gesture in the Part One matrix.
 
 ## 13. Pinch archived (2026-08-01); pivot to snap / open-palm rotate / closed-fist release
 
+> **See `Claude/GAME_RULES.md` for the plain-language rules inventory** —
+> this section documents design/rationale/build history; that file lists
+> only the confirmed rules themselves, updated every time a new one is
+> added. Check both: this section for *why*, `GAME_RULES.md` for *what*.
+
 ### 13.1 Stage 4 live-validation result — why pinch is being archived, not just re-tuned again
 
 Live-tested via `debug.bat` against the final pipeline state from §12.6
@@ -2821,16 +2826,110 @@ the underlying object-manipulation architecture.
 
 - Exact grab-radius value (likely scaled to object size — same open item
   `PART_ONE.md` §5 already flagged for pinch, unresolved, still open).
-- Whether `Open_Palm`/`Closed_Fist` from MediaPipe's built-in Gesture
-  Recognizer are reliable enough live across this project's priority
-  orientations without any custom training — the whole point of trying
-  it first and live-testing before committing.
+- ~~Whether `Open_Palm`/`Closed_Fist` from MediaPipe's built-in Gesture
+  Recognizer are reliable enough live~~ — **checked and answered, see
+  §13.5: no, reverted.**
 - Whether snap should be blocked while closed-fist (see §13.3's inert-fist
-  note).
+  note) — the mechanism was built and worked, but was reverted along with
+  the Gesture Recognizer integration (§13.5); revisit once fist detection
+  has a working replacement.
 - Whether rotation should be gated on `Open_Palm` specifically, or applied
   whenever an object is snapped regardless of hand pose (see §13.3's
-  gating-choice note) — resolve by feel once live.
+  gating-choice note) — resolve by feel once live; also now blocked on
+  finding a working open-palm signal (§13.5).
 - Depth (Z-axis) translation and/or the old depth-proxy scale/color effect
   (`PART_ONE.md` §2's last bullet, row 6 of the old matrix) were not
   mentioned in the new gesture set — presumed dropped for now, not
   carried forward automatically; revisit only if explicitly wanted.
+
+### 13.5 Build progress (2026-08-01) — proximity snap/translate live-verified; MediaPipe's built-in Closed_Fist reverted
+
+**Phase A (hand position, proximity snap, translation, tracking-loss
+release) built and live-verified.** New combined debug tool
+`LiveSnapDebug.py`/`debug_snap.bat` (temporary, single-window: video +
+hand landmarks + a semi-transparent cube overlay in one OpenCV window,
+replacing the old troubleshooting need for the depth-proxy color effect —
+directly requested, and confirms translation visually against the real
+hand position without needing that old technique). Production code
+(`Resources/HandsTriggeredActions.py`, `Resources/CubeWindow.py`) updated
+in parallel with matching logic.
+
+**A same-frame ordering bug was found live and fixed**: releasing a cube
+(tracking lost) and re-snapping it (the other hand's check) happened in
+one combined per-hand pass, so a cube could instantly "jump" to the other
+hand the instant one hand disappeared, whenever the other hand was
+already within grab radius — the release and the re-snap were two steps
+of the same tick with no ordering guarantee against each other. Fixed:
+split into two passes (release everyone who needs releasing, across both
+hands, *then* snap/translate), and any cube released this frame is
+excluded from this frame's snap pass — a cube can only be re-claimed
+starting the next frame at the earliest, never the same tick as its
+release. Applied identically in both the production module and the debug
+tool (kept in sync by hand, documented in both files' docstrings).
+
+**Phase B (`Open_Palm`/`Closed_Fist` via MediaPipe's built-in Gesture
+Recognizer) tried, live-tested, and reverted.** Downloaded
+`gesture_recognizer.task` (Google's official MediaPipe model repository,
+`storage.googleapis.com/mediapipe-models/gesture_recognizer/...`) and
+wired it into `LiveSnapDebug.py`, replacing `HandLandmarker` (the
+Recognizer conveniently returns gestures + both landmark coordinate types
+in one call). Wired `Closed_Fist` to block snap and to trigger release,
+per §13.3/§13.4's confirmed design. **Live result: closed-fist detection
+was unreliable across different hand positions/orientations — a lot of
+missed fist closures.** This is exactly the failure mode §13.2 flagged as
+a risk ("still subject to Stage 4 discipline... don't trust a claim
+without checking it") — the built-in classifier is evidently tuned to a
+narrow set of canonical poses, not usable as-is for this project's
+purpose (the hand needs to be trackable as closed-fist across the same
+range of positions/orientations pinch needed, not just head-on).
+**Decision: revert the Gesture Recognizer integration** (both files back
+to `HandLandmarker`, bug fix retained) **but keep `gesture_recognizer.task`
+on disk** — its `Thumb_Up` class may be useful for a later, different
+game interaction, unrelated to this open-palm/closed-fist need.
+
+**Not yet decided**: the replacement approach for `Open_Palm`/
+`Closed_Fist` detection. Candidates, not yet evaluated: (a) a simple
+geometric heuristic reusing `features.py`'s existing finger-curl-angle
+functions (`curl_worst_deg` etc., already built for pinch/fist
+discrimination in the archived corpus) — plausible since fist/open-palm
+are coarse, large-amplitude poses that a hand-crafted rule might
+discriminate robustly across orientations without needing MediaPipe's
+canonical-pose-biased classifier; (b) a custom-trained classifier via
+this document's own Stage 1-3 pipeline (proven to work, but the heavier
+option, and pinch's own difficulty was in a much finer-grained
+measurement than fist/open-palm need). Evaluate (a) first — cheaper to
+try, and directly matches this project's literature-grounded intuition
+that these are structurally easier poses than pinch, only unreliable in
+MediaPipe's *specific* pretrained classifier, not necessarily inherently
+hard to detect geometrically.
+
+### 13.6 Thumb-outward snap restriction (2026-08-01) — new rule, built and live-verified
+
+Direct request, added to the current (Phase A) snap/translate build: a
+hand should not be able to snap an object while oriented thumb-outward
+(back of hand facing the camera), with a specific exception for
+continuity across a release/re-grab in that same orientation. Full rule
+text: `Claude/GAME_RULES.md`.
+
+**Detection approach**: a purely 2D geometric signal, no wire-protocol or
+model changes needed — the sign of the 2D cross product of
+`(index_MCP - wrist) × (pinky_MCP - wrist)` in the already-available
+mirrored pixel-space landmarks, mirrored again per handedness for a
+consistent sign across both hands (their landmark geometry is chirally
+opposite). **Calibrated live before being trusted** (per §13.5's own
+lesson, not repeating the Closed_Fist mistake): a calibration-only build
+showed the raw sign/a tentative "A"/"B" label on screen, the operator
+showed palm then back of hand for both hands, and confirmed the mapping
+(positive, mirrored-for-Left = thumb-outward) before the label was wired
+into any gating logic.
+
+**State machine**: two bits of per-hand state — `last_known_thumb_outward`
+(the most recent orientation reading while the hand WAS detected, persists
+through frames where it's lost, so a tracking-loss release still has an
+orientation to record) and `thumb_outward_snap_allowed` (the armed/
+disarmed exception: armed on release with whatever orientation held at
+that moment, disarmed the instant the hand is next seen thumb-inward).
+Built and live-verified in both `LiveSnapDebug.py` and
+`Resources/HandsTriggeredActions.py` (kept in sync), confirmed working
+end-to-end (block-from-neutral, allow-immediately-after-same-orientation-
+release, re-block-after-showing-thumb-inward) by the operator, 2026-08-01.
