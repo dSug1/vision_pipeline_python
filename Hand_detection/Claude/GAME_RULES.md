@@ -35,6 +35,14 @@ plain language, not implementation detail (link to the code instead).
      `last_known_thumb_outward`/`thumb_outward_snap_allowed` per-hand state
      pair. Orientation sign convention calibrated live 2026-08-01 (see
      `GESTURE_PIPELINE_SPEC.md` §13.6).
+   - **Bug found and FIXED (2026-08-01, later conversation): this rule was
+     silently INVERTED in production only** (debug tool was always
+     correct) — root cause was a mirrored-vs-unmirrored handedness label
+     mismatch in the server's wire protocol (`hands_visualizer.py`), not
+     the rule's own formula, which was identical in both files. Fixed at
+     the source (`_mirror_handedness()`). Not yet independently
+     live-confirmed after the fix. Full account: `GESTURE_PIPELINE_SPEC.md`
+     §13.6.1.
 
 4. **Rotation while snapped.** While a hand holds a cube, the cube's
    orientation follows the hand's rotation — but RELATIVE to how the hand
@@ -110,6 +118,36 @@ plain language, not implementation detail (link to the code instead).
      was found and fixed the same day — full account and the
      mesh-generalization design: `GESTURE_PIPELINE_SPEC.md` §13.7-§13.8.
 
+6. **Translation follows a grab-relative, distance-weighted point, not a
+   fixed single anchor.** While a hand holds a cube, the cube's position
+   is a weighted combination of ~9 phalange-adjacent landmarks (5
+   fingertips + 4 knuckles), weighted by how close each one was to the
+   cube at the moment of grab and FROZEN from then on — so the cube keeps
+   its own position at grab (no pop/snap onto the hand) and only moves as
+   those same landmarks actually move afterward. Replaces the earlier
+   design where the cube was forced to sit exactly on one fixed
+   hand-center point every frame, which caused a visible pop at grab and
+   incorrect coupling when the hand only rotated in place.
+   - `Resources/HandsTriggeredActions.py` (`_compute_grab_weights`/
+     `_weighted_position`, production) — `LiveSnapDebug.py` (identical
+     functions, debug tool). Redesigned, live-verified, and ported to
+     production 2026-08-01 — full account: `GESTURE_PIPELINE_SPEC.md`
+     §14.1/§14.1.1/§14.1.3.
+   - **Known issue (TODO): swings toward the palm specifically when the
+     hand turns sideways (yaw), not pitch/roll.** A purely-2D signal can't
+     distinguish yaw-driven foreshortening from real repositioning —
+     likely shares root cause with the not-yet-built Z-axis translation
+     gesture. Deliberately deferred; proposed direction is a future
+     startup Z-axis calibration step. `GESTURE_PIPELINE_SPEC.md` §14.1.1.
+   - **Known issue (TODO, spurious, NOT YET ROOT-CAUSED): a live
+     production test found the cube once jump to the other hand and back**
+     — not reproducible on demand. Leading, unverified hypothesis: a
+     single fingertip landmark briefly misread (e.g. hand occlusion), with
+     no outlier rejection in this mechanism (unlike rule 4's
+     reliability-weighted rotation filter). Documented, not fixed — no
+     repro data to verify a fix against. `GESTURE_PIPELINE_SPEC.md`
+     §14.1.3.
+
 ## Not yet built
 
 - **Open-palm/closed-fist detection: PARKED (2026-08-01, later
@@ -132,14 +170,6 @@ plain language, not implementation detail (link to the code instead).
   after the translation-pivot fix below.
 - Open-palm rotation gating — **not planned**: rotation stays permanently
   ungated now that open-palm/closed-fist detection is parked (rule 4).
-- **Grab-relative translation via distance-weighted live landmarks**
-  (reframed and mechanism resolved 2026-08-01 — not "stop translation
-  coupling to rotation," see rule 4's TODO): translation needs a
-  grab-time-frozen relationship to the hand, same principle rotation
-  already has, but implemented as a live-tracked weighted combination of
-  phalange-adjacent landmarks rather than a fixed single anchor.
-  `GESTURE_PIPELINE_SPEC.md` §14.1 (rewritten). **Highest priority** of
-  the currently queued build targets.
 - **Z-axis (camera-view-axis) translation, design confirmed 2026-08-01, not
   yet built**: moving a snapped hand closer to/farther from the camera
   would move the cube along the same axis. Driven by apparent hand-span
@@ -147,8 +177,11 @@ plain language, not implementation detail (link to the code instead).
   today's X/Y translation. Snap itself would become a 3D proximity check
   (hand must be close to the cube on X, Y, **and** this new Z axis, not
   just X/Y as today). Queued **third** in build order (unchanged), after
-  the translation-pivot fix and the hand-open release trigger above. Full
-  design: `GESTURE_PIPELINE_SPEC.md` §14.3.
+  the translation-pivot fix and the hand-open release trigger above.
+  **Related (2026-08-01): likely shares root cause with the translation
+  fix's deferred yaw/palm-sinking limitation above** — a proposed future
+  startup Z-axis calibration step may address both together. Full design:
+  `GESTURE_PIPELINE_SPEC.md` §14.3.
 
 **Confirmed build order (2026-08-01)**: translation-pivot fix →
 hand-open-quick-release trigger → Z-axis translation. Open-palm/closed-fist

@@ -9,6 +9,31 @@ FONT_SIZE = 1
 FONT_THICKNESS = 1
 HANDEDNESS_TEXT_COLOR = (88, 205, 54) # vibrant green
 
+# Mirror-consistent handedness (2026-08-01, direct request -- root-caused
+# from a live bug report, not guessed). VisionPipeline.py runs MediaPipe
+# detection on the RAW, un-mirrored camera frame (no cv2.flip anywhere in
+# that file), but the pixel/world landmark COORDINATES get mirrored
+# afterward for display consistency (utils_for_remapping_coordinates_
+# and_output_formatting.py's remap_keypoints/remap_world_keypoints,
+# invert_x=True). MediaPipe's own Left/Right classification assumes an
+# already-mirrored ("selfie") input by convention -- fed an UN-mirrored
+# frame, it reports the TRUE anatomical hand, the OPPOSITE of what the
+# mirrored display shows. Left uncorrected, this silently broke any
+# chirality-sensitive consumer of the handedness label: confirmed live,
+# HandsTriggeredActions.py's `_is_thumb_outward` (`if handedness ==
+# "Left": cross = -cross`) computed the wrong sign, inverting the
+# thumb-outward/inward snap restriction in production -- opposite of the
+# already-correct debug tool (LiveSnapDebug.py flips the frame BEFORE
+# detection, so its handedness needs no such correction). Fixed at this
+# single source, not by patching each chirality-sensitive consumer
+# separately -- everything downstream (both the "hands" and "hands_world"
+# packets, both keyed off this same field) inherits the fix consistently.
+_MIRRORED_HANDEDNESS = {"Left": "Right", "Right": "Left"}
+
+
+def _mirror_handedness(category_name):
+    return _MIRRORED_HANDEDNESS.get(category_name, category_name)
+
 def draw_landmarks_on_image(frame_image_shape, rgb_image, detection_result):
   hand_landmarks_list = detection_result.hand_landmarks
   # world_landmarks: metric, hand-relative 3D coordinates (meters), parallel
@@ -30,6 +55,7 @@ def draw_landmarks_on_image(frame_image_shape, rgb_image, detection_result):
     hand_landmarks = hand_landmarks_list[idx]
     hand_world_landmarks = hand_world_landmarks_list[idx]
     handedness = handedness_list[idx]
+    mirrored_handedness = _mirror_handedness(handedness[0].category_name)
 
     hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()     # Prepare protobuf for drawing
     handslandmarks_coords = []  # This will store the extracted coordinates
@@ -70,14 +96,17 @@ def draw_landmarks_on_image(frame_image_shape, rgb_image, detection_result):
     text_x = int(min(x_coordinates) * width)
     text_y = int(min(y_coordinates) * height) - MARGIN
 
-    # Draw handedness (left or right hand) on the image.
-    cv2.putText(annotated_image, f"{handedness[0].category_name}",
+    # Draw handedness (left or right hand) on the image -- the MIRRORED
+    # label, so this on-screen debug text matches what a human sees of
+    # their own mirrored reflection, not MediaPipe's raw (un-mirrored)
+    # classification.
+    cv2.putText(annotated_image, f"{mirrored_handedness}",
                 (text_x, text_y), cv2.FONT_HERSHEY_DUPLEX,
                 FONT_SIZE, HANDEDNESS_TEXT_COLOR, FONT_THICKNESS, cv2.LINE_AA)
 
     # Append to full list
     all_hands_coords.append({
-            "handedness": handedness[0].category_name,
+            "handedness": mirrored_handedness,
             "landmarks": handslandmarks_coords,
             "world_landmarks": handsworldlandmarks_coords
         })

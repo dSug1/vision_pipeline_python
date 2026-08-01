@@ -2946,6 +2946,53 @@ Built and live-verified in both `LiveSnapDebug.py` and
 end-to-end (block-from-neutral, allow-immediately-after-same-orientation-
 release, re-block-after-showing-thumb-inward) by the operator, 2026-08-01.
 
+### 13.6.1 Correction (2026-08-01, later conversation): production's thumb-outward was actually INVERTED — root-caused and fixed
+
+**The "confirmed working end-to-end" claim above was wrong for
+production specifically**, discovered live: "in the production pipeline,
+it seems you inverted the logic for the grab: I can grab only if the
+hands are with the thumbs facing outwards: this is the opposite of the
+debug pipeline where rightfully the grab was done when the thumbs were
+facing inwards." The `_is_thumb_outward` formula itself was byte-for-byte
+identical in both files (ruled out first, not assumed) — the actual cause
+was upstream, in the wire protocol.
+
+**Root cause, confirmed by reading the code (not guessed)**:
+`VisionPipeline.py` runs MediaPipe detection on the RAW, un-mirrored
+camera frame (no `cv2.flip` anywhere in that file), then mirrors the
+pixel/world landmark COORDINATES afterward for display consistency
+(`remap_keypoints`/`remap_world_keypoints`, `invert_x=True`). But
+MediaPipe's own Left/Right handedness classification assumes an
+already-mirrored ("selfie") input by convention — fed an un-mirrored
+frame, it reports the TRUE anatomical hand, the opposite of what the
+mirrored display shows. `hands_visualizer.py` took that raw handedness
+label with no correction (`"handedness": handedness[0].category_name`).
+Every OTHER hand behavior (snap, translate, rotate, release) is
+handedness-symmetric and was unaffected — `_is_thumb_outward` is the ONE
+place with an explicit `if handedness == "Left": cross = -cross`
+chirality correction, so it was the only visible symptom.
+`LiveSnapDebug.py` never had this problem because it flips the frame
+BEFORE detection, so MediaPipe's handedness comes out already
+display-consistent — this is exactly the same class of unverified
+mirroring risk `remap_world_keypoints`'s own docstring already flagged
+for `world_landmarks` ("has NOT been live-verified yet... confirm the
+rotation's sign/axis feel live"), just materializing on the 2D pixel/
+handedness side instead, and for a different consumer (thumb-outward, not
+rotation).
+
+**Fix**: `hands_visualizer.py` gained `_mirror_handedness()`, applied at
+the single source point where handedness first enters the pipeline (both
+the on-screen debug label and the `"handedness"` field every downstream
+packet — "hands" AND "hands_world" — reads from), rather than patching
+`_is_thumb_outward` or any other individual consumer. Verified by reading
+the full call chain (`VisionPipeline.py`'s `extract_hand_by_type(...,
+"Left")`/`"Right"` lookups → `hands_visualizer.py`'s `all_hands_coords` →
+this fix) to confirm this is genuinely the single source, not one of
+several. Compiles and the swap function smoke-tested (`Left ↔ Right`).
+**Not yet independently live-tested** — recommend the user re-run
+`launch.bat` and confirm thumb-inward now (correctly) permits grab in
+production, matching the debug tool.
+
 ### 13.7 Rotation while snapped (2026-08-01) — built in the debug tool, relative not absolute, two noise filters, one open TODO
 
 **Confirmed direction**: rotation is **UNGATED** (active for any snapped
@@ -3539,6 +3586,158 @@ recorded data, THEN tune concentration/smoothing parameters only if the
 data shows they're needed — don't skip straight to implementation-by-feel
 for either.
 
+### 14.1.1 Verification results (2026-08-01, same conversation) — no-pop confirmed, jitter comparable, one deferred limitation found
+
+**Tooling built**: `RecordTranslationPivotDebug.py`/`record_translation_pivot_debug.bat`
+(imports `LiveSnapDebug.py`'s real, already-live-verified snap/translate
+logic, so recorded grab events and cube centers are real ground truth, not
+simulated — same lineage as `RecordRotationDebug.py`) and
+`AnalyzeTranslationPivot.py` (offline: finds real grab events, freezes
+distance-weighted candidate weights, replays the mechanism, checks
+no-pop/jitter/rotation-coupling/yaw-foreshortening). Recordings saved to
+`E:\Python\Recordings for vision_pipeline\Position_during_rotation`
+(direct request — external-drive corpus convention, not the local
+one-off-diagnostic pattern `RecordRotationDebug.py` used). Core math
+(no-pop residual, pure-translation linearity) synthetically sanity-checked
+before ever touching the camera — both exact — same discipline as
+rotation's own offline checks.
+
+**7 hold intervals analyzed across 3 valid live recordings** (both cube
+sizes, both hands, a few of the first takes discarded because the
+small-cube grip wasn't actually closed — quality-controlled by the
+operator before analysis, not assumed valid):
+- **No-pop: exactly 0.0000px in every interval.** The residual-offset
+  construction is correct.
+- **Jitter comparable to today's system** (new ≈4.4–4.8px mean per-frame
+  movement vs. old ≈4.0–4.7px) — not a regression.
+- **Translation now measurably scales with real rotation, not flat/erratic**:
+  low-rotation-amount frames average 2.97px jitter, high-rotation-amount
+  frames 5.95px (≈2.0x) — consistent across all 7 intervals individually.
+  (Today's system shows a similar ≈2.1x ratio too — expected, since both
+  draw from overlapping parts of the same tracked hand; this check mainly
+  confirms the new mechanism doesn't move erratically independent of
+  actual rotation, not that it's dramatically different from today's.)
+- **Important caveat on the above**: this recording methodology
+  structurally cannot exercise the actual "non-zero grab offset" case the
+  whole redesign exists for, because `object_position_at_grab` (the ground
+  truth) is itself defined as today's buggy zero-offset cube center. A
+  fair old-vs-new comparison needs the mechanism actually wired into
+  `LiveSnapDebug.py` and watched live, once a real non-zero offset can
+  exist.
+
+**Deferred limitation found (direct live report, verified against the
+same 3 recordings — no new recording needed): the computed point swings
+toward the palm specifically under YAW** (hand turning left/right,
+knuckle row going edge-on to the camera), NOT under pitch/roll (reported
+fine). Quantified: knuckle-row width (`INDEX_MCP`↔`PINKY_MCP` pixel
+distance) shrank to as little as 38% of its grab-time value in these
+recordings; correlation between that foreshortening and a palm-vs-fingertip
+bias metric was negative in 6/7 intervals (mean −0.25); bias averaged
++0.48 (leaning palm) at the most-sideways frames vs. +0.29 at the most-frontal
+frames (0 = balanced, +1 = fully at palm, on a signed scale). A persistent
+baseline lean toward the palm exists even facing the camera (+0.29, not
+0) — because the MCP candidates are inherently closer to the
+centroid-based ground truth than the fingertip candidates are.
+
+**Why this happens, and why it's structural, not a bug to quick-fix**: yaw
+is specifically the rotation that moves fingers toward/away from the
+camera (a real depth/Z change), not just sideways in the image. A purely
+2D pixel-distance weighting (chosen deliberately, §14's "Concrete redesign"
+above, to avoid the noisy 3D `world_landmarks` and to stay consistent with
+§1's image-space-translation decision) cannot distinguish "this fingertip
+foreshortened toward the palm's 2D silhouette because of yaw" from "this
+fingertip actually moved toward the palm" — both look identical to a 2D
+distance metric. This is the same class of problem as §14.3's Z-axis
+translation design (both need a notion of depth the current signal set
+doesn't reliably provide monocularly).
+
+**Decision (direct request): defer the yaw fix, implement the mechanism
+as-is.** Roll/pitch behavior is fine; only yaw is affected; the mechanism
+is still a strict improvement over today's zero-offset forcing (verified
+above) even with this known gap. **New TODO, proposed direction**: "we
+will probably need to build a calibration on the Z axis at the beginning
+of the game" — a startup calibration step (e.g. establishing a baseline
+hand-to-camera depth reference before play begins) is the leading
+candidate to eventually resolve both this yaw/palm-sinking issue and
+§14.3's Z-axis-at-grab problem together, since they likely share root
+cause. Not designed yet — revisit once Z-axis translation (§14.3) is
+actually being built, per the confirmed build order.
+
+### 14.1.2 Implementation, live confirmation, and production port (2026-08-01, same conversation)
+
+**Implemented in `LiveSnapDebug.py`**: `Cube` gained `grab_landmark_weights`/
+`grab_residual_offset` (mirrors the rotation baseline pair);
+`_compute_grab_weights`/`_weighted_position` added; `update_hands` now
+captures weights from the cube's own pre-existing position at grab (not
+the hand anchor) and tracks live thereafter.
+
+**Verified by replaying a real recording's landmarks through the actual
+modified `update_hands` function** (not just the standalone analysis
+script, closing the loop on the real code path): at the grab frame, the
+cube stayed at its resting position (320.0, 240.0) — zero pop — while the
+OLD recorded data at that same frame had already popped to (395.9, 255.3),
+a ~76px discontinuous jump the new mechanism eliminates. Confirmed against
+real camera data, not just synthetic math.
+
+**Confirmed working live**: user tested the redesigned mechanism against
+a real camera via `debug_snap.bat`: "it's working" — same confirmation
+pattern as rotation's own live test (§13.7).
+
+**Ported to production** (`HandsTriggeredActions.py`/`CubeWindow.py`,
+same day): identical `Cube` fields, verbatim `_compute_grab_weights`/
+`_weighted_position` formulas, `on_hands_frame`'s translation logic
+mirrored. **Verification method necessarily differs**:
+`HandsTriggeredActions.py` opens a real pygame window as an import side
+effect (module-level `cube_window = CubeWindow()`), so it can't be safely
+replayed through a script the way `LiveSnapDebug.py` was — verified
+instead via careful line-by-line parity review against the already
+live-verified debug-tool version. One intentional, justified divergence:
+translation's grab-weight capture is unconditional (not gated on
+`hand_quat_now is not None` the way rotation's baseline is), since
+translation only needs 2D `landmarks` (always available every frame), not
+the slower-arriving `world_landmarks` — no "missed the grab-frame capture"
+fallback needed for it, unlike rotation's.
+
+**Status**: implemented, replay-verified, live-camera-confirmed, and
+ported to production with a parity review. **Not yet independently
+live-tested in production itself** — recommend a quick live check
+(running the actual client/server pipeline, not just `debug_snap.bat`)
+before considering this fully closed out, same as rotation's own
+production port was ultimately confirmed live.
+
+### 14.1.3 Live production test — mostly confirmed working, one spurious NOT-YET-ROOT-CAUSED glitch found (2026-08-01)
+
+User ran the actual production client/server pipeline (`launch.bat`) and
+confirmed the translation-pivot fix generally works. **One glitch
+reported**: "in one case, the cube jumped from one hand to another and
+came back to the hand" — not reproducible on demand ("it was spurious so
+I do not know how to replicate this bug"), and the user couldn't recall
+whether the hands were close together/crossing at the time.
+
+**Leading hypothesis, NOT verified (no repro data available)**: the
+distance-weighted mechanism has no outlier rejection across its 9
+candidate landmarks, unlike rotation's reliability-weighted predictive
+filter (§13.7). A single fingertip landmark briefly misread (e.g. from
+occlusion when hands pass close to each other, or a fast-motion tracking
+glitch) could pull the weighted average toward that bad reading for a
+frame or two before self-correcting once tracking recovers — this would
+look exactly like a brief jump toward wherever the glitchy landmark
+reported, then a snap back. This is exactly the risk already flagged as
+deferred-but-unverified when the mechanism was designed ("individual
+landmarks are noisier than the existing centroid... mitigations only if
+data shows they're needed," §14.1) — a live, spurious report is real
+evidence the risk can materialize, even without a controlled reproduction.
+
+**Decision (direct request): document only, no code change.** Per this
+project's standing discipline, don't fix without verifying against real
+data — and there's no repro to verify against. A conservative mitigation
+(max-per-frame-jump clamp, or borrowing rotation's reliability-weighted
+approach) was considered and explicitly deferred, not rejected on merit.
+**Revisit if**: this recurs, becomes reproducible, or a recorded session
+happens to catch it (check candidate-landmark positions frame-by-frame
+around any future occurrence for a stray outlier before assuming any
+other cause).
+
 ---
 
 **Original framing (2026-08-01, superseded above — kept for context, not
@@ -3666,6 +3865,18 @@ snap/rotate/release pivot (§13.3); (2) §14.2 above, which mentions
 Z-translation only as a **hypothetical confound** to justify the
 hand-open release gesture's wrist-stability qualifier, not as a real
 design. This section is the first actual design for it.
+
+**Related finding, added 2026-08-01 (later conversation, during §14.1's
+verification pass)**: live-testing the §14.1 translation-pivot fix
+surfaced a yaw-specific bug (the computed grasp point swings toward the
+palm when the hand turns edge-on to the camera, confirmed empirically —
+§14.1.1) that's likely the SAME underlying depth-ambiguity problem this
+section exists to solve, not a coincidence. **Proposed direction (direct
+request, not yet designed): a startup calibration step** — establishing a
+baseline hand-to-camera depth reference before play begins — is the
+leading candidate to resolve both this row's own grab-time Z positioning
+AND §14.1's yaw/palm-sinking issue together. Revisit when this row is
+actually picked up, per the confirmed build order (§14.1 → §14.2 → §14.3).
 
 **Design, confirmed with the user before starting** (four decisions, in
 the order asked):

@@ -23,6 +23,21 @@ WRIST = 0
 INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP = 5, 9, 13, 17
 HAND_POSITION_LANDMARKS = [WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP]
 
+# Translation-pivot fix (§14.1/§14.1.1, 2026-08-01) -- distance-weighted
+# live landmark tracking, ported from LiveSnapDebug.py after live
+# verification there. Replaces the old zero-offset design (cube center
+# forced to exactly equal HAND_POSITION_LANDMARKS' centroid every frame,
+# with no grab-time offset) -- see `_compute_grab_weights`'s docstring for
+# the mechanism and GESTURE_PIPELINE_SPEC.md §14.1 for the full account,
+# including a known, deliberately DEFERRED limitation (the computed point
+# swings toward the palm under yaw specifically -- §14.1.1).
+THUMB_TIP, MIDDLE_TIP, RING_TIP, PINKY_TIP = 4, 12, 16, 20
+TRANSLATION_CANDIDATE_LANDMARKS = [THUMB_TIP, INDEX_TIP, MIDDLE_TIP, RING_TIP, PINKY_TIP,
+                                    INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP]
+# Matches LiveSnapDebug.py's verified value -- re-tune together if this
+# ever needs adjusting, don't let the two drift apart.
+TRANSLATION_EPSILON_PX = 5.0
+
 # Grab radius (open item, `PART_ONE.md` §5 — "likely scaled to cube size",
 # still unresolved/tunable): distance from a cube's CENTER, in the same
 # pixel units as hand position, within which an unowned cube can be
@@ -57,10 +72,43 @@ def _is_detected(landmarks: List[Tuple[float, float]]) -> bool:
 
 def _hand_position(landmarks: List[Tuple[float, float]]) -> Tuple[float, float]:
     """Palm-center point (see HAND_POSITION_LANDMARKS above), in the same
-    mirrored webcam-frame pixel coordinates as the raw landmarks."""
+    mirrored webcam-frame pixel coordinates as the raw landmarks. Still
+    used for the snap/grab-radius proximity check (unchanged) -- no longer
+    used to drive translation once a cube is held, see
+    `_compute_grab_weights`/`_weighted_position` below."""
     xs = [landmarks[i][0] for i in HAND_POSITION_LANDMARKS]
     ys = [landmarks[i][1] for i in HAND_POSITION_LANDMARKS]
     return (sum(xs) / len(xs), sum(ys) / len(ys))
+
+
+def _weighted_position(weights: Dict[int, float], landmarks: List[Tuple[float, float]]) -> Tuple[float, float]:
+    """Distance-weighted combination of candidate landmarks' CURRENT pixel
+    positions (§14.1's translation-pivot fix). Used both to compute the
+    grab-time weights' own no-pop residual and to track position live every
+    frame after -- same formula, different landmark positions each time."""
+    x = sum(w * landmarks[i][0] for i, w in weights.items())
+    y = sum(w * landmarks[i][1] for i, w in weights.items())
+    return (x, y)
+
+
+def _compute_grab_weights(object_pos_at_grab: Tuple[float, float], landmarks: List[Tuple[float, float]]) -> Dict[int, float]:
+    """Freezes distance-weighted candidate-landmark weights at the moment
+    of grab (§14.1.1's chosen, live-verified mechanism): each candidate (5
+    fingertips + 4 non-thumb MCPs) is weighted by normalized inverse
+    distance from the object's own position at that instant -- the
+    literal, computable version of "the phalanges are locked once the
+    object is grabbed." Never recomputed during the hold; the caller also
+    adds a `grab_residual_offset` (object_pos_at_grab minus this function's
+    own weighted combination at grab) every frame after, since
+    inverse-distance weighting doesn't interpolate exactly through the
+    query point. Ported verbatim from LiveSnapDebug.py after live
+    verification there -- do not re-derive independently if this needs
+    touching again, keep the two in sync."""
+    raw = {i: 1.0 / (math.hypot(object_pos_at_grab[0] - landmarks[i][0],
+                                 object_pos_at_grab[1] - landmarks[i][1]) + TRANSLATION_EPSILON_PX)
+           for i in TRANSLATION_CANDIDATE_LANDMARKS}
+    total = sum(raw.values())
+    return {i: w / total for i, w in raw.items()}
 
 
 def _is_thumb_outward(landmarks: List[Tuple[float, float]], handedness: str) -> bool:
@@ -418,12 +466,33 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             can_snap = (not thumb_outward) or _thumb_outward_snap_allowed[handedness]
             if can_snap:
                 owned_cube = _try_snap(handedness, hand_pos, exclude=released_this_frame)
-                if owned_cube is not None and hand_quat_now is not None:
+                if owned_cube is not None:
                     cube = cube_window.cubes[owned_cube]
-                    cube.grab_hand_orientation = hand_quat_now
-                    cube.grab_cube_orientation = cube.orientation
+                    if hand_quat_now is not None:
+                        cube.grab_hand_orientation = hand_quat_now
+                        cube.grab_cube_orientation = cube.orientation
+                    # Translation-pivot fix (§14.1/§14.1.1): capture the
+                    # object's position from its own PRE-EXISTING center --
+                    # BEFORE this frame's translation update below touches
+                    # it -- so this is genuinely "wherever the cube
+                    # visually was," not the hand anchor (today's old
+                    # zero-offset design discarded this; no-pop guarantee,
+                    # same principle as the orientation baseline above).
+                    object_pos_at_grab = cube_window.cube_center(owned_cube)
+                    cube.grab_landmark_weights = _compute_grab_weights(object_pos_at_grab, landmarks)
+                    weighted_at_grab = _weighted_position(cube.grab_landmark_weights, landmarks)
+                    cube.grab_residual_offset = (
+                        object_pos_at_grab[0] - weighted_at_grab[0],
+                        object_pos_at_grab[1] - weighted_at_grab[1],
+                    )
         if owned_cube is not None:
-            cube_window.set_target_position(owned_cube, _top_left_for_center(hand_pos, cube_window.cubes[owned_cube].size))
+            cube = cube_window.cubes[owned_cube]
+            weighted_now = _weighted_position(cube.grab_landmark_weights, landmarks)
+            new_center = (
+                weighted_now[0] + cube.grab_residual_offset[0],
+                weighted_now[1] + cube.grab_residual_offset[1],
+            )
+            cube_window.set_target_position(owned_cube, _top_left_for_center(new_center, cube.size))
             if hand_quat_now is not None:
                 cube = cube_window.cubes[owned_cube]
                 if cube.grab_hand_orientation is None:

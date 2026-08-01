@@ -59,6 +59,25 @@ WRIST = 0
 INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP = 5, 9, 13, 17
 HAND_POSITION_LANDMARKS = [WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP]
 
+# Translation-pivot fix (§14.1/§14.1.1, 2026-08-01, later conversation) --
+# distance-weighted live landmark tracking, verified offline against 7 real
+# hold intervals (AnalyzeTranslationPivot.py) before being wired in here:
+# no-pop exact, jitter comparable to today's zero-offset mechanism,
+# translation now measurably scales with real rotation. One known,
+# deliberately DEFERRED limitation: swings toward the palm under yaw
+# specifically (pure 2D weighting can't distinguish yaw foreshortening from
+# real repositioning -- likely shares root cause with the not-yet-built
+# Z-axis translation gesture, §14.3) -- accepted for now, revisit alongside
+# a proposed future startup Z-axis calibration step.
+THUMB_TIP, INDEX_TIP, MIDDLE_TIP, RING_TIP, PINKY_TIP = 4, 8, 12, 16, 20
+TRANSLATION_CANDIDATE_LANDMARKS = [THUMB_TIP, INDEX_TIP, MIDDLE_TIP, RING_TIP, PINKY_TIP,
+                                    INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP]
+# Floor under the inverse-distance denominator -- prevents divide-by-zero
+# and caps how sharply weight can concentrate onto a single landmark.
+# Matches AnalyzeTranslationPivot.py's verified value; re-tune together
+# with that script if this ever needs adjusting, don't drift the two apart.
+TRANSLATION_EPSILON_PX = 5.0
+
 # Cube sizes match production's CubeWindow.py exactly (2026-08-01, direct
 # request: large cube's every dimension is 2x the small cube's) -- keeping
 # this debug tool's visual an accurate stand-in for what production shows,
@@ -239,6 +258,15 @@ class Cube:
     # at that instant (unchanged) -- both None while unowned.
     grab_hand_orientation: Optional[Tuple[float, float, float, float]] = None
     grab_cube_orientation: Optional[Tuple[float, float, float, float]] = None
+    # Translation-pivot fix (§14.1/§14.1.1) -- distance-weighted live
+    # landmark tracking, the translation counterpart of the rotation
+    # baseline pair above. `grab_landmark_weights` (frozen at grab, never
+    # recomputed) maps each candidate landmark index to its normalized
+    # inverse-distance-from-the-object weight; `grab_residual_offset` is
+    # the small constant added every frame so the grab frame itself is
+    # exactly continuous (no pop) -- see _compute_grab_weights' docstring.
+    grab_landmark_weights: Optional[Dict[int, float]] = None
+    grab_residual_offset: Optional[Tuple[float, float]] = None
 
 
 @dataclass
@@ -321,6 +349,8 @@ class CubeState:
         cube.owner = None
         cube.grab_hand_orientation = None
         cube.grab_cube_orientation = None
+        cube.grab_landmark_weights = None
+        cube.grab_residual_offset = None
 
     def set_target_position(self, name: str, top_left: Tuple[float, float]) -> None:
         cube = self.cubes[name]
@@ -356,6 +386,37 @@ def _hand_position(pixel_landmarks) -> Tuple[float, float]:
     xs = [pixel_landmarks[i][0] for i in HAND_POSITION_LANDMARKS]
     ys = [pixel_landmarks[i][1] for i in HAND_POSITION_LANDMARKS]
     return (sum(xs) / len(xs), sum(ys) / len(ys))
+
+
+def _weighted_position(weights: Dict[int, float], pixel_landmarks) -> Tuple[float, float]:
+    """Distance-weighted combination of candidate landmarks' CURRENT pixel
+    positions (§14.1's translation-pivot fix, chosen mechanism). Used both
+    to compute the grab-time weights' own no-pop residual and to track
+    position live every frame after -- same formula, different landmark
+    positions."""
+    x = sum(w * pixel_landmarks[i][0] for i, w in weights.items())
+    y = sum(w * pixel_landmarks[i][1] for i, w in weights.items())
+    return (x, y)
+
+
+def _compute_grab_weights(object_pos_at_grab: Tuple[float, float], pixel_landmarks) -> Dict[int, float]:
+    """Freezes distance-weighted candidate-landmark weights at the moment
+    of grab (§14.1.1's chosen, offline-verified mechanism): each candidate
+    (5 fingertips + 4 non-thumb MCPs) is weighted by normalized inverse
+    distance from the object's own position at that instant -- the
+    literal, computable version of "the phalanges are locked once the
+    object is grabbed." Never recomputed during the hold; the caller also
+    needs a `grab_residual_offset` (object_pos_at_grab minus this
+    function's own weighted combination at grab) added every frame after,
+    since inverse-distance weighting doesn't interpolate exactly through
+    the query point -- see AnalyzeTranslationPivot.py's identical
+    construction, verified offline (0.0000px no-pop error, 7/7 real hold
+    intervals) before being ported here."""
+    raw = {i: 1.0 / (math.hypot(object_pos_at_grab[0] - pixel_landmarks[i][0],
+                                 object_pos_at_grab[1] - pixel_landmarks[i][1]) + TRANSLATION_EPSILON_PX)
+           for i in TRANSLATION_CANDIDATE_LANDMARKS}
+    total = sum(raw.values())
+    return {i: w / total for i, w in raw.items()}
 
 
 def _top_left_for_center(center: Tuple[float, float], size: int) -> Tuple[float, float]:
@@ -701,9 +762,29 @@ def update_hands(state: CubeState, hand_data_by_hand) -> None:
                     cube = state.cubes[owned]
                     cube.grab_hand_orientation = hand_quat_now
                     cube.grab_cube_orientation = cube.orientation
+                    # Object position at the instant of grab -- captured
+                    # from the cube's own pre-existing center, BEFORE this
+                    # frame's translation update below touches it, so this
+                    # is genuinely "wherever the cube visually was," not
+                    # the hand anchor (§14.1's whole point: today's
+                    # zero-offset design discarded this; the redesign
+                    # preserves it, same no-pop principle as the
+                    # orientation baseline just above).
+                    object_pos_at_grab = state.cube_center(owned)
+                    cube.grab_landmark_weights = _compute_grab_weights(object_pos_at_grab, data["pixel_landmarks"])
+                    weighted_at_grab = _weighted_position(cube.grab_landmark_weights, data["pixel_landmarks"])
+                    cube.grab_residual_offset = (
+                        object_pos_at_grab[0] - weighted_at_grab[0],
+                        object_pos_at_grab[1] - weighted_at_grab[1],
+                    )
         if owned is not None:
-            state.set_target_position(owned, _top_left_for_center(hand_pos, state.cubes[owned].size))
             cube = state.cubes[owned]
+            weighted_now = _weighted_position(cube.grab_landmark_weights, data["pixel_landmarks"])
+            new_center = (
+                weighted_now[0] + cube.grab_residual_offset[0],
+                weighted_now[1] + cube.grab_residual_offset[1],
+            )
+            state.set_target_position(owned, _top_left_for_center(new_center, cube.size))
             delta = _quat_multiply(hand_quat_now, _quat_conjugate(cube.grab_hand_orientation))
             target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
             # Slerp was temporarily disabled 2026-08-01 to isolate and

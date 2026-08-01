@@ -165,6 +165,17 @@ class Cube:
     orientation: Tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
     grab_hand_orientation: Optional[Tuple[float, float, float, float]] = None
     grab_cube_orientation: Optional[Tuple[float, float, float, float]] = None
+    # Translation-pivot fix (§14.1/§14.1.1) -- distance-weighted live
+    # landmark tracking, ported from LiveSnapDebug.py after live
+    # verification there (2026-08-01). Translation counterpart of the
+    # rotation baseline pair above: `grab_landmark_weights` (frozen at
+    # grab, never recomputed) maps each candidate landmark index to its
+    # normalized inverse-distance-from-the-object weight;
+    # `grab_residual_offset` is the small constant added every frame so
+    # the grab frame itself is exactly continuous (no pop) -- see
+    # HandsTriggeredActions.py's `_compute_grab_weights` docstring.
+    grab_landmark_weights: Optional[Dict[int, float]] = None
+    grab_residual_offset: Optional[Tuple[float, float]] = None
 
 
 class CubeWindow:
@@ -281,6 +292,8 @@ class CubeWindow:
         cube.owner = None
         cube.grab_hand_orientation = None
         cube.grab_cube_orientation = None
+        cube.grab_landmark_weights = None
+        cube.grab_residual_offset = None
 
     def _draw_object_3d(self, obj: Cube) -> None:
         """Rotates `obj.mesh`'s local vertices by the object's orientation

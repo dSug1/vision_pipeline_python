@@ -212,6 +212,104 @@ concentration cap, light temporal smoothing) are only worth adding if
 recorded data actually shows they're needed. Full verification
 methodology: §14.1.
 
+**Verified against real recordings (2026-08-01, same conversation
+continued)**: built `RecordTranslationPivotDebug.py`/
+`record_translation_pivot_debug.bat` + `AnalyzeTranslationPivot.py`
+(saved to `E:\Python\Recordings for vision_pipeline\Position_during_rotation`,
+direct request). 7 real hold intervals across 3 valid takes (both cube
+sizes): **no-pop exact (0.0000px always), jitter comparable to today,
+translation now measurably scales with real rotation** (~2x jitter under
+high vs. low rotation amount, consistent across all 7 intervals).
+
+**Known, deliberately DEFERRED limitation found the same session**: the
+computed point swings toward the palm specifically under **yaw** (hand
+turning sideways, knuckle row going edge-on to the camera) — confirmed
+empirically (correlation −0.25 across intervals, using the same
+recordings, no new capture needed). Pitch/roll are fine. Root cause: pure
+2D pixel-distance weighting can't distinguish yaw-driven foreshortening
+from real repositioning — a depth-ambiguity problem, same class as §14.3's
+Z-axis-at-grab issue, likely the SAME underlying cause. **Decision:
+implement as-is** (still a strict improvement over today's zero-offset
+forcing), revisit yaw together with a **proposed future startup Z-axis
+calibration step** (not yet designed) when Z-axis translation is actually
+picked up. Full account: `GESTURE_PIPELINE_SPEC.md` §14.1.1.
+
+**Implemented in `LiveSnapDebug.py` and replay-verified against real
+recorded data (2026-08-01, same conversation continued)**: `Cube` gained
+`grab_landmark_weights`/`grab_residual_offset` (mirrors the
+`grab_hand_orientation`/`grab_cube_orientation` pattern), `_compute_grab_weights`/
+`_weighted_position` added, `update_hands` now computes the grab-time
+weights from the cube's own pre-existing position (not the hand anchor)
+and tracks live thereafter. **Verified by replaying a real recording's
+landmarks through the actual (modified) `update_hands` function**: at the
+exact grab frame, the cube stayed at its own resting position (320.0,
+240.0) with zero pop; the OLD recorded data at that same frame had already
+popped to (395.9, 255.3) — a ~76px discontinuous jump the new mechanism
+eliminates, confirmed against real camera data through the real code path,
+not just synthetic math.
+
+**Confirmed working live (2026-08-01, same conversation continued)** —
+user tested the redesigned mechanism against a real camera via
+`debug_snap.bat`: "it's working." Same confirmation pattern as rotation's
+own live test (§13.7).
+
+**Ported to production (2026-08-01, same conversation continued)**:
+`CubeWindow.py`'s `Cube` gained the identical `grab_landmark_weights`/
+`grab_residual_offset` fields; `HandsTriggeredActions.py` gained
+`_weighted_position`/`_compute_grab_weights` (verbatim formula) and
+`on_hands_frame`'s translation logic now mirrors `LiveSnapDebug.py`'s.
+**Verification method differs from usual** because
+`HandsTriggeredActions.py` opens a real pygame window as an import side
+effect (module-level `cube_window = CubeWindow()`), so it can't be
+safely replayed through a script the way `LiveSnapDebug.py` was — instead
+verified by careful line-by-line parity review against the already
+live-verified debug-tool version (same candidate landmarks, same epsilon,
+same formulas, same no-pop construction). One intentional, justified
+divergence: translation's grab-weight capture is unconditional (not
+gated on `hand_quat_now is not None` the way rotation's baseline is),
+since translation only needs 2D `landmarks` (always available), not the
+slower-arriving `world_landmarks` — no "missed the grab-frame capture"
+fallback needed for it.
+
+**Status: implemented, replay-verified, live-camera-confirmed in the
+debug tool, ported to production and parity-reviewed, AND live production
+tested (2026-08-01)** — user ran the actual client/server pipeline
+(`launch.bat`) and confirmed it mostly works.
+
+**One spurious, NOT-YET-ROOT-CAUSED glitch found during that live
+production test**: "the cube jumped from one hand to another and came
+back to the hand" — not reproducible on demand. Leading, UNVERIFIED
+hypothesis: the mechanism has no outlier rejection across its 9 candidate
+landmarks (unlike rotation's reliability-weighted predictive filter) — a
+single fingertip briefly misread (e.g. hand occlusion) could pull the
+weighted average toward a bad reading for a frame or two, looking exactly
+like a jump-and-recover. This is exactly the risk flagged as
+deferred-but-unverified when the mechanism was designed — real evidence
+it can happen, even without a controlled repro. **Decision (direct
+request): document only, no code change** — this project's standing
+discipline is not to fix without verifying against real data, and there's
+no repro to verify against. Revisit if this recurs or becomes
+reproducible. Full account: `GESTURE_PIPELINE_SPEC.md` §14.1.3.
+
+**Considered done for now**, with this known open glitch tracked
+separately, not blocking moving on to §2.2 (release trigger).
+
+**Separate, unrelated bug found and FIXED the same session: thumb-outward
+restriction (rule 3) was silently INVERTED in production only** — "I can
+grab only if the hands are with the thumbs facing outwards... opposite of
+the debug pipeline where rightfully the grab was done when the thumbs
+were facing inwards." Root-caused (not guessed): `VisionPipeline.py`
+detects on the raw, un-mirrored frame; pixel/world COORDINATES get
+mirrored afterward (`invert_x=True`) but the handedness LABEL never was —
+MediaPipe's Left/Right classification assumes a mirrored input, so on an
+unmirrored frame it reports the true anatomical hand, inverting
+`_is_thumb_outward`'s handedness-dependent chirality correction
+specifically (the one place that's not handedness-symmetric). Fixed at
+the single source (`hands_visualizer.py`'s new `_mirror_handedness()`),
+not by patching the consumer. **Not yet independently live-tested** —
+recommend confirming thumb-inward now correctly permits grab in
+production. Full account: `GESTURE_PIPELINE_SPEC.md` §13.6.1.
+
 ### 2.2 New candidate: unsnap by quickly fully opening the hand
 
 **Design**: while holding an object, rapidly and fully opening the hand
@@ -273,20 +371,23 @@ is actually picked up — full detail: `GESTURE_PIPELINE_SPEC.md` §14.3.
   (`LiveSnapDebug.py`, `debug_snap.bat`, `RecordRotationDebug.py`,
   `record_rotation_debug.bat`; the archived `LiveGestureDebug.py`/
   `debug.bat` for pinch).
-- **§14.1 verification tooling built (2026-08-01, later conversation),
-  NOT YET RUN against real camera data**: `RecordTranslationPivotDebug.py`/
+- **§14.1 verification tooling built AND RUN against real camera data
+  (2026-08-01, later conversation)**: `RecordTranslationPivotDebug.py`/
   `record_translation_pivot_debug.bat` (same lineage as
   `RecordRotationDebug.py` — imports `LiveSnapDebug.py`'s real, already
   live-verified snap/translate logic, so recorded grab events and cube
-  centers are real ground truth, not simulated) and
-  `AnalyzeTranslationPivot.py` (offline: finds each real grab event,
-  freezes distance-weighted candidate-landmark weights, replays the new
-  mechanism frame-by-frame, checks no-pop/jitter/weight-concentration —
-  §14.1's "Revised verification methodology"). Core math (no-pop residual,
-  pure-translation linearity) synthetically sanity-checked and passes
-  before ever touching the camera, same discipline as rotation's own
-  offline checks. Next step: record sessions for both cube sizes at a few
-  hand positions, then run the analysis script.
+  centers are real ground truth, not simulated), saved to
+  `E:\Python\Recordings for vision_pipeline\Position_during_rotation`
+  (direct request), and `AnalyzeTranslationPivot.py` (offline: finds each
+  real grab event, freezes distance-weighted candidate-landmark weights,
+  replays the new mechanism frame-by-frame, checks no-pop/jitter/
+  rotation-coupling/yaw-foreshortening). Core math synthetically
+  sanity-checked before ever touching the camera. **Verified against 7
+  real hold intervals**: no-pop exact, jitter comparable to today,
+  rotation-coupling confirmed proportional. **One deferred limitation
+  found and accepted** (yaw/palm-sinking, see §2.1 above and
+  `GESTURE_PIPELINE_SPEC.md` §14.1.1). Next step: wire the mechanism into
+  `LiveSnapDebug.py` for a true live visual check.
 - Model files: `Local_pc/Python_Server_MediaPipe_vision_pipeline/
   Resources/hand_landmarker.task` (in active use) and
   `gesture_recognizer.task` (downloaded 2026-08-01, kept on disk, not

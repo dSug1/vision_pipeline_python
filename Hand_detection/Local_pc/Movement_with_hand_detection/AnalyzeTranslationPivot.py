@@ -45,10 +45,15 @@ RECORDINGS_DIR = r"E:\Python\Recordings for vision_pipeline\Position_during_rota
 # 5 fingertips + the same 4 non-thumb MCPs today's `_hand_position`
 # already uses. Extend with PIP/DIP only if this pass shows the fingertip
 # + MCP set is too coarse -- not assumed necessary up front.
+WRIST = 0
 THUMB_TIP, INDEX_TIP, MIDDLE_TIP, RING_TIP, PINKY_TIP = 4, 8, 12, 16, 20
 INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP = 5, 9, 13, 17
 CANDIDATE_LANDMARKS = [THUMB_TIP, INDEX_TIP, MIDDLE_TIP, RING_TIP, PINKY_TIP,
                         INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP]
+# Same 5 points as today's `_hand_position` -- used below as the "palm
+# centroid" reference for the yaw/foreshortening diagnostic.
+PALM_LANDMARKS = [WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP]
+FINGERTIP_LANDMARKS = [THUMB_TIP, INDEX_TIP, MIDDLE_TIP, RING_TIP, PINKY_TIP]
 
 # Floor under the inverse-distance denominator -- prevents divide-by-zero
 # and caps how sharply weight can concentrate onto a single landmark.
@@ -61,6 +66,12 @@ TRACKED_HANDS = ("Left", "Right")
 
 def _dist(a, b):
     return math.hypot(a[0] - b[0], a[1] - b[1])
+
+
+def _centroid(landmarks, indices):
+    xs = [landmarks[i][0] for i in indices]
+    ys = [landmarks[i][1] for i in indices]
+    return (sum(xs) / len(xs), sum(ys) / len(ys))
 
 
 def _weighted_position(weights, landmarks_now):
@@ -128,6 +139,49 @@ def _tercile_split(rotation_angles, jitter_deltas):
     return low_mean, high_mean
 
 
+def _yaw_palm_bias_diagnostic(new_positions, palm_centroids, fingertip_centroids, knuckle_widths):
+    """Checks the specific problem reported live (2026-08-01, after the
+    first two analysis passes): "at one point, the center of the cube
+    sits inside the palm... when the hand is facing left or right,
+    orthogonal to the camera view" -- i.e. under YAW (turning the hand
+    sideways to the camera), not pitch/roll (reported OK).
+
+    `knuckle_width` (pixel distance INDEX_MCP<->PINKY_MCP) foreshortens
+    specifically under yaw -- the knuckle row turns edge-on to the camera
+    -- so a shrinking width-at-grab ratio is used as the yaw/sideways
+    indicator (cheap, already-available proxy; doesn't need 3D pose
+    classification). `bias_toward_palm` is signed: positive means the
+    computed position sits closer to the palm centroid (today's OLD
+    anchor) than to the fingertip centroid, negative means the reverse.
+    If the reported problem is real, bias_toward_palm should INCREASE
+    (swing toward the palm) as the knuckle row foreshortens (ratio drops)
+    -- i.e. a NEGATIVE correlation between ratio and bias."""
+    if len(new_positions) < 6 or knuckle_widths[0] < 1e-6:
+        return None
+    baseline_width = knuckle_widths[0]
+    ratios = [w / baseline_width for w in knuckle_widths]
+    biases = []
+    for pos, palm_c, tip_c in zip(new_positions, palm_centroids, fingertip_centroids):
+        d_palm = _dist(pos, palm_c)
+        d_tip = _dist(pos, tip_c)
+        denom = d_palm + d_tip
+        biases.append((d_tip - d_palm) / denom if denom > 1e-6 else 0.0)
+
+    corr = _pearson_correlation(ratios, biases)
+
+    n = len(ratios)
+    order = sorted(range(n), key=lambda i: ratios[i])  # ascending: most-foreshortened first
+    third = n // 3
+    if third < 2:
+        return {"correlation": corr, "foreshortened_bias": None, "frontal_bias": None}
+    foreshortened_idx = order[:third]   # smallest ratio = most sideways/yawed
+    frontal_idx = order[-third:]        # largest ratio = most front-facing
+    foreshortened_bias = sum(biases[i] for i in foreshortened_idx) / len(foreshortened_idx)
+    frontal_bias = sum(biases[i] for i in frontal_idx) / len(frontal_idx)
+    return {"correlation": corr, "foreshortened_bias": foreshortened_bias, "frontal_bias": frontal_bias,
+            "min_ratio": min(ratios)}
+
+
 def _find_hold_intervals(frames, handedness):
     """Yields (start_idx, end_idx_exclusive, held_cube) for each contiguous
     span where this hand holds a cube AND is detected AND that cube's
@@ -165,6 +219,9 @@ def _analyze_interval(frames, handedness, start_idx, end_idx, held_cube, source_
     new_positions = []
     old_positions = []
     raw_quats = []
+    palm_centroids = []
+    fingertip_centroids = []
+    knuckle_widths = []
     for idx in range(start_idx, end_idx):
         hand = frames[idx]["hands"].get(handedness)
         if hand is None or not hand.get("detected"):
@@ -175,6 +232,9 @@ def _analyze_interval(frames, handedness, start_idx, end_idx, held_cube, source_
         old_positions.append(tuple(frames[idx]["cubes"][held_cube]["center"]))
         raw_quat, _conditioning = debug_tool._hand_orientation_quaternion(hand["world_landmarks"])
         raw_quats.append(raw_quat)
+        palm_centroids.append(_centroid(landmarks_now, PALM_LANDMARKS))
+        fingertip_centroids.append(_centroid(landmarks_now, FINGERTIP_LANDMARKS))
+        knuckle_widths.append(_dist(landmarks_now[INDEX_MCP], landmarks_now[PINKY_MCP]))
 
     def _jitter_deltas(positions):
         return [_dist(positions[i], positions[i - 1]) for i in range(1, len(positions))]
@@ -219,6 +279,17 @@ def _analyze_interval(frames, handedness, start_idx, end_idx, held_cube, source_
               f"low-rotation frames={old_low_rot_jitter:.2f}px, high-rotation frames={old_high_rot_jitter:.2f}px "
               f"(ratio {old_ratio:.2f}x)")
 
+    yaw_diag = _yaw_palm_bias_diagnostic(new_positions, palm_centroids, fingertip_centroids, knuckle_widths)
+    if yaw_diag is not None:
+        corr_str = f"{yaw_diag['correlation']:.2f}" if yaw_diag["correlation"] is not None else "n/a"
+        print(f"    yaw/foreshortening check: knuckle-width min ratio={yaw_diag.get('min_ratio', float('nan')):.2f} "
+              f"(1.0=frontal, lower=more sideways), ratio-vs-palm-bias correlation={corr_str} "
+              f"(negative = swings toward palm as hand turns sideways, matches the reported problem)")
+        if yaw_diag["foreshortened_bias"] is not None:
+            print(f"    palm-bias when most sideways={yaw_diag['foreshortened_bias']:+.2f} "
+                  f"vs. most frontal={yaw_diag['frontal_bias']:+.2f} "
+                  f"(-1=fully at fingertips, +1=fully at palm, 0=balanced)")
+
     return {
         "cube": held_cube,
         "cube_size": cube_size,
@@ -234,6 +305,7 @@ def _analyze_interval(frames, handedness, start_idx, end_idx, held_cube, source_
         "high_rot_jitter": high_rot_jitter,
         "old_low_rot_jitter": old_low_rot_jitter,
         "old_high_rot_jitter": old_high_rot_jitter,
+        "yaw_diag": yaw_diag,
         "frames": end_idx - start_idx,
     }
 
@@ -302,6 +374,20 @@ def main() -> None:
         print(f"  old (today's) jitter, low-rotation frames: {old_low_mean:.2f}px "
               f"vs. high-rotation frames: {old_high_mean:.2f}px "
               f"(ratio {old_high_mean / old_low_mean:.2f}x)")
+
+    print("\n=== Yaw/foreshortening check (does the cube sink toward the palm when the hand turns sideways?) ===")
+    yaw_diags = [r["yaw_diag"] for r in all_results if r["yaw_diag"] is not None]
+    corr_vals = [d["correlation"] for d in yaw_diags if d.get("correlation") is not None]
+    fore_vals = [d["foreshortened_bias"] for d in yaw_diags if d.get("foreshortened_bias") is not None]
+    front_vals = [d["frontal_bias"] for d in yaw_diags if d.get("frontal_bias") is not None]
+    if corr_vals:
+        print(f"  mean ratio-vs-palm-bias correlation: {sum(corr_vals)/len(corr_vals):.2f} "
+              f"(across {len(corr_vals)} intervals; negative = confirms the reported swing-toward-palm)")
+    if fore_vals:
+        print(f"  mean palm-bias, most-sideways frames: {sum(fore_vals)/len(fore_vals):+.2f} "
+              f"vs. most-frontal frames: {sum(front_vals)/len(front_vals):+.2f}")
+        print(f"  worst single-frame min knuckle-width ratio seen: "
+              f"{min(d.get('min_ratio', 1.0) for d in yaw_diags):.2f}")
 
 
 if __name__ == "__main__":
