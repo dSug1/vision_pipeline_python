@@ -42,19 +42,35 @@ plain language, not implementation detail (link to the code instead).
    never makes it pop/snap to match whatever twist the hand happens to be
    at, it only starts rotating from there as the hand keeps turning.
    Active for any snapped hand regardless of pose (not gated on
-   open-palm — that detector doesn't exist yet, see "Not yet built"
-   below).
+   open-palm — that detector is parked, not just missing yet, see "Not yet
+   built" below).
    - Ported to production (`Resources/HandsTriggeredActions.py`/
      `Resources/CubeWindow.py`, wire protocol extended) and **confirmed
      working live against a real camera** 2026-08-01. Full account:
      `GESTURE_PIPELINE_SPEC.md` §13.7.
-   - **Known issue (TODO, separate from below): the object currently
-     translates somewhat when the hand only rotates in place** (it
-     shouldn't). The tracked hand-position anchor (§13.3, wrist + 4 MCP
-     centroid) isn't exactly at the hand's true rotational pivot, so pure
-     wrist rotation still traces a small arc in image space. Candidate
-     fixes and a recording-based verification plan: `GESTURE_PIPELINE_SPEC.md`
-     §14.1. Not yet started.
+   - **Known issue (TODO, separate from below), REFRAMED 2026-08-01 (later
+     conversation), mechanism resolved in a follow-up discussion: the
+     object currently translates when the hand rotates.** Root cause
+     corrected — this is NOT about the tracked hand-position anchor
+     (§13.3) not being precisely at the true rotational pivot; it's that
+     translation (rule 1/row 5) has **no grab-time offset at all** — the
+     cube is forced to sit exactly on one tracked anchor every single
+     frame. Chosen fix: **distance-weighted live landmark tracking** — at
+     grab, freeze a weighted set of ~9 phalange-adjacent landmarks
+     (fingertips + MCPs), weighted by proximity to the object; each frame,
+     recompute the weighted position from those same landmarks' real
+     tracked motion (no rotation math reused, stays purely 2D/pixel-based)
+     — literally "in relation to the phalanges," decided by direct
+     follow-up question. Literature-grounded (human grasp biomechanics —
+     grip point depends on object size, not one fixed landmark; the
+     broader "offset captured at grab, held fixed" principle used by
+     Unity's XR Interaction Toolkit and Meta's Horizon OS hand-grab SDKs).
+     **Once fixed, some translation during pure rotation is expected and
+     correct** (an object held off-center from the wrist genuinely swings
+     when the wrist twists) — this is no longer "the cube shouldn't
+     translate at all." Full design + citations: `GESTURE_PIPELINE_SPEC.md`
+     §14.1 (rewritten). Not yet started — first in the confirmed build
+     order.
    - **Known issue (TODO): rotation quality is still poor with the back
      of the hand facing the camera.** A pitch-crossing collinearity
      problem (rotation glitching when the hand rotates through edge-on,
@@ -96,20 +112,47 @@ plain language, not implementation detail (link to the code instead).
 
 ## Not yet built
 
-- Release via closed fist (original plan; blocked on finding a working
-  fist-detection approach — MediaPipe's built-in classifier was tried and
-  reverted, see `GESTURE_PIPELINE_SPEC.md` §13.5).
-- **New candidate release trigger, proposed 2026-08-01, not yet built**:
-  unsnap by quickly fully opening the hand (fingers extending outward
-  fast while the wrist stays stable) — specifically designed to be
-  distinguishable from a future depth/Z-axis-translation gesture (moving
-  the whole hand toward/away from the camera, where fingers AND wrist
-  would scale together instead). Proposed recording-based discrimination
-  plan: `GESTURE_PIPELINE_SPEC.md` §14.2. Not yet confirmed whether this
-  replaces or complements the closed-fist plan above.
-- Open-palm rotation gating (rotation is currently ungated — see rule 4).
-- Object translation shouldn't couple to pure hand rotation — see rule 4's
-  TODO and `GESTURE_PIPELINE_SPEC.md` §14.1.
+- **Open-palm/closed-fist detection: PARKED (2026-08-01, later
+  conversation)**, not intended to be pursued for the moment — was
+  blocked on finding a working fist-detection approach (MediaPipe's
+  built-in classifier was tried and reverted, see
+  `GESTURE_PIPELINE_SPEC.md` §13.5), now deprioritized rather than
+  actively worked on. Its two former dependents no longer need it:
+  rotation stays permanently ungated (rule 4), and release no longer plans
+  to use closed-fist at all — see the next item.
+- **Release trigger — quick full hand-open, now the sole active plan
+  (design confirmed 2026-08-01, not yet built)**: unsnap by quickly fully
+  opening the hand (fingers extending outward fast while the wrist stays
+  stable) — specifically designed to be distinguishable from Z-axis
+  translation below (moving the whole hand toward/away from the camera,
+  where fingers AND wrist would scale together instead). The closed-fist
+  release plan is superseded by this, not coexisting with it, since
+  closed-fist detection is parked above. Proposed recording-based
+  discrimination plan: `GESTURE_PIPELINE_SPEC.md` §14.2. **First priority**
+  after the translation-pivot fix below.
+- Open-palm rotation gating — **not planned**: rotation stays permanently
+  ungated now that open-palm/closed-fist detection is parked (rule 4).
+- **Grab-relative translation via distance-weighted live landmarks**
+  (reframed and mechanism resolved 2026-08-01 — not "stop translation
+  coupling to rotation," see rule 4's TODO): translation needs a
+  grab-time-frozen relationship to the hand, same principle rotation
+  already has, but implemented as a live-tracked weighted combination of
+  phalange-adjacent landmarks rather than a fixed single anchor.
+  `GESTURE_PIPELINE_SPEC.md` §14.1 (rewritten). **Highest priority** of
+  the currently queued build targets.
+- **Z-axis (camera-view-axis) translation, design confirmed 2026-08-01, not
+  yet built**: moving a snapped hand closer to/farther from the camera
+  would move the cube along the same axis. Driven by apparent hand-span
+  ratio (not raw MediaPipe `z`), mapped absolutely/continuously like
+  today's X/Y translation. Snap itself would become a 3D proximity check
+  (hand must be close to the cube on X, Y, **and** this new Z axis, not
+  just X/Y as today). Queued **third** in build order (unchanged), after
+  the translation-pivot fix and the hand-open release trigger above. Full
+  design: `GESTURE_PIPELINE_SPEC.md` §14.3.
+
+**Confirmed build order (2026-08-01)**: translation-pivot fix →
+hand-open-quick-release trigger → Z-axis translation. Open-palm/closed-fist
+detection is parked, not queued at all for now.
 
 ## Status
 

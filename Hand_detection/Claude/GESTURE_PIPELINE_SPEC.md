@@ -2829,18 +2829,21 @@ the underlying object-manipulation architecture.
 - ~~Whether `Open_Palm`/`Closed_Fist` from MediaPipe's built-in Gesture
   Recognizer are reliable enough live~~ — **checked and answered, see
   §13.5: no, reverted.**
-- Whether snap should be blocked while closed-fist (see §13.3's inert-fist
-  note) — the mechanism was built and worked, but was reverted along with
-  the Gesture Recognizer integration (§13.5); revisit once fist detection
-  has a working replacement.
-- Whether rotation should be gated on `Open_Palm` specifically, or applied
-  whenever an object is snapped regardless of hand pose (see §13.3's
-  gating-choice note) — resolve by feel once live; also now blocked on
-  finding a working open-palm signal (§13.5).
-- Depth (Z-axis) translation and/or the old depth-proxy scale/color effect
-  (`PART_ONE.md` §2's last bullet, row 6 of the old matrix) were not
-  mentioned in the new gesture set — presumed dropped for now, not
-  carried forward automatically; revisit only if explicitly wanted.
+- ~~Whether snap should be blocked while closed-fist (see §13.3's inert-fist
+  note)~~ — **moot (2026-08-01, later conversation): open-palm/closed-fist
+  detection (row 2) is now PARKED, not being actively pursued.** The
+  mechanism was built and worked once, but was reverted along with the
+  Gesture Recognizer integration (§13.5); revisit only if row 2 is
+  explicitly un-parked later.
+- ~~Whether rotation should be gated on `Open_Palm` specifically~~ —
+  **resolved (2026-08-01, later conversation): rotation stays permanently
+  ungated**, not just pending a working open-palm signal — row 2 being
+  parked makes this the settled answer, not a temporary gap.
+- ~~Depth (Z-axis) translation and/or the old depth-proxy scale/color
+  effect~~ — **superseded (2026-08-01, later conversation).** Depth-proxy
+  scale/color (`PART_ONE.md` §2's last bullet, row 6 of the matrix) stays
+  dropped, but Z-axis translation itself is no longer just "not mentioned"
+  — it has a confirmed design now, matrix row 9, full detail §14.3.
 
 ### 13.5 Build progress (2026-08-01) — proximity snap/translate live-verified; MediaPipe's built-in Closed_Fist reverted
 
@@ -2902,6 +2905,15 @@ try, and directly matches this project's literature-grounded intuition
 that these are structurally easier poses than pinch, only unreliable in
 MediaPipe's *specific* pretrained classifier, not necessarily inherently
 hard to detect geometrically.
+
+**PARKED (2026-08-01, later conversation)**: `Open_Palm`/`Closed_Fist`
+detection (matrix row 2) is not intended to be pursued for the moment —
+neither candidate (a) nor (b) above is being evaluated now. This is a
+deprioritization, not a rejection of either candidate's merit; revisit if
+explicitly requested again. Its two former dependents have already moved
+on without it: rotation (row 7) stays permanently ungated by design;
+release (row 4) now relies on the hand-open-quick-release gesture (§14.2)
+as its sole deliberate trigger instead of `Closed_Fist`.
 
 ### 13.6 Thumb-outward snap restriction (2026-08-01) — new rule, built and live-verified
 
@@ -3345,9 +3357,192 @@ of `_make_cube_mesh`'s procedural light/dark color-family assignment.
 Two build targets the user proposed immediately after confirming the 3D
 cube rendering worked, to be picked up in a fresh conversation (see
 `Claude/HANDOFF_SNAP_ROTATE_RELEASE.md`, refreshed the same session to
-point here).
+point here). **A third target, Z-axis translation, was added and its
+design confirmed in a later conversation (§14.3)** — queued after the
+first two, not started.
 
-### 14.1 Hand-anchor/pivot point for translation — cube shouldn't drift when the hand only rotates
+**Confirmed build order (2026-08-01, later conversation)**: §14.1 (pivot
+fix) → §14.2 (hand-open release) → §14.3 (Z-axis translation). Ask the
+user before reordering if this ever seems worth revisiting.
+
+### 14.1 Grab-relative rigid attachment for translation (REDESIGNED, 2026-08-01, later conversation) — supersedes the original anchor-selection framing below
+
+**The original framing (preserved below for context) was wrong, per
+direct user correction.** It asked "which single tracked landmark drifts
+least during pure rotation," implicitly treating any translation during
+rotation as an artifact to be minimized by picking a better point. That
+missed the actual root cause.
+
+**Root cause, confirmed by reading the current code**
+(`HandsTriggeredActions.py`, `on_hands_frame`, ~line 426): unlike
+rotation — which explicitly captures a grab-time baseline pair
+(`grab_hand_orientation`/`grab_cube_orientation`) and computes a relative
+DELTA each frame — translation has **no grab-time offset at all**:
+`cube_window.set_target_position(owned_cube, _top_left_for_center(hand_pos, ...))`
+forces the cube's center to exactly equal the mapped anchor position
+**every** frame, unconditionally. The object is never allowed to sit
+anywhere other than exactly on top of the tracked anchor point, so any
+imprecision in that anchor shows up directly as spurious motion, and the
+object's actual position at the moment of grab (which can be up to
+`GRAB_RADIUS` away from the anchor) is discarded at that instant. No
+choice of anchor landmark fixes this — the zero-offset forcing is the
+actual defect, not the anchor's precision.
+
+**Corrected model, per direct user request**: real prehension does not
+work this way. When a hand grasps an object, the object occupies a
+specific position within the volume the hand's fingers/palm close around
+at the moment of grasp, and stays fixed relative to that grip as the hand
+subsequently moves and rotates — the phalanges don't keep sliding around
+the object mid-hold. The correct model captures the object's relationship
+to the hand **once, at the moment of grab**, and follows it live
+thereafter — the translation counterpart of what rotation already does
+for orientation. (Which exact mechanism does that capturing — a single
+frozen offset reapplied via a rotation transform, vs. a live-tracked
+weighted combination of nearby landmarks — was a genuine open question,
+resolved below in "Concrete redesign, chosen mechanism" after direct
+follow-up discussion with the user.)
+
+**Literature confirms this over the original anchor-selection framing,
+not just the user's intuition**:
+- **Grasp biomechanics (Napier, 1956 — the foundational prehension
+  taxonomy, still the standard reference today)**: human grasps fall into
+  two main patterns, **power grip** (object held against the palm,
+  fingers flexed around it, thumb-assisted — larger objects/force) and
+  **precision grip** (object pinched between the pads of thumb and
+  fingers, palm largely uninvolved — smaller objects/control). Object size
+  is a confirmed determinant of which pattern is used, and of exactly
+  where on the hand the object sits — a real "grasp point" is not one
+  fixed anatomical landmark, it depends on the object
+  ([PMC: quantitative taxonomy of human hand grasps](https://pmc.ncbi.nlm.nih.gov/articles/PMC6377750/),
+  [OT Mastery: grasp pattern taxonomy](https://www.otmastery.com/resources/types-of-grasp-patterns)).
+  Postural studies further show grasp contact points/posture vary
+  systematically and continuously with object size relative to hand size,
+  not just discretely between the two categories
+  ([Springer, J. Mech. Sci. Technol. 2014: postural variation of precision grips by object size](https://link.springer.com/article/10.1007/s12206-014-0309-x)).
+- **VR/AR hand-interaction industry practice already implements exactly
+  the corrected model, as the standard, not an edge case.** Unity's XR
+  Interaction Toolkit: grabbing with **Dynamic Attach** "grab[s] the
+  object wherever the hand touches it, which keeps relative position" —
+  the relative offset is captured once at the grab instant and held fixed
+  through the hold
+  ([Unity XR Interaction Toolkit — XR Grab Interactable](https://docs.unity3d.com/Packages/com.unity.xr.interaction.toolkit@3.2/manual/xr-grab-interactable.html)).
+  Meta's Horizon OS Hand Grab Interaction SDK defines a `GripPoint` — "an
+  offset from the Wrist... used... as anchor for attaching the object"
+  ([Meta Horizon OS — Hand Grab Interactions](https://developers.meta.com/horizon/documentation/unity/unity-isdk-hand-grab-interaction/)).
+  Both are the same underlying principle — a hand-object relationship
+  fixed once at grab, followed thereafter, not a per-frame absolute remap
+  of a single tracked point — via a single frozen attach-point offset.
+  This project's chosen mechanism (below) goes one step further, given
+  finer-grained per-landmark data is already available and free: instead
+  of one frozen offset from one point, it's a live-tracked, distance-
+  weighted combination of several phalange-adjacent landmarks — directly
+  motivated by the Napier finding above that a real grasp point isn't one
+  fixed landmark, it depends on the object.
+
+**Important caveat specific to this pipeline, not present in the VR
+citations above**: those systems either use real physical controllers, or
+(for hand-tracking headsets) treat the tracked hand as *assumed* to
+mechanically conform around the object once a grab is recognized. This
+pipeline's MediaPipe landmarks are **not** mechanically constrained by any
+real object — nothing stops the tracked fingers from continuing to report
+their true, unconstrained pose during a "hold." So "the volume enclosed by
+the distal phalanges at the moment of grab" cannot be literally measured
+from landmark contact here; it has to be **approximated as a fixed offset
+captured at the grab instant**, exactly the way Unity's Dynamic Attach
+does it ("grab the object wherever the hand touches it" — a geometric
+snapshot, not a physical contact simulation). This is a faithful, standard
+approximation, not a shortcut unique to this project.
+
+**Concrete redesign, chosen mechanism (resolved 2026-08-01, follow-up
+discussion)**: direct user question — "how do you define the offset at
+grab? In relation to the phalanges?" — surfaced that the first draft above
+(a single frozen offset from the existing wrist+4-MCP anchor, reapplied
+via the 3D rotation quaternion each frame) left a real gap unresolved: it
+never specified how a 2D pixel-space offset and a 3D `world_landmarks`
+rotation delta are supposed to combine — translation has always been kept
+deliberately in image-space (§1), while `rotation_delta` lives in the
+noisier 3D `world_landmarks` space. Presented as an explicit fork (single
+frozen offset + 3D delta / single frozen offset + simple 2D rotation /
+distance-weighted live landmarks) — **user chose distance-weighted live
+landmarks.**
+
+1. **Candidate landmark set** (phalange-adjacent joints — starting point,
+   extend only if verification shows it helps, don't over-scope up
+   front): the 5 fingertips (`THUMB_TIP`, `INDEX_TIP`, `MIDDLE_TIP`,
+   `RING_TIP`, `PINKY_TIP`) plus the existing 4 non-thumb MCPs already
+   used by `_hand_position` (`INDEX_MCP`, `MIDDLE_MCP`, `RING_MCP`,
+   `PINKY_MCP`) — 9 candidates. PIP/DIP joints are a natural extension to
+   test later if the fingertip+MCP set proves too coarse, not assumed
+   necessary up front.
+2. **At grab**: for each candidate landmark *i*, compute
+   `weight_i = 1 / (distance(object_position_at_grab, landmark_i_position_at_grab) + EPSILON)`,
+   then normalize so `Σ weight_i = 1`. **Freeze this weight vector** —
+   `grab_landmark_weights` — for the duration of the hold; it is never
+   recomputed. This is the literal, computable version of "the phalanges
+   are locked once the object is grabbed": the SET of landmarks and their
+   relative influence is decided once, from real geometry at that grab
+   instant (which landmarks were actually near the object), not
+   hardcoded per cube identity.
+3. **Exact no-pop continuity**: inverse-distance weighting is an
+   approximation, not exact interpolation — it won't land precisely on
+   `object_position_at_grab` in general. So also store a small constant
+   `grab_residual_offset = object_position_at_grab − Σ(grab_landmark_weights_i
+   × landmark_i_position_at_grab)`, added every frame. This guarantees the
+   grab frame itself is bit-for-bit continuous (same no-pop discipline as
+   rotation's own baseline capture, and the same "grab-time position = the
+   object's own position" principle already decided for Z-axis translation,
+   §14.3).
+4. **Every subsequent frame**:
+   `object_position(t) = Σ(grab_landmark_weights_i × landmark_i_position(t)) + grab_residual_offset`
+   — same frozen weights, each candidate landmark's CURRENT live tracked
+   2D pixel position. **No quaternion, no rotation-delta application, no
+   2D/3D space-bridging at all** — translation stays purely 2D/pixel-based
+   throughout, consistent with §1's original architecture decision.
+   Rotation-coupling falls out naturally and correctly, because real
+   fingertip/knuckle landmarks genuinely do swing more than the wrist
+   during a wrist twist — no explicit "reapply a rotation" step needed.
+5. **Napier's grip-size distinction falls out for free, superseding the
+   earlier "pick a different hardcoded anchor per object size" idea**:
+   grab the small cube near the fingertips and weights concentrate on TIP
+   landmarks (precision-grip-like); grab the large cube more centrally and
+   weights spread across MCPs (power-grip-like) — an emergent property of
+   the actual grab geometry, not a branch on which cube name was grabbed.
+   The size-dependent-single-anchor refinement from the first draft is now
+   unnecessary and superseded, not a separate open item anymore.
+
+**Known risk to verify, not assume**: individual fingertip/joint landmarks
+are noisier than the existing wrist+4-MCP centroid — that noise-stability
+was §13.3's original reason for choosing a multi-point centroid in the
+first place. If weights concentrate sharply on one or two landmarks (a
+small object grabbed right at the fingertips), the resulting position
+signal could be jitterier than today's very stable translation.
+Mitigations to test empirically if the data shows they're needed, not
+picked blindly up front: a weight-concentration cap (e.g. a larger
+`EPSILON` floor under the inverse-distance denominator, or clamping the
+max single-landmark weight share), and/or light temporal smoothing on the
+final combined position (same category of fix as rotation's own slerp,
+applied to position instead).
+
+**Revised verification methodology** (supersedes both the old "measure
+which anchor drifts least" plan below AND the first draft's rotation-delta
+plan above — this is the concrete mechanism to test): record a hand
+grabbing, then rotating in place at a few real positions, for both cube
+sizes. Offline, check: (1) the grab frame itself shows exactly zero pop
+(sanity-checks the residual-offset math); (2) rotation-coupled translation
+now looks proportional to the real swing of the weighted landmark set, not
+the erratic behavior row 5 previously showed; (3) whether weights
+concentrate too sharply for the small cube specifically, and whether that
+shows up as extra jitter vs. the large cube — deciding whether a
+concentration cap or smoothing is needed based on what's actually
+measured. Build the base weighted-tracking mechanism first, verify against
+recorded data, THEN tune concentration/smoothing parameters only if the
+data shows they're needed — don't skip straight to implementation-by-feel
+for either.
+
+---
+
+**Original framing (2026-08-01, superseded above — kept for context, not
+current design)**:
 
 **Problem, as reported**: "at the moment, the cube is located somewhere
 inside the palm/wrist and therefore it translates when the hand rotates:
@@ -3366,9 +3561,10 @@ noise/jitter, it would happen even with perfect, noise-free tracking,
 because the palm-center centroid is pulled toward the knuckles, offset
 from the true pivot.
 
-**Candidate approaches to test** (not yet chosen — the user's own
-suggestion first, plus alternatives, all should be verified empirically
-before committing, same discipline as everything else in this document):
+**Candidate approaches that were proposed** (superseded — kept for
+context; candidate 3's "offset along the hand's local axis" idea is the
+one thing that foreshadowed the corrected model above, but was framed as
+an anchor-position adjustment rather than a grab-relative offset):
 
 1. **User's own suggestion**: "center of gravity in the middle of all
    volume created by the fingers and palm" — i.e. a centroid over a wider
@@ -3390,17 +3586,6 @@ before committing, same discipline as everything else in this document):
    the same orthonormal frame §13.7 already computes for rotation) toward
    the anatomically-correct pivot rather than the raw landmark centroid.
 
-**Suggested verification methodology** (mirroring `RecordRotationDebug.py`'s
-proven approach this session): record a hand rotating in place (wrist
-twisting, translating the hand itself as little as possible) at a few
-different real-world positions/orientations, log ALL candidate anchor
-points' pixel positions per frame (already easy to extend the existing
-recorder, or build a similarly small one), and directly measure how much
-each candidate DRIFTS during a "pure rotation" recording — the candidate
-with the least drift for the same real motion is the answer, not a guess.
-Don't pick a fix by feel alone; this project's standing discipline (this
-document, throughout) is to verify against recorded data first.
-
 ### 14.2 Unsnap by quickly fully opening the hand — new candidate release trigger
 
 **Design, as described**: while a hand holds a snapped object, rapidly and
@@ -3420,11 +3605,15 @@ changing quickly) while wrist-relative hand scale/position stays
 roughly constant* — as opposed to depth-translation's *fingers AND wrist
 scale together*.
 
-**This is a NEW candidate for the release trigger, proposed 2026-08-01,
-alongside (not yet confirmed to replace) the earlier closed-fist release
-plan** (§13.4/§13.5 — blocked since inception on finding a working
-fist-detection approach, MediaPipe's built-in classifier tried and
-reverted). Unlike a static closed-fist POSE classifier, this is
+**Confirmed as the sole active release-trigger plan (2026-08-01, later
+conversation)**: the earlier closed-fist release plan (§13.4/§13.5 —
+blocked since inception on finding a working fist-detection approach,
+MediaPipe's built-in classifier tried and reverted) depended on row 2
+(`Open_Palm`/`Closed_Fist` detection), which is now **PARKED**, not being
+pursued for the moment. This gesture is therefore no longer weighed as an
+alternative to closed-fist release — it's the one release-trigger plan
+going forward, second in the confirmed build order (§14.1 → §14.2 →
+§14.3). Unlike a static closed-fist POSE classifier, this is
 fundamentally a **transient, rate-of-change** gesture (a quick motion, not
 a held pose) — closer in spirit to how this project's pinch-release work
 (archived, §12) approached onset/offset detection than to a per-frame pose
@@ -3435,9 +3624,9 @@ structurally easier than pinch's fine-grained one), and the specific
 signal proposed (rate of finger extension vs. wrist stability) is a
 purely geometric, landmark-derived quantity — no pretrained classifier
 dependency at all, sidestepping the exact class of problem that blocked
-closed-fist. **Confirm with the user whether this supersedes or
-complements the closed-fist plan before building both** — not decided
-here, just proposed.
+closed-fist. **Resolved (2026-08-01, later conversation): this supersedes
+the closed-fist plan**, not coexists with it — row 2 is parked, so
+closed-fist release has no working detection path to run on regardless.
 
 **Proposed empirical approach, directly requested**: "we can take 6
 recordings in each hand position to record the gesture and see which
@@ -3464,3 +3653,79 @@ plan for whoever picks this up:
   rate-of-change with LOW wrist-scale rate-of-change; the confound gesture
   should show both changing together. Verify this separation holds across
   all 12 recordings before designing a threshold/classifier, not after.
+
+### 14.3 Z-axis (camera-view-axis) translation — new gesture, design confirmed 2026-08-01, NOT YET BUILT
+
+**Not previously specified as its own gesture.** Before this conversation
+the only two references to camera-axis depth in this project were: (1)
+`PART_ONE.md` §2's "depth proxy" (apparent hand span vs. a grab-time
+baseline), which was scoped to drive **scale + color only**, explicitly
+**not** Z-axis translation ("no Z-axis translation for now, explicitly
+deferred") — and that whole row was later **dropped** entirely during the
+snap/rotate/release pivot (§13.3); (2) §14.2 above, which mentions
+Z-translation only as a **hypothetical confound** to justify the
+hand-open release gesture's wrist-stability qualifier, not as a real
+design. This section is the first actual design for it.
+
+**Design, confirmed with the user before starting** (four decisions, in
+the order asked):
+
+1. **Signal: apparent hand-span ratio**, not raw `world_landmarks` `z`.
+   Same metric the dropped depth-proxy row used —
+   `wrist↔middle-MCP` image-space distance vs. a baseline captured at grab
+   time, `ratio = current_span / baseline_span`. Consistent with this
+   project's established, literature-backed finding that MediaPipe's raw
+   monocular `z` is the least reliable of the three coordinates (§13.2);
+   raw `z` was explicitly rejected as the signal.
+2. **Mapping: absolute and continuous, not relative-delta.** Symmetric
+   with how X/Y translation already works (row 5: cube position =
+   mapped(hand position) every frame) — **not** like rotation's
+   grab-time-baseline-delta design (§13.7). The cube's Z position is a
+   direct function of the current hand-span ratio each frame; there is no
+   "keep the cube's own Z at grab, only move by however much the ratio
+   changes afterward" baselining.
+3. **Snap gating becomes 3D.** A hand can only snap a cube if it is close
+   enough on **all three axes** — X, Y, **and** Z (hand-span-ratio-derived
+   depth) — not just image-space X/Y proximity as today. Direct quote:
+   "the snap can occur only if the hand position on the camera view axis
+   is close enough to the position of the cube on the same axis (same
+   logic as X/Y translation: the cube follows exactly the translation of
+   the hand, but the hand cannot snap the cube if it is not close enough
+   to the cube)." This means the grab-radius/arbitration logic (§13.3, row
+   3, currently a 2D image-space proximity check in `_try_snap`) needs to
+   become a 3D proximity check once this ships — a real change to existing
+   snap logic, not just an additive new axis bolted on afterward.
+4. **Scope: Z-translation only.** The old dropped depth-proxy scale/color
+   effect (row 6) stays dropped — not revived alongside this. Once
+   snapped, only position (now X/Y/Z) is affected, same as today's
+   rendering (real size stays fixed per-object, per §13.8).
+
+**Confirmed build order**: this is the **third** of three now-queued
+targets — after §14.1 (translation-pivot fix) and §14.2 (hand-open
+release trigger). Not started next; do §14.1 first.
+
+**Not yet resolved — defer to whoever actually picks this up, don't guess
+in advance**:
+- The exact mapping function from hand-span ratio to a Z position/depth
+  unit (linear? bounded range? what ratio counts as "no Z movement," i.e.
+  the resting width around 1.0?).
+- How the new Z-proximity check relates to the existing 2D grab-radius
+  value — the same radius extended into 3D (e.g. a spherical/ellipsoidal
+  check), or a separately-tuned Z tolerance? Needs live tuning either way,
+  same discipline as `GRAB_RADIUS`/`ROTATION_SLERP_FACTOR` etc.
+  (`HANDOFF_SNAP_ROTATE_RELEASE.md` §4).
+- **Interaction with §14.2's still-unbuilt release trigger**: §14.2's
+  discrimination design already reasoned about this gesture as a
+  *hypothetical* confound (fingers+wrist scaling together vs. release's
+  fingers-only). Once this is actually built (not hypothetical), §14.2's
+  planned recordings should be re-verified against the REAL Z-translation
+  implementation's actual hand-span-ratio signal, not just the imagined
+  confound — don't assume the earlier reasoning still holds unchecked.
+- Whether the hand-span metric needs recalibration/baseline capture to be
+  robust across different real hand sizes/users (same open question the
+  dropped depth-proxy row never resolved, `PART_ONE.md` §5).
+
+Per this project's standing discipline (`HANDOFF_SNAP_ROTATE_RELEASE.md`
+§4): verify the chosen hand-span-ratio-to-Z mapping against recorded or
+live data before committing to specific constants, same as every other
+build step in this document.

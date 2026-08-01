@@ -23,6 +23,13 @@
 > *trigger* gestures changed, not the manipulation architecture around
 > them.
 >
+> **Update (2026-08-01, later conversation): open-palm/closed-fist
+> detection (row 2) is now PARKED**, not being pursued for the moment —
+> so "open-palm rotation, closed-fist release" above is historical intent,
+> not the current plan. Rotation is permanently ungated; release now
+> relies on tracking-loss plus a new hand-open-quick-release gesture
+> (§3 row 4, `GESTURE_PIPELINE_SPEC.md` §14.2) instead of `Closed_Fist`.
+>
 > **Original 2026-07-30 banner, preserved for context**: §6–§8 below
 > document a **rule-based (hand-tuned threshold) pinch classifier that was
 > built, tested, and then abandoned** — it worked for the hand orientation
@@ -170,13 +177,14 @@ it actually belongs to), and cross-check §7.4's engine-agnostic
 | Order | Signal / Gesture | Hand(s) | Input | Detection logic | Effect | Status |
 |---|---|---|---|---|---|---|
 | 1 | Scaffolding | both, independent | full 21-landmark list per hand | n/a — plumbing only | red cube added to scene; both hands' landmarks flow through (not just left); no ownership/grab logic yet | **Built and live-verified** — code in `Local_pc/Movement_with_hand_detection/`; confirmed via `debug_snap.bat`'s combined video+landmarks+cube view (2026-08-01) |
-| 2 | Open-palm / closed-fist detection | each hand independently | `world_landmarks` (or a geometric heuristic on landmarks — see status) | MediaPipe's built-in `Open_Palm`/`Closed_Fist` classes **tried and reverted** (live-tested unreliable across hand positions — `GESTURE_PIPELINE_SPEC.md` §13.5); next candidate a geometric heuristic on finger-curl angles, else a **trained classifier** per `GESTURE_PIPELINE_SPEC.md`'s pipeline | `Open_Palm` gates rotation (row 7); `Closed_Fist` triggers release (row 4) | **Blocked on finding a working detection approach (2026-08-01)** — `gesture_recognizer.task` kept on disk for its `Thumb_Up` class (possible later use), not for this row. Rows 3-5 (snap/release-on-tracking-loss/translate) already built and live-verified without needing this row, per their own status |
-| 3 | Snap acquisition + arbitration | each hand vs. shared registry | hand position (palm-center, §13.3) vs. cube positions | pure proximity trigger — nearest **unowned** cube within grab radius of hand position → claim in shared registry, blocked by the thumb-outward rule (§13.6) | idle/hover → snapped | **Proximity trigger + thumb-outward restriction built and live-verified (2026-08-01)** — `Resources/HandsTriggeredActions.py`; the closed-fist-blocks-snap refinement (§13.4) still pending row 2. A same-frame release/re-snap ordering bug (cube instantly "jumping" to the other hand when one hand lost tracking near it) was found live and fixed — release now always resolves before that frame's snap pass, see the module's `on_hands_frame` docstring. Full rules list: `Claude/GAME_RULES.md` |
-| 4 | Release (un-snap) | each hand | `Closed_Fist` (row 2), or tracking loss | closed-fist detected on a hand holding a snapped cube **or** hand tracking lost | snapped → idle; cube frozen in place; ownership cleared; requires fresh proximity-snap to reacquire | **Tracking-loss release built and live-verified (2026-08-01)**; `Closed_Fist`-triggered release still pending row 2 |
-| 5 | Translation | each hand, while snapped | hand position (palm-center, image-space X/Y) | cube position = mapped(hand position), X/Y only | cube follows hand | **Built and live-verified (2026-08-01)** — replaces "pinch midpoint" with palm-center; mechanism otherwise unchanged |
-| 6 | Depth proxy → scale + color | each hand, while snapped | apparent hand span (image coords) vs. calibration baseline | `ratio = current_span / baseline_span` | cube scale ∝ ratio; color lerps light↔dark by ratio | **Dropped for now (2026-08-01)** — not part of the new gesture set as directed; not carried forward automatically, revisit only if explicitly wanted again |
-| 7 | Rotation (quaternion) | each hand, while snapped, **UNGATED** (confirmed 2026-08-01 — not gated on `Open_Palm`, see below) | `world_landmarks`: wrist(0), index_MCP(5), middle_MCP(9), pinky_MCP(17) | orthonormal frame → quaternion → predictive/reliability-weighted filter → relative delta-from-grab → slerp | cube orientation follows hand orientation | **Ported to production and CONFIRMED WORKING LIVE (2026-08-01)** — wire protocol extended (`hands_world` packet, §4's gap closed), `HandsTriggeredActions.py`/`CubeWindow.py` match the debug-tool-verified design, tested end-to-end against a real camera. Rendering upgraded same day to real mesh-generic 3D objects (row 8 below) once rotation was confirmed. Known open TODOs: rotation quality still poor with the back of the hand facing the camera (reduced, not eliminated, `GESTURE_PIPELINE_SPEC.md` §13.7); object translates somewhat during pure hand rotation, candidate fixes proposed but not built (§14.1) |
+| 2 | Open-palm / closed-fist detection | each hand independently | `world_landmarks` (or a geometric heuristic on landmarks — see status) | MediaPipe's built-in `Open_Palm`/`Closed_Fist` classes **tried and reverted** (live-tested unreliable across hand positions — `GESTURE_PIPELINE_SPEC.md` §13.5); next candidate a geometric heuristic on finger-curl angles, else a **trained classifier** per `GESTURE_PIPELINE_SPEC.md`'s pipeline | Previously: `Open_Palm` gates rotation (row 7); `Closed_Fist` triggers release (row 4) — **neither dependency still applies, see status** | **PARKED — not intended to be used for the moment (2026-08-01, direct request).** Was blocked on finding a working detection approach; now deprioritized rather than actively pursued. Both rows that once depended on it have moved on without it: rotation (row 7) stays permanently ungated by design, not just pending this row; release (row 4) now uses the hand-open-quick gesture (§14.2) instead of `Closed_Fist`. `gesture_recognizer.task` still kept on disk for a possible future `Thumb_Up` use, unrelated to this row. Revisit only if explicitly requested again |
+| 3 | Snap acquisition + arbitration | each hand vs. shared registry | hand position (palm-center, §13.3) vs. cube positions | pure proximity trigger — nearest **unowned** cube within grab radius of hand position → claim in shared registry, blocked by the thumb-outward rule (§13.6) | idle/hover → snapped | **Proximity trigger + thumb-outward restriction built and live-verified (2026-08-01)** — `Resources/HandsTriggeredActions.py`; the closed-fist-blocks-snap refinement (§13.4) is now **PARKED along with row 2** (was "pending row 2," row 2 itself is now parked, not just blocked). A same-frame release/re-snap ordering bug (cube instantly "jumping" to the other hand when one hand lost tracking near it) was found live and fixed — release now always resolves before that frame's snap pass, see the module's `on_hands_frame` docstring. Full rules list: `Claude/GAME_RULES.md` |
+| 4 | Release (un-snap) | each hand | quick full hand-open (§14.2 — geometric signal, no row 2 dependency), or tracking loss | rapid full finger-extension while the wrist stays stable, on a hand holding a snapped cube (§14.2, **not yet built**) **or** hand tracking lost (built) | snapped → idle; cube frozen in place; ownership cleared; requires fresh proximity-snap to reacquire | **Tracking-loss release built and live-verified (2026-08-01).** Closed-fist-triggered release is now **PARKED** (it depended on row 2, which is parked — see above). Hand-open-quick-release (§14.2) is now the **sole active plan** for a deliberate release trigger — not yet built, queued **second** in build order (§14.1 pivot fix → §14.2 release trigger → §14.3 Z-translation) |
+| 5 | Translation | each hand, while snapped | at grab: object position vs. ~9 phalange-adjacent landmarks (5 fingertips + 4 non-thumb MCPs); each frame after: those SAME landmarks' current 2D positions | distance-weighted combination — weights = normalized inverse-distance from the object at grab, FROZEN thereafter; `object_position(t) = Σ(frozen_weight_i × landmark_i_position(t)) + grab_residual_offset` (residual added once for exact no-pop continuity) | cube follows a live-tracked, grab-time-weighted point instead of one fixed anchor | **Built and live-verified (2026-08-01)**, but the underlying mechanism is now understood to be the root cause of row 7's pivot-coupling issue — **REDESIGN IN PROGRESS, not yet built**: current logic forces the cube to sit exactly on one fixed tracked anchor every frame with no grab-time offset (confirmed by reading `HandsTriggeredActions.py`'s `on_hands_frame`). §14.1 (rewritten, later conversation, mechanism resolved in a follow-up discussion — direct question "in relation to the phalanges?" surfaced the fix) redesigns this row around distance-weighted live landmark tracking, staying purely 2D/pixel-based (no reuse of row 7's rotation math). First in the confirmed build order |
+| 6 | Depth proxy → scale + color | each hand, while snapped | apparent hand span (image coords) vs. calibration baseline | `ratio = current_span / baseline_span` | cube scale ∝ ratio; color lerps light↔dark by ratio | **Dropped for now (2026-08-01)** — not part of the new gesture set as directed; not carried forward automatically, revisit only if explicitly wanted again. **Note (2026-08-01, later conversation): row 9 (Z-axis translation) reuses this row's hand-span-ratio metric** — the signal is shared, the scale/color effect itself is not; this row stays dropped as its own feature |
+| 7 | Rotation (quaternion) | each hand, while snapped, **UNGATED** (confirmed 2026-08-01 — not gated on `Open_Palm`; now permanent, since row 2 is parked, not just temporarily absent) | `world_landmarks`: wrist(0), index_MCP(5), middle_MCP(9), pinky_MCP(17) | orthonormal frame → quaternion → predictive/reliability-weighted filter → relative delta-from-grab → slerp | cube orientation follows hand orientation | **Ported to production and CONFIRMED WORKING LIVE (2026-08-01)** — wire protocol extended (`hands_world` packet, §4's gap closed), `HandsTriggeredActions.py`/`CubeWindow.py` match the debug-tool-verified design, tested end-to-end against a real camera. Rendering upgraded same day to real mesh-generic 3D objects (row 8 below) once rotation was confirmed. Known open TODOs: rotation quality still poor with the back of the hand facing the camera (reduced, not eliminated, `GESTURE_PIPELINE_SPEC.md` §13.7); **object translation coupling during pure hand rotation — reframed (2026-08-01, later conversation): row 5's zero-offset translation logic was the actual defect, not this row.** Corrected model does NOT reuse this row's rotation math — it's a separate, purely 2D distance-weighted live-landmark mechanism (row 5's own status cell has detail): `GESTURE_PIPELINE_SPEC.md` §14.1 |
 | 8 | 3D object rendering | n/a (visual only) | orientation quaternion (row 7) | mesh-generic: rotate vertices → perspective-project (fixed camera distance) → backface-cull → depth-sort → draw each face's own color | replaces the flat-square placeholder with a real rotating 3D shape; cube is a placeholder for a future imported object | **Built and confirmed working live (2026-08-01)** — `CubeWindow.py`'s `_draw_object_3d` (mirrored in `LiveSnapDebug.py`), fully generic over any `Mesh`/`MeshFace` (verified by swapping in a non-cube mesh at runtime with zero code changes). A live-found morphing bug (unsafe per-vertex scale formula) was found and fixed the same day. Two placeholder objects: **large** (yellow/violet/turquoise, 2x size) and **small** (green/red/blue) — grab radius now scales per-object size. Full account: `GESTURE_PIPELINE_SPEC.md` §13.7-§13.8. Real 3D-file import (OBJ/glTF) not yet built — scoped remaining gap noted in §13.8 |
+| 9 | Z-axis (camera-view-axis) translation | each hand, while snapped | apparent hand span (image coords, wrist↔middle-MCP) vs. calibration baseline — same metric as the dropped row 6, **not** raw `world_landmarks` `z` | `ratio = current_span / baseline_span`, mapped absolutely/continuously (like row 5, not a grab-time delta like row 7); snap itself becomes a 3D proximity check (hand must be close on X, Y, **and** Z-derived depth to a cube, not just X/Y) | cube's Z position follows hand depth; grab radius/arbitration (row 3) extended to 3D | **Proposed and design-confirmed 2026-08-01 (new conversation), NOT YET BUILT.** Queued **third** in build order — after the §14.1 pivot fix and §14.2 release trigger below. Order reconfirmed unchanged (2026-08-01, later conversation) when row 2 was parked and rows 4/6 updated. Full design + open unknowns: `GESTURE_PIPELINE_SPEC.md` §14.3 |
 
 **Rows 2-4 replaced (2026-08-01)**: pinch's onset/offset event pair (the
 original rows 2/4, decomposed per the 2026-07-30 note below) is replaced
@@ -184,8 +192,16 @@ by a proximity trigger (snap) and a `Closed_Fist` trigger (release) —
 full rationale and state-of-the-art check in `GESTURE_PIPELINE_SPEC.md`
 §13. The original pinch/release decomposition note is preserved below for
 historical context, since the same "onset and offset are independently-
-tuned, not assumed symmetric" discipline likely still applies to
-open-palm/closed-fist detection if a custom classifier ends up needed.
+tuned, not assumed symmetric" discipline likely still applies to whichever
+release mechanism ends up needing an event layer.
+
+**Row 2 parked, row 4's release trigger changed (2026-08-01, later
+conversation)**: open-palm/closed-fist detection (row 2) is parked, not
+being pursued for the moment — so the `Closed_Fist`-triggered release
+described in the paragraph above is no longer the active plan. Release
+now relies on tracking-loss (built) and the hand-open-quick-release
+gesture (§14.2, not yet built) as its sole deliberate trigger. See row 2
+and row 4's own status cells above for detail.
 
 **Original row 2 (pinch/onset) and row 4 (release/offset) note
 (2026-07-30, historical)**: these were the same episodic gesture's two
@@ -231,20 +247,47 @@ wired into `HandsTriggeredActions.py` for live use. Extend `VisionPipeline.py`
 - Exact hand-span metric for the depth proxy (wrist↔middle-MCP vs. a full
   bounding-box diagonal) — moot for now since row 6 is dropped; revisit
   only if depth-proxy scale/color comes back.
-- See `GESTURE_PIPELINE_SPEC.md` §13.4 for the new gesture set's own open
+- ~~See `GESTURE_PIPELINE_SPEC.md` §13.4 for the new gesture set's own open
   questions (whether `Open_Palm`/`Closed_Fist` need custom training,
   whether snap should be blocked while closed-fist, whether rotation's
-  `Open_Palm` gate is the right design).
-- **New, proposed 2026-08-01, not yet started** — object translates
-  somewhat when the hand only rotates in place (the tracked hand-position
-  anchor isn't exactly at the true rotational pivot); candidate fixes and
-  a recording-based verification plan: `GESTURE_PIPELINE_SPEC.md` §14.1.
-- **New, proposed 2026-08-01, not yet started** — a candidate release
-  trigger (unsnap by quickly fully opening the hand), designed to be
-  distinguishable from a future depth/Z-translation gesture; proposed
-  6-recordings-per-hand-position discrimination plan:
-  `GESTURE_PIPELINE_SPEC.md` §14.2. Not yet confirmed whether this
-  replaces or complements the closed-fist release plan.
+  `Open_Palm` gate is the right design).~~ — **Moot (2026-08-01, later
+  conversation): row 2 is parked, not being pursued for the moment.**
+  Rotation stays permanently ungated by design; snap is not blocked by
+  closed-fist since closed-fist detection itself is parked.
+- **Reframed (2026-08-01, later conversation), mechanism resolved in a
+  follow-up discussion, not yet built** — object translates when the hand
+  rotates. **Not an anchor-selection problem**: the actual defect is that
+  row 5's translation logic has no grab-time offset at all (cube center
+  forced to exactly equal one tracked anchor every frame — confirmed by
+  reading `HandsTriggeredActions.py`). Fix, chosen mechanism: distance-
+  weighted live landmark tracking — freeze a weighted set of ~9
+  phalange-adjacent landmarks (fingertips + MCPs) at grab, weighted by
+  proximity to the object, then recompute the weighted position live each
+  frame from those same landmarks' real tracked motion. Stays purely
+  2D/pixel-based, no reuse of row 7's rotation math. Literature-grounded
+  (Napier grasp taxonomy — grip point depends on object size, not one
+  fixed landmark; Unity XRI's Dynamic Attach / Meta Horizon's GripPoint
+  establish the broader "offset captured at grab, held fixed" principle
+  this extends). Some translation during pure rotation is now understood
+  to be physically CORRECT (an off-center held point swings when the
+  wrist twists), not a bug to eliminate. Full design + citations:
+  `GESTURE_PIPELINE_SPEC.md` §14.1 (rewritten). **First in the confirmed
+  build order.**
+- **Confirmed as the sole active release-trigger plan (2026-08-01, later
+  conversation)** — a release trigger (unsnap by quickly fully opening the
+  hand), designed to be distinguishable from the now-designed Z-translation
+  gesture (row 9); proposed 6-recordings-per-hand-position discrimination
+  plan: `GESTURE_PIPELINE_SPEC.md` §14.2. The closed-fist release
+  alternative is now parked (row 2 is parked), so this no longer needs to
+  be weighed against it — it's the one plan going forward. **Second in the
+  confirmed build order.**
+- **New, design confirmed 2026-08-01 (later conversation), not yet
+  started** — Z-axis (camera-view-axis) translation (matrix row 9):
+  hand-span-ratio-driven, absolute/continuous mapping, snap gating
+  extended to 3D. Queued third, after the pivot fix and release trigger
+  above. Open unknowns (exact ratio→Z mapping, how Z-tolerance relates to
+  the existing grab radius, hand-size recalibration): `GESTURE_PIPELINE_SPEC.md`
+  §14.3.
 
 ## 6. Pinch classifier design basis (state-of-the-art check, 2026-07-30)
 
