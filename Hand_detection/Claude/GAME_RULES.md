@@ -68,6 +68,19 @@ plain language, not implementation detail (link to the code instead).
      software fix away. See `GESTURE_PIPELINE_SPEC.md`
      §13.7's last section before investigating further.
 
+5. **Cubes are real rotating 3D shapes, not flat squares.** Each cube has
+   6 colored faces in 3 opposite-pair color families, one side of each
+   pair a darker shade of the other. The **large** cube (yellow / violet /
+   turquoise) is exactly 2x the size of the **small** cube (green / red /
+   blue) in every dimension — snap radius scales with each cube's own
+   size accordingly (`PART_ONE.md` §5's long-open "grab radius scaled to
+   object size" item, resolved by this).
+   - `Resources/CubeWindow.py` (`_draw_cube_3d`, backface-culled +
+     painter's-algorithm depth-sorted), built 2026-08-01 once rotation was
+     confirmed working end-to-end — the flat-square + axis-gizmo
+     placeholder was no longer needed once real faces could show
+     orientation directly.
+
 ## Not yet built
 
 - Release via closed fist (planned; blocked on finding a working

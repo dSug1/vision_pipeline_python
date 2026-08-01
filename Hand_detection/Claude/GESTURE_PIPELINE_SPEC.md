@@ -3228,3 +3228,49 @@ was added by inference/reasoning, not verified live. If rotation feels
 mirrored/inverted on any axis once live-tested, check this exact function
 first, same "verify the sign convention live before trusting it"
 discipline as the thumb-outward rule's calibration (§13.6).
+
+**Real 3D cube rendering (2026-08-01, direct request, live-confirmed
+working)** — once rotation was confirmed working end-to-end, the
+flat-square + axis-gizmo placeholder no longer made sense: replaced with
+actual rotating 3D cubes in `CubeWindow.py`'s `_draw_cube_3d` (8 local
+vertices rotated by the cube's orientation quaternion, weak-perspective
+projected, 6 faces backface-culled then painter's-algorithm depth-sorted
+farthest-to-nearest). Each cube's 6 faces are 3 opposite-pair color
+families, one side of each pair a computed darker shade (`_darken`) of the
+other, not hand-picked separately — guarantees the pairing stays
+consistent. **Large** cube: yellow/violet/turquoise, exactly 2x the
+**small** cube (green/red/blue) in every dimension. Cube identifiers
+renamed "blue"/"red" → "large"/"small" (the old names stopped describing
+anything once every cube got 3 face colors and different sizes).
+Renaming surfaced a real, now-fixed issue: grab radius previously used a
+single shared `cube_window.cube_size`, which stopped making sense once
+cube sizes actually differ — `_try_snap` now scales grab radius to EACH
+candidate cube's own size (`PART_ONE.md` §5's long-open "grab radius
+scaled to object size" item, resolved as a side effect). Offline-verified
+(sizes, face-color pairing, no-pop-at-grab and rotation-vs-theory checks
+all re-run and passing after the rewrite).
+
+**Morphing bug found live and fixed (2026-08-01)**: the first version of
+`_draw_cube_3d` reused the axis-gizmo's per-vertex scale formula
+(`1/(1+K*rz/half)`), which is only ever safe for a point at distance
+<= half from the origin (true of a gizmo's axis endpoints, NOT of cube
+corners, whose distance from the origin is the body diagonal,
+`half*sqrt(3)`). Verified numerically: at some rotations a corner's
+denominator went NEGATIVE (worst case -0.039 with K=0.6), flipping that
+vertex to the wrong side of the cube -- exactly the reported "vertices
+moving so faces morph and the cube doesn't stay a cube." **Fixed** with a
+proper, physically-correct perspective projection instead: a virtual
+camera at a FIXED distance (`CUBE_PERSPECTIVE_DISTANCE_RATIO = 3.0` times
+cube.size, comfortably beyond the half-diagonal) using the standard
+pinhole-camera divide `scale = camera_distance / (camera_distance + rz)`.
+Verified via a full rotation sweep (9 axes x 180 angle steps, both cube
+sizes): the projection scale never drops below ~0.71x camera_distance
+(nowhere near the old bug's zero-crossing), and small rotation steps
+produce correspondingly small, continuous screen movement (max ~1.7px per
+2° step, no discontinuities) — ported the same fix into `LiveSnapDebug.py`
+(same design, cv2 primitives instead of pygame) so the combined video +
+landmarks + transparent-cube-overlay debug view (`debug_snap.bat`) stays
+an accurate, synchronized stand-in for production while it's still in
+active use for testing (direct request 2026-08-01: keep this debug view
+around for now, remove only once final production no longer needs
+landmark-level debugging).

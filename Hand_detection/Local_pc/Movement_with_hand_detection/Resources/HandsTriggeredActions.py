@@ -100,15 +100,22 @@ def _try_snap(handedness: str, hand_pos: Tuple[float, float], exclude=frozenset(
     so two hands can never claim the same cube in the same frame — the
     second hand's check runs after the first's claim is already recorded
     (`PART_ONE.md` §5's same-frame tie-break open item, resolved by
-    construction this way)."""
-    grab_radius = cube_window.cube_size * GRAB_RADIUS_MULTIPLIER
-    best_name, best_dist = None, grab_radius
+    construction this way).
+
+    Grab radius is scaled to EACH candidate cube's OWN size (2026-08-01,
+    now that the two cubes are different sizes — `PART_ONE.md` §5's
+    long-open "grab radius likely scaled to object size" item), not a
+    single shared value — otherwise the small cube would keep the same
+    (comparatively huge) grab radius as the large one."""
+    best_name, best_dist = None, None
     for name in cube_window.unowned_cube_names():
         if name in exclude:
             continue
+        cube = cube_window.cubes[name]
+        grab_radius = cube.size * GRAB_RADIUS_MULTIPLIER
         cx, cy = cube_window.cube_center(name)
         dist = math.hypot(hand_pos[0] - cx, hand_pos[1] - cy)
-        if dist <= best_dist:
+        if dist <= grab_radius and (best_dist is None or dist <= best_dist):
             best_name, best_dist = name, dist
     if best_name is not None:
         cube_window.snap_cube(best_name, handedness)
@@ -416,7 +423,7 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                     cube.grab_hand_orientation = hand_quat_now
                     cube.grab_cube_orientation = cube.orientation
         if owned_cube is not None:
-            cube_window.set_target_position(owned_cube, _top_left_for_center(hand_pos, cube_window.cube_size))
+            cube_window.set_target_position(owned_cube, _top_left_for_center(hand_pos, cube_window.cubes[owned_cube].size))
             if hand_quat_now is not None:
                 cube = cube_window.cubes[owned_cube]
                 if cube.grab_hand_orientation is None:

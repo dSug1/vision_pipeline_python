@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 import cv2
+import numpy as np
 import mediapipe as mp
 from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
@@ -12,16 +13,20 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 # Combined single-window debug tool for the new snap/translate gesture set
-# (Claude/GESTURE_PIPELINE_SPEC.md §13). TEMPORARY, per direction: overlays
-# semi-transparent cubes directly on the live camera + hand-landmarks feed
-# (one window instead of the production split's two -- webcam preview +
-# separate pygame cube window) so snap/translate can be visually verified
-# against the real hand position in the same frame. Meant to be deleted
-# once the gesture set is built and verified; NOT part of the production
-# client/server pipeline (`Resources/HandsTriggeredActions.py`/
-# `Resources/CubeWindow.py`, which stay independent of this file and of
-# each other's rendering choice, same "deliberately independent debug
-# tool" pattern as `LiveGestureDebug.py` used for pinch).
+# (Claude/GESTURE_PIPELINE_SPEC.md §13). Overlays semi-transparent 3D cubes
+# directly on the live camera + hand-landmarks feed (one window instead of
+# the production split's two -- webcam preview + separate pygame cube
+# window) so gesture behavior can be visually verified against the real
+# hand position/landmarks in the same frame. Originally meant to be
+# deleted once the gesture set was built and verified; kept in active use
+# past that point per direct request (2026-08-01) -- it's easier to debug
+# with video+landmarks+cube visible together than via production's split
+# windows -- to be removed only once final production no longer needs
+# this level of visibility. NOT part of the production client/server
+# pipeline (`Resources/HandsTriggeredActions.py`/`Resources/CubeWindow.py`,
+# which stay independent of this file and of each other's rendering
+# choice, same "deliberately independent debug tool" pattern as
+# `LiveGestureDebug.py` used for pinch).
 #
 # Deliberately duplicates (not imports) HandsTriggeredActions.py's small
 # snap/translate logic rather than sharing it -- that module's `cube_window`
@@ -54,11 +59,17 @@ WRIST = 0
 INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP = 5, 9, 13, 17
 HAND_POSITION_LANDMARKS = [WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP]
 
-CUBE_SIZE = 60
+# Cube sizes match production's CubeWindow.py exactly (2026-08-01, direct
+# request: large cube's every dimension is 2x the small cube's) -- keeping
+# this debug tool's visual an accurate stand-in for what production shows,
+# per its own "kept in logic-sync with the production module" discipline.
+CUBE_SIZE_SMALL = 40
+CUBE_SIZE_LARGE = CUBE_SIZE_SMALL * 2
 GRAB_RADIUS_MULTIPLIER = 1.5
 CUBE_ALPHA = 0.55  # transparency of the cube overlay, so the video stays visible underneath
 SNAP_BORDER_COLOR = (255, 255, 255)
-SNAP_BORDER_WIDTH = 4
+SNAP_BORDER_WIDTH = 3
+CUBE_EDGE_COLOR = (20, 20, 20)  # normal (unsnapped) face-outline color, BGR
 
 HAND_POINT_COLOR = {"Left": (255, 120, 0), "Right": (0, 0, 255)}
 
@@ -79,9 +90,50 @@ ROTATION_SLERP_FACTOR = 0.35  # tune by feel once live, same discipline as GRAB_
 # feel -- an exponential-smoothing filter's settling time constant (frames
 # to close 1-1/e of any gap) is 1/(-ln(1-factor)); 0.25 -> ~3.48 frames,
 # 0.35 -> ~2.32 frames, a reduction of almost exactly one third.
-GIZMO_AXIS_LENGTH = CUBE_SIZE * 0.9
-GIZMO_PERSPECTIVE_K = 0.6  # cosmetic weak-perspective foreshortening only, tune by feel
-GIZMO_AXIS_COLORS = {"x": (0, 0, 255), "y": (0, 255, 0), "z": (255, 160, 0)}  # BGR: X=red, Y=green, Z=blue-ish
+# Real 3D cube rendering (2026-08-01, direct request — replaces the axis
+# gizmo now that rotation is confirmed working end-to-end; ported from the
+# production CubeWindow.py, same design and same fixed-camera-distance
+# perspective projection -- see CubeWindow.py's CUBE_PERSPECTIVE_DISTANCE_
+# RATIO comment for the live-found morphing bug this avoids (a naive
+# per-vertex scale relative to the cube's own half-size goes negative for
+# cube corners at some rotations; a fixed virtual camera distance,
+# comfortably larger than the cube's half-diagonal, never does).
+CUBE_PERSPECTIVE_DISTANCE_RATIO = 3.0  # virtual camera distance = cube.size * this
+
+CUBE_VERTICES: Tuple[Tuple[float, float, float], ...] = (
+    (-1.0, -1.0, -1.0), (1.0, -1.0, -1.0), (1.0, 1.0, -1.0), (-1.0, 1.0, -1.0),
+    (-1.0, -1.0, 1.0), (1.0, -1.0, 1.0), (1.0, 1.0, 1.0), (-1.0, 1.0, 1.0),
+)
+CUBE_FACES = (
+    {"key": "+x", "normal": (1.0, 0.0, 0.0), "verts": (1, 2, 6, 5)},
+    {"key": "-x", "normal": (-1.0, 0.0, 0.0), "verts": (0, 3, 7, 4)},
+    {"key": "+y", "normal": (0.0, 1.0, 0.0), "verts": (3, 2, 6, 7)},
+    {"key": "-y", "normal": (0.0, -1.0, 0.0), "verts": (0, 1, 5, 4)},
+    {"key": "+z", "normal": (0.0, 0.0, 1.0), "verts": (4, 5, 6, 7)},
+    {"key": "-z", "normal": (0.0, 0.0, -1.0), "verts": (0, 1, 2, 3)},
+)
+
+
+def _darken(color: Tuple[int, int, int], factor: float = 0.45) -> Tuple[int, int, int]:
+    return tuple(max(0, int(c * factor)) for c in color)
+
+
+def _face_colors(color_x, color_y, color_z) -> Dict[str, Tuple[int, int, int]]:
+    return {
+        "+x": color_x, "-x": _darken(color_x),
+        "+y": color_y, "-y": _darken(color_y),
+        "+z": color_z, "-z": _darken(color_z),
+    }
+
+
+# Colors are BGR (cv2 convention here, vs. CubeWindow.py's RGB/pygame) --
+# same colors as production, channel order swapped.
+FACE_COLOR_YELLOW = (0, 221, 255)
+FACE_COLOR_VIOLET = (224, 90, 170)
+FACE_COLOR_TURQUOISE = (208, 224, 64)
+FACE_COLOR_GREEN = (60, 200, 60)
+FACE_COLOR_RED = (60, 60, 220)
+FACE_COLOR_BLUE = (230, 130, 60)
 
 # Orientation noise filtering (2026-08-01) -- history of attempts, kept for
 # context on why this landed here, not because earlier attempts are still
@@ -154,7 +206,8 @@ def _reliability_alpha(conditioning_norm: float) -> float:
 
 @dataclass
 class Cube:
-    color: Tuple[int, int, int]
+    face_colors: Dict[str, Tuple[int, int, int]]
+    size: int
     position: Tuple[float, float]  # top-left corner, pixel coordinates
     owner: Optional[str] = None
     orientation: Tuple[float, float, float, float] = IDENTITY_QUATERNION
@@ -212,18 +265,25 @@ class CubeState:
 
     def __post_init__(self):
         if not self.cubes:
-            center = self._centered_position()
             self.cubes = {
-                "blue": Cube(color=(255, 200, 0), position=center),
-                "red": Cube(color=(60, 60, 220), position=center),
+                "large": Cube(
+                    face_colors=_face_colors(FACE_COLOR_YELLOW, FACE_COLOR_VIOLET, FACE_COLOR_TURQUOISE),
+                    size=CUBE_SIZE_LARGE,
+                    position=self._centered_position(CUBE_SIZE_LARGE),
+                ),
+                "small": Cube(
+                    face_colors=_face_colors(FACE_COLOR_GREEN, FACE_COLOR_RED, FACE_COLOR_BLUE),
+                    size=CUBE_SIZE_SMALL,
+                    position=self._centered_position(CUBE_SIZE_SMALL),
+                ),
             }
 
-    def _centered_position(self) -> Tuple[float, float]:
-        return ((self.window_size[0] - CUBE_SIZE) / 2, (self.window_size[1] - CUBE_SIZE) / 2)
+    def _centered_position(self, size: int) -> Tuple[float, float]:
+        return ((self.window_size[0] - size) / 2, (self.window_size[1] - size) / 2)
 
     def cube_center(self, name: str) -> Tuple[float, float]:
         cube = self.cubes[name]
-        return (cube.position[0] + CUBE_SIZE / 2, cube.position[1] + CUBE_SIZE / 2)
+        return (cube.position[0] + cube.size / 2, cube.position[1] + cube.size / 2)
 
     def unowned_cube_names(self):
         return [name for name, cube in self.cubes.items() if cube.owner is None]
@@ -246,8 +306,8 @@ class CubeState:
     def set_target_position(self, name: str, top_left: Tuple[float, float]) -> None:
         cube = self.cubes[name]
         x, y = top_left
-        clamped_x = max(0.0, min(x, self.window_size[0] - CUBE_SIZE))
-        clamped_y = max(0.0, min(y, self.window_size[1] - CUBE_SIZE))
+        clamped_x = max(0.0, min(x, self.window_size[0] - cube.size))
+        clamped_y = max(0.0, min(y, self.window_size[1] - cube.size))
         cube.position = (clamped_x, clamped_y)
 
 
@@ -279,8 +339,8 @@ def _hand_position(pixel_landmarks) -> Tuple[float, float]:
     return (sum(xs) / len(xs), sum(ys) / len(ys))
 
 
-def _top_left_for_center(center: Tuple[float, float]) -> Tuple[float, float]:
-    return (center[0] - CUBE_SIZE / 2, center[1] - CUBE_SIZE / 2)
+def _top_left_for_center(center: Tuple[float, float], size: int) -> Tuple[float, float]:
+    return (center[0] - size / 2, center[1] - size / 2)
 
 
 # --- Rotation: orthonormal-frame -> quaternion -> slerp ---------------------
@@ -510,14 +570,17 @@ def _predictive_filter_step(filt: HandOrientationFilter, raw_quat: Quat, conditi
 
 
 def _try_snap(state: CubeState, handedness: str, hand_pos: Tuple[float, float], exclude=frozenset()) -> Optional[str]:
-    grab_radius = CUBE_SIZE * GRAB_RADIUS_MULTIPLIER
-    best_name, best_dist = None, grab_radius
+    """Grab radius scales to EACH candidate cube's OWN size (2026-08-01,
+    matching production's CubeWindow.py fix) -- a single shared radius
+    stopped making sense once the two cubes have different sizes."""
+    best_name, best_dist = None, None
     for name in state.unowned_cube_names():
         if name in exclude:
             continue
+        grab_radius = state.cubes[name].size * GRAB_RADIUS_MULTIPLIER
         cx, cy = state.cube_center(name)
         dist = math.hypot(hand_pos[0] - cx, hand_pos[1] - cy)
-        if dist <= best_dist:
+        if dist <= grab_radius and (best_dist is None or dist <= best_dist):
             best_name, best_dist = name, dist
     if best_name is not None:
         state.snap_cube(best_name, handedness)
@@ -620,7 +683,7 @@ def update_hands(state: CubeState, hand_data_by_hand) -> None:
                     cube.grab_hand_orientation = hand_quat_now
                     cube.grab_cube_orientation = cube.orientation
         if owned is not None:
-            state.set_target_position(owned, _top_left_for_center(hand_pos))
+            state.set_target_position(owned, _top_left_for_center(hand_pos, state.cubes[owned].size))
             cube = state.cubes[owned]
             delta = _quat_multiply(hand_quat_now, _quat_conjugate(cube.grab_hand_orientation))
             target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
@@ -667,48 +730,59 @@ def _draw_hand(frame, normalized_landmarks, handedness, thumb_outward, snap_allo
                     cv2.FONT_HERSHEY_DUPLEX, 0.6, color, 2, cv2.LINE_AA)
 
 
+def _draw_cube_3d(overlay, cube: Cube, screen_center: Tuple[float, float]):
+    """Real rotating 3D cube (2026-08-01, replaces the old flat-rect +
+    axis-gizmo placeholder) -- ported from production CubeWindow.py's
+    `_draw_cube_3d`, same fixed-camera-distance perspective projection (see
+    CubeWindow.py's CUBE_PERSPECTIVE_DISTANCE_RATIO comment for the live-
+    found morphing bug this specifically avoids), same backface-cull +
+    painter's-algorithm depth sort, just drawn with cv2 primitives onto the
+    (not-yet-blended) `overlay` canvas instead of pygame ones -- the
+    alpha-blend with the real video frame happens once for both cubes
+    together in the caller, same as the old flat-rect version did."""
+    half = cube.size / 2.0
+    camera_distance = cube.size * CUBE_PERSPECTIVE_DISTANCE_RATIO
+    cx, cy = screen_center
+
+    projected = []
+    for v in CUBE_VERTICES:
+        local = (v[0] * half, v[1] * half, v[2] * half)
+        rx, ry, rz = _quat_rotate_vector(cube.orientation, local)
+        scale = camera_distance / (camera_distance + rz)
+        projected.append(((cx + rx * scale, cy + ry * scale), rz))
+
+    visible_faces = []
+    for face in CUBE_FACES:
+        rn = _quat_rotate_vector(cube.orientation, face["normal"])
+        if rn[2] >= 0:
+            continue  # facing away from the viewer -- culled
+        verts = face["verts"]
+        avg_z = sum(projected[i][1] for i in verts) / len(verts)
+        pts = [projected[i][0] for i in verts]
+        visible_faces.append((avg_z, face["key"], pts))
+    visible_faces.sort(key=lambda f: f[0], reverse=True)  # farthest first, nearest last/on top
+
+    for _avg_z, key, pts in visible_faces:
+        int_pts = np.array([[int(x), int(y)] for x, y in pts], dtype=np.int32)
+        cv2.fillConvexPoly(overlay, int_pts, cube.face_colors[key])
+        cv2.polylines(overlay, [int_pts], True, CUBE_EDGE_COLOR, 1, cv2.LINE_AA)
+
+
 def _draw_cubes(frame, state: CubeState):
-    """Alpha-blended overlay so the video underneath stays visible (per
-    direction: 'the overlay has to have some transparency')."""
+    """Draws both 3D cubes onto a copy of the frame, alpha-blends once (per
+    direction: 'the overlay has to have some transparency'), then draws a
+    bright snap-highlight outline on the now-blended frame for whichever
+    cube(s) are held -- kept opaque/on top so the highlight itself stays
+    crisp rather than also being alpha-blended."""
     overlay = frame.copy()
     for cube in state.cubes.values():
-        x, y = int(cube.position[0]), int(cube.position[1])
-        cv2.rectangle(overlay, (x, y), (x + CUBE_SIZE, y + CUBE_SIZE), cube.color, -1)
+        screen_center = (cube.position[0] + cube.size / 2, cube.position[1] + cube.size / 2)
+        _draw_cube_3d(overlay, cube, screen_center)
     cv2.addWeighted(overlay, CUBE_ALPHA, frame, 1 - CUBE_ALPHA, 0, frame)
     for cube in state.cubes.values():
         if cube.owner is not None:
             x, y = int(cube.position[0]), int(cube.position[1])
-            cv2.rectangle(frame, (x, y), (x + CUBE_SIZE, y + CUBE_SIZE), SNAP_BORDER_COLOR, SNAP_BORDER_WIDTH)
-
-
-def _project_local_point(local_point: Vec3, quat: Quat, screen_center: Tuple[float, float]) -> Tuple[int, int]:
-    """Rotate a cube-local point by its orientation quaternion and project
-    it onto the 2D overlay: orthographic in x/y, plus a small cosmetic
-    weak-perspective foreshortening term (scale by 1/(1+k*z)) purely so
-    rotation toward/away from the camera reads as a size change too, not
-    just angle -- this scale factor has no bearing on the rotation's
-    correctness, only its legibility, and is safe to retune by feel."""
-    rx, ry, rz = _quat_rotate_vector(quat, local_point)
-    scale = 1.0 / (1.0 + GIZMO_PERSPECTIVE_K * (rz / GIZMO_AXIS_LENGTH)) if GIZMO_AXIS_LENGTH else 1.0
-    return (int(screen_center[0] + rx * scale), int(screen_center[1] + ry * scale))
-
-
-def _draw_orientation_gizmo(frame, cube: Cube, screen_center: Tuple[float, float]):
-    """Draws a 3-axis RGB gizmo (X=red, Y=green, Z=blue-ish) at the cube's
-    screen center, rotated by its orientation quaternion -- the visual
-    stand-in CubeWindow.py's flat solid square never had for "which way is
-    this object facing" (HANDOFF_SNAP_ROTATE_RELEASE.md §2 point 3). Always
-    drawn (not just while snapped) so a released cube's frozen orientation
-    stays visible, matching position's own freeze-in-place semantics."""
-    origin = _project_local_point((0.0, 0.0, 0.0), cube.orientation, screen_center)
-    for axis, color in (
-        ((GIZMO_AXIS_LENGTH, 0.0, 0.0), GIZMO_AXIS_COLORS["x"]),
-        ((0.0, GIZMO_AXIS_LENGTH, 0.0), GIZMO_AXIS_COLORS["y"]),
-        ((0.0, 0.0, GIZMO_AXIS_LENGTH), GIZMO_AXIS_COLORS["z"]),
-    ):
-        tip = _project_local_point(axis, cube.orientation, screen_center)
-        cv2.line(frame, origin, tip, color, 3, cv2.LINE_AA)
-    cv2.circle(frame, origin, 4, (255, 255, 255), -1)
+            cv2.rectangle(frame, (x, y), (x + cube.size, y + cube.size), SNAP_BORDER_COLOR, SNAP_BORDER_WIDTH)
 
 
 def build_detector():
@@ -789,8 +863,6 @@ def main():
                 )
 
             _draw_cubes(frame, state)
-            for name, cube in state.cubes.items():
-                _draw_orientation_gizmo(frame, cube, state.cube_center(name))
 
             cv2.imshow(window_name, frame)
             if cv2.waitKey(1) & 0xFF == ord("q"):
