@@ -11,6 +11,11 @@ HANDEDNESS_TEXT_COLOR = (88, 205, 54) # vibrant green
 
 def draw_landmarks_on_image(frame_image_shape, rgb_image, detection_result):
   hand_landmarks_list = detection_result.hand_landmarks
+  # world_landmarks: metric, hand-relative 3D coordinates (meters), parallel
+  # array to hand_landmarks -- needed for rotation-while-snapped
+  # (Hand_detection/Claude/GESTURE_PIPELINE_SPEC.md §13.7), not previously
+  # extracted here since only 2D pixel landmarks were needed before.
+  hand_world_landmarks_list = detection_result.hand_world_landmarks
   handedness_list = detection_result.handedness
   annotated_image = np.copy(rgb_image)
   height, width = frame_image_shape[:2]
@@ -23,10 +28,15 @@ def draw_landmarks_on_image(frame_image_shape, rgb_image, detection_result):
   # Loop through the detected hands to visualize.
   for idx in range(len(hand_landmarks_list)):
     hand_landmarks = hand_landmarks_list[idx]
+    hand_world_landmarks = hand_world_landmarks_list[idx]
     handedness = handedness_list[idx]
 
     hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()     # Prepare protobuf for drawing
     handslandmarks_coords = []  # This will store the extracted coordinates
+    # Metric hand-relative 3D coords (meters), no pixel remapping -- raw
+    # x/y/z as MediaPipe returns them (mirroring/remap_keypoints only
+    # applies to the pixel-space landmarks above).
+    handsworldlandmarks_coords = [{"x": lm.x, "y": lm.y, "z": lm.z} for lm in hand_world_landmarks]
 
     for landmark in hand_landmarks:
         # Add to protobuf for drawing
@@ -68,7 +78,8 @@ def draw_landmarks_on_image(frame_image_shape, rgb_image, detection_result):
     # Append to full list
     all_hands_coords.append({
             "handedness": handedness[0].category_name,
-            "landmarks": handslandmarks_coords
+            "landmarks": handslandmarks_coords,
+            "world_landmarks": handsworldlandmarks_coords
         })
 
   return annotated_image, all_hands_coords

@@ -33,7 +33,7 @@ GRAB_RADIUS_MULTIPLIER = 1.5
 
 # TODO (§13.4 open question, pending Phase B's Open_Palm/Closed_Fist
 # detection): snap should probably be blocked while the hand is
-# closed-fist, so a fist passing near a cube doesn't accidentally grab it.
+# closed-fist, so a fist passing near an object doesn't accidentally grab it.
 # Not yet implemented — proximity is the only condition checked below
 # until fist detection exists to gate it.
 
@@ -115,6 +115,225 @@ def _try_snap(handedness: str, hand_pos: Tuple[float, float], exclude=frozenset(
     return best_name
 
 
+# --- Rotation: orthonormal-frame -> quaternion -> predictive filter -> slerp
+# Ported from LiveSnapDebug.py (2026-08-01) after live-verification there —
+# see that file's module-level comments (above CONDITIONING_ALPHA_LOW and
+# in _orthonormal_frame's docstring) for the full design history/rationale;
+# kept verbatim here rather than re-derived, to not risk reintroducing bugs
+# already found and fixed once (two live-caught filter bugs, a chirality
+# regression risk, etc.). GESTURE_PIPELINE_SPEC.md §13.7 has the complete
+# account, including the still-OPEN TODO: rotation quality remains
+# imperfect with the back of the hand facing the camera (reduced, not
+# eliminated, by the predictive filter below).
+IDENTITY_QUATERNION: Tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  # (w, x, y, z)
+
+# Rotation is UNGATED (confirmed 2026-08-01) — active for any snapped hand
+# regardless of pose; Open_Palm detection has no working implementation
+# (§13.5), gating can be added later.
+ROTATION_SLERP_FACTOR = 0.35  # tune by feel; time-constant math in LiveSnapDebug.py's comment
+
+# Geometric confidence signal thresholds for the predictive filter's
+# reliability weighting (see _reliability_alpha) — data-derived in
+# LiveSnapDebug.py, see GESTURE_PIPELINE_SPEC.md §13.7 for the full numbers.
+CONDITIONING_ALPHA_LOW = 0.015
+CONDITIONING_ALPHA_HIGH = 0.06
+
+Vec3 = Tuple[float, float, float]
+Quat = Tuple[float, float, float, float]  # (w, x, y, z)
+
+
+def _reliability_alpha(conditioning_norm: float) -> float:
+    """Linear ramp from 0 (fully degenerate -> trust the prediction) to 1
+    (well-conditioned -> trust the raw reading) — Ernst & Banks-style
+    reliability-weighted cue blending, not a hard accept/reject cutoff."""
+    if conditioning_norm <= CONDITIONING_ALPHA_LOW:
+        return 0.0
+    if conditioning_norm >= CONDITIONING_ALPHA_HIGH:
+        return 1.0
+    return (conditioning_norm - CONDITIONING_ALPHA_LOW) / (CONDITIONING_ALPHA_HIGH - CONDITIONING_ALPHA_LOW)
+
+
+def _vec_sub(a: Vec3, b: Vec3) -> Vec3:
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _vec_dot(a: Vec3, b: Vec3) -> float:
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _vec_cross(a: Vec3, b: Vec3) -> Vec3:
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def _vec_scale(v: Vec3, s: float) -> Vec3:
+    return (v[0] * s, v[1] * s, v[2] * s)
+
+
+def _vec_normalize(v: Vec3) -> Vec3:
+    n = math.sqrt(_vec_dot(v, v))
+    if n < 1e-9:
+        return (0.0, 0.0, 0.0)
+    return (v[0] / n, v[1] / n, v[2] / n)
+
+
+def _orthonormal_frame(wrist: Vec3, index_mcp: Vec3, pinky_mcp: Vec3, middle_mcp: Vec3) -> Tuple[Vec3, Vec3, Vec3, float]:
+    """Gram-Schmidt orthonormal frame from a hand's world landmarks: e1
+    along index_MCP->pinky_MCP (knuckle-row width axis), e2 the
+    wrist->middle_MCP length axis orthogonalized against e1, e3 = e1 x e2.
+    Better-conditioned pair than the original wrist-anchored one (fixes a
+    pitch-crossing collinearity bug) — see LiveSnapDebug.py's identical
+    function for the full data-driven derivation and the chirality-
+    preservation verification (do not swap e1's vector order without
+    re-verifying chirality the same way, or yaw/roll will invert).
+    Returns (e1, e2, e3, conditioning_norm) — the last is the
+    pre-normalization length of the orthogonalized e2, fed into
+    _reliability_alpha."""
+    e1 = _vec_normalize(_vec_sub(pinky_mcp, index_mcp))
+    v2 = _vec_sub(middle_mcp, wrist)
+    v2_orth = _vec_sub(v2, _vec_scale(e1, _vec_dot(v2, e1)))
+    conditioning_norm = math.sqrt(_vec_dot(v2_orth, v2_orth))
+    e2 = _vec_normalize(v2_orth)
+    e3 = _vec_cross(e1, e2)
+    return (e1, e2, e3, conditioning_norm)
+
+
+def _quat_normalize(q: Quat) -> Quat:
+    w, x, y, z = q
+    n = math.sqrt(w * w + x * x + y * y + z * z)
+    if n < 1e-9:
+        return IDENTITY_QUATERNION
+    return (w / n, x / n, y / n, z / n)
+
+
+def _matrix_to_quaternion(cols: Tuple[Vec3, Vec3, Vec3]) -> Quat:
+    """Rotation-matrix -> quaternion via Shepperd's method (numerically
+    stable across all rotation angles, unlike the naive sqrt(1+trace)
+    formula). `cols` = (e1, e2, e3) column vectors."""
+    e1, e2, e3 = cols
+    m00, m10, m20 = e1
+    m01, m11, m21 = e2
+    m02, m12, m22 = e3
+    trace = m00 + m11 + m22
+    if trace > 0:
+        s = math.sqrt(trace + 1.0) * 2
+        w, x, y, z = 0.25 * s, (m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s
+    elif m00 > m11 and m00 > m22:
+        s = math.sqrt(1.0 + m00 - m11 - m22) * 2
+        w, x, y, z = (m21 - m12) / s, 0.25 * s, (m01 + m10) / s, (m02 + m20) / s
+    elif m11 > m22:
+        s = math.sqrt(1.0 + m11 - m00 - m22) * 2
+        w, x, y, z = (m02 - m20) / s, (m01 + m10) / s, 0.25 * s, (m12 + m21) / s
+    else:
+        s = math.sqrt(1.0 + m22 - m00 - m11) * 2
+        w, x, y, z = (m10 - m01) / s, (m02 + m20) / s, (m12 + m21) / s, 0.25 * s
+    return _quat_normalize((w, x, y, z))
+
+
+def _quat_multiply(q1: Quat, q2: Quat) -> Quat:
+    """Hamilton product q1*q2 -- used below as `q2 * conjugate(q1)` to get
+    the world-frame rotation that takes orientation q1 to orientation q2."""
+    w1, x1, y1, z1 = q1
+    w2, x2, y2, z2 = q2
+    return (
+        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+    )
+
+
+def _quat_conjugate(q: Quat) -> Quat:
+    """Inverse of a unit quaternion (conjugate == inverse when normalized)."""
+    w, x, y, z = q
+    return (w, -x, -y, -z)
+
+
+def _hand_orientation_quaternion(world_landmarks: List[Vec3]) -> Tuple[Quat, float]:
+    """Returns (orientation quaternion, conditioning_norm)."""
+    e1, e2, e3, conditioning_norm = _orthonormal_frame(
+        world_landmarks[WRIST], world_landmarks[INDEX_MCP], world_landmarks[PINKY_MCP], world_landmarks[MIDDLE_MCP]
+    )
+    return _matrix_to_quaternion((e1, e2, e3)), conditioning_norm
+
+
+def _quat_slerp(q0: Quat, q1: Quat, t: float) -> Quat:
+    """Shortest-path spherical interpolation (negates q1 if the dot product
+    is negative -- quaternion double-cover). Falls back to normalized
+    linear interpolation when q0/q1 are nearly identical."""
+    d = q0[0] * q1[0] + q0[1] * q1[1] + q0[2] * q1[2] + q0[3] * q1[3]
+    if d < 0:
+        q1 = (-q1[0], -q1[1], -q1[2], -q1[3])
+        d = -d
+    d = max(-1.0, min(1.0, d))
+    if d > 0.9995:
+        lerped = tuple(a + t * (b - a) for a, b in zip(q0, q1))
+        return _quat_normalize(lerped)
+    theta0 = math.acos(d)
+    theta = theta0 * t
+    q2 = _quat_normalize(tuple(b - a * d for a, b in zip(q0, q1)))
+    sin_theta, cos_theta = math.sin(theta), math.cos(theta)
+    return tuple(a * cos_theta + b * sin_theta for a, b in zip(q0, q2))
+
+
+def _make_continuous(q: Quat, reference: Quat) -> Quat:
+    """Flip q's sign if needed so it's on the same hemisphere as reference
+    (quaternion double-cover) -- must be resolved before quaternion
+    ARITHMETIC (multiply/subtract), unlike _quat_slerp which handles this
+    internally for its own use."""
+    d = q[0] * reference[0] + q[1] * reference[1] + q[2] * reference[2] + q[3] * reference[3]
+    return tuple(-c for c in q) if d < 0 else q
+
+
+class HandOrientationFilter:
+    """Per-hand predictive/reliability-weighted orientation filter state.
+    `last_fused` is the filter's own running orientation estimate (this
+    frame's output, next frame's prediction base); `omega` is the most
+    recently observed per-frame rotation delta among accepted/fused frames
+    (constant-angular-velocity model). Reset to a fresh instance whenever
+    the hand isn't detected, so reacquiring tracking after a gap never
+    predicts from a stale reference."""
+
+    def __init__(self):
+        self.last_fused: Optional[Quat] = None
+        self.omega: Quat = IDENTITY_QUATERNION
+
+
+def _predictive_filter_step(filt: "HandOrientationFilter", raw_quat: Quat, conditioning_norm: float) -> Quat:
+    """Advances `filt` by one frame and returns the fused orientation to
+    use as this frame's hand orientation. See GESTURE_PIPELINE_SPEC.md
+    §13.7 for the full design rationale and live-test results (a real but
+    incomplete improvement — TODO remains open for the back-of-hand pose)."""
+    if filt.last_fused is None:
+        filt.last_fused = raw_quat
+        return raw_quat
+    raw_quat = _make_continuous(raw_quat, filt.last_fused)
+    predicted = _make_continuous(_quat_multiply(filt.omega, filt.last_fused), filt.last_fused)
+    alpha = _reliability_alpha(conditioning_norm)
+    fused = _quat_slerp(predicted, raw_quat, alpha)
+    filt.omega = _quat_multiply(fused, _quat_conjugate(filt.last_fused))
+    filt.last_fused = fused
+    return fused
+
+
+# Per-hand predictive-filter state and the latest world_landmarks received
+# via the "hands_world" wire packet (sent BEFORE "hands" each frame, see
+# Server.py's SendHandsWorldPacket — so by the time on_hands_frame runs for
+# a given frame, that same frame's world landmarks are already stored
+# here). None until the first "hands_world" packet arrives after connect.
+_hand_orientation_filters: Dict[str, HandOrientationFilter] = {h: HandOrientationFilter() for h in TRACKED_HANDS}
+_last_hand_reliability_alpha: Dict[str, float] = {h: 1.0 for h in TRACKED_HANDS}
+_latest_world_landmarks: Dict[str, Optional[List[Vec3]]] = {h: None for h in TRACKED_HANDS}
+
+
+def on_hands_world_frame(left_world: List[Tuple[float, float, float]], right_world: List[Tuple[float, float, float]]) -> None:
+    """Called once per received "hands_world" packet, storing each hand's
+    latest metric world landmarks for on_hands_frame (below) to read when
+    the same frame's "hands" packet arrives next. See PythonApp_Main.py's
+    dispatch for datatype == "hands_world"."""
+    _latest_world_landmarks["Left"] = left_world
+    _latest_world_landmarks["Right"] = right_world
+
+
 def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: List[Tuple[float, float]]) -> None:
     """Called once per received "hands" packet with both hands' full
     21-point landmark lists (mirrored webcam-frame pixel coordinates).
@@ -125,16 +344,32 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     tracking, whenever the other hand happened to already be within grab
     radius (its snap-check ran immediately after and saw the just-released
     cube as fair game). Fix: release everyone who needs releasing FIRST,
-    across both hands, then snap/translate — and any cube released this
-    frame is excluded from THIS frame's snap pass, so the earliest a cube
-    can be re-claimed is next frame, never the same tick as its release.
+    across both hands, then snap/translate/rotate — and any cube released
+    this frame is excluded from THIS frame's snap pass, so the earliest a
+    cube can be re-claimed is next frame, never the same tick as its release.
 
     Thumb-outward snap rule (§13.6, direct request, 2026-08-01): don't snap
     while the hand is thumb-outward (back of hand facing camera) UNLESS the
     hand was already thumb-outward at the moment its currently-held cube
     was last released, AND it hasn't shown thumb-inward since. See the
     module-level `_last_known_thumb_outward`/`_thumb_outward_snap_allowed`
-    comment for what each bit of state tracks."""
+    comment for what each bit of state tracks.
+
+    Rotation (2026-08-01, ported from LiveSnapDebug.py after live
+    verification there — GESTURE_PIPELINE_SPEC.md §13.7 has the full
+    account): RELATIVE to the hand's orientation at grab time (a cube
+    keeps its own orientation at grab, then rotates by however much the
+    hand's orientation changes afterward — no pop), fed through a
+    predictive/reliability-weighted filter (per-hand `HandOrientationFilter`
+    in `_hand_orientation_filters`) before the relative-delta math, then
+    slerped into the cube's displayed orientation. The filter runs for
+    EVERY detected hand every frame, regardless of whether it currently
+    holds a cube (matching LiveSnapDebug.py exactly) -- this keeps its
+    angular-velocity estimate warm, so a grab that happens to land right
+    before a noisy stretch still has a useful prediction to fall back on,
+    rather than starting cold. Skipped for a hand this frame if its world
+    landmarks haven't arrived yet (only expected very briefly after
+    connecting, since "hands_world" is sent every frame)."""
     hands = (("Left", left_landmarks), ("Right", right_landmarks))
 
     released_this_frame = set()
@@ -153,6 +388,7 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
 
     for handedness, landmarks in hands:
         if not _is_detected(landmarks):
+            _hand_orientation_filters[handedness] = HandOrientationFilter()  # avoid predicting from a stale reference on reacquire
             continue
         thumb_outward = _is_thumb_outward(landmarks, handedness)
         _last_known_thumb_outward[handedness] = thumb_outward
@@ -160,13 +396,38 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             _thumb_outward_snap_allowed[handedness] = False
 
         hand_pos = _hand_position(landmarks)
+
+        hand_quat_now = None
+        world_landmarks = _latest_world_landmarks[handedness]
+        if world_landmarks is not None:
+            raw_quat, conditioning_norm = _hand_orientation_quaternion(world_landmarks)
+            _last_hand_reliability_alpha[handedness] = _reliability_alpha(conditioning_norm)
+            hand_quat_now = _predictive_filter_step(
+                _hand_orientation_filters[handedness], raw_quat, conditioning_norm
+            )
+
         owned_cube = cube_window.cube_owned_by(handedness)
         if owned_cube is None:
             can_snap = (not thumb_outward) or _thumb_outward_snap_allowed[handedness]
             if can_snap:
                 owned_cube = _try_snap(handedness, hand_pos, exclude=released_this_frame)
+                if owned_cube is not None and hand_quat_now is not None:
+                    cube = cube_window.cubes[owned_cube]
+                    cube.grab_hand_orientation = hand_quat_now
+                    cube.grab_cube_orientation = cube.orientation
         if owned_cube is not None:
             cube_window.set_target_position(owned_cube, _top_left_for_center(hand_pos, cube_window.cube_size))
+            if hand_quat_now is not None:
+                cube = cube_window.cubes[owned_cube]
+                if cube.grab_hand_orientation is None:
+                    # Missed the grab-frame capture above (world landmarks
+                    # weren't available yet at that instant) -- capture now
+                    # so the delta still starts at identity, no pop.
+                    cube.grab_hand_orientation = hand_quat_now
+                    cube.grab_cube_orientation = cube.orientation
+                delta = _quat_multiply(hand_quat_now, _quat_conjugate(cube.grab_hand_orientation))
+                target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
+                cube.orientation = _quat_slerp(cube.orientation, target_quat, ROTATION_SLERP_FACTOR)
 
     cube_window.pump_and_draw()
 

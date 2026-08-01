@@ -2933,3 +2933,298 @@ Built and live-verified in both `LiveSnapDebug.py` and
 `Resources/HandsTriggeredActions.py` (kept in sync), confirmed working
 end-to-end (block-from-neutral, allow-immediately-after-same-orientation-
 release, re-block-after-showing-thumb-inward) by the operator, 2026-08-01.
+
+### 13.7 Rotation while snapped (2026-08-01) — built in the debug tool, relative not absolute, two noise filters, one open TODO
+
+**Confirmed direction**: rotation is **UNGATED** (active for any snapped
+hand regardless of pose) rather than gated on `Open_Palm` — a pragmatic
+choice since `Open_Palm` detection has no working implementation (§13.5);
+a gate can be added later. Built entirely in `LiveSnapDebug.py` first
+(fast iteration — that tool already runs `HandLandmarker` in-process and
+gets `hand_world_landmarks` for free, no wire-protocol change needed to
+prototype). **Not yet ported to production** (`HandsTriggeredActions.py`/
+`CubeWindow.py`) or the wire protocol (§4's `world_landmarks` gap still
+applies there).
+
+**Quaternion math is hand-rolled**, not via scipy: scipy is only an
+incidental transitive dependency of mediapipe's `jax` in this project's
+venv, not a declared requirement, so not something to build a core
+mechanic on. Gram-Schmidt orthonormal frame → quaternion (Shepperd's
+method, numerically stable across all rotation angles) → shortest-path
+slerp. Offline-sanity-checked (identity round-trip, a known 90° rotation,
+slerp endpoints/midpoint) before ever touching the camera.
+
+**Rotation is RELATIVE to the hand's orientation at grab time, not
+absolute** — direct request, superseding an initial absolute-follow
+attempt that made the cube visibly pop/snap-rotate to match whatever
+twist the hand happened to be at the moment of the grab. Fixed via a
+grab-time baseline pair stored on the cube (`grab_hand_orientation`,
+`grab_cube_orientation`) and applying the hand's world-frame rotation
+*delta* since grab on top of the cube's own orientation at grab time. On
+the grab frame itself the delta is identity by construction — no pop.
+
+**Two independent noise-filtering mechanisms**, found necessary by live
+testing (a naive slerp-only or single-filter approach was insufficient):
+1. **Reactive raw-jump filter** (`RAW_ORIENTATION_GLITCH_DEG = 60`):
+   compares each frame's raw hand-orientation reading only to the
+   IMMEDIATELY PRECEDING raw reading (never a lagged/smoothed value),
+   substituting rather than freezing when the jump exceeds a threshold no
+   real hand can physically achieve in one ~33ms frame. Went through two
+   live-caught bugs before landing here: v1 compared against the cube's
+   own (lagging) slerped orientation, which created a self-reinforcing
+   trap (one rejection made the cube fall further behind, making the next
+   frame's gap look bigger, causing MANY consecutive frames to be
+   rejected instead of a brief blip); v2's fix still had the substituted
+   reference reassigned to the SUBSTITUTED (i.e., stale) value instead of
+   the frame's true raw reading, silently never advancing on a flagged
+   frame and reproducing the same stuck-trap one level down — this
+   specifically caused PROLONGED (not brief) glitch flags whenever the
+   hand settled into a genuinely different but stable pose. Both found via
+   live testing, not by inspection, and fixed with offline regression
+   tests added for each (including a "transitions to a new stable pose"
+   case that the v2 bug's fix specifically had to pass).
+2. **Proactive geometric confidence gate** (`GEOMETRIC_DEGENERACY_NORM =
+   0.035`), added after root-causing the pitch-vs-yaw asymmetry below —
+   checks the actual numerical conditioning of the frame construction
+   directly (before any jump ever shows up downstream), substituting when
+   the orthogonalized second axis's pre-normalization length falls below a
+   data-derived threshold.
+
+**Root-caused the "chaotic" rotation report (2026-08-01) with recorded
+data, not guesses** — built a new ad hoc recorder, `RecordRotationDebug.py`
++ `record_rotation_debug.bat` (imports directly from `LiveSnapDebug.py`
+rather than duplicating, so it records exactly what that tool computes;
+saves locally under `rotation_debug_recordings/`, NOT the external-drive
+corpus dir, since this is diagnostic data, not training data):
+- User reported rotation was chaotic specifically with the back of the
+  hand facing the camera, and separately that a **pitch** crossing (hand
+  tipping through edge-on about the screen's horizontal axis) had the
+  problem while a **yaw** crossing (about the vertical axis) did not.
+- A no-slerp test (slerp temporarily disabled entirely, `cube.orientation
+  = target_quat` directly) proved the chaos was a faithful, unmodified
+  reflection of the raw signal — not a slerp artifact, not the
+  relative-delta math, not the (then-only) raw-jump filter.
+- Geometric analysis of the recorded `world_landmarks` pinned the exact
+  mechanism: the original frame (`wrist→index_MCP`, `wrist→pinky_MCP`)
+  uses two vectors that both point from the wrist toward opposite ends of
+  the SAME knuckle row — only moderately non-parallel even at rest. A
+  PITCH rotation sweeps exactly that knuckle-row axis edge-on to the
+  camera at the crossing, driving the two vectors toward collinearity
+  right when the hand is edge-on; normalizing then divides by a near-zero
+  orthogonalized component, amplifying ordinary landmark noise into wild
+  swings. A YAW rotation instead foreshortens the wrist→fingertip axis,
+  which the frame never used at all — explaining the asymmetry exactly.
+  Quantified: across a full recording, this conditioning norm correlated
+  with the per-frame rotation jump at r=-0.52; the most-degenerate
+  quartile of frames averaged a 36.3° jump vs. 2.2° for the
+  best-conditioned quartile (16x).
+- **Fix**: switched to `index_MCP→pinky_MCP` (width axis, taken directly,
+  larger magnitude, one less wrist-noise term) and `wrist→middle_MCP`
+  (length axis) — much closer to genuinely orthogonal at rest, giving far
+  more margin before collinearity. **Chirality was explicitly verified
+  preserved** against real recorded data before shipping (211/211 frames,
+  palm-normal dot product with the old construction averaged 0.991 — not
+  flipped) specifically so yaw/roll, which the user confirmed were
+  already working correctly, would not regress; the vector order
+  (`index_MCP→pinky_MCP`, not the reverse) is chosen deliberately for this
+  reason and must be re-verified the same way before ever being swapped.
+- **Measured improvement**, matched recordings of the same pitch-sweep
+  test, back-toward-camera pose only: mean per-frame jump 20.6°→12.1°;
+  frames jumping >30° in one frame 14-18%→4% (4-5x fewer); frames jumping
+  >60° 6-10%→3% (2-3x fewer). A real, substantial, data-confirmed
+  improvement — not a complete elimination.
+
+**Open TODO (2026-08-01, direct request)**: rotation quality is still
+reportedly poor specifically with the **back of the hand** facing the
+camera — i.e. this is NOT a new/different failure mode, it's the SAME
+pitch-crossing pose already diagnosed and fixed above, just not fully
+eliminated. Consistent with the data: the fix substantially reduced the
+frequency and severity of large per-frame jumps in that pose (see the
+"measured improvement" bullet above) but did not bring it to zero — a few
+percent of frames still exceed the raw-jump threshold.
+
+**Three alternative geometric constructions tested against already-
+recorded data (2026-08-01), all NEGATIVE — this avenue is reasonably
+exhausted for now**:
+1. Thumb-based fallback vector (`wrist→thumb_CMC`, `wrist→thumb_MCP`,
+   `wrist→thumb_TIP` in place of `wrist→middle_MCP`) — literature-motivated
+   (the thumb is the one MediaPipe landmark NOT coplanar with the rest of
+   the palm; Horn's classic absolute-orientation method documents that
+   coplanar point sets are mathematically degenerate for full 3D
+   orientation and need an out-of-plane reference). Tested against the
+   exact 15 frames the current fix flags as degenerate in a real
+   recording: CMC and MCP were degenerate on 15/15 (mean conditioning
+   0.023-0.036 vs. the current pair's 0.074 overall — substantially
+   WORSE, not better); TIP only resolved 8/15 and was roughly on par
+   overall. Root cause: anatomically, the thumb emerges near the wrist on
+   the index side, so its direction from the wrist isn't much more
+   orthogonal to the knuckle-row width axis than the wrist itself is —
+   `wrist→middle_MCP` ("straight up the palm") was already the
+   better-conditioned choice, independent of viewing angle. Also
+   independently flagged as a reliability risk: a robustness study
+   testing MediaPipe Hands specifically found thumb occlusion causes far
+   larger accuracy drops than occluding other fingers (~20% recall drop on
+   FreiHand, ~40% on Panoptic) — the thumb is a documented weak point in
+   this exact model, for reasons unrelated to viewing angle (self-occlusion
+   against the palm/other fingers, more kinematic freedom than the other
+   MCPs).
+2. PCA-fit width axis (best-fit line through all 4 non-thumb MCPs via
+   first principal component, instead of the raw `index_MCP→pinky_MCP`
+   two-point vector) and/or a centroid-based length axis (`wrist→mean(4
+   MCPs)` instead of `wrist→middle_MCP`) — motivated by "average out
+   individual-landmark noise using more points." Tested against the same
+   recording: conditioning values were statistically indistinguishable
+   from the current simple pair (differences of ~0.002-0.005, within
+   noise) at every one of the 15 degenerate frames, and nearly identical
+   overall (mean 0.073-0.075 across all variants). **This is the more
+   informative negative result**: if the residual noise were independent
+   per-landmark measurement error, averaging over more points should have
+   visibly reduced it — it didn't, at all, and all variants rise and fall
+   together in lockstep at the same frames. This means the degradation is
+   a SYSTEMATIC, CORRELATED distortion of the whole knuckle-row
+   reconstruction at that viewing angle (consistent with genuine reduced
+   monocular depth-disambiguation at edge-on views), not independent noise
+   on any single landmark — no choice or combination of landmarks *within
+   the palm plane* can fix this, since they're all subject to the same
+   correlated degradation together.
+
+**Prospective directions for further improvement (2026-08-01, literature
+review, NOT YET IMPLEMENTED)** — since all three tested approaches worked
+*within a single frame* (picking/combining landmarks), and none helped,
+the productive next axis is *across frames* (temporal), which hasn't been
+tried yet:
+
+- **Literature context — why a human doesn't perceive this the same way a
+  per-frame geometric estimator does**: Ernst & Banks (2002, *Nature*)
+  showed human sensory integration is reliability-weighted (Bayesian/MLE)
+  — multiple cues are combined in proportion to their inverse variance, so
+  a momentarily-degraded cue is automatically down-weighted rather than
+  trusted at face value. Wolpert's forward-model work (and Friston's
+  predictive-coding/active-inference framework) shows the brain regulates
+  perception and action against a *predicted* sensory state (from an
+  efference copy of the motor command / a forward model of ongoing
+  motion), not raw instantaneous sensory input — this is specifically
+  valuable when sensory feedback is noisy, delayed, or has gaps, exactly
+  this project's situation at an edge-on crossing. Johansson's biological-
+  motion-perception work (point-light displays) shows humans reconstruct
+  plausible body structure from extremely sparse/ambiguous visual data by
+  applying strong learned priors on which configurations and motions are
+  kinematically plausible for a human body — the visual system doesn't
+  entertain wildly implausible instantaneous readings the way an
+  unconstrained per-frame estimator can. Note one important asymmetry that
+  bounds how far this analogy goes: a person moving their OWN hand also
+  has proprioception plus an efference copy of the motor command — a
+  non-visual channel with no camera-viewing-angle ambiguity at all, which
+  this vision-only pipeline has no equivalent of and cannot replicate in
+  software; the achievable parallel is specifically the
+  temporal-prediction/reliability-weighting mechanism, not full parity
+  with biological perception.
+  Sources: [Predictions not commands: active inference in the motor
+  system](https://link.springer.com/article/10.1007/s00429-012-0475-5);
+  [Humans integrate visual and haptic information in a statistically
+  optimal
+  fashion](https://www.researchgate.net/publication/11550808_Humans_integrate_visual_and_haptic_information_in_a_statistically_optimal_fashion)
+  (Ernst & Banks 2002); [Biological motion
+  perception](https://en.wikipedia.org/wiki/Biological_motion_perception)
+  (Johansson).
+- **Directly translatable engineering parallel, and already standard CV
+  practice for exactly this problem** (not just a neuroscience analogy):
+  Kalman/Extended-Kalman/Unscented-Kalman filtering is the established
+  technique for monocular hand-pose tracking specifically under depth
+  ambiguity — literature confirms EKF has been used "to estimate the pose
+  of the hand... even when using only a monocular camera and without any
+  depth information." The concrete, incremental proposal: maintain a
+  short-window estimate of the hand's recent angular velocity from the
+  last few ACCEPTED good frames; each frame, predict this frame's expected
+  orientation by extrapolating that velocity (a constant-angular-velocity
+  motion model); then blend the raw geometric reading with that
+  prediction, weighted by real-time reliability — using
+  `conditioning_norm` (already computed every frame) directly as the
+  inverse-variance-style reliability signal, exactly mirroring Ernst &
+  Banks' MLE cue-weighting. This upgrades the current binary
+  accept/substitute gate into a continuous, principled fusion that can
+  distinguish "the raw signal disagrees because of noise" from "the raw
+  signal disagrees because the hand genuinely accelerated," which a fixed
+  jump threshold cannot. This is a materially different, untried axis (temporal
+  integration) from the three geometric (spatial, single-frame) attempts
+  above, so there's real reason to expect it could help where those
+  plateaued — but per this project's standing discipline, build small and
+  verify against recorded data (the existing `rotation_debug_recordings/`
+  captures plus fresh ones) before trusting it, the same way every other
+  claim in this section was checked rather than assumed. Source:
+  [Predictive Tracking in Vision-based Hand Pose Estimation Using
+  Unscented Kalman
+  Filter](https://www.intechopen.com/books/human-robot-interaction/predictive-tracking-in-vision-based-hand-pose-estimation-using-unscented-kalman-filter-and-multi-vie).
+- **Kinematic-plausibility prior** (softer version of the current hard
+  `RAW_ORIENTATION_GLITCH_DEG` threshold): Johansson-style body-constraint
+  priors suggest replacing the fixed 60°/frame cutoff with a proper
+  probabilistic plausibility weight derived from measured human wrist
+  angular-velocity statistics, feeding into the same reliability-weighted
+  fusion above rather than a hard reject/accept boundary.
+- **Out of scope but worth naming**: the fundamental reason binocular
+  human vision doesn't hit this exact ambiguity is stereo depth — an
+  actual second camera or an IMU on the hand would structurally resolve
+  it the way no amount of single-RGB-camera processing can. Not pursued
+  here (this project's whole premise is a single webcam), but worth
+  remembering as the ceiling on what pure software can achieve.
+
+**Predictive filter IMPLEMENTED and live-tested (2026-08-01)** — the
+Kalman-style proposal above was built (`HandOrientationFilter`,
+`_predictive_filter_step`, `_reliability_alpha`, replacing BOTH earlier
+binary filter mechanisms entirely) and offline-verified against recorded
+data before ever touching the live tool (no-pop-at-grab preserved, healthy
+rotation stays fully raw-trusted with zero added lag, tracking-loss reset
+confirmed clean, an engineered degenerate frame correctly drives
+reliability to 0 instead of freezing) — see `LiveSnapDebug.py`'s module
+comment above `CONDITIONING_ALPHA_LOW` for the full implementation
+account. Same-recording analysis showed it eliminating >30°/>60° jumps
+entirely in the back-toward-camera pose. **Live test result: a real but
+INSUFFICIENT improvement** — user reports rotation quality with the back
+of the hand facing the camera is "slightly better but not yet solving the
+issue." **TODO remains OPEN.** Kept in place (it's a measured net
+improvement, not a regression), but this is now four attempts (three
+geometric, one temporal) that have each helped without fully resolving
+it — worth treating the residual as looking increasingly like a genuine
+floor of this pipeline's single-monocular-RGB-camera setup (see the
+"out of scope" stereo/IMU note above) rather than assuming a fifth
+software-only attempt will fully close the gap. If picking this up again:
+check whether `ROTATION_SLERP_FACTOR` (raised 0.25→0.35 the same session,
+for unrelated general responsiveness) changed the felt severity before
+concluding anything new about the filter itself, and consider whether
+further tuning of `CONDITIONING_ALPHA_LOW`/`CONDITIONING_ALPHA_HIGH`
+(not yet tuned beyond the initial data-derived guess) or a wider
+angular-velocity averaging window (currently a single-frame delta, no
+smoothing of `omega` itself) are worth testing before reaching for a
+fifth fundamentally different approach.
+
+**Ported to production (2026-08-01)** — `HandsTriggeredActions.py`/
+`CubeWindow.py` and the wire protocol (`VisionPipeline.py`→`Server.py`→
+`PythonApp_Main.py`, new `"hands_world"` packet type, 21×3×2=126 floats,
+sent before `"hands"` each frame) now carry the exact same design verified
+in `LiveSnapDebug.py`: relative-to-grab quaternion math, the
+better-conditioned landmark pair, and the predictive/reliability-weighted
+filter, ported essentially verbatim rather than re-derived. Offline-
+verified end-to-end with synthetic landmark data before ever touching a
+real camera (same discipline as everything else in this section): snap +
+no-pop-at-grab confirmed; rotation tracking a moving synthetic target
+converged to EXACTLY the theoretically-predicted steady-state slerp lag
+(0.000° error against the closed-form `Δ×(1-α)/α` formula) — a strong
+signal the ported math is bit-for-bit equivalent to the debug tool's,
+not just superficially similar. `CubeWindow.py`'s orientation gizmo
+(`_draw_orientation_gizmo`) was also ported and smoke-tested (opens,
+draws, closes cleanly).
+
+**NOT YET tested against a real camera or the real wire protocol** — only
+offline/synthetic verification so far. One specific item is genuinely
+new, untested code with no prior verification anywhere: the world-landmark
+mirroring/x-negation convention in `utils_for_remapping_coordinates_and_
+output_formatting.py`'s `remap_world_keypoints` (`invert_x=True` default).
+`LiveSnapDebug.py` never needed this — it runs detection on an
+already-mirrored frame, so MediaPipe's own output was already mirror-
+consistent there. The production pipeline mirrors pixel coordinates AFTER
+detection on an un-mirrored frame, so world landmarks need an explicit
+x-negation to represent the same visually-mirrored hand — this negation
+was added by inference/reasoning, not verified live. If rotation feels
+mirrored/inverted on any axis once live-tested, check this exact function
+first, same "verify the sign convention live before trusting it"
+discipline as the thumb-outward rule's calibration (§13.6).

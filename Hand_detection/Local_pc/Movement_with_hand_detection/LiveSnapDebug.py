@@ -74,48 +74,82 @@ IDENTITY_QUATERNION: Tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  #
 # (§13.5), and gating was an inference, not a hard requirement; the user
 # chose the pragmatic path of building/verifying rotation independently and
 # adding a gate later once open-palm detection exists.
-ROTATION_SLERP_FACTOR = 0.25  # tune by feel once live, same discipline as GRAB_RADIUS_MULTIPLIER
+ROTATION_SLERP_FACTOR = 0.35  # tune by feel once live, same discipline as GRAB_RADIUS_MULTIPLIER
+# Raised from 0.25 to 0.35 (2026-08-01, direct request) for more responsive
+# feel -- an exponential-smoothing filter's settling time constant (frames
+# to close 1-1/e of any gap) is 1/(-ln(1-factor)); 0.25 -> ~3.48 frames,
+# 0.35 -> ~2.32 frames, a reduction of almost exactly one third.
 GIZMO_AXIS_LENGTH = CUBE_SIZE * 0.9
 GIZMO_PERSPECTIVE_K = 0.6  # cosmetic weak-perspective foreshortening only, tune by feel
 GIZMO_AXIS_COLORS = {"x": (0, 0, 255), "y": (0, 255, 0), "z": (255, 160, 0)}  # BGR: X=red, Y=green, Z=blue-ish
 
-# Raw-signal glitch detection (2026-08-01, revised after live testing found
-# the first attempt below over-triggered):
+# Orientation noise filtering (2026-08-01) -- history of attempts, kept for
+# context on why this landed here, not because earlier attempts are still
+# used:
 #
-# Attempt 1 (removed): reject a frame outright if its target orientation was
-# far from the CUBE's current (slerped) orientation, freezing the cube for
-# that frame. Live result: many CONSECUTIVE frames got rejected during
-# otherwise-smooth pitch rotation (rotating about the screen's horizontal
-# axis -- crossing from palm-toward-camera to back-of-hand-toward-camera).
-# Root cause, on inspection: comparing against the cube's orientation is
-# comparing against a LAGGING reference (slerp itself lags by design, and
-# each rejection freezes it further) -- once one frame tripped the
-# threshold, the cube fell further behind, making the NEXT frame's gap look
-# even bigger against that same stale reference. A self-reinforcing trap,
-# not a threshold-tuning problem.
+# Attempt 1 (removed): reject a frame if its target was far from the CUBE's
+# current (slerped) orientation. Created a self-reinforcing trap (a lagging
+# reference falls further behind on every rejection) -- many CONSECUTIVE
+# frames rejected during otherwise-smooth pitch rotation.
 #
-# Separately: `_orthonormal_frame`/`_matrix_to_quaternion` are continuous
-# functions of (wrist, index_MCP, pinky_MCP) wherever the frame isn't
-# geometrically degenerate, and quaternion double-cover is already handled
-# (see _quat_angle_deg's abs(dot)) -- so a genuine large single-frame jump
-# in the RAW hand-orientation reading can only come from MediaPipe's own
-# `hand_world_landmarks` output itself jumping between frames, not from a
-# bug in this file's math. The likely cause: a monocular depth-estimation
-# flip at the ambiguous edge-on viewing angle (documented failure mode for
-# learned 3D reconstruction under depth ambiguity) -- PART_ONE.md §2's own
-# predicted risk ("world_landmarks' z... the least reliable of the three
-# coordinates monocularly... expect this to be noisier") landing here.
+# Attempt 2 (removed): compare each frame's raw reading only to the
+# previous raw reading (never a lagged value), substitute the last known-
+# good raw on a flagged frame (`RAW_ORIENTATION_GLITCH_DEG = 60`, a
+# physically-justified per-frame bound). Fixed the stuck-trap problem, but
+# still a binary accept/reject: a flagged frame contributed literally
+# nothing (the cube froze), and live testing at the exact pitch crossing
+# showed the classic pattern this produces -- freeze, then one or two
+# CATASTROPHIC back-to-back jumps once a frame finally got accepted again
+# (observed: 141 degrees then 124 degrees in consecutive frames), then a
+# snap back. Root cause of the residual noise itself (not this filter's
+# design): geometric analysis + two further tests (a thumb-based vector
+# pair, literature-motivated since the thumb is the one MediaPipe landmark
+# not coplanar with the palm; and a PCA/centroid fit averaging all 4
+# non-thumb MCPs) both failed to improve conditioning at the exact
+# degenerate frames -- proving the residual is a SYSTEMATIC, CORRELATED
+# distortion of the whole knuckle-row reconstruction at that viewing angle
+# (all landmarks degrade together), not independent per-landmark noise, so
+# no in-frame landmark choice can fix it. Full account:
+# GESTURE_PIPELINE_SPEC.md §13.7.
 #
-# Attempt 2 (current): compare each frame's RAW reading only to the
-# PREVIOUS RAW reading (`CubeState.last_raw_hand_orientation`, always
-# advanced every detected frame, substituted rather than frozen on a
-# flagged frame) -- never to a lagged/frozen value, so there is no
-# reference to fall behind and no accumulating trap. A real hand cannot
-# rotate this far in one ~33ms frame regardless of intent (even a fast
-# flick is well under this per-frame bound at 30fps), so a jump this size
-# is still a physically-justified glitch signal, not a guess -- but now one
-# that self-heals within a single frame instead of compounding.
-RAW_ORIENTATION_GLITCH_DEG = 60.0
+# Attempt 3 (current): a predictive, reliability-weighted filter --
+# literature-grounded (Ernst & Banks 2002 reliability-weighted/Bayesian
+# sensory cue integration; Wolpert/Friston forward-model and predictive-
+# coding work; EKF/UKF is documented standard practice for monocular hand
+# pose specifically under depth ambiguity) and empirically verified against
+# recorded data before implementing (same discipline as everything else in
+# this file): maintain a short estimate of the hand's recent angular
+# velocity from accepted frames (`HandOrientationFilter.omega`), predict
+# each frame's expected orientation by extrapolating it forward one step,
+# and blend the raw reading with that prediction weighted by
+# `_reliability_alpha(conditioning_norm)` -- a continuous ramp, not a hard
+# cutoff, so a frame is never fully discarded OR fully trusted based on a
+# threshold alone. During a fully degenerate run the filter "coasts" at the
+# last known angular velocity (dead reckoning) instead of freezing; during
+# healthy frames it tracks the raw signal with zero added lag (alpha=1).
+# Verified on the same recorded pitch-crossing data used to diagnose the
+# problem: eliminated >30deg jumps entirely (4%->0%) and >60deg jumps
+# entirely (3%->0%) in the back-toward-camera pose, mean jump 11.4->7.8
+# degrees, with no change to the already-good palm-toward-camera pose
+# (mean 5.2 degrees both). Replaces BOTH earlier mechanisms -- there is no
+# longer a separate raw-jump filter or geometric-substitution gate, this is
+# the sole noise-handling mechanism.
+CONDITIONING_ALPHA_LOW = 0.015   # at/below this conditioning_norm, alpha=0 (fully trust the prediction)
+CONDITIONING_ALPHA_HIGH = 0.06   # at/above this conditioning_norm, alpha=1 (fully trust the raw reading)
+
+
+def _reliability_alpha(conditioning_norm: float) -> float:
+    """Linear ramp from 0 (fully degenerate -> trust the prediction) to 1
+    (comfortably well-conditioned -> trust the raw reading), the continuous
+    generalization of the old hard GEOMETRIC_DEGENERACY_NORM cutoff --
+    mirrors Ernst & Banks' inverse-variance-weighted sensory cue
+    integration (a degraded cue is down-weighted smoothly, not discarded
+    outright at an arbitrary threshold)."""
+    if conditioning_norm <= CONDITIONING_ALPHA_LOW:
+        return 0.0
+    if conditioning_norm >= CONDITIONING_ALPHA_HIGH:
+        return 1.0
+    return (conditioning_norm - CONDITIONING_ALPHA_LOW) / (CONDITIONING_ALPHA_HIGH - CONDITIONING_ALPHA_LOW)
 
 
 @dataclass
@@ -136,21 +170,45 @@ class Cube:
 
 
 @dataclass
+class HandOrientationFilter:
+    """Per-hand predictive/reliability-weighted orientation filter state
+    (see the "Attempt 3" comment above `CONDITIONING_ALPHA_LOW`, further
+    down this file). A property of the HAND's own signal, not of whichever
+    cube it holds (if any), so it lives on CubeState rather than on Cube.
+    `last_fused` is the filter's own running orientation estimate (this
+    frame's output, next frame's prediction base); `omega` is the most
+    recently observed per-frame rotation delta among accepted/fused frames
+    (the constant-angular-velocity model's state). Reset to a fresh
+    instance whenever the hand isn't detected (see update_hands), so
+    reacquiring tracking after a gap never predicts from a stale
+    reference. Uses raw tuples, not the `Quat` alias, because this class is
+    defined before that alias exists further down the file (same reason
+    `Cube.orientation` above does the same)."""
+    last_fused: Optional[Tuple[float, float, float, float]] = None
+    omega: Tuple[float, float, float, float] = IDENTITY_QUATERNION
+
+
+@dataclass
 class CubeState:
     window_size: Tuple[int, int]
     cubes: Dict[str, Cube] = field(default_factory=dict)
     # Thumb-outward snap rule state (§13.6) — see update_hands' docstring.
     last_known_thumb_outward: Dict[str, bool] = field(default_factory=lambda: {h: False for h in TRACKED_HANDS})
     thumb_outward_snap_allowed: Dict[str, bool] = field(default_factory=lambda: {h: False for h in TRACKED_HANDS})
-    # Raw-signal glitch filter state (RAW_ORIENTATION_GLITCH_DEG above) — a
-    # property of the HAND's own orientation signal, not of whichever cube
-    # (if any) it's holding, so it lives here rather than on Cube. Reset to
-    # None whenever the hand isn't detected (see update_hands), so
-    # reacquiring tracking after a gap never compares against a stale value.
-    last_raw_hand_orientation: Dict[str, Optional[Tuple[float, float, float, float]]] = field(
-        default_factory=lambda: {h: None for h in TRACKED_HANDS}
+    # Predictive/reliability-weighted orientation filter (see "Attempt 3"
+    # above CONDITIONING_ALPHA_LOW) — a property of the HAND's own signal,
+    # not of whichever cube it holds, so it lives here rather than on Cube.
+    # Reset to a fresh HandOrientationFilter() whenever the hand isn't
+    # detected (see update_hands), so reacquiring tracking after a gap
+    # never predicts from a stale reference.
+    hand_orientation_filters: Dict[str, HandOrientationFilter] = field(
+        default_factory=lambda: {h: HandOrientationFilter() for h in TRACKED_HANDS}
     )
-    last_hand_glitch_flagged: Dict[str, bool] = field(default_factory=lambda: {h: False for h in TRACKED_HANDS})
+    # Reliability weight (0-1) the filter used most recently for each hand,
+    # exposed purely for the on-screen diagnostic (_draw_hand) — 1.0 means
+    # fully trusting the raw reading, 0.0 means fully coasting on the
+    # predicted/extrapolated orientation.
+    last_hand_reliability_alpha: Dict[str, float] = field(default_factory=lambda: {h: 1.0 for h in TRACKED_HANDS})
 
     def __post_init__(self):
         if not self.cubes:
@@ -263,19 +321,63 @@ def _vec_normalize(v: Vec3) -> Vec3:
     return (v[0] / n, v[1] / n, v[2] / n)
 
 
-def _orthonormal_frame(wrist: Vec3, index_mcp: Vec3, pinky_mcp: Vec3) -> Tuple[Vec3, Vec3, Vec3]:
-    """Gram-Schmidt orthonormal frame from a hand's world landmarks: e1
-    along wrist->index_MCP, e2 the wrist->pinky_MCP direction orthogonalized
-    against e1, e3 = e1 x e2 completing a right-handed frame. Returns the
-    rotation matrix as its three orthonormal column vectors (e1, e2, e3) --
-    this IS the target hand-orientation, converted to a quaternion by
-    _matrix_to_quaternion below."""
-    e1 = _vec_normalize(_vec_sub(index_mcp, wrist))
-    v2 = _vec_sub(pinky_mcp, wrist)
+def _orthonormal_frame(wrist: Vec3, index_mcp: Vec3, pinky_mcp: Vec3, middle_mcp: Vec3) -> Tuple[Vec3, Vec3, Vec3, float]:
+    """Gram-Schmidt orthonormal frame from a hand's world landmarks.
+
+    REVISED 2026-08-01 (data-driven, see the memory/handoff for the full
+    analysis): the original construction (e1 along wrist->index_MCP, e2 the
+    wrist->pinky_MCP direction orthogonalized against e1) uses two vectors
+    that both point from the wrist toward opposite ends of the SAME
+    knuckle row -- only moderately non-parallel even in a neutral pose.
+    A PITCH rotation (about the screen's horizontal axis) sweeps exactly
+    that knuckle-row axis edge-on to the camera at the crossing, driving
+    the two vectors' 3D reconstruction toward collinearity right when the
+    hand is edge-on -- normalizing then divides by a near-zero
+    orthogonalized component, amplifying ordinary landmark noise into wild
+    swings. A YAW rotation (about the vertical axis) instead foreshortens
+    the wrist->fingertip axis, which the OLD construction never used at
+    all -- explaining exactly the pitch-bad/yaw-fine asymmetry observed
+    live and confirmed by recording (r=-0.52 correlation between this
+    function's orthogonalized-vector norm and the per-frame rotation
+    jump, 16x mean-jump difference between the most- and least-degenerate
+    quartiles of frames).
+
+    New pair: e1 along index_MCP->pinky_MCP (the knuckle-row "width" axis,
+    taken directly rather than via the wrist -- larger magnitude, one less
+    wrist-noise term), e2 the wrist->middle_MCP "length" axis orthogonalized
+    against e1. These two are much closer to genuinely orthogonal in a
+    normal pose, giving far more margin before any single rotation axis
+    drives them toward collinearity (verified: worst-case orthogonalized
+    norm across a full pitch-crossing recording improved from 0.0008 to
+    0.0025, and specifically AT the three observed crossings from
+    0.011-0.025 up to 0.033-0.049 -- roughly 2-4x better exactly where it
+    mattered). Some rotation axis can likely still degrade any 2-vector
+    choice, but not pitch specifically, at least not this badly.
+
+    Chirality is preserved on purpose (verified against real recordings:
+    211/211 frames, palm-normal dot product with the OLD construction's
+    palm-normal averaged 0.991, i.e. essentially the same up-vector, not
+    flipped) -- e1 is deliberately index_MCP->pinky_MCP, not the reverse;
+    swapping that order would invert the rotation SENSE (clockwise hand
+    twist would rotate the cube counterclockwise), which would have broken
+    yaw/roll, not just left pitch unfixed. Do not swap it without
+    re-verifying chirality the same way.
+
+    Returns the rotation matrix as its three orthonormal column vectors
+    (e1, e2, e3) -- this IS the target hand-orientation, converted to a
+    quaternion by _matrix_to_quaternion below -- plus the pre-normalization
+    norm of the orthogonalized e2 vector, a direct numerical-conditioning
+    signal (small = e1/e2 nearly collinear = this frame is close to the
+    known degenerate zone) fed into the predictive filter's reliability
+    weighting (`_reliability_alpha`, see "Attempt 3" above
+    CONDITIONING_ALPHA_LOW) in update_hands."""
+    e1 = _vec_normalize(_vec_sub(pinky_mcp, index_mcp))
+    v2 = _vec_sub(middle_mcp, wrist)
     v2_orth = _vec_sub(v2, _vec_scale(e1, _vec_dot(v2, e1)))
+    conditioning_norm = math.sqrt(_vec_dot(v2_orth, v2_orth))
     e2 = _vec_normalize(v2_orth)
     e3 = _vec_cross(e1, e2)
-    return (e1, e2, e3)
+    return (e1, e2, e3, conditioning_norm)
 
 
 def _quat_normalize(q: Quat) -> Quat:
@@ -334,19 +436,15 @@ def _quat_conjugate(q: Quat) -> Quat:
     return (w, -x, -y, -z)
 
 
-def _quat_angle_deg(q0: Quat, q1: Quat) -> float:
-    """Angle in degrees between two orientations. Uses abs(dot) so q and -q
-    (the same rotation, quaternion double-cover) read as 0 degrees apart,
-    not 180 -- otherwise every other frame's arbitrary sign choice out of
-    _matrix_to_quaternion could look like a huge spurious jump on its own."""
-    d = abs(q0[0] * q1[0] + q0[1] * q1[1] + q0[2] * q1[2] + q0[3] * q1[3])
-    d = max(-1.0, min(1.0, d))
-    return math.degrees(2.0 * math.acos(d))
-
-
-def _hand_orientation_quaternion(world_landmarks: List[Vec3]) -> Quat:
-    cols = _orthonormal_frame(world_landmarks[WRIST], world_landmarks[INDEX_MCP], world_landmarks[PINKY_MCP])
-    return _matrix_to_quaternion(cols)
+def _hand_orientation_quaternion(world_landmarks: List[Vec3]) -> Tuple[Quat, float]:
+    """Returns (orientation quaternion, conditioning_norm) -- the latter is
+    _orthonormal_frame's raw numerical-conditioning signal, fed into the
+    predictive filter's reliability weighting in update_hands (see
+    "Attempt 3" above CONDITIONING_ALPHA_LOW)."""
+    e1, e2, e3, conditioning_norm = _orthonormal_frame(
+        world_landmarks[WRIST], world_landmarks[INDEX_MCP], world_landmarks[PINKY_MCP], world_landmarks[MIDDLE_MCP]
+    )
+    return _matrix_to_quaternion((e1, e2, e3)), conditioning_norm
 
 
 def _quat_slerp(q0: Quat, q1: Quat, t: float) -> Quat:
@@ -381,6 +479,34 @@ def _quat_rotate_vector(q: Quat, v: Vec3) -> Vec3:
     uv = _vec_cross(qv, v)
     uuv = _vec_cross(qv, uv)
     return (v[0] + 2.0 * (w * uv[0] + uuv[0]), v[1] + 2.0 * (w * uv[1] + uuv[1]), v[2] + 2.0 * (w * uv[2] + uuv[2]))
+
+
+def _make_continuous(q: Quat, reference: Quat) -> Quat:
+    """Flip q's sign if needed so it's on the same hemisphere as reference
+    (quaternion double-cover: q and -q are the same rotation) -- must be
+    resolved before any quaternion ARITHMETIC (multiply/subtract), unlike
+    _quat_slerp which already handles this internally for its own use."""
+    d = q[0] * reference[0] + q[1] * reference[1] + q[2] * reference[2] + q[3] * reference[3]
+    return tuple(-c for c in q) if d < 0 else q
+
+
+def _predictive_filter_step(filt: HandOrientationFilter, raw_quat: Quat, conditioning_norm: float) -> Quat:
+    """Advances `filt` by one frame and returns the fused orientation to
+    use as `hand_quat_now`. See the "Attempt 3" comment above
+    CONDITIONING_ALPHA_LOW for the full design rationale; verified against
+    recorded data before being wired in here (GESTURE_PIPELINE_SPEC.md
+    §13.7)."""
+    if filt.last_fused is None:
+        # First sighting since the last reset -- nothing to predict from yet.
+        filt.last_fused = raw_quat
+        return raw_quat
+    raw_quat = _make_continuous(raw_quat, filt.last_fused)
+    predicted = _make_continuous(_quat_multiply(filt.omega, filt.last_fused), filt.last_fused)
+    alpha = _reliability_alpha(conditioning_norm)
+    fused = _quat_slerp(predicted, raw_quat, alpha)
+    filt.omega = _quat_multiply(fused, _quat_conjugate(filt.last_fused))
+    filt.last_fused = fused
+    return fused
 
 
 def _try_snap(state: CubeState, handedness: str, hand_pos: Tuple[float, float], exclude=frozenset()) -> Optional[str]:
@@ -443,15 +569,19 @@ def update_hands(state: CubeState, hand_data_by_hand) -> None:
     cube's current orientation exactly (no pop); slerp still eases toward
     it each frame afterward for jitter smoothing, not to bridge a gap.
 
-    Raw-signal glitch filtering (see RAW_ORIENTATION_GLITCH_DEG above): each
-    hand's freshly computed orientation is compared only to ITS OWN previous
-    raw reading (`last_raw_hand_orientation`, per-hand, always advanced —
-    substituted, never frozen, on a flagged frame) before being fed into the
-    grab-delta/slerp math above. This is deliberately independent of
-    whether the hand currently holds a cube, and of the cube's own
-    (lagging, by design) slerped orientation — comparing against a lagging
-    reference is what made the previous version of this filter get stuck
-    rejecting many consecutive frames."""
+    Predictive, reliability-weighted orientation filtering (see "Attempt 3"
+    above CONDITIONING_ALPHA_LOW, 2026-08-01): each hand's raw orientation
+    reading is passed through `_predictive_filter_step` (per-hand state in
+    `state.hand_orientation_filters`) BEFORE being fed into the grab-delta
+    math above. That filter maintains a running angular-velocity estimate
+    and blends the raw reading with a one-step extrapolation of it,
+    weighted by `_reliability_alpha(conditioning_norm)` — never a hard
+    accept/reject, always a continuous blend. This replaced two earlier
+    binary-filter attempts (see the module-level comment above
+    CONDITIONING_ALPHA_LOW for the full history of why) and is verified
+    against recorded data to eliminate the large (>30/>60 degree)
+    per-frame jumps at the pitch crossing without changing already-healthy
+    frames at all (alpha=1 there, zero added lag)."""
     released_this_frame = set()
     for handedness in TRACKED_HANDS:
         data = hand_data_by_hand[handedness]
@@ -466,7 +596,7 @@ def update_hands(state: CubeState, hand_data_by_hand) -> None:
     for handedness in TRACKED_HANDS:
         data = hand_data_by_hand[handedness]
         if data is None:
-            state.last_raw_hand_orientation[handedness] = None  # avoid comparing against a stale reading on reacquire
+            state.hand_orientation_filters[handedness] = HandOrientationFilter()  # avoid predicting from a stale reference on reacquire
             continue
         thumb_outward = data["thumb_outward"]
         state.last_known_thumb_outward[handedness] = thumb_outward
@@ -474,22 +604,11 @@ def update_hands(state: CubeState, hand_data_by_hand) -> None:
             state.thumb_outward_snap_allowed[handedness] = False
 
         hand_pos = _hand_position(data["pixel_landmarks"])
-        raw_quat = _hand_orientation_quaternion(data["world_landmarks"])
-        last_raw = state.last_raw_hand_orientation[handedness]
-        is_glitch = last_raw is not None and _quat_angle_deg(raw_quat, last_raw) > RAW_ORIENTATION_GLITCH_DEG
-        hand_quat_now = last_raw if is_glitch else raw_quat
-        # The comparison reference MUST always become this frame's TRUE raw
-        # reading, regardless of the accept/reject decision -- not
-        # `hand_quat_now` (a bug found live 2026-08-01: that assigns back
-        # the OLD value on a flagged frame, so the reference never advances,
-        # and every later frame -- even a perfectly clean, stable one -- was
-        # still being compared against a stale pre-transition value forever.
-        # That reproduced the exact stuck-trap failure this filter exists to
-        # avoid, one level down, and is what caused "prolonged" glitch
-        # flagging instead of a single flagged frame whenever the hand
-        # settled into a genuinely different but stable pose.
-        state.last_raw_hand_orientation[handedness] = raw_quat
-        state.last_hand_glitch_flagged[handedness] = is_glitch
+        raw_quat, conditioning_norm = _hand_orientation_quaternion(data["world_landmarks"])
+        state.last_hand_reliability_alpha[handedness] = _reliability_alpha(conditioning_norm)
+        hand_quat_now = _predictive_filter_step(
+            state.hand_orientation_filters[handedness], raw_quat, conditioning_norm
+        )
 
         owned = state.cube_owned_by(handedness)
         if owned is None:
@@ -505,10 +624,19 @@ def update_hands(state: CubeState, hand_data_by_hand) -> None:
             cube = state.cubes[owned]
             delta = _quat_multiply(hand_quat_now, _quat_conjugate(cube.grab_hand_orientation))
             target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
+            # Slerp was temporarily disabled 2026-08-01 to isolate and
+            # diagnose the back-toward-camera noise from any smoothing
+            # artifact (confirmed: the chaos was a faithful reflection of
+            # the raw signal, not a slerp artifact). Root-caused and fixed
+            # since (see _orthonormal_frame's docstring + GEOMETRIC_
+            # DEGENERACY_NORM above: better-conditioned vector pair +
+            # geometric confidence gate) -- data-confirmed improvement
+            # (back-pose >30deg-jump frames dropped ~4-5x, >60deg ~2-3x
+            # across matched recordings), re-enabled.
             cube.orientation = _quat_slerp(cube.orientation, target_quat, ROTATION_SLERP_FACTOR)
 
 
-def _draw_hand(frame, normalized_landmarks, handedness, thumb_outward, snap_allowed, glitch_flagged, width, height):
+def _draw_hand(frame, normalized_landmarks, handedness, thumb_outward, snap_allowed, reliability_alpha, width, height):
     hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
     for lm in normalized_landmarks:
         hand_landmarks_proto.landmark.append(landmark_pb2.NormalizedLandmark(x=lm.x, y=lm.y, z=lm.z))
@@ -527,16 +655,16 @@ def _draw_hand(frame, normalized_landmarks, handedness, thumb_outward, snap_allo
         label, color = "thumb-inward", (0, 200, 200)
     cv2.putText(frame, f"{handedness}: {label}", (text_x, max(text_y, 20)),
                 cv2.FONT_HERSHEY_DUPLEX, 0.6, color, 2, cv2.LINE_AA)
-    # Raw-orientation glitch diagnostic (RAW_ORIENTATION_GLITCH_DEG,
-    # update_hands' docstring) -- a per-hand signal, drawn here rather than
+    # Predictive-filter reliability diagnostic (see "Attempt 3" above
+    # CONDITIONING_ALPHA_LOW) -- a per-hand signal, drawn here rather than
     # on the cube since it's about the hand's own reading, independent of
-    # whether it currently holds anything. Should show as brief, ISOLATED
-    # flashes if this is really a rare depth-flip artifact; if it's instead
-    # near-continuous during the pitch transition, that points to sustained
-    # jitter rather than a one-frame flip -- watch for which live.
-    if glitch_flagged:
-        cv2.putText(frame, f"{handedness}: ORIENTATION GLITCH", (text_x, max(text_y, 20) + 24),
-                    cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
+    # whether it currently holds anything. alpha=1.0 (not drawn) means the
+    # filter is fully trusting the raw reading; lower values mean it's
+    # increasingly coasting on the predicted/extrapolated orientation.
+    if reliability_alpha < 0.999:
+        color = (0, 140, 255) if reliability_alpha > 0.0 else (0, 0, 255)
+        cv2.putText(frame, f"{handedness}: reliability {reliability_alpha:.2f}", (text_x, max(text_y, 20) + 24),
+                    cv2.FONT_HERSHEY_DUPLEX, 0.6, color, 2, cv2.LINE_AA)
 
 
 def _draw_cubes(frame, state: CubeState):
@@ -657,7 +785,7 @@ def main():
                 _draw_hand(
                     frame, normalized, handedness, data["thumb_outward"],
                     state.thumb_outward_snap_allowed[handedness],
-                    state.last_hand_glitch_flagged[handedness], width, height,
+                    state.last_hand_reliability_alpha[handedness], width, height,
                 )
 
             _draw_cubes(frame, state)

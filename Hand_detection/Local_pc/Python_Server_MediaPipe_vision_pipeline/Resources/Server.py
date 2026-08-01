@@ -26,6 +26,23 @@ def SendMetaPacket(frame_width, frame_height, throughconnection):
         raise  # re-raise so the caller can mark the connection dead
 
 
+def SendHandsWorldPacket(hands_world_data, throughconnection):
+    """Sent BEFORE each frame's "hands" packet (see SendPacket below) --
+    metric, hand-relative 3D landmarks (21 x/y/z per hand x 2 hands = 126
+    floats), added for rotation-while-snapped
+    (Hand_detection/Claude/GESTURE_PIPELINE_SPEC.md §13.7). Packets are
+    dispatched sequentially in arrival order (Client.py's
+    receive_keypoints_data), so sending this first guarantees the frame's
+    world landmarks are already stored by the time the same frame's
+    "hands" packet triggers on_hands_frame's per-frame gesture logic."""
+    try:
+        serialized = json.dumps({"type": "hands_world", "data": hands_world_data}) + "\n"
+        throughconnection.sendall(serialized.encode('utf-8'))
+    except Exception as e:
+        print(f"[Socket Server] Error: {e}")
+        raise  # re-raise so the caller can mark the connection dead
+
+
 def SendPacket(face_data, hands_data, throughconnection):
     """Serialize the face and hands coordinate arrays and send them as two
     newline-delimited JSON packets over the socket. `\n` is the packet

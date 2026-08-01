@@ -5,9 +5,12 @@ from Resources.inference import load_models, run_inference_on_frame
 from Resources.Server import Start_socket_server as StartServer
 from Resources.Server import SendPacket as SendPacketThroughSocket
 from Resources.Server import SendMetaPacket as SendMetaPacketThroughSocket
+from Resources.Server import SendHandsWorldPacket as SendHandsWorldPacketThroughSocket
 from Resources.utils_for_remapping_coordinates_and_output_formatting import (
     remap_keypoints,
-    extract_hand_by_type
+    remap_world_keypoints,
+    extract_hand_by_type,
+    extract_hand_world_by_type
 )
 
 
@@ -84,9 +87,21 @@ try:
         remap_keypoints(right_landmarks, width, height, x_key="x_px", y_key="y_px", expected_count=21)
     )
 
+    # World landmarks (metric, hand-relative 3D) -- added for rotation-while-
+    # snapped (Claude/GESTURE_PIPELINE_SPEC.md §13.7). 21 x/y/z per hand x 2
+    # hands = 126 floats.
+    left_world_landmarks = extract_hand_world_by_type(allHandsLandmarksCoordinatesArray, "Left")
+    right_world_landmarks = extract_hand_world_by_type(allHandsLandmarksCoordinatesArray, "Right")
+    flat_hands_world_coords = (
+        remap_world_keypoints(left_world_landmarks, expected_count=21) +
+        remap_world_keypoints(right_world_landmarks, expected_count=21)
+    )
 
     # Send the in-memory coordinates straight over the socket (no disk round-trip).
     try:
+        # hands_world sent BEFORE hands -- see SendHandsWorldPacket's
+        # docstring for why the order matters.
+        SendHandsWorldPacketThroughSocket(flat_hands_world_coords, connection)
         SendPacketThroughSocket(flat_face_coords, flat_hands_coords, connection)
     except (BrokenPipeError, ConnectionResetError, OSError) as e:
         print(f"[Main] Socket connection lost: {e}")

@@ -36,12 +36,44 @@ plain language, not implementation detail (link to the code instead).
      pair. Orientation sign convention calibrated live 2026-08-01 (see
      `GESTURE_PIPELINE_SPEC.md` §13.6).
 
+4. **Rotation while snapped.** While a hand holds a cube, the cube's
+   orientation follows the hand's rotation — but RELATIVE to how the hand
+   was oriented at the moment of the grab, not absolute: grabbing a cube
+   never makes it pop/snap to match whatever twist the hand happens to be
+   at, it only starts rotating from there as the hand keeps turning.
+   Active for any snapped hand regardless of pose (not gated on
+   open-palm — that detector doesn't exist yet, see "Not yet built"
+   below).
+   - Ported to production (`Resources/HandsTriggeredActions.py`/
+     `Resources/CubeWindow.py`, wire protocol extended) 2026-08-01 —
+     offline-verified end-to-end but **not yet tested against a real
+     camera**. Full account: `GESTURE_PIPELINE_SPEC.md` §13.7.
+   - **Known issue (TODO): rotation quality is still poor with the back
+     of the hand facing the camera.** A pitch-crossing collinearity
+     problem (rotation glitching when the hand rotates through edge-on,
+     back-of-hand facing the camera) was found and substantially — but not
+     completely — fixed 2026-08-01: large per-frame jumps are now much
+     less frequent in that pose, but still occur occasionally. Three
+     alternative landmark choices (thumb-based, PCA/centroid-averaged)
+     were tested against recorded data and all failed to improve it
+     further — the remaining noise looks like a genuine, shared
+     (not per-landmark) monocular depth-estimation limit at that viewing
+     angle, not a fixable landmark-selection problem. A temporal/predictive
+     (Kalman-style) filter was then implemented and live-tested — a real
+     but INSUFFICIENT improvement ("slightly better but not yet solving the
+     issue"), kept in place since it's a net improvement, but **the TODO
+     remains OPEN**: four attempts total (three geometric, one temporal)
+     have each helped without fully resolving it, increasingly looking like
+     a genuine floor of a single-monocular-camera setup rather than a
+     software fix away. See `GESTURE_PIPELINE_SPEC.md`
+     §13.7's last section before investigating further.
+
 ## Not yet built
 
-- Rotation while snapped (planned: gated on the hand being open-palm).
 - Release via closed fist (planned; blocked on finding a working
   fist-detection approach — MediaPipe's built-in classifier was tried and
   reverted, see `GESTURE_PIPELINE_SPEC.md` §13.5).
+- Open-palm rotation gating (rotation is currently ungated — see rule 4).
 
 ## Status
 
