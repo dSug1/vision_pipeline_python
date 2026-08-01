@@ -20,8 +20,10 @@ from Resources import classifier, features
 # train/test split).
 
 # Recordings live on the external drive, not the local disk (2026-07-31) --
-# must match RecordSession.py's RECORDINGS_DIR.
-RECORDINGS_DIR = r"E:\Python\Recordings for vision_pipeline"
+# must match RecordSession.py's RECORDINGS_DIR. Pointed at Pencil_style_grip/
+# (pencil-grip corpus reset, 2026-07-31) -- the old open-hand-pinch corpus is
+# archived under .../Unsuccessful_grip/, not read here anymore.
+RECORDINGS_DIR = r"E:\Python\Recordings for vision_pipeline\Pencil_style_grip"
 WEIGHTS_OUT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "Resources", "pinch_classifier_weights.json"
 )
@@ -29,14 +31,33 @@ WEIGHTS_OUT = os.path.join(
 BASE_CLASS_PREFIXES = {
     "open_hand_": "open_hand",
     "fist_": "fist",
+    # pencil_rest_<orientation> added 2026-07-31 (GESTURE_PIPELINE_SPEC.md
+    # §12.4.3's failure analysis): a NEW negative held-state class -- pencil-
+    # grip hand shape (other three fingers curled, matching pinch), thumb
+    # and index CLEARLY SEPARATED, not touching. Fixes a verified data gap:
+    # the held-state taxonomy previously had no explicit negative example
+    # for this exact resting pose, so the model's decision boundary there
+    # was unconstrained -- a rare loose-contact tail in `pinch` training
+    # examples (ratio up to ~0.51) overlapped almost exactly with some
+    # hands' natural not-touching resting gap in cyclic recordings, and the
+    # model couldn't tell them apart. Not yet recorded as of this comment --
+    # see HANDOFF_GESTURE_CLASSIFIER.md for the recording plan.
+    "pencil_rest_": "pencil_rest",
 }
 
 
 def classify_label(label):
     """Returns (base_class, orientation) for a held-state recording label,
-    or None for event-layer-only labels (pinch_cycles_*, pinch_rotate_release)."""
-    if label == "rotating_no_pinch":
-        return "rotating_no_pinch", None
+    or None for event-layer-only labels (pinch_cycles_*, pinch_rotate_release).
+    rotating_no_pinch has two adversarial variants recorded as of the
+    2026-07-31 pencil-grip reset (GESTURE_PIPELINE_SPEC.md §12) -- plain
+    "rotating_no_pinch" (relaxed hand) and "rotating_no_pinch_pencilrest"
+    (near-pencil-grip resting shape) -- both pooled into the same
+    base_class for training, kept as distinct orientation cells so either
+    variant's weak-cell status can be seen separately."""
+    if label.startswith("rotating_no_pinch"):
+        variant = label[len("rotating_no_pinch"):].lstrip("_") or "relaxed"
+        return "rotating_no_pinch", variant
     if label.startswith("pinch_cycles") or label == "pinch_rotate_release":
         return None
     if label.startswith("pinch_"):
@@ -58,6 +79,18 @@ def load_sessions():
         classified = classify_label(data["label"])
         if classified is None:
             continue
+        # Defensive check, added 2026-07-31 after finding an archived
+        # "held-state" pinch_front session actually contained three
+        # pinch-release dips (a cyclic recording mislabeled as held-state) --
+        # every file this function treats as per-frame-clean training data
+        # must be tagged "held_state" by the recorder itself, not inferred
+        # from the filename, which is exactly how that mixup went unnoticed.
+        if data.get("protocol") != "held_state":
+            raise ValueError(
+                f"{path}: base-classifier training data must be protocol='held_state' "
+                f"(one continuous hold, every frame = the labeled class), got "
+                f"{data.get('protocol')!r} -- see RecordSession.py's header comment."
+            )
         base_class, orientation = classified
         cells.setdefault((base_class, orientation), []).append((path, data))
     return cells
@@ -134,9 +167,21 @@ def hand_landmark_sequence(data, handedness):
 # grounded in rigid-vs-articulated motion segmentation (CV) and hand
 # postural-synergy (biomechanics) literature. Tested on top of the current
 # winner, not in isolation, since that's the practically relevant question.
+# raw_plus_handcrafted_plus_articulation_plus_delta added 2026-07-31
+# (§3.2.11 follow-up / §12.4.2): a traced, specific failure mode found by
+# inspecting this representation's confidence signal frame-by-frame against
+# a genuinely-still open-hand hold in a pinch_cycles recording -- confidence
+# climbed while pinch_ratio and curl were both flat, traced to
+# thumb_index_articulation rising from incidental non-converging thumb/
+# index motion the articulation feature can't distinguish from real
+# closing (it measures motion magnitude, not direction). Adds the existing,
+# already-implemented signed delta_pinch_ratio/delta_curl_worst_deg pair so
+# the model has direct access to "is the gap actually shrinking," not just
+# "are fingers moving independently of rigid motion."
 REPRESENTATIONS = ["handcrafted_static", "handcrafted_velocity", "handcrafted_prederror",
                     "handcrafted_full", "raw_landmarks", "raw_plus_handcrafted",
-                    "raw_plus_handcrafted_plus_articulation"]
+                    "raw_plus_handcrafted_plus_articulation",
+                    "raw_plus_handcrafted_plus_articulation_plus_delta"]
 
 
 def sessions_to_windowed_examples(session_list):
@@ -173,6 +218,10 @@ def sessions_to_windowed_examples(session_list):
                     "raw_plus_handcrafted": features.extract_raw_plus_handcrafted_features(now, handedness=handedness),
                     "raw_plus_handcrafted_plus_articulation":
                         features.extract_raw_plus_handcrafted_plus_articulation_features(t1, now, handedness=handedness),
+                    "raw_plus_handcrafted_plus_articulation_plus_delta":
+                        features.extract_raw_plus_handcrafted_plus_articulation_plus_delta_features(
+                            t1, now, handedness=handedness
+                        ),
                 }
                 examples.append((feats, y, {
                     "base_class": base_class, "orientation": orientation,
@@ -334,6 +383,8 @@ def _extract_by_representation(representation, t2, t1, now, handedness):
         return features.extract_raw_plus_handcrafted_features(now, handedness=handedness)
     if representation == "raw_plus_handcrafted_plus_articulation":
         return features.extract_raw_plus_handcrafted_plus_articulation_features(t1, now, handedness=handedness)
+    if representation == "raw_plus_handcrafted_plus_articulation_plus_delta":
+        return features.extract_raw_plus_handcrafted_plus_articulation_plus_delta_features(t1, now, handedness=handedness)
     raise ValueError(representation)
 
 
@@ -349,6 +400,8 @@ def rotation_stress_test(model_json, representation):
     for path in sorted(glob.glob(os.path.join(RECORDINGS_DIR, "rotating_no_pinch_*.json"))):
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
+        if data.get("protocol") != "held_state":
+            raise ValueError(f"{path}: expected protocol='held_state', got {data.get('protocol')!r}")
         duration_s = session_duration_s(data)
         for handedness in ("Left", "Right"):
             seq = hand_landmark_sequence(data, handedness)
@@ -413,6 +466,8 @@ def main():
         "raw_landmarks": [f"lm{i}_{axis}" for i in range(21) for axis in ("x", "y", "z")] + features.DELTA_FEATURE_NAMES,
         "raw_plus_handcrafted": features.RAW_PLUS_HANDCRAFTED_FEATURE_NAMES,
         "raw_plus_handcrafted_plus_articulation": features.RAW_PLUS_HANDCRAFTED_PLUS_ARTICULATION_FEATURE_NAMES,
+        "raw_plus_handcrafted_plus_articulation_plus_delta":
+            features.RAW_PLUS_HANDCRAFTED_PLUS_ARTICULATION_PLUS_DELTA_FEATURE_NAMES,
     }
 
     results = {}

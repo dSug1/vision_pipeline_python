@@ -42,14 +42,25 @@ HANDCRAFTED_FEATURE_NAMES = [
 # biological-motion-perception literature (humans use motion cues, not
 # static snapshots, for exactly this kind of intention judgment). These 2
 # features give the classifier that temporal signal directly, instead of
-# only a per-frame snapshot. Window = 300ms, chosen from
-# analyze_transition_window.py's measured onset/offset transition-duration
-# distribution (median 667-967ms depending on distance, p25 220-440ms) --
-# short enough to trigger before a slow transition fully completes, long
-# enough to carry real signal above frame-to-frame noise.
+# only a per-frame snapshot.
+#
+# Window = 900ms (re-swept 2026-07-31 against the pencil-grip corpus,
+# GESTURE_PIPELINE_SPEC.md §12/§3.2.11, via sweep_prediction_error_window.py
+# -- now covering raw_plus_handcrafted_plus_articulation, the actual
+# shipped representation, not just the superseded handcrafted variants the
+# original 300ms sweep covered). Previously 300ms, from analyze_
+# transition_window.py's transition-DURATION measurement alone, never
+# validated against classifier performance. Directly swept against
+# classification score this time: rotation-FP fell monotonically as the
+# window grew (2.5% at 300ms -> 0.9% at 900ms, both on
+# raw_plus_handcrafted_plus_articulation/mlp), with recall/F1 reaching
+# 1.000/1.000 at 900ms -- essentially ceiling performance, so there's no
+# signal to justify pushing the window larger (1200ms tested, marginally
+# worse). This is a global constant shared by every windowed representation
+# `train_pinch_classifier.py` compares, not tuned per-representation.
 DELTA_FEATURE_NAMES = ["delta_pinch_ratio", "delta_curl_worst_deg"]
 HANDCRAFTED_WINDOWED_FEATURE_NAMES = HANDCRAFTED_FEATURE_NAMES + DELTA_FEATURE_NAMES
-DELTA_WINDOW_MS = 300
+DELTA_WINDOW_MS = 900
 
 
 def to_dict_landmarks(mp_landmarks):
@@ -338,4 +349,36 @@ def extract_raw_plus_handcrafted_plus_articulation_features(landmarks_past, land
     return (
         extract_raw_plus_handcrafted_features(landmarks_now, handedness)
         + extract_finger_articulation_features(landmarks_past, landmarks_now)
+    )
+
+
+# Directional-delta addition (2026-07-31, pencil-grip corpus,
+# GESTURE_PIPELINE_SPEC.md §12.4.2): found by directly tracing this
+# representation's confidence signal frame-by-frame against a genuinely-
+# still open-hand hold in a pinch_cycles recording -- confidence rose
+# during a period where pinch_ratio and curl were both flat/unchanged, and
+# the cause traced to thumb_index_articulation alone climbing (0.08 -> 0.41
+# over ~500ms) with nothing else moving. `extract_finger_articulation_
+# features` measures the MAGNITUDE of thumb/index motion relative to the
+# rigid hand frame, not its DIRECTION -- it cannot distinguish "closing"
+# (a real pinch starting) from incidental non-converging motion (natural
+# micro-repositioning between reps), because nothing in
+# raw_plus_handcrafted_plus_articulation carries a signed "is the gap
+# actually shrinking" signal. `extract_delta_features` (delta_pinch_ratio,
+# already implemented, used by the superseded handcrafted_velocity/
+# handcrafted_full representations) is exactly that signal and was simply
+# never combined with the articulation feature. Added here as a direct,
+# targeted fix for a traced failure mode, not a guessed improvement.
+RAW_PLUS_HANDCRAFTED_PLUS_ARTICULATION_PLUS_DELTA_FEATURE_NAMES = (
+    RAW_PLUS_HANDCRAFTED_PLUS_ARTICULATION_FEATURE_NAMES + DELTA_FEATURE_NAMES
+)
+
+
+def extract_raw_plus_handcrafted_plus_articulation_plus_delta_features(landmarks_past, landmarks_now, handedness=None):
+    """72-dim raw_plus_handcrafted_plus_articulation + 2 delta features
+    (delta_pinch_ratio, delta_curl_worst_deg, signed, same past/now pair)
+    -> 74 values."""
+    return (
+        extract_raw_plus_handcrafted_plus_articulation_features(landmarks_past, landmarks_now, handedness)
+        + extract_delta_features(landmarks_now, landmarks_past)
     )

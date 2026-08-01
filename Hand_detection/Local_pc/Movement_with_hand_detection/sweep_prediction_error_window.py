@@ -21,8 +21,18 @@ from train_pinch_classifier import (
 # was never actually validated against classifier performance, just assumed
 # to transfer. This sweeps window size directly against the same two
 # metrics train_pinch_classifier.py already selects on (held-out test
-# recall/F1, and the rotation stress test), across the three window-
-# dependent representations, so the isolation is measured, not guessed.
+# recall/F1, and the rotation stress test), across the window-dependent
+# representations, so the isolation is measured, not guessed.
+#
+# Re-run 2026-07-31 against the pencil-grip corpus (GESTURE_PIPELINE_SPEC.md
+# §12) -- extended to include raw_plus_handcrafted_plus_articulation, the
+# CURRENT winning representation (§3.2.10/§3.3.3), which the original sweep
+# (built against the old corpus, before the articulation feature existed)
+# never covered. That representation's articulation feature is exactly as
+# window-dependent as the older handcrafted variants (extract_finger_
+# articulation_features(past, now) needs the same window_frames), so
+# DELTA_WINDOW_MS is a live assumption for the actual shipped model, not
+# just a historical artifact for superseded representations.
 #
 # Not run automatically as part of every retrain (unlike
 # train_pinch_classifier.py) -- this is a one-off tuning pass, same
@@ -31,6 +41,7 @@ from train_pinch_classifier import (
 WINDOW_SIZES_MS = [100, 150, 200, 300, 450, 600, 900, 1200]
 WINDOW_DEPENDENT_REPRESENTATIONS = [
     "handcrafted_velocity", "handcrafted_prederror", "handcrafted_full",
+    "raw_plus_handcrafted_plus_articulation",
 ]
 MIN_RECALL = 0.4
 
@@ -38,16 +49,31 @@ FEATURE_NAMES = {
     "handcrafted_velocity": features.HANDCRAFTED_WINDOWED_FEATURE_NAMES,
     "handcrafted_prederror": features.HANDCRAFTED_FEATURE_NAMES + features.PREDICTION_ERROR_FEATURE_NAMES,
     "handcrafted_full": features.HANDCRAFTED_FULL_FEATURE_NAMES,
+    "raw_plus_handcrafted_plus_articulation": features.RAW_PLUS_HANDCRAFTED_PLUS_ARTICULATION_FEATURE_NAMES,
+}
+
+# hidden_units per representation for the "mlp" architecture below -- the
+# handcrafted family stays at 4 (unchanged, low-dimensional input, never
+# implicated in the §3.2.9 stale-hyperparameter finding). 72-dim
+# raw_plus_handcrafted_plus_articulation uses 24, matching the value
+# train_pinch_classifier.py's own sweep found correct for that input size --
+# using the old default of 4 here would confound the window-size comparison
+# with a known-undersized model for this representation.
+MLP_HIDDEN_UNITS = {
+    "handcrafted_velocity": 4, "handcrafted_prederror": 4, "handcrafted_full": 4,
+    "raw_plus_handcrafted_plus_articulation": 24,
 }
 
 
-def _features_for(representation, t2, t1, now):
+def _features_for(representation, t2, t1, now, handedness=None):
     if representation == "handcrafted_velocity":
         return features.extract_handcrafted_windowed_features(now, t1)
     if representation == "handcrafted_prederror":
         return features.extract_handcrafted_features(now) + features.extract_prediction_error_features(t2, t1, now)
     if representation == "handcrafted_full":
         return features.extract_handcrafted_full_features(t2, t1, now)
+    if representation == "raw_plus_handcrafted_plus_articulation":
+        return features.extract_raw_plus_handcrafted_plus_articulation_features(t1, now, handedness=handedness)
     raise ValueError(representation)
 
 
@@ -67,7 +93,7 @@ def build_examples(session_list, window_ms):
             window_frames = max(1, round(fps * window_ms / 1000))
             for i in range(2 * window_frames, len(seq)):
                 now, t1, t2 = seq[i], seq[i - window_frames], seq[i - 2 * window_frames]
-                feats = {rep: _features_for(rep, t2, t1, now) for rep in WINDOW_DEPENDENT_REPRESENTATIONS}
+                feats = {rep: _features_for(rep, t2, t1, now, handedness) for rep in WINDOW_DEPENDENT_REPRESENTATIONS}
                 examples.append((feats, y, {
                     "base_class": base_class, "orientation": orientation,
                     "handedness": handedness, "file": os.path.basename(path),
@@ -80,6 +106,8 @@ def rotation_stress_test_window(model_json, representation, window_ms):
     for path in sorted(glob.glob(os.path.join(RECORDINGS_DIR, "rotating_no_pinch_*.json"))):
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
+        if data.get("protocol") != "held_state":
+            raise ValueError(f"{path}: expected protocol='held_state', got {data.get('protocol')!r}")
         duration_s = session_duration_s(data)
         for handedness in ("Left", "Right"):
             seq = hand_landmark_sequence(data, handedness)
@@ -90,7 +118,7 @@ def rotation_stress_test_window(model_json, representation, window_ms):
             confs = []
             for i in range(2 * window_frames, len(seq)):
                 now, t1, t2 = seq[i], seq[i - window_frames], seq[i - 2 * window_frames]
-                x = _features_for(representation, t2, t1, now)
+                x = _features_for(representation, t2, t1, now, handedness)
                 confs.append(classifier.predict_from_features(model_json, x))
             pcts.append(100.0 * float(np.mean(np.array(confs) > 0.5)))
     return float(np.mean(pcts)) if pcts else float("nan")
@@ -113,9 +141,10 @@ def main():
             y_test = [ex[1] for ex in test_ex]
             feature_names = FEATURE_NAMES[representation]
 
+            hidden_units = MLP_HIDDEN_UNITS[representation]
             for arch_name, make_model, fit_kwargs in [
                 ("logreg", lambda: LogisticRegression(n_features=len(X_train[0])), {}),
-                ("mlp", lambda: TinyMLP(n_features=len(X_train[0]), hidden_units=4), {"l2": 0.001}),
+                ("mlp", lambda hu=hidden_units: TinyMLP(n_features=len(X_train[0]), hidden_units=hu), {"l2": 0.001}),
             ]:
                 model = make_model()
                 model.fit(X_train, y_train, **fit_kwargs)

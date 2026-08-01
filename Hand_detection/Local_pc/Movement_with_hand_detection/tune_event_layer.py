@@ -12,7 +12,10 @@ from train_pinch_classifier import hand_landmark_sequence, session_duration_s
 # transition recordings -- NOT the held-state sessions, which contain no
 # real transitions to tune against (spec §3.3's own rule).
 
-RECORDINGS_DIR = r"E:\Python\Recordings for vision_pipeline"
+# Pencil-grip corpus reset (2026-07-31) -- must match RecordSession.py/
+# train_pinch_classifier.py's RECORDINGS_DIR; old corpus archived under
+# .../Unsuccessful_grip/, not read here anymore.
+RECORDINGS_DIR = r"E:\Python\Recordings for vision_pipeline\Pencil_style_grip"
 WEIGHTS_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "Resources", "pinch_classifier_weights.json"
 )
@@ -25,7 +28,10 @@ MODEL = classifier.load(WEIGHTS_PATH)
 # the model JSON itself -- cheap to extend when a new representation is
 # added, and fails loudly (KeyError-free explicit branch) instead of
 # silently mis-predicting if a representation is missing from both paths.
-WINDOWED_REPRESENTATIONS = {"raw_plus_handcrafted_plus_articulation"}
+WINDOWED_REPRESENTATIONS = {
+    "raw_plus_handcrafted_plus_articulation",
+    "raw_plus_handcrafted_plus_articulation_plus_delta",
+}
 
 
 def hand_sequence(path, handedness):
@@ -58,6 +64,10 @@ def hand_sequence(path, handedness):
         now, past = lm_seq[i], lm_seq[i - window_frames]
         if representation == "raw_plus_handcrafted_plus_articulation":
             x = features.extract_raw_plus_handcrafted_plus_articulation_features(past, now, handedness=handedness)
+        elif representation == "raw_plus_handcrafted_plus_articulation_plus_delta":
+            x = features.extract_raw_plus_handcrafted_plus_articulation_plus_delta_features(
+                past, now, handedness=handedness
+            )
         conf = classifier.predict_from_features(MODEL, x)
         ratio = features.pinch_ratio(now)
         seq.append((conf, ratio))
@@ -74,10 +84,26 @@ def run_tracker(seq, **tracker_kwargs):
     return onsets, offsets
 
 
+def _check_protocol(path, expected):
+    """Defensive check, added 2026-07-31 after finding an archived
+    "held-state" pinch_front session actually contained three pinch-release
+    dips -- a recording's declared protocol (RecordSession.py's --protocol,
+    saved in the JSON) must match what this loop assumes about it, not be
+    inferred from the filename alone."""
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if data.get("protocol") != expected:
+        raise ValueError(f"{path}: expected protocol={expected!r}, got {data.get('protocol')!r}")
+
+
 def evaluate(params, verbose=False):
     cycle_files = sorted(glob.glob(os.path.join(RECORDINGS_DIR, "pinch_cycles_*.json")))
     rotate_release_files = sorted(glob.glob(os.path.join(RECORDINGS_DIR, "pinch_rotate_release_*.json")))
     neg_files = sorted(glob.glob(os.path.join(RECORDINGS_DIR, "rotating_no_pinch_*.json")))
+    for path in cycle_files + rotate_release_files:
+        _check_protocol(path, "cyclic")
+    for path in neg_files:
+        _check_protocol(path, "held_state")
 
     cycle_onsets, cycle_offsets = [], []
     for path in cycle_files:
@@ -122,30 +148,66 @@ def evaluate(params, verbose=False):
 
 def main():
     print("Sweeping onset/offset thresholds...\n")
+    # window_frames added to the grid (2026-07-31, pencil-grip corpus,
+    # GESTURE_PIPELINE_SPEC.md §12.4's retrain) -- previously always
+    # event_layer.DEFAULT_WINDOW_FRAMES (5, ~150-200ms), never itself swept.
+    # That's now a live stale-hyperparameter risk of exactly the same shape
+    # §3.2.9 found for hidden_units=4: features.DELTA_WINDOW_MS just tripled
+    # 300ms->900ms (§12.4), which smooths the classifier's own per-frame
+    # confidence signal over a much longer lookback -- the event tracker's
+    # OWN derivative-agreement window (a completely separate window over the
+    # confidence/ratio sequence, not the same thing as the classifier's
+    # input-feature window) was never re-checked against that changed
+    # smoothing profile.
     best = None
-    for onset_conf_rise in [0.20, 0.30, 0.40]:
-        for onset_ratio_fall in [0.08, 0.12, 0.18]:
-            for offset_conf_fall in [0.20, 0.30, 0.40]:
-                for offset_ratio_rise in [0.08, 0.12, 0.18]:
-                    params = dict(
-                        onset_conf_rise=onset_conf_rise, onset_ratio_fall=onset_ratio_fall,
-                        offset_conf_fall=offset_conf_fall, offset_ratio_rise=offset_ratio_rise,
-                    )
-                    r = evaluate(params)
-                    # Score: want cycle onset/offset counts near 3 (pinch_x3
-                    # cadence) with zero false positives on rotating_no_pinch.
-                    score = (
-                        -abs(r["cycle_onset_mean"] - 3) - abs(r["cycle_offset_mean"] - 3)
-                        - 2 * r["neg_onset_total"] - 2 * r["neg_offset_total"]
-                    )
-                    if best is None or score > best[0]:
-                        best = (score, params, r)
+    all_results = []  # every (params, r) -- lets us inspect the raw
+    # cycle-detection/false-positive tradeoff directly afterward, since the
+    # scalar `score` below weights false positives heavily (-2 each) and
+    # could hide a config that's much closer to the ~3-per-cycle target at
+    # the cost of one or two false positives, not just report the single
+    # most conservative winner.
+    for window_frames in [5, 8, 12, 18, 24]:
+        for onset_conf_rise in [0.20, 0.30, 0.40]:
+            for onset_ratio_fall in [0.08, 0.12, 0.18]:
+                for offset_conf_fall in [0.20, 0.30, 0.40]:
+                    for offset_ratio_rise in [0.08, 0.12, 0.18]:
+                        params = dict(
+                            window_frames=window_frames,
+                            onset_conf_rise=onset_conf_rise, onset_ratio_fall=onset_ratio_fall,
+                            offset_conf_fall=offset_conf_fall, offset_ratio_rise=offset_ratio_rise,
+                        )
+                        r = evaluate(params)
+                        all_results.append((params, r))
+                        # Score: want cycle onset/offset counts near 3
+                        # (pinch_x3 cadence) with zero false positives on
+                        # rotating_no_pinch.
+                        score = (
+                            -abs(r["cycle_onset_mean"] - 3) - abs(r["cycle_offset_mean"] - 3)
+                            - 2 * r["neg_onset_total"] - 2 * r["neg_offset_total"]
+                        )
+                        if best is None or score > best[0]:
+                            best = (score, params, r)
 
     score, params, r = best
-    print("Best params:", params)
+    print("Best params (FP-penalized score):", params)
     print("Results:", r)
     print("\n--- verbose run of best params ---")
     evaluate(params, verbose=True)
+
+    print("\n--- Top 10 by raw cycle-detection closeness to 3, ignoring the FP penalty ---")
+
+    def _raw_cycle_score(item):
+        _, res = item
+        return abs(res["cycle_onset_mean"] - 3) + abs(res["cycle_offset_mean"] - 3)
+
+    for p, res in sorted(all_results, key=_raw_cycle_score)[:10]:
+        print(
+            f"  window_frames={p['window_frames']:2d} onset_conf_rise={p['onset_conf_rise']:.2f} "
+            f"onset_ratio_fall={p['onset_ratio_fall']:.2f} offset_conf_fall={p['offset_conf_fall']:.2f} "
+            f"offset_ratio_rise={p['offset_ratio_rise']:.2f} -> cycle_onset={res['cycle_onset_mean']:.2f} "
+            f"cycle_offset={res['cycle_offset_mean']:.2f} neg_onset_total={res['neg_onset_total']} "
+            f"neg_offset_total={res['neg_offset_total']}"
+        )
 
 
 if __name__ == "__main__":

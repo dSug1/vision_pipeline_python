@@ -1,5 +1,21 @@
 # Gesture Classifier Pipeline — Specification
 
+> **⚠ Pinch corpus reset (2026-07-31): read §12 first.** Stage 4's first
+> real live test (the whole point of building it) showed the open-hand
+> pinch definition doesn't hold up live, despite passing every recorded-data
+> metric in §3.2/§3.3 below — so those sections' "current best model" and
+> event-layer numbers describe an **archived** corpus
+> (`.../Unsuccessful_grip/`), not the active one. Pinch is redefined
+> (index+thumb contact, other three fingers curled closed) and the corpus
+> has been rebuilt under `.../Pencil_style_grip/` (160 sessions) —
+> **Stage 3 is already retrained against it (§12.4): rotation FP 0.9%,
+> recall/F1 1.000, both dramatically better than the archived corpus, same
+> winning representation.** Not yet live-validated — that's next. §1–§2
+> (why rule-based thresholds were abandoned, core discipline) and the
+> pipeline stages themselves (§3's structure, not its pinch-specific
+> numbers) are still current and still apply — the *methodology* isn't
+> what got redone, the *pose definition and data* were.
+
 Written 2026-07-30, after abandoning a rule-based (hand-tuned threshold)
 pinch classifier. This is the **project-wide, gesture-agnostic**
 specification for how every gesture classifier gets built from here on —
@@ -2080,3 +2096,388 @@ work is picked up again.
 current priority is the next gesture(s), per direction, with §10 and this
 section both left as staged, literature-grounded starting points for
 whenever event-layer work resumes.
+
+## 12. Pinch corpus reset (2026-07-31): the open-hand pinch definition doesn't hold up live
+
+Stage 4 (the live debug tool, `LiveGestureDebug.py`) was built and run live
+for the first time this session — the actual point of Stage 4, per §3's own
+rule, is that held-out recorded-data metrics can't validate what only a live
+run can. It found exactly that: with the classifier that scored rotation FP
+**2.7%** / recall **0.739** (§3.2.10) and an event layer re-tuned against it
+(§3.3.4), live onset/offset events fired far more often and far less
+predictably, on both hands, than the recorded numbers implied — a live/
+recorded behavior gap the recorded metrics could not have caught, by
+construction (the whole reason Stage 4 exists).
+
+**Root cause, per the user's diagnosis**: the pinch gesture itself was
+under-specified. It was recorded and trained as "thumb and index close
+together, on an otherwise freely-posed hand" — the other three fingers'
+pose and thumb-index *proximity* (not contact) were never constrained. This
+is consistent with two things this project already found and, at the time,
+accepted as unresolved noise rather than fixed at the source:
+
+- §6.1 (`PART_ONE.md`): the other-three-fingers curl gate showed "tail
+  overlap with `fist`" even on confirmed-pinch frames — never fully
+  resolved, just given a percentile-based margin instead of a clean split.
+- §7.2 (`PART_ONE.md`): a fast open-close on a *relaxed, freely-posed* open
+  hand has the same timing signature as a genuine pinch, because "closing"
+  was defined as *ratio crossing a threshold*, not *fingers actually
+  touching*.
+
+Both findings point at the same structural issue: an unconstrained hand
+pose gives the model (and, before it, the abandoned rule-based classifier)
+a fundamentally ambiguous input distribution. No amount of further
+retraining against *that* corpus was going to close the gap — this is a
+gesture-*definition* fix, not another representation/hyperparameter round,
+and is being treated as one: a new corpus, not a patch on the old model.
+
+### 12.1 New pinch definition
+
+**Pinch = index and thumb tip in contact, with the middle/ring/pinky
+fingers held curled closed** (a "holding a pencil" grip) — not merely
+thumb-index proximity on a freely-posed hand. Two effects, both aimed
+directly at the two findings above:
+
+- Curling the other three fingers **during the pinch pose itself** removes
+  their pose as a free variable — `curl_worst_deg` stops being a fuzzy,
+  overlapping gate and becomes close to constant during genuine pinch,
+  by construction. It also reinforces §3.3.3's finger-articulation feature
+  directly: those fingers are now genuinely rigid/motionless during a
+  pinch, not just assumed to be.
+- Requiring **contact, not proximity**, moves the true-pinch region of
+  `pinch_ratio`'s distribution close to its structural floor (near 0)
+  instead of "below some threshold," sharpening the boundary against
+  incidental closeness during rotation/relaxed poses.
+
+**This is still a trained classifier over continuous features, not a
+reversion to the abandoned rule-based approach (§1)** — contact is what
+defines the *ground truth label* during recording, the model still learns
+from continuous distance/curl/articulation features, same as before.
+
+### 12.2 Corpus reset, mechanics
+
+- Old corpus (163 recordings, all of Stage 1's held-state + event-layer
+  sessions) moved from `E:\Python\Recordings for vision_pipeline\` into
+  `.../Unsuccessful_grip\` — **archived, not deleted**, but no script reads
+  it anymore.
+- New corpus recorded under `.../Pencil_style_grip\`. `RECORDINGS_DIR` in
+  `RecordSession.py`, `train_pinch_classifier.py`, `tune_event_layer.py`,
+  and `analyze_transition_window.py` all repointed there (2026-07-31).
+- **Same overall taxonomy as before** (§5's 6-orientation × 3-distance
+  grid, cyclic `pinch_cycles`/`pinch_rotate_release` sessions) — but see
+  §12.3: the held-state *recording protocol itself* also got a fix this
+  session, discovered while re-launching this corpus, not carried over
+  unchanged.
+- **`rotating_no_pinch` gets a new adversarial variant**: recorded both in
+  a normal relaxed hand pose (as before) **and** in a near-pencil-grip
+  resting shape (fingers curled, thumb close to but not touching index)
+  while rotating — the closest-to-genuine-pinch adversarial case for the
+  new definition, not just arbitrary rotation. `open_hand`/`fist`
+  themselves are unchanged (they're not the gesture being redefined).
+- **All previously-compared representations get re-run against the new
+  corpus, not just retrained on top of the old winner** — hand-crafted,
+  raw landmarks, `raw_plus_handcrafted`, and
+  `raw_plus_handcrafted_plus_articulation` all get re-compared from
+  scratch (§3.2's own methodology, applied again), since which one wins
+  under a less-ambiguous pose distribution is an open question, not an
+  assumption to carry over.
+
+### 12.3 A second, independent bug found while re-launching this corpus: held-state sessions weren't actually held
+
+Before recording the new corpus, an archived `pinch_front` session (nominally
+a **held-state** file — every frame was supposed to be unambiguously the
+labeled class, per §3 stage 1's own rule) was inspected directly. Its
+`pinch_ratio` time series showed **three separate dips**, not one continuous
+hold:
+
+```
+0.40 0.39 0.43 ... [dip to 0.09] ... 0.43 0.48 ... [dip to 0.18] ... 0.42 0.43 ... [dip to 0.17] ... 0.46
+```
+
+i.e. the hand was open/transitioning for roughly **60% of the frames in a
+file `train_pinch_classifier.py` treated as 100% positive "pinch."** This
+had been happening the entire project history, undetected — a second,
+independent source of label noise alongside the pose-ambiguity issue §12.1
+fixes, and a plausible further contributor to the recall-vs-rotation-FP
+tension documented throughout §3.2.
+
+**Root cause**: the recording protocol never actually distinguished, in
+data, between "one continuous hold" (what Stage 3 held-state sessions are
+*supposed* to be) and "repeated grip/release cycles" (what
+`pinch_cycles`/`pinch_rotate_release` event-layer sessions are *supposed*
+to be) — both were just recorded via the same `RecordSession.py --label X`
+call and the distinction lived only in the operator's head, not in the
+file. It's the same failure shape as §12's main finding: an implicit
+convention that silently drifted.
+
+**Fix — a required, explicit `--protocol` flag, saved as data**:
+`RecordSession.py` now requires `--protocol {held_state,cyclic}`, shown
+live on-screen during both the countdown and capture (so the operator
+always sees which one is active) and saved in the output JSON's
+`"protocol"` field. `held_state` means one continuous hold, every frame is
+the labeled class (used for `pinch_*`/`open_hand_*`/`fist_*`/
+`rotating_no_pinch*`); `cyclic` means 3 grip/release repetitions, frames
+are not uniformly one class (used for `pinch_cycles_*`/
+`pinch_rotate_release`). **Never inferred from the label string** — that's
+exactly how the original mixup went unnoticed. `train_pinch_classifier.py`
+(`load_sessions`, `rotation_stress_test`) and `tune_event_layer.py`
+(`evaluate`) now assert the expected protocol on every file they read and
+raise loudly on a mismatch, rather than silently trusting the filename.
+`record.bat` takes `<label> <protocol> [duration]` accordingly.
+
+**Recording duration**: uniform 5s for every session, held-state and
+cyclic alike (explicit direction, 2026-07-31) — a departure from the old
+corpus's longer cyclic durations (8-10s, to fit 3 *deliberately slow*
+reps per `PART_ONE.md` §7.2's own lesson about rushing cyclic timing). 5s
+for 3 reps is a faster cadence than that lesson recommends; noted here as
+a known, explicit tradeoff, not an oversight — revisit if the new cyclic
+data shows the same too-fast-to-separate timing problem §7.2 already found
+once.
+
+**Cyclic framing convention** (added same session, per direction): to
+maximize actual transition coverage inside the compressed 5s window, a
+`cyclic` capture **starts already closing into the first grip** (no
+neutral pre-roll) and **ends right at the final release** (no neutral
+post-roll) — not neutral→pinch→release×3→neutral. Stored as a
+`"protocol_note"` field in the saved JSON (not just this document), so the
+convention is legible from the data itself.
+
+### 12.3.1 Recording session workflow: prompt and authorization
+
+How an assistant (or anyone else) actually drives a recording session with
+the operator, established this session and meant to carry forward
+unchanged for future recording rounds:
+
+- **One capture at a time, never chained/unattended.** Each invocation of
+  `RecordSession.py`/`record.bat` is its own separate command — never
+  scripted as a batch/loop of several captures in a row. The operator
+  needs a moment to get into position and mentally prepare for each
+  specific label/orientation/distance/rep before the 3s countdown starts;
+  chaining captures removes that moment and was explicitly rejected when
+  tried.
+- **A one-line prompt before every single capture**, stating exactly what's
+  about to be recorded: the label, the distance (if applicable — near/far/
+  medium), the rep number (e.g. "rep 1/2"), the protocol (`held_state` or
+  `cyclic`), and a brief pose reminder (e.g. "pencil grip, hold
+  continuously for 5s" or "start already closing into the first grip, 3
+  full cycles, end at the final release"). This is not optional framing —
+  it's the operator's only cue for what to physically do next, since the
+  on-screen countdown text only shows the label/protocol, not orientation
+  or distance or rep count.
+- **The tool invocation's own permission prompt is the authorization
+  gate — no separate verbal "go" is needed.** Earlier in this same session
+  the workflow required the operator to type "go" after each one-line
+  prompt, then separately approve the tool call; this was later simplified
+  (explicit direction) to just showing the prompt and immediately issuing
+  the recording command, since the harness's own permission dialog already
+  serves as the confirmation step. Don't reintroduce the double-
+  confirmation step.
+- **Redo mechanics**: if a capture wasn't performed correctly (wrong pose,
+  not ready in time, etc.), the operator says "redo the previous
+  recording" (or "redo the last two/three," etc.) — the corresponding
+  saved JSON file(s) get deleted first, then the exact same label/
+  distance/rep/protocol is re-recorded. Never leave a bad capture in the
+  corpus silently; always delete before re-recording, and confirm the
+  deletion succeeded (recordings live on an external drive, §5, which has
+  shown transient access hiccups — verify the file is actually gone, don't
+  assume a single `rm` succeeded).
+- **Distance-blocked, orientation-cycled ordering**: for the held-state
+  6-orientation × 3-distance grid, sessions are grouped **by distance
+  first** (all 6 orientations × 2 reps at near, then all 6 at far, then all
+  6 at medium) rather than by orientation first — this means the operator
+  only physically repositions (changes distance) 3 times total per class,
+  not 18 times, since rotating the hand between orientations at a fixed
+  distance is far less disruptive than walking closer/farther repeatedly.
+
+### 12.4 Stage 3 retrained against the pencil-grip corpus (2026-07-31): target not just met, essentially ceiling
+
+With the new corpus complete (160 sessions: 36 each pinch/open_hand/fist,
+36 `pinch_cycles`, 6 `pinch_rotate_release`, 5+5 `rotating_no_pinch`
+variants) and `DELTA_WINDOW_MS` re-swept to 900ms (below), the full
+representation comparison (`train_pinch_classifier.py`) was re-run from
+scratch, per §12.2's own instruction not to assume the old ranking holds.
+
+**It held, decisively, with far wider margins**: `mlp/raw_plus_handcrafted_
+plus_articulation` wins again — rotation FP **0.9%** (was 2.7% on the
+archived corpus), recall **1.000**, F1 **1.000**, precision **0.999**.
+Every representation's relative ranking is unchanged (hand-crafted-only
+variants still ~38-42% rotation FP; `raw_plus_handcrafted` without the
+articulation feature reaches only 4.8%), but the winning representation's
+absolute numbers moved from "comfortably past target" to "at ceiling."
+
+**Window sweep, done first** (`sweep_prediction_error_window.py`, extended
+this session to cover `raw_plus_handcrafted_plus_articulation` — the prior
+sweep only covered superseded hand-crafted variants): rotation FP fell
+monotonically as the window grew, from 2.5% at the old 300ms default to
+**0.9% at 900ms** (recall/F1 reaching 1.000/1.000), with 1200ms showing no
+further gain. `features.DELTA_WINDOW_MS` updated 300→900 accordingly — see
+that file's updated comment for the full number trail.
+
+**Honest caveat, not a reason to distrust the result but a reason not to
+declare victory yet**: F1/recall of 1.000 is a near-ceiling score, and the
+session-level held-out test set is small (20 sessions, one per class/
+orientation cell) — a real, measured result, not a guess, but exactly the
+kind of good-looking number that needs live validation (Stage 4) before
+being trusted the way the *archived* corpus's good recorded metrics weren't
+(§12's whole premise). Re-validate live before declaring pinch done.
+
+### 12.4.1 Stage 3.3 re-tuned against the new classifier (2026-07-31): specificity solved, sensitivity hits a cadence ceiling, not a threshold ceiling
+
+Re-tuned `tune_event_layer.py` against the retrained classifier (§12.4).
+Extended the sweep to also search `event_layer`'s own `window_frames`
+(5/8/12/18/24, previously always 5 and never itself re-checked) alongside
+the four onset/offset thresholds, since `features.DELTA_WINDOW_MS` tripling
+300ms→900ms changes how smoothed the classifier's per-frame confidence
+signal is — a live staleness risk for the event tracker's *own*, separate
+window, the same shape as the `hidden_units=4` finding.
+
+**Specificity is now excellent**: the best-scoring config (`window_frames=8`,
+`onset_conf_rise=0.20`, `onset_ratio_fall=0.12`, `offset_conf_fall=0.20`,
+`offset_ratio_rise=0.08` — `Resources/event_layer.py`'s new defaults)
+produces **zero false onset/offset events across all 40 `rotating_no_pinch`
+hand-sessions** (was 6/3 on the archived corpus).
+
+**Sensitivity did not improve, and the full 405-point grid shows why it
+structurally can't from here**: cycle onset/offset means stayed at
+~1.18/0.90 (archived corpus: 1.15/1.00) — barely moved, despite the base
+classifier going from 2.7%→0.9% rotation FP. Printing the top 10 configs by
+raw closeness to the ~3-per-cycle target (ignoring the false-positive
+penalty entirely) shows **the ceiling is ~1.3-1.4 onsets/session even at
+the most permissive settings tested** — this is not a threshold or window
+that further sweeping will fix.
+
+**Root cause, diagnosed not guessed**: `analyze_transition_window.py`
+re-run against this corpus (§12.4) measured the pencil-grip pinch's own
+transition timing — **median onset (open→pinch) 1165ms, median offset
+(pinch→open) 597ms**. A cyclic recording is 5s holding 3 reps (§12.3's
+explicit, flagged tradeoff), i.e. ~1.6s budget per cycle. Onset alone
+(1165ms) already consumes most of that budget; onset+offset together
+(1.76s median) *exceeds* it. The 3 reps very likely run back-to-back with
+little or no settled apex/idle time between them, which is exactly the
+"too fast to separate" failure mode `PART_ONE.md` §7.2 found once before
+and this section's own duration note flagged as a foreseeable risk, not
+a surprise.
+
+**This is not a classifier-quality or event-layer-quality problem
+anymore — it's a recording-cadence problem**, and per §2's "no heuristic
+pile-up" discipline the fix is different data (re-record `pinch_cycles`/
+`pinch_rotate_release` at a longer duration, giving real separation
+between reps, matching the pre-reset corpus's 8-10s convention), not
+another threshold sweep. **Deliberately not done automatically this
+session** — re-recording cyclic sessions is a real time cost and a
+judgment call on the tradeoff already flagged in §12.3, left for explicit
+direction rather than assumed.
+
+### 12.4.3 Systematic failure analysis (2026-07-31): the actual root cause, after two wrong/incomplete guesses
+
+§12.4.1's "recording cadence" root cause was **wrong** — retracted after the
+user directly inspected raw index-fingertip landmark data and found three
+clean, well-separated dips per `pinch_cycles` session, not back-to-back
+transitions. Tracing this further found a **second bug this session**:
+`analyze_transition_window.py` used a hardcoded `PINCH_CYCLES_DURATION_S =
+10.0`, a leftover assumption from the archived corpus's 10s cyclic
+sessions — the pencil-grip corpus's are actually 5.0s, so fps (and every
+reported transition duration) was off by exactly 2x. Corrected: median
+onset **583ms** (not 1165ms), median offset **299ms** (not 597ms) — fully
+consistent with the clean, separated dips actually observed. **Lesson,
+stated plainly: don't assert a root cause from a derived statistic without
+checking the code that computed it — this one was checked only after the
+user's direct data inspection forced it.**
+
+**Targeted feature fix, partial**: tracing one session's confidence signal
+frame-by-frame found `thumb_index_articulation` climbing (0.08→0.41) during
+a genuinely-still open hold (ratio and curl both flat) — the feature
+measures motion *magnitude*, not *direction*, so it can't distinguish
+closing from incidental non-converging motion. Added
+`raw_plus_handcrafted_plus_articulation_plus_delta` (72-dim representation
++ signed `delta_pinch_ratio`/`delta_curl_worst_deg`,
+`Resources/features.py`) — it won Stage 3 again (rotation FP 0.7% vs 0.9%)
+and fixed that specific traced instance, but **did not move the aggregate
+event-layer sensitivity number** (`analyze_cycle_detection_failures.py`,
+new diagnostic script — computes an independent ground-truth cycle count
+per session directly from raw `pinch_ratio` via `find_peaks`, compared
+against detected onsets). One real, traced fix; not the dominant cause.
+
+**Window-size test, partial**: re-swept `DELTA_WINDOW_MS` retraining from
+scratch at each candidate (`sweep_window_for_cycle_detection.py`, new
+script), evaluating BOTH the static held-state metric (what the original
+900ms sweep used, §12.4) AND real cycle-detection recall restricted to
+`front`/`palmin`/`palmdown`/`palmup` (the priority orientations — see
+below). Shorter windows help somewhat (100ms: 49.6% priority recall vs
+900ms: 43.5%) but the relationship is **not monotonic** (300-450ms are the
+*worst* of the whole grid, worse than both shorter and longer) — window
+size is a real but insufficient factor, capped around 50% even at the best
+setting tested.
+
+**The actual root cause, verified two independent ways**: tracing a
+completely-missed `front` session found confidence pinned at 0.99-1.00
+almost constantly — including during clearly-open plateaus — only dipping
+*during* the real pinch dips (backwards from expected). That session's
+resting "not touching" pencil-grip gap sits at `pinch_ratio` ≈ 0.42-0.52.
+Checked directly against the held-state `pinch` training corpus's own
+ratio distribution (`pinch_front`/`pinch_palmin`): **median 0.18, p90 0.25,
+max 0.51** — a rare high-end tail of (presumably loose/imperfect-contact)
+positive examples overlaps almost exactly with this hand's resting,
+not-touching gap. **The model learned from a few loose "pinch" training
+examples that ratio up to ~0.5 can mean contact, and can't distinguish
+that from a hand whose natural pencil-grip resting gap also happens to sit
+there — because the held-state taxonomy has no explicit negative class for
+"pencil-grip shape at rest, not touching."** Only `pinch`/`open_hand`/
+`fist`/`rotating_no_pinch` were ever recorded; the specific resting shape
+that naturally occurs between cyclic reps was never its own class. This is
+a genuine data-taxonomy gap, not a tuning, window, or single-feature
+problem — consistent with §2's "fix with better data, not a patch"
+discipline, now pointing at a specific, concrete missing class rather than
+a guess.
+
+**Not yet fixed — options logged, not decided**: (a) record a new
+held-state negative class ("pencil-grip at rest, not touching," 6
+orientations) to explicitly teach this boundary, and/or (b) tighten the
+`pinch` held-state recording discipline itself so genuine contact examples
+never drift into the ambiguous 0.4-0.5 range in the first place. Left for
+explicit direction, not assumed.
+
+**Orientation priority, reframed by direct instruction and checked against
+literature (not just asserted)**: not every orientation needs to hit the
+same bar. `palm_away` and `palm_out` are structurally low-priority — a
+real pinch attempt is unlikely to happen there in the first place, and
+`palm_away` specifically has a camera-visibility constraint (the index/
+thumb are on the far side of the hand from the camera). Checked against
+biomechanics literature: the neutral, comfortable forearm position is
+~thumb-up (roughly this project's `front`/`palm_in` region); from there,
+active range is **~85° supination / ~75° pronation (~157-160° combined)**,
+and people spend **50% of daily-living time in just the central 20% of
+that range** — i.e., they actively avoid extreme rotations even within the
+mechanically available range. `palm_away` requires near-maximal pronation.
+Reach-to-grasp literature specifically notes a neutral forearm position is
+preferred when approaching/grasping an object, reinforcing that a genuine
+grab is unlikely to happen at an orientation like `palm_away`. Separately,
+MediaPipe's own documentation and the existence of dedicated "dorsal hand
+pose" research (e.g. DorsalNet) confirm back-of-hand-facing-camera tracking
+is a distinct, harder problem from standard palm-visible tracking, not an
+artifact of this project's data. **Revised target: `front`/`palm_in`/
+`palm_down`/`palm_up` should be reliably discriminated; `palm_away` and
+especially `palm_out` are accepted as structurally weaker, not chased to
+the same bar.**
+
+**Same literature check, forward-looking for rotation gestures (§10's
+staged design)**: the ~157-160° combined pronation-supination range means
+a future rotation gesture only needs to handle roughly this span, not a
+full 360° — consistent with the ~180-200° estimate that prompted the
+check, slightly more conservative per the literature's own number. Relevant
+once rotation (Part One matrix row 7) is built.
+
+### 12.5 What this means for the rest of this document and for Part One
+
+- Every Stage 3/3.3 number above this section (§3.2.1–§3.2.10, §3.3.1–
+  §3.3.4) describes the **archived** corpus and is historical evidence of
+  method, not a current result — re-derive, don't assume, once the new
+  corpus exists.
+- §10/§10.1 (context/prior layer) and §11 (event-layer literature scan)
+  are unaffected in substance — both were already staged for later,
+  independent of which corpus the base classifier is trained on.
+- The approved Part One plan (grab acquisition/arbitration, release,
+  translation, depth proxy, rotation — `PART_ONE.md` §3 rows 3–7) is
+  **paused**, not abandoned: it depends on a live-validated pinch signal,
+  which is exactly what this reset is for. Resume it once Stage 3/3.3/4 are
+  redone against `Pencil_style_grip/` and Stage 4 is live-validated again.

@@ -14,11 +14,20 @@ from Resources import features
 # project's discipline throughout. Drives the window size used by
 # features.py's new windowed-feature extraction.
 
-RECORDINGS_DIR = r"E:\Python\Recordings for vision_pipeline"
-PINCH_CYCLES_DURATION_S = 10.0  # every pinch_cycles_* session was recorded
-# with --duration 10 -- used to convert frame counts to real time, since
-# actual capture fps varies with hardware load (seen ~15fps near-distance
-# vs ~27fps far-distance sessions, not a fixed 30fps).
+# Pencil-grip corpus reset (2026-07-31) -- old corpus archived under
+# .../Unsuccessful_grip/; must match RecordSession.py's RECORDINGS_DIR.
+RECORDINGS_DIR = r"E:\Python\Recordings for vision_pipeline\Pencil_style_grip"
+# BUG FOUND AND FIXED (2026-07-31, same session): this used to be a
+# hardcoded PINCH_CYCLES_DURATION_S = 10.0, a leftover assumption from the
+# ARCHIVED corpus's 10s cyclic recordings. The pencil-grip corpus's
+# pinch_cycles_* sessions are actually 5.0s ("duration_s" in each file,
+# RecordSession.py's uniform-5s direction) -- the hardcoded 10.0 silently
+# computed fps at HALF its true value, which doubled every reported
+# transition duration below. This is exactly why an earlier analysis this
+# session reported a false "median onset 1165ms" (real value ~half that) and
+# fed a wrong root-cause conclusion (recording cadence) that direct
+# landmark inspection then disproved -- always read duration from the
+# recording's own data, never a separately-maintained assumed constant.
 
 
 def hand_ratio_sequence(path, handedness):
@@ -30,7 +39,7 @@ def hand_ratio_sequence(path, handedness):
             if hand["handedness"] == handedness:
                 seq.append(features.pinch_ratio(hand["world_landmarks"]))
                 break
-    return seq
+    return seq, data["duration_s"]
 
 
 def transition_durations_ms(ratio_seq, fps):
@@ -61,16 +70,22 @@ def transition_durations_ms(ratio_seq, fps):
 
 def main():
     files = sorted(glob.glob(os.path.join(RECORDINGS_DIR, "pinch_cycles_*.json")))
+    for path in files:
+        with open(path, encoding="utf-8") as f:
+            protocol = json.load(f).get("protocol")
+        if protocol != "cyclic":
+            raise ValueError(f"{path}: expected protocol='cyclic', got {protocol!r}")
+
     all_onset, all_offset = [], []
     near_onset, near_offset, far_onset, far_offset = [], [], [], []
 
     for path in files:
         is_far = "20260731" in os.path.basename(path)
         for handedness in ("Left", "Right"):
-            seq = hand_ratio_sequence(path, handedness)
+            seq, duration_s = hand_ratio_sequence(path, handedness)
             if not seq:
                 continue
-            fps = len(seq) / PINCH_CYCLES_DURATION_S
+            fps = len(seq) / duration_s
             onset_ms, offset_ms = transition_durations_ms(seq, fps)
             all_onset.extend(onset_ms)
             all_offset.extend(offset_ms)

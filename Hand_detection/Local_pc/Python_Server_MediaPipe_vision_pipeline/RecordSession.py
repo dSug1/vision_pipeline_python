@@ -21,10 +21,32 @@ from mediapipe.tasks.python import vision
 # server/client split, just webcam -> HandLandmarker -> JSON file. Run via
 # ..\Movement_with_hand_detection\record.bat (reuses that folder's .venv).
 #
-# Usage: record.bat <label> [duration_seconds]   e.g. record.bat pinch_x3 4
+# Usage: record.bat <label> <protocol> [duration_seconds]
+#   e.g. record.bat pinch_front held_state
+#        record.bat pinch_cycles_front cyclic
 # Recording starts after a short countdown and stops automatically after
 # --duration seconds — no keypress needed once it starts, since your hands
 # are busy performing the gesture, not at the keyboard.
+#
+# --protocol is REQUIRED and stored in the saved JSON's "protocol" field --
+# added 2026-07-31 after finding that an archived "held-state" pinch_front
+# session actually contained three separate pinch-release dips, not one
+# continuous hold, silently mislabeling ~60% of its frames as positive
+# "pinch" when the hand was actually open/transitioning. Two protocols,
+# never inferred from the label string alone (that's exactly how the mixup
+# happened) -- always passed explicitly and always saved as data, not just
+# implied by filename convention:
+#   - "held_state": ONE CONTINUOUS HOLD for the whole capture -- every frame
+#     is unambiguously the labeled class. Used for pinch_*/open_hand_*/
+#     fist_*/rotating_no_pinch* (Stage 3 base-classifier training data,
+#     GESTURE_PIPELINE_SPEC.md §3/§12) -- rotating_no_pinch is "held_state"
+#     in this sense despite the hand moving, since the label is uniform
+#     across every frame, which is what this protocol distinction is
+#     actually about, not literal stillness.
+#   - "cyclic": THREE grip/release (or pinch/rotate/release) REPETITIONS
+#     within the capture -- frames are NOT uniformly one class, this is
+#     event-layer (Stage 3.3) tuning data only. Used for
+#     pinch_cycles_*/pinch_rotate_release.
 
 RESOURCES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Resources")
 MODEL_PATH = os.path.join(RESOURCES_DIR, "hand_landmarker.task")
@@ -32,10 +54,31 @@ MODEL_PATH = os.path.join(RESOURCES_DIR, "hand_landmarker.task")
 # Recordings live on the external drive, not the local disk (2026-07-31) --
 # keeps the growing raw-capture corpus off the PC. If this path isn't
 # reachable, the external drive is probably unplugged.
-RECORDINGS_DIR = r"E:\Python\Recordings for vision_pipeline"
+#
+# Pencil-grip corpus reset (2026-07-31, GESTURE_PIPELINE_SPEC.md's handoff):
+# the open-hand pinch definition's live behavior didn't meet expectations
+# despite passing every recorded-data metric (Stage 4 live test) -- the old
+# corpus is archived under Unsuccessful_grip/, not deleted, and is no longer
+# read by any script. New recordings go under Pencil_style_grip/: pinch is
+# now index+thumb CONTACT with the other three fingers held curled closed
+# (a "holding a pencil" grip), not just thumb-index proximity on an
+# otherwise freely-posed hand.
+RECORDINGS_DIR = r"E:\Python\Recordings for vision_pipeline\Pencil_style_grip"
 
-DEFAULT_DURATION_S = 4.0
+DEFAULT_DURATION_S = 5.0  # uniform 5s for all sessions, held_state and cyclic alike (2026-07-31 direction)
 COUNTDOWN_S = 3.0
+
+PROTOCOL_HINTS = {
+    "held_state": "HOLD CONTINUOUSLY -- do not release",
+    # Framing convention added 2026-07-31, per direction: with the uniform
+    # 5s duration, start the capture already closing into the FIRST grip
+    # (not from a neutral pre-roll) and end right at the FINAL release (not
+    # a neutral post-roll) -- maximizes actual transition coverage inside a
+    # short window, rather than wasting frames on neutral padding at either
+    # end. This is stored below (not just in this on-screen hint) so it's
+    # legible from the saved JSON alone, not just tribal knowledge.
+    "cyclic": "3 REPS -- START at grip onset, END at final release (no neutral padding)",
+}
 
 
 def _landmark_list(landmarks):
@@ -60,12 +103,18 @@ def _window_open(window_name: str) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Record a labeled hand-landmark session (Claude/PART_ONE.md).")
-    parser.add_argument("--label", type=str, required=True, help="Session label, e.g. pinch_x3, open_hand, fist")
+    parser.add_argument("--label", type=str, required=True, help="Session label, e.g. pinch_front, pinch_cycles_front")
+    parser.add_argument(
+        "--protocol", type=str, required=True, choices=sorted(PROTOCOL_HINTS),
+        help="held_state (one continuous hold, every frame = the labeled class) or "
+             "cyclic (3 grip/release reps, event-layer tuning data only)",
+    )
     parser.add_argument(
         "--duration", type=float, default=DEFAULT_DURATION_S,
         help=f"Recording duration in seconds (default {DEFAULT_DURATION_S}) — capture auto-stops, no keypress needed",
     )
     args = parser.parse_args()
+    protocol_hint = PROTOCOL_HINTS[args.protocol]
 
     drive_root = os.path.splitdrive(RECORDINGS_DIR)[0] + os.sep
     if not os.path.isdir(drive_root):
@@ -95,8 +144,9 @@ def main() -> None:
     timestamp_ms = 0
 
     print(
-        f"[RecordSession] Get ready — recording '{args.label}' starts in {COUNTDOWN_S:.0f}s, "
-        f"then captures for {args.duration:.1f}s automatically. No keypress needed."
+        f"[RecordSession] Get ready — recording '{args.label}' [{args.protocol.upper()}: {protocol_hint}] "
+        f"starts in {COUNTDOWN_S:.0f}s, then captures for {args.duration:.1f}s automatically. "
+        f"No keypress needed."
     )
 
     try:
@@ -117,6 +167,10 @@ def main() -> None:
             cv2.putText(
                 preview, f"Get ready... {remaining:.1f}s",
                 (10, 30), cv2.FONT_HERSHEY_DUPLEX, 0.9, (0, 200, 255), 2, cv2.LINE_AA,
+            )
+            cv2.putText(
+                preview, f"[{args.protocol.upper()}] {protocol_hint}",
+                (10, 65), cv2.FONT_HERSHEY_DUPLEX, 0.7, (0, 200, 255), 2, cv2.LINE_AA,
             )
             cv2.imshow(window_name, preview)
             cv2.waitKey(1)
@@ -148,6 +202,10 @@ def main() -> None:
                     preview, f"REC '{args.label}' - {remaining:.1f}s left - frames: {len(frames)}",
                     (10, 30), cv2.FONT_HERSHEY_DUPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA,
                 )
+                cv2.putText(
+                    preview, f"[{args.protocol.upper()}] {protocol_hint}",
+                    (10, 65), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA,
+                )
                 cv2.imshow(window_name, preview)
                 cv2.waitKey(1)
 
@@ -166,7 +224,16 @@ def main() -> None:
     out_name = f"{args.label}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     out_path = os.path.join(RECORDINGS_DIR, out_name)
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump({"label": args.label, "duration_s": args.duration, "frames": frames}, f)
+        json.dump(
+            {
+                "label": args.label,
+                "protocol": args.protocol,
+                "protocol_note": protocol_hint,
+                "duration_s": args.duration,
+                "frames": frames,
+            },
+            f,
+        )
 
     print(f"[RecordSession] Saved {len(frames)} frames to {out_path}")
 
