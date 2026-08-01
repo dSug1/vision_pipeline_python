@@ -1,23 +1,45 @@
 # Part One — gesture/pattern recognition design & matrix
 
-> **⚠ Superseded (2026-07-30): read `GESTURE_PIPELINE_SPEC.md` first.**
-> §6–§8 below document a **rule-based (hand-tuned threshold) pinch
-> classifier that was built, tested, and then abandoned** — it worked for
-> the hand orientation it was calibrated on, but a state-of-the-art
-> literature check plus reproducible live/recorded evidence showed it
-> could not be fixed without either endless heuristic patching (rejected —
-> not backed by literature, doesn't generalize) or a fundamentally
-> different approach. That different approach — labeled recording, a
-> *trained* classifier instead of hand-picked thresholds, and a live debug
-> tool, run identically for every future gesture — is now specified in
-> `GESTURE_PIPELINE_SPEC.md`. **That document is the active spec.** Every
-> file the rule-based attempt produced (`GestureRules.py`,
-> `AnalyzeRecordings.py`, `ValidateWindowedClassifier.py`,
-> `LiveGestureDebug.py`, `debug_gestures.bat`) and every old recording have
-> been deleted — §6–§8 are kept below **only** as the evidence trail for
-> why, not as a description of current code. §1–§5 (scope, architecture
-> decisions, the gesture matrix, the wire-protocol gap, open items) are
-> still current and still apply.
+> **⚠ Gesture set changed again (2026-08-01): read `GESTURE_PIPELINE_SPEC.md`
+> §13 first.** After §6-§8's rule-based pinch attempt was abandoned
+> (2026-07-30, see the original banner text preserved below) and a
+> subsequently *trained* pinch classifier was built, fixed repeatedly, and
+> finally live-validated (`GESTURE_PIPELINE_SPEC.md` §12, through §12.7),
+> **Stage 4 live testing found pinch still missed too many real
+> grabs/releases (worse off `front`) and had a perceptible input lag** —
+> a real, live-observed UX problem, not just an offline metric. **Pinch is
+> now archived** (code/corpus/weights kept, not deleted — reusable if
+> revisited later). **New primary gesture set (§13 of the pipeline spec
+> has the full design + state-of-the-art check): proximity-based object
+> snapping (replaces pinch-triggered grab), open-palm rotation, closed-fist
+> release.** The matrix in §3 below has been updated accordingly — rows
+> 2-4 (trigger/grab/release) now describe the new gestures; rows 1, 5, 7
+> (scaffolding, translation, rotation) mostly reuse their prior design,
+> just with the new trigger signal swapped in; row 6 (depth-proxy
+> scale/color) is dropped for now, not carried forward automatically.
+> §2's core architecture decisions (sticky grab, shared-registry
+> arbitration, image-space translation, depth-proxy-not-raw-`z`,
+> quaternion rotation) are **unchanged and still apply** — only the
+> *trigger* gestures changed, not the manipulation architecture around
+> them.
+>
+> **Original 2026-07-30 banner, preserved for context**: §6–§8 below
+> document a **rule-based (hand-tuned threshold) pinch classifier that was
+> built, tested, and then abandoned** — it worked for the hand orientation
+> it was calibrated on, but a state-of-the-art literature check plus
+> reproducible live/recorded evidence showed it could not be fixed without
+> either endless heuristic patching (rejected — not backed by literature,
+> doesn't generalize) or a fundamentally different approach. That
+> different approach — labeled recording, a *trained* classifier instead
+> of hand-picked thresholds, and a live debug tool, run identically for
+> every future gesture — is specified in `GESTURE_PIPELINE_SPEC.md`
+> (still the active methodology spec for any gesture that ends up needing
+> custom training). Every file the rule-based attempt produced
+> (`GestureRules.py`, `AnalyzeRecordings.py`,
+> `ValidateWindowedClassifier.py`, `LiveGestureDebug.py`,
+> `debug_gestures.bat`) and every old recording have been deleted — §6–§8
+> are kept below **only** as the evidence trail for why, not as a
+> description of current code.
 
 Implements §7 of `Specification.md`: Pipeline A gesture recognition, developed
 on PC against the existing Python MediaPipe pipeline. This file is the living
@@ -148,21 +170,30 @@ it actually belongs to), and cross-check §7.4's engine-agnostic
 | Order | Signal / Gesture | Hand(s) | Input | Detection logic | Effect | Status |
 |---|---|---|---|---|---|---|
 | 1 | Scaffolding | both, independent | full 21-landmark list per hand | n/a — plumbing only | red cube added to scene; both hands' landmarks flow through (not just left); no ownership/grab logic yet | **Built, not yet live-verified** — code in `Local_pc/Movement_with_hand_detection/`; run `launch.bat` and confirm blue cube follows left hand, red cube follows right hand |
-| 2 | Pinch detection | each hand independently | `world_landmarks`, features TBD by the new pipeline's stage 2/3 | a **trained classifier**, not hand-picked thresholds — see `GESTURE_PIPELINE_SPEC.md` | candidate grab trigger (rising edge) | **Reset (2026-07-30)** — rule-based approach abandoned (structural rotation ambiguity, not fixable by more thresholds — see §6/§7/§9 below for the evidence). Rebuilding under `GESTURE_PIPELINE_SPEC.md`'s pipeline; not started under the new approach yet |
-| 3 | Grab acquisition + arbitration | each hand vs. shared registry | pinch (#2) + pinch-midpoint vs. cube positions | pinch rising-edge → nearest **unowned** cube within grab radius → claim in shared registry | idle/hover → grabbed | Not started |
-| 4 | Release | each hand | pinch state, or tracking loss | un-pinch (falling edge past hysteresis) **or** hand tracking lost | grabbed → idle; cube frozen in place; ownership cleared; requires fresh pinch to reacquire | Not started |
-| 5 | Translation | each hand, while grabbed | pinch midpoint (4+8) | cube position = mapped(pinch midpoint), X/Y only | cube follows pinch | Not started |
-| 6 | Depth proxy → scale + color | each hand, while grabbed | apparent hand span (image coords) vs. calibration baseline | `ratio = current_span / baseline_span` | cube scale ∝ ratio; color lerps light↔dark by ratio | Not started |
-| 7 | Rotation (quaternion) | each hand, while grabbed | `world_landmarks`: wrist(0), index_MCP(5), pinky_MCP(17) | orthonormal frame → quaternion → slerp | cube orientation follows hand orientation | Not started — **requires sending `world_landmarks` over the wire, not currently sent** (server only sends 2D pixel landmarks today, see §4) |
+| 2 | Open-palm / closed-fist detection | each hand independently | `world_landmarks` (or MediaPipe's own Gesture Recognizer output — try that first) | MediaPipe's built-in `Open_Palm`/`Closed_Fist` classes if live-verified sufficient; else a **trained classifier** per `GESTURE_PIPELINE_SPEC.md`'s pipeline | `Open_Palm` gates rotation (row 7); `Closed_Fist` triggers release (row 4) | **Superseded pinch (2026-08-01)** — pinch archived after Stage 4 live testing (`GESTURE_PIPELINE_SPEC.md` §13.1); this row replaces the old "pinch detection" row. Not started |
+| 3 | Snap acquisition + arbitration | each hand vs. shared registry | hand position (palm-center, §13.3) vs. cube positions | pure proximity trigger — nearest **unowned** cube within grab radius of hand position → claim in shared registry | idle/hover → snapped | Not started — replaces the old pinch-rising-edge trigger; arbitration logic itself (shared registry, nearest-unowned-cube) unchanged from the original design |
+| 4 | Release (un-snap) | each hand | `Closed_Fist` (row 2), or tracking loss | closed-fist detected on a hand holding a snapped cube **or** hand tracking lost | snapped → idle; cube frozen in place; ownership cleared; requires fresh proximity-snap to reacquire | Not started — replaces the old un-pinch trigger; freeze/ownership-clear semantics unchanged |
+| 5 | Translation | each hand, while snapped | hand position (palm-center, image-space X/Y) | cube position = mapped(hand position), X/Y only | cube follows hand | Not started — replaces "pinch midpoint" with palm-center; mechanism otherwise unchanged |
+| 6 | Depth proxy → scale + color | each hand, while snapped | apparent hand span (image coords) vs. calibration baseline | `ratio = current_span / baseline_span` | cube scale ∝ ratio; color lerps light↔dark by ratio | **Dropped for now (2026-08-01)** — not part of the new gesture set as directed; not carried forward automatically, revisit only if explicitly wanted again |
+| 7 | Rotation (quaternion) | each hand, while snapped **and** `Open_Palm` | `world_landmarks`: wrist(0), index_MCP(5), pinky_MCP(17) | orthonormal frame → quaternion → slerp | cube orientation follows hand orientation | Not started — design unchanged from original (§2); now additionally gated on `Open_Palm` (row 2) to avoid rotation noise during pose transitions — **requires sending `world_landmarks` over the wire, not currently sent** (server only sends 2D pixel landmarks today, see §4) |
 
-**Row 2 (pinch/onset) and row 4 (release/offset) note (2026-07-30)**: these
-are the same episodic gesture's two event boundaries, not independent
-gestures — decomposed and cross-checked against literature in
-`GESTURE_PIPELINE_SPEC.md` §3.3.1, which also drove the 6-orientation
-recording grid in that document's §5 (`front`/`palm_away`/`palm_up`/
-`palm_down`/`palm_in`/`palm_out`) replacing the earlier 3-orientation
-version. See §2's updated release-conditions bullet above for the design
-consequence.
+**Rows 2-4 replaced (2026-08-01)**: pinch's onset/offset event pair (the
+original rows 2/4, decomposed per the 2026-07-30 note below) is replaced
+by a proximity trigger (snap) and a `Closed_Fist` trigger (release) —
+full rationale and state-of-the-art check in `GESTURE_PIPELINE_SPEC.md`
+§13. The original pinch/release decomposition note is preserved below for
+historical context, since the same "onset and offset are independently-
+tuned, not assumed symmetric" discipline likely still applies to
+open-palm/closed-fist detection if a custom classifier ends up needed.
+
+**Original row 2 (pinch/onset) and row 4 (release/offset) note
+(2026-07-30, historical)**: these were the same episodic gesture's two
+event boundaries, not independent gestures — decomposed and cross-checked
+against literature in `GESTURE_PIPELINE_SPEC.md` §3.3.1, which also drove
+the 6-orientation recording grid in that document's §5 (`front`/
+`palm_away`/`palm_up`/`palm_down`/`palm_in`/`palm_out`) replacing the
+earlier 3-orientation version. See §2's release-conditions bullet above
+for the design consequence (still applies to the new release trigger).
 
 ## 4. Known wire-protocol gap (live pipeline, not recording)
 
@@ -186,14 +217,21 @@ wired into `HandsTriggeredActions.py` for live use. Extend `VisionPipeline.py`
 
 ## 5. Open items to resolve empirically, not now
 
-- Pinch classification itself — superseded, see the banner at the top of
-  this file and `GESTURE_PIPELINE_SPEC.md`.
-- Exact grab-radius value (likely scaled to cube size).
-- Tie-break rule if both hands' pinch rising-edges land on the same free
+- Pinch classification itself — archived, see the banner at the top of
+  this file and `GESTURE_PIPELINE_SPEC.md` §13.
+- Exact grab-radius value (likely scaled to cube size) — still open,
+  applies to the new proximity-snap trigger now instead of the old
+  pinch-based one.
+- Tie-break rule if both hands' proximity triggers land on the same free
   cube in the same frame (currently unspecified — low-probability edge
   case, revisit only if it's actually hit in practice).
 - Exact hand-span metric for the depth proxy (wrist↔middle-MCP vs. a full
-  bounding-box diagonal) — pick whichever is more stable empirically.
+  bounding-box diagonal) — moot for now since row 6 is dropped; revisit
+  only if depth-proxy scale/color comes back.
+- See `GESTURE_PIPELINE_SPEC.md` §13.4 for the new gesture set's own open
+  questions (whether `Open_Palm`/`Closed_Fist` need custom training,
+  whether snap should be blocked while closed-fist, whether rotation's
+  `Open_Palm` gate is the right design).
 
 ## 6. Pinch classifier design basis (state-of-the-art check, 2026-07-30)
 

@@ -545,22 +545,46 @@ def main():
         print(f"\nWARNING: no candidate reached recall >= {MIN_RECALL}; "
               f"falling back to the best test F1 (all candidates are weak).")
         eligible = list(results)
-    best_overall = min(eligible, key=lambda k: results[k]["rotation_fp_pct"])
-    # Prefer a pure hand-crafted-family variant over raw_landmarks when close
-    # (within 2 points), per §8's decided default (raw landmarks are more
-    # noise-sensitive on this small dataset) -- but §3.2.7's fused
-    # raw_plus_handcrafted representation is NOT part of this "prefer
-    # hand-crafted" bucket: it's 63/70ths raw landmarks by dimension, and
-    # the whole point of testing it is to see whether it stands on its own
-    # merits against both pure representations, not get an automatic bonus
-    # meant for the pure 7-dim feature set.
+    # SELECTION REDESIGN 2026-08-01: the previous "min(rotation_fp_pct),
+    # tie-break by F1 within a small tolerance" approach failed TWICE this
+    # session -- first a 0.0% vs 0.1% rotation_fp gap (one frame of noise)
+    # beat a 34-point recall advantage; widening the tolerance to 1.0 then
+    # let a 1.0% vs 2.4% gap do the same thing to a 30-point F1/recall
+    # advantage. The root problem: chasing the global-MINIMUM rotation_fp
+    # always lets some low-recall candidate win by being marginally lower,
+    # no matter how small the margin or how large the recall cost -- the
+    # tolerance band just moves where that failure mode bites. Replaced
+    # with a CEILING: any candidate at or under ROTATION_FP_CEILING is
+    # considered "robust enough" (not chased to the theoretical minimum),
+    # and among those the highest F1 wins outright. This stops a fractional
+    # percentage-point FP difference from ever outweighing a large F1 gap.
+    ROTATION_FP_CEILING = 5.0
+    under_ceiling = [k for k in eligible if results[k]["rotation_fp_pct"] <= ROTATION_FP_CEILING]
+    if not under_ceiling:
+        print(f"\nWARNING: no eligible candidate at or under {ROTATION_FP_CEILING}% "
+              f"rotation_fp; falling back to lowest rotation_fp among eligible "
+              f"candidates (all candidates are rotation-fragile).")
+        best_overall = min(eligible, key=lambda k: results[k]["rotation_fp_pct"])
+    else:
+        best_overall = max(under_ceiling, key=lambda k: results[k]["test"]["f1"])
+    # Prefer a pure hand-crafted-family variant over raw_landmarks when
+    # comparably good (F1 within 0.02 AND also under the ceiling), per §8's
+    # decided default (raw landmarks are more noise-sensitive on this small
+    # dataset) -- gated on F1 now too, not just rotation_fp closeness, for
+    # the same reason as the redesign above: a hand-crafted swap must not
+    # itself trade away meaningful F1 just to win a small rotation_fp edge.
+    # §3.2.7's fused raw_plus_handcrafted representation is NOT part of this
+    # "prefer hand-crafted" bucket: it's 63/70ths raw landmarks by
+    # dimension, and the whole point of testing it is to see whether it
+    # stands on its own merits against both pure representations, not get
+    # an automatic bonus meant for the pure 7-dim feature set.
     PURE_HANDCRAFTED = {"handcrafted_static", "handcrafted_velocity",
                          "handcrafted_prederror", "handcrafted_full"}
-    handcrafted_eligible = [k for k in eligible if results[k]["representation"] in PURE_HANDCRAFTED]
+    handcrafted_under_ceiling = [k for k in under_ceiling if results[k]["representation"] in PURE_HANDCRAFTED]
     winner = best_overall
-    if results[best_overall]["representation"] not in PURE_HANDCRAFTED and handcrafted_eligible:
-        hc_best = min(handcrafted_eligible, key=lambda k: results[k]["rotation_fp_pct"])
-        if results[hc_best]["rotation_fp_pct"] <= results[best_overall]["rotation_fp_pct"] + 2.0:
+    if results[best_overall]["representation"] not in PURE_HANDCRAFTED and handcrafted_under_ceiling:
+        hc_best = max(handcrafted_under_ceiling, key=lambda k: results[k]["test"]["f1"])
+        if results[hc_best]["test"]["f1"] >= results[best_overall]["test"]["f1"] - 0.02:
             winner = hc_best
     win = results[winner]
     print(f"\nWinner: {winner} (rotation_fp={win['rotation_fp_pct']:.1f}%, test_f1={win['test']['f1']:.3f}) "

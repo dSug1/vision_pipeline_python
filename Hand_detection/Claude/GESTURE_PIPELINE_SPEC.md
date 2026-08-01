@@ -1,20 +1,23 @@
 # Gesture Classifier Pipeline — Specification
 
-> **⚠ Pinch corpus reset (2026-07-31): read §12 first.** Stage 4's first
-> real live test (the whole point of building it) showed the open-hand
-> pinch definition doesn't hold up live, despite passing every recorded-data
-> metric in §3.2/§3.3 below — so those sections' "current best model" and
-> event-layer numbers describe an **archived** corpus
-> (`.../Unsuccessful_grip/`), not the active one. Pinch is redefined
-> (index+thumb contact, other three fingers curled closed) and the corpus
-> has been rebuilt under `.../Pencil_style_grip/` (160 sessions) —
-> **Stage 3 is already retrained against it (§12.4): rotation FP 0.9%,
-> recall/F1 1.000, both dramatically better than the archived corpus, same
-> winning representation.** Not yet live-validated — that's next. §1–§2
-> (why rule-based thresholds were abandoned, core discipline) and the
-> pipeline stages themselves (§3's structure, not its pinch-specific
-> numbers) are still current and still apply — the *methodology* isn't
-> what got redone, the *pose definition and data* were.
+> **⚠ Pinch gesture ARCHIVED (2026-08-01): read §13 first.** After the
+> pencil-grip corpus reset (§12, below) drove priority-orientation
+> cycle-detection recall from ~45% to 77.7% on recorded data, Stage 4 live
+> validation still showed too few real pinches/releases detected (fine on
+> false positives, weak on recall, worse off `front`) plus a perceptible
+> input-lag cost to the UX — a real, live-observed shortfall the recorded
+> numbers didn't fully capture. **Decision: archive pinch (may be revisited
+> later), pivot to a simpler gesture set** — proximity-based object
+> snapping, open-palm rotation, closed-fist release. Full account and the
+> new gesture's design: §13. §1–§2 (why rule-based thresholds were
+> abandoned, core discipline) and the pipeline stages themselves (§3's
+> structure) are still current and still apply to whatever gesture needs a
+> **custom-trained** classifier — but §13 also found that two of the three
+> new gestures (open-palm, closed fist) may not need this pipeline at all,
+> since MediaPipe ships pretrained classifiers for exactly those poses.
+> §12 (all subsections) is kept as the full historical/technical record of
+> the pinch arc — genuinely useful precedent (the lessons in §12.7
+> generalize directly), not superseded/wrong, just not the active gesture.
 
 Written 2026-07-30, after abandoning a rule-based (hand-tuned threshold)
 pinch classifier. This is the **project-wide, gesture-agnostic**
@@ -2455,10 +2458,61 @@ grab is unlikely to happen at an orientation like `palm_away`. Separately,
 MediaPipe's own documentation and the existence of dedicated "dorsal hand
 pose" research (e.g. DorsalNet) confirm back-of-hand-facing-camera tracking
 is a distinct, harder problem from standard palm-visible tracking, not an
-artifact of this project's data. **Revised target: `front`/`palm_in`/
-`palm_down`/`palm_up` should be reliably discriminated; `palm_away` and
-especially `palm_out` are accepted as structurally weaker, not chased to
-the same bar.**
+artifact of this project's data. **Revised target (superseded below,
+2026-08-01): `front`/`palm_in`/`palm_down`/`palm_up` should be reliably
+discriminated; `palm_away` and especially `palm_out` are accepted as
+structurally weaker, not chased to the same bar.**
+
+### 12.4.4 `palm_up` downgraded to the low-priority tier (2026-08-01): a landmark-precision limit, verified two ways, survives a targeted fix
+
+After the `pencil_rest_<orientation>` negative class was recorded (§12.4.3's
+fix) and Stage 3/the failure analysis re-run, `palm_up`'s real cycle-
+detection recall came back far worse than `front`/`palm_in`/`palm_down`
+(12.5% vs 55-72%), and inspecting the raw `pinch_ratio` signal directly
+showed why: MediaPipe's hand-detection confidence at `palm_up` was
+measurably degraded (mean 0.979, **min 0.61**, 5.7% of frames below 0.9,
+vs ≥0.94 min / 0% below 0.9 for every other priority orientation) — a
+tracking-quality problem, not a tuning one.
+
+**Tested and ruled out**: switching `pinch_ratio`'s distance calculation
+from 3D `world_landmarks` to 2D image-plane `landmarks` (removing the
+noisier depth axis) fixed `front` almost perfectly (ground truth became
+exactly 3.00 for all 12 hand-sessions, matching the 3-cycle protocol) and
+helped `palm_down`, but made `palm_up` *worse* (mean ground truth jumped to
+23.9, from noise) — ruling out "wrong coordinate space" as the cause.
+
+**Repositioning worked, partially**: closer camera distance recovered
+detection confidence dramatically (diagnostic capture: min 0.94-0.98,
+0-1.6% below 0.9, both static and during real pinch/release motion) —
+confirmed camera framing/distance, not an inherent angle limit, was
+degrading confidence. All 5 `palm_up` classes across the corpus (30
+files — `pinch`/`open_hand`/`fist`/`pencil_rest`/`pinch_cycles`) were
+deleted and re-recorded at the corrected distance; one `open_hand_palmup`
+file needed a further redo after coming back with the spread-fingers pose
+clipping frame edges (zero detections) — final corpus confidence is
+in line with the rest of the corpus (`pinch_palmup`/`fist_palmup`/
+`pencil_rest_palmup` all ≥99% mean, `open_hand_palmup` 3.6% below 0.9,
+comparable to `open_hand_palmout`'s already-accepted 2.6% baseline).
+
+**But the cyclic (motion) ground truth stayed broken even after the fix**:
+re-running the failure analysis against the corrected corpus, `palm_up`'s
+raw `pinch_ratio` signal during actual pinch/release cycles still never
+approaches true contact (checked directly: oscillates noisily in the
+0.2-0.85 range) *despite* detection confidence staying high throughout
+(mean 0.99) — a different failure mode than the confidence problem just
+fixed. **Conclusion, verified two independent ways (2D-projection test,
+then the confidence-fixed re-recording): `palm_up` has a genuine
+landmark-*precision* limit for the fine thumb/index-tip separation
+specifically, distinct from and not resolved by the detection-*confidence*
+fix.** Further recording attempts at this orientation are not expected to
+close this gap.
+
+**Final target, superseding §12.4.3's revised target above**: `front`/
+`palm_in`/`palm_down` are the reliably-discriminated priority tier;
+`palm_up` moves to the same accepted-weaker tier as `palm_away`/`palm_out`
+(not chased to the same bar). Stage 3.3 event-layer tuning and any live
+validation should treat `front`/`palm_in`/`palm_down` as the trustworthy
+priority signal.
 
 **Same literature check, forward-looking for rotation gestures (§10's
 staged design)**: the ~157-160° combined pronation-supination range means
@@ -2481,3 +2535,302 @@ once rotation (Part One matrix row 7) is built.
   **paused**, not abandoned: it depends on a live-validated pinch signal,
   which is exactly what this reset is for. Resume it once Stage 3/3.3/4 are
   redone against `Pencil_style_grip/` and Stage 4 is live-validated again.
+
+### 12.6 Final pipeline state after the full 2026-08-01 follow-through (pre-Stage-4)
+
+Continuing directly from §12.4.4, three more things changed before Stage 4
+live validation:
+
+**Winner-selection logic redesigned, not just tolerance-patched**. The
+`min(rotation_fp_pct)`-based selection in `train_pinch_classifier.py`
+picked a badly worse model **twice** in immediate succession: first a
+0.0% vs 0.1% rotation-FP gap (one frame of noise) beat a 34-point recall
+advantage; widening the tolerance to 1.0 point then let a 1.0% vs 2.4% gap
+do the same thing to a 30-point F1 advantage. The tolerance band just
+relocates this failure mode rather than fixing it — chasing the
+**global minimum** of a secondary metric always lets some low-primary-
+metric candidate win by an arbitrarily small margin. Replaced with a
+**ceiling**: `ROTATION_FP_CEILING = 5.0` — any candidate at or under the
+ceiling is "robust enough," and the highest-F1 candidate among those wins
+outright, full stop. No more chasing the theoretical minimum. See §12.7
+below for the generalized version of this lesson.
+
+**`DELTA_WINDOW_MS` re-swept 900ms→200ms** (`sweep_window_for_cycle_
+detection.py`, against the corrected classifier): the effect was much
+larger than the pre-`pencil_rest`-fix sweep suggested (§12.4.3's own
+100ms-vs-900ms numbers were 49.6%/43.5%, both weak) — priority-orientation
+cycle-detection recall went from 72.3% at 900ms to 96.4% at 200ms, at the
+cost of rotation-FP roughly tripling (0.8%→2.9% on the sweep's own quick
+single-representation check). 100ms scored even higher (101%) but nearly
+quadrupled rotation-FP (3.8%); **200ms chosen as the deliberate balanced
+point**, not the max-recall extreme — a judgment call, not a computed
+optimum.
+
+**Full pipeline re-run end-to-end at the new window** (required — a window
+change invalidates every downstream fit): Stage 3 representation
+comparison re-run at 200ms (winner: `mlp/raw_plus_handcrafted_plus_
+articulation`, rotation_fp=2.4%, F1=0.902, recall=0.927); Stage 3.3
+event-layer re-tuned to match (`window_frames=8`, `onset_ratio_fall=0.12`,
+others unchanged — near-zero false positives: 1 across 20 negative
+sessions). **Final, apples-to-apples confirmed numbers**:
+
+| orientation | ground truth | detected | recall |
+|---|---|---|---|
+| `front` | 3.00 | 2.58 | 86.0% |
+| `palmdown` | 1.50 | 1.17 | 78.0% |
+| `palmin` | 2.42 | 1.67 | 69.0% |
+
+Average 77.7% across the priority tier — up from this session's starting
+point (~43.5–49.6%), and more evenly distributed across orientations than
+an earlier intermediate reading (which had `palmdown` disproportionately
+high at 94.7% while `front` lagged at 66.7%, an artifact of comparing
+numbers generated from different classifier/event-layer combinations
+rather than one consistent pipeline state — see §12.7's "apples-to-apples"
+lesson).
+
+**Not yet done**: Stage 4 live validation via `debug.bat` — the gate that
+actually matters, per this whole section's own repeated lesson that good
+recorded-data numbers have failed live twice already.
+
+### 12.7 Lessons learned, generalized for the next gesture (grab/release/translate/depth/rotate)
+
+These are written to be reusable beyond pinch — read this section before
+starting Stage 3/3.3 work on any future gesture in the Part One matrix.
+
+1. **Detection confidence and landmark precision are separate failure
+   modes; a fix for one does not fix the other.** `palm_up` had both: low
+   MediaPipe hand-detection confidence (fixable by camera distance/
+   framing) AND, independently, imprecise fine-grained landmark
+   positioning for the specific measurement that mattered (thumb-index
+   gap) even once confidence was fixed. When an orientation or pose
+   underperforms, check the raw `score` field AND the raw feature signal
+   (e.g. `pinch_ratio` time series on a held-still recording) separately —
+   don't assume fixing one explains or fixes the other.
+
+2. **Camera distance/framing tolerance is pose-dependent, not just
+   orientation-dependent.** The same corrected distance that fixed
+   compact poses (fist, pencil-grip) at `palm_up` caused a *different*
+   problem for the open-hand pose (spread fingers clipping the frame
+   edge, one file with zero detections). When adjusting camera position
+   to fix one class, re-verify EVERY class recorded at that position, not
+   just the one that motivated the change.
+
+3. **Model/config selection between two competing metrics needs a
+   ceiling on the secondary metric, not a minimum with a tolerance
+   band.** If metric A (e.g. recall/F1) is what you actually care about
+   and metric B (e.g. a robustness/false-positive rate) is a constraint,
+   selecting by `min(B)` — even with a tie-break tolerance — will always
+   let an arbitrarily-small B-improvement override an arbitrarily-large
+   A-cost, because tolerance bands just relocate where the cliff is.
+   Select by "max(A) among candidates with B under an absolute ceiling"
+   instead. This generalizes past this specific classifier: any pipeline
+   with two competing objectives should ask "is B here a target to
+   minimize, or a constraint to satisfy?" and design selection
+   accordingly.
+
+4. **A hyperparameter that depends on another hyperparameter must be
+   re-tuned every time the one it depends on changes — not just
+   re-checked for staleness independently.** The event tracker's
+   `window_frames` depends on how smoothed the classifier's confidence
+   signal is, which depends on `DELTA_WINDOW_MS`. Changing
+   `DELTA_WINDOW_MS` without re-tuning `window_frames` left a stale,
+   mismatched config that produced numbers that looked worse than either
+   piece actually was — always re-tune the dependent parameter in the
+   same pass as the parameter it depends on, not as a separately-scheduled
+   task.
+
+5. **A static held-out metric (F1/recall/rotation-FP on individual
+   frames) can be structurally blind to real transition-timing behavior
+   for any cyclic/event-based gesture.** Build a real, classifier-
+   independent ground-truth signal (e.g. `find_peaks` on a raw geometric
+   feature) before trusting that good static numbers mean the event layer
+   will actually fire correctly on real transitions. This matters for
+   every future cyclic gesture (grab/release cycles, rotation reversals),
+   not just pinch.
+
+6. **Verify a ground-truth-extraction method itself before trusting a
+   "bad" number it produces.** `palm_up`'s ground-truth cycle count was
+   itself unreliable in two different ways (undercounting via
+   insufficient dip depth, then overcounting via signal noise) before the
+   underlying tracking issue was even diagnosed — inspect the raw signal
+   directly (don't just trust an aggregated statistic) whenever a number
+   looks surprising, in either direction.
+
+7. **When comparing "before" and "after" numbers, confirm both came from
+   the exact same pipeline configuration.** This session generated two
+   different sets of "current" cycle-detection numbers from mismatched
+   classifier/event-layer-parameter combinations at one point, purely
+   from re-running scripts with stale hardcoded constants in between
+   pipeline changes — always re-verify every hardcoded parameter in every
+   diagnostic script matches the currently-active model/config before
+   reporting a number as authoritative.
+
+8. **Not every pose/orientation needs the same bar, and that decision
+   should be explicit, literature-checked where possible, and revisited
+   as new evidence arrives** — `palm_up` moved tiers mid-session on new
+   evidence (§12.4.4). Don't treat an orientation-priority decision as
+   permanent; re-open it if a later diagnostic contradicts the original
+   reasoning.
+
+## 13. Pinch archived (2026-08-01); pivot to snap / open-palm rotate / closed-fist release
+
+### 13.1 Stage 4 live-validation result — why pinch is being archived, not just re-tuned again
+
+Live-tested via `debug.bat` against the final pipeline state from §12.6
+(200ms window, `mlp/raw_plus_handcrafted_plus_articulation`, re-tuned event
+layer, 77.7% avg priority-orientation recall on recorded data). Direct,
+observed result:
+
+- **False positives: rare** — consistent with the recorded rotation-FP
+  numbers staying low throughout this arc.
+- **False negatives (missed pinches/releases): frequent**, and
+  **noticeably worse off the `front` orientation** — consistent with the
+  recorded numbers (`palmin`=69%, weaker than `front`=86%), but the live
+  *feel* of a missed grab/release is a harder failure than the aggregate
+  percentage suggests, since a game interaction needs each individual
+  attempt to register, not just a good hit-rate averaged over many.
+- **A small but perceptible detection lag** between the real gesture and
+  the reported event — small in absolute terms, but the kind of latency
+  that measurably degrades direct-manipulation UX (well-established in
+  HCI latency literature: even sub-100ms delays are detectable and
+  degrade a sense of direct control). This is a structural property of
+  the current design (the event tracker needs a `window_frames`-sized
+  lookback of confidence/ratio history before it can confirm an
+  onset/offset — see `Resources/event_layer.py`), not a bug fixable by
+  more tuning.
+
+**Decision**: archive the pinch classifier (all code, corpus, and trained
+weights kept, not deleted — genuinely reusable if pinch is revisited
+later) and pivot to a simpler gesture set that doesn't share pinch's core
+difficulty (discriminating a *fine, low-amplitude, easily-occluded*
+finger-contact signal from incidental motion). This is consistent with
+§12.7's lesson #8: a bar that turns out to be structurally hard to clear
+is a legitimate reason to change strategy, not just push harder on the
+same one.
+
+### 13.2 State-of-the-art check for the replacement gesture set (2026-08-01)
+
+Per the standing "search literature proactively" discipline
+(`feedback_proactive_literature_search` memory), checked three things
+before committing to the new design:
+
+**1. MediaPipe already ships pretrained `Open_Palm`/`Closed_Fist`
+classifiers.** MediaPipe Tasks' **Gesture Recognizer** (distinct from the
+Hand Landmarker this project already uses) outputs one of 7 built-in
+gesture labels per detected hand: `Closed_Fist`, `Open_Palm`,
+`Pointing_Up`, `Thumb_Down`, `Thumb_Up`, `Victory`, `ILoveYou` (plus
+`Unknown`), trained on ~30K real-world images plus rendered synthetic hand
+models. **This means open-palm and closed-fist detection may not need
+this document's Stage 1-3 custom-training pipeline at all** — a
+significant simplification opportunity, and consistent with the intuition
+that these are coarse, high-amplitude poses (a fully open hand vs. a
+fully closed fist), structurally easier to discriminate than pinch's fine
+near-contact measurement. **Still subject to this project's own
+hard-won Stage 4 discipline**: try the built-in recognizer, live-verify
+it (per §12.7 lesson #6 — don't trust a claim, even Google's own, without
+checking it against this project's actual camera/lighting/hand setup),
+and only fall back to a custom-trained classifier (reusing
+`RecordSession.py`/`train_pinch_classifier.py`'s infrastructure,
+generalized past pinch-specific label parsing) if the built-in one proves
+insufficient live. [Gesture recognition task guide — MediaPipe / Google AI
+Edge](https://ai.google.dev/edge/mediapipe/solutions/vision/gesture_recognizer).
+
+**2. Proximity-based "snap" grabbing is an established, validated VR/HCI
+interaction technique**, not a simplification that sacrifices UX quality.
+Literature on hand-tracking object manipulation in VR describes the
+"virtual hand technique" with pose-snapping as increasing presence and
+usability, and proximity/psychological-closeness cues as reducing
+interaction demand versus more indirect techniques (e.g. raycasting) —
+directly relevant since this project's UX goal is the same "reach out and
+grab" interaction. This validates the "snap when hand position is close
+to the object" trigger as a reasonable, literature-backed design, not an
+ad-hoc shortcut. [Controller-Free Hand Tracking for Grab-and-Place Tasks
+in Immersive Virtual Reality](https://www.researchgate.net/publication/346966176_Controller-Free_Hand_Tracking_for_Grab-and-Place_Tasks_in_Immersive_Virtual_Reality_Design_Elements_and_Their_Empirical_Study),
+[Evaluating Hand-tracking Interaction for Performing Motor-tasks in VR
+Learning Environments](https://www.researchgate.net/publication/352866232_Evaluating_Hand-tracking_Interaction_for_Performing_Motor-tasks_in_VR_Learning_Environments).
+
+**3. Quaternion-based rotation tracking (already the existing design —
+`PART_ONE.md` §2, `Specification.md` §7.5) is confirmed correct and
+doesn't need to change.** Orientation-control and robotics/graphics
+literature consistently confirms quaternions avoid gimbal lock (a
+property of Euler-angle decomposition specifically, not of rotation
+itself) and are the standard representation for this exact problem —
+nothing found that changes or improves on the orthonormal-frame-from-
+landmarks → quaternion → slerp approach already specified. [A quaternionic
+approach to teaching 3D rotations and the resolution of gimbal
+lock](https://arxiv.org/pdf/2511.04452), [Quaternion Rotation in 3D: A
+Solution to Gimbal Lock](https://medium.com/@ratwolf/quaternion-3d-rotation-32a3de61a373).
+
+**4. MediaPipe's monocular depth (`world_landmarks` `z`) is
+literature-confirmed unreliable for absolute positioning.** Directly
+relevant to "how to measure hand position in the camera-view direction":
+validation literature explicitly notes MediaPipe Hands' positional
+landmarks are "not suitable for augmented or mixed reality applications"
+in terms of depth accuracy for monocular setups — confirming
+`PART_ONE.md` §2's existing decision (depth proxy via apparent hand span,
+not raw `z`, and no Z-axis translation) was already correct, not a
+compromise to revisit. [Hand tracking for clinical applications:
+validation of the Google MediaPipe Hand (GMH) and the depth-enhanced
+GMH-D frameworks](https://arxiv.org/pdf/2308.01088).
+
+### 13.3 New gesture design: snap / translate / open-palm rotate / closed-fist release
+
+Replaces pinch as the primary manipulation gesture. Reuses
+`PART_ONE.md` §2's already-correct architecture decisions (sticky grab,
+shared-registry arbitration, image-space translation, depth-proxy-not-
+raw-z, quaternion rotation) — only the **trigger conditions** change, not
+the underlying object-manipulation architecture.
+
+- **Hand position** (new concept, replaces "pinch midpoint" throughout):
+  the palm-center point — centroid of `wrist(0)` + the four non-thumb
+  MCP joints (`index_MCP(5)`, `middle_MCP(9)`, `ring_MCP(13)`,
+  `pinky_MCP(17)`). A standard palm-center approximation, more stable
+  than the wrist alone (which is offset from the palm) or any single MCP
+  (asymmetric). Used in **image-space X/Y** for translation, per §13.2
+  point 4 above (no Z-axis translation, matching the existing
+  depth-proxy-only decision).
+- **Snap (acquisition)**: pure proximity trigger — no pose/gesture
+  precondition. When a hand's position enters grab-radius of an unowned
+  object, snap it (claim in the same shared-registry arbitration scheme
+  `PART_ONE.md` §2 already specifies for pinch — reused unchanged, just
+  triggered by proximity instead of a pinch rising-edge).
+  - Snap should probably be *inert* if that hand is currently
+    closed-fist (so nothing weird happens if a hand loitering in a fist
+    passes near an object without intending to grab) — worth deciding as
+    that step is built, not blocking design now.
+- **Translate**: while snapped, object position = mapped(hand position),
+  X/Y only — identical mechanism to the old pinch-midpoint version, new
+  input signal.
+- **Rotate**: while snapped **and** the hand is classified `Open_Palm`,
+  track hand orientation via the existing quaternion design (`PART_ONE.md`
+  §2/§7.5) and slerp the object's orientation toward it. Gating rotation
+  on `Open_Palm` specifically (rather than applying it whenever snapped)
+  avoids rotation jitter/noise while the hand is transitioning through
+  other shapes (e.g. mid-way into closing a fist) — **this gating choice
+  is a design inference, not explicitly stated by direction; confirm or
+  adjust once live-tested.**
+- **Un-snap (release)**: `Closed_Fist` detected on a hand currently
+  holding a snapped object → release: clear ownership, freeze object at
+  last position, hand returns to idle. Same freeze-in-place semantics
+  `PART_ONE.md` §2 already specifies for pinch release.
+- **Both hands can each independently snap/translate/rotate/release their
+  own object** — no fixed hand-to-object pairing, same "either hand, any
+  unowned object" arbitration already designed for pinch.
+
+### 13.4 Open questions, to resolve empirically once building starts (not blocking design)
+
+- Exact grab-radius value (likely scaled to object size — same open item
+  `PART_ONE.md` §5 already flagged for pinch, unresolved, still open).
+- Whether `Open_Palm`/`Closed_Fist` from MediaPipe's built-in Gesture
+  Recognizer are reliable enough live across this project's priority
+  orientations without any custom training — the whole point of trying
+  it first and live-testing before committing.
+- Whether snap should be blocked while closed-fist (see §13.3's inert-fist
+  note).
+- Whether rotation should be gated on `Open_Palm` specifically, or applied
+  whenever an object is snapped regardless of hand pose (see §13.3's
+  gating-choice note) — resolve by feel once live.
+- Depth (Z-axis) translation and/or the old depth-proxy scale/color effect
+  (`PART_ONE.md` §2's last bullet, row 6 of the old matrix) were not
+  mentioned in the new gesture set — presumed dropped for now, not
+  carried forward automatically; revisit only if explicitly wanted.

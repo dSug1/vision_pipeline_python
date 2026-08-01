@@ -9,16 +9,16 @@ import collections
 # failure mode (PART_ONE.md §1). Onset and offset get independently tuned
 # thresholds (§3.3.1) -- release is not assumed to mirror pinch.
 
-DEFAULT_WINDOW_FRAMES = 8  # re-tuned 2026-07-31 against the pencil-grip
-# corpus (GESTURE_PIPELINE_SPEC.md §12.4's retrain + the follow-up event-
-# layer sweep) -- was 5. Needed re-checking (not assumed to carry over)
-# once features.DELTA_WINDOW_MS tripled 300ms->900ms for the base
-# classifier: a much longer classifier lookback smooths per-frame
-# confidence more, so this tracker's OWN derivative-agreement window (a
-# separate concept from the classifier's input-feature window) needed a
-# wider grid search too. 8 was the best-scoring point across window_frames
-# in {5,8,12,18,24}; the grid did NOT find window_frames alone able to
-# close the remaining cycle-detection gap -- see the tuning comment below.
+DEFAULT_WINDOW_FRAMES = 8  # re-tuned 2026-08-01, twice: first to 12 against
+# the just-fixed classifier (pencil_rest fix + corrected palm_up
+# recordings + winner-selection fix), then back to 8 after
+# features.DELTA_WINDOW_MS itself moved 900ms->200ms (GESTURE_PIPELINE_SPEC.md
+# §12.4.4) on the strength of sweep_window_for_cycle_detection.py's real
+# cycle-detection metric -- re-tuning this tracker window is required every
+# time the classifier's own input window changes, since a shorter
+# DELTA_WINDOW_MS changes how smoothed the per-frame confidence signal is.
+# 8 was the best-scoring point across window_frames in {5,8,12,18,24} run
+# against the 200ms-window classifier.
 
 
 class PinchEventTracker:
@@ -29,15 +29,11 @@ class PinchEventTracker:
     def __init__(
         self,
         window_frames=DEFAULT_WINDOW_FRAMES,
-        # Re-tuned 2026-07-31 against the pencil-grip corpus
+        # Re-tuned 2026-08-01 against the 200ms-window classifier
         # (tune_event_layer.py's grid search, GESTURE_PIPELINE_SPEC.md
-        # §12.4 follow-up) -- was 0.30/0.15/0.30/0.15. Best-scoring point
-        # (near-zero false positives: 0 across 40 held-out hand-sessions)
-        # but the grid's OWN top-10-by-raw-cycle-closeness table shows even
-        # the most permissive settings tested only reach ~1.3-1.4 onsets per
-        # session against a ~3 target -- this is not a threshold-tuning
-        # problem anymore, see the spec for the diagnosed root cause
-        # (recording cadence, not classifier or event-layer quality).
+        # §12.4.4) -- near-zero false positives (1 across 40 held-out
+        # hand-sessions, up from a perfect 0 at the 900ms-window classifier,
+        # the expected robustness cost of shortening DELTA_WINDOW_MS).
         onset_conf_rise=0.20,
         onset_ratio_fall=0.12,
         onset_conf_floor=0.5,

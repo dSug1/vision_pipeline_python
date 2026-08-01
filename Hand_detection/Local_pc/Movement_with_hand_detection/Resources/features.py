@@ -44,23 +44,27 @@ HANDCRAFTED_FEATURE_NAMES = [
 # features give the classifier that temporal signal directly, instead of
 # only a per-frame snapshot.
 #
-# Window = 900ms (re-swept 2026-07-31 against the pencil-grip corpus,
-# GESTURE_PIPELINE_SPEC.md §12/§3.2.11, via sweep_prediction_error_window.py
-# -- now covering raw_plus_handcrafted_plus_articulation, the actual
-# shipped representation, not just the superseded handcrafted variants the
-# original 300ms sweep covered). Previously 300ms, from analyze_
-# transition_window.py's transition-DURATION measurement alone, never
-# validated against classifier performance. Directly swept against
-# classification score this time: rotation-FP fell monotonically as the
-# window grew (2.5% at 300ms -> 0.9% at 900ms, both on
-# raw_plus_handcrafted_plus_articulation/mlp), with recall/F1 reaching
-# 1.000/1.000 at 900ms -- essentially ceiling performance, so there's no
-# signal to justify pushing the window larger (1200ms tested, marginally
-# worse). This is a global constant shared by every windowed representation
-# `train_pinch_classifier.py` compares, not tuned per-representation.
+# Window = 200ms (re-swept 2026-08-01 against the retrained classifier +
+# corrected corpus, GESTURE_PIPELINE_SPEC.md §12.4.4, via
+# sweep_window_for_cycle_detection.py -- this sweep evaluates a REAL
+# cycle-detection metric, not just static held-state F1/rotation-FP, which
+# is exactly the blind spot the previous 900ms choice had (§12.4's own
+# admission: "blind to real cyclic timing"). Was 900ms. With the corrected
+# classifier, the effect turned out to be much larger than the earlier
+# 900ms-era sweep suggested: priority-orientation (front/palmin/palmdown)
+# cycle-detection recall rose from 72.3% at 900ms to 96.4% at 200ms, at the
+# cost of rotation-FP rising from 0.8% to 2.9%. 100ms recall was even
+# higher (101%) but rotation-FP nearly quadrupled the baseline (3.8%);
+# 200ms chosen as the balanced point -- nearly all the recall gain at the
+# smallest robustness cost, not the max-recall extreme. Re-check this
+# choice again if the corpus or classifier changes materially, per this
+# project's standing "every window/hyperparameter choice gets re-checked,
+# not assumed to carry over" discipline. This is a global constant shared
+# by every windowed representation `train_pinch_classifier.py` compares,
+# not tuned per-representation.
 DELTA_FEATURE_NAMES = ["delta_pinch_ratio", "delta_curl_worst_deg"]
 HANDCRAFTED_WINDOWED_FEATURE_NAMES = HANDCRAFTED_FEATURE_NAMES + DELTA_FEATURE_NAMES
-DELTA_WINDOW_MS = 900
+DELTA_WINDOW_MS = 200
 
 
 def to_dict_landmarks(mp_landmarks):

@@ -25,17 +25,18 @@ from train_pinch_classifier import (
 # ground-truth cycle count (independent, from raw pinch_ratio via find_peaks,
 # analyze_transition_window.py's method) vs. detected onsets, per orientation.
 #
-# Per direction (2026-07-31): front/palmin/palmdown/palmup are the
-# orientations that matter for this decision -- palmaway/palmout are
-# structurally low-priority (low real-world likelihood of pinching in those
-# orientations, and palm_away specifically has a camera-visibility
-# constraint on the index/thumb) and are reported separately, not folded
-# into the primary score.
+# Per direction (2026-07-31, revised 2026-08-01): front/palmin/palmdown are
+# the orientations that matter for this decision -- palmaway/palmout/palmup
+# are structurally low-priority (low real-world likelihood of pinching in
+# those orientations; palm_away has a camera-visibility constraint on the
+# index/thumb; palm_up was moved here 2026-08-01 after a verified landmark-
+# precision limit survived a targeted confidence fix, GESTURE_PIPELINE_SPEC.md
+# §12.4.4) and are reported separately, not folded into the primary score.
 
 WINDOW_SIZES_MS = [100, 150, 200, 300, 450, 600, 900]
-PRIORITY_ORIENTATIONS = {"front", "palmin", "palmdown", "palmup"}
+PRIORITY_ORIENTATIONS = {"front", "palmin", "palmdown"}
 BEST_EVENT_PARAMS = dict(
-    window_frames=8, onset_conf_rise=0.20, onset_ratio_fall=0.12,
+    window_frames=12, onset_conf_rise=0.20, onset_ratio_fall=0.08,
     offset_conf_fall=0.20, offset_ratio_rise=0.08,
 )
 
