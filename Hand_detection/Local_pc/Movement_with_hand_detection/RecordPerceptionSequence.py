@@ -49,6 +49,36 @@ HAND_LANDMARKER_MODEL_PATH = os.path.join(
 
 COUNTDOWN_S = 3.0
 
+# Prescribed number of FULL cycles (palm -> back -> palm) per sequence. One cycle
+# is TWO sign changes, so the analyser's per-frame sign-inversion count must be
+# compared against 2x this. Overridable with --cycles when the operator does a
+# different number; whatever is used is written into meta.json.
+DEFAULT_CYCLES = {
+    "palm_back_s1_very_slow": 10,
+    "palm_back_s2_slow": 15,
+    "palm_back_s3_medium": 20,
+    "palm_back_s4_fast": 30,
+}
+
+PITCH_AXIS_NOTE = (
+    "PITCH axis: tip the fingers TOWARD then AWAY from the camera, as if nodding "
+    "the hand -- the axis runs left-right across the knuckles. Do NOT rotate about "
+    "the vertical axis (yaw, like turning a page/doorknob). Pitch is what the open "
+    "pitch-plane-crossing TODO is about and what pitch_sweep_slow/fast used, so a "
+    "yaw take would not be comparable; yaw has its own separate open item."
+)
+
+# Frame rate below which a take is flagged as suspect at save time.
+#
+# Learned 2026-08-02 (spec §0.7 / queue N10): two takes recorded at 22:18 measured
+# 15.1 and 15.77 fps, against 24.09-24.14 fps for seven takes made 19:13-20:51 on
+# the SAME camera and machine. Leading hypothesis is webcam auto-exposure
+# lengthening frame duration in dim light. Both low-fps takes were discarded --
+# owner: "I don't want the lack of light to pollute our analysis." A quiet
+# 15-fps take is worse than a failed one, because it looks valid in analysis
+# while being non-comparable to the rest of the corpus, so warn LOUDLY here.
+MIN_EXPECTED_FPS = 20.0
+
 # PERCEPTION_LAYER_SPEC.md §7.2. (default_duration_s, on-screen prompt, what it unblocks)
 SEQUENCES = {
     "static_hold": (
@@ -73,10 +103,54 @@ SEQUENCES = {
         "FAST pitch sweep: same rotation, ~0.5s per sweep",
         "crossing survival under motion blur; angular-velocity carry-through",
     ),
+    # SUPERSEDED 2026-08-02 by the four palm_back_s* takes below. Mixing four
+    # speeds into one clip yields a single blended flip count, which cannot
+    # answer the question that actually matters -- at WHAT speed does the sign
+    # cue start missing crossings. Kept runnable for comparability with any
+    # older analysis; prefer the decoupled takes for new work.
     "palm_back": (
         40.0,
-        "Rotate palm<->back repeatedly, at 4 DIFFERENT speeds",
+        "[SUPERSEDED - prefer palm_back_s1..s4] Rotate palm<->back repeatedly, "
+        "at 4 DIFFERENT speeds",
         "chirality flip rate, hysteresis behaviour",
+    ),
+
+    # --- Speed-decoupled palm<->back, one speed per take (owner request,
+    # 2026-08-02): "it may be worth decoupling and do 4 recordings at different
+    # speeds, so we can gauge what is the threshold where we lose detection."
+    #
+    # Each take prescribes an EXACT cycle count, so ground truth comes from the
+    # protocol rather than from the operator remembering a number afterwards.
+    # One CYCLE = palm -> back -> palm = TWO sign changes; the recorder writes
+    # both figures into meta.json so the two units can never be confused again
+    # (that ambiguity caused a wrong reading on 2026-08-02 -- spec §0.7).
+    # ROTATION AXIS IS PITCH, NOT YAW (owner instruction, 2026-08-02). This is not
+    # incidental: the open pipeline TODO is the PITCH-plane crossing (queue T2 /
+    # GESTURE_PIPELINE_SPEC.md §13.7), and the existing pitch_sweep_slow/fast takes
+    # these are compared against are pitch too -- a yaw take would not be
+    # comparable. Yaw has its own separate open item (the yaw/palm-sinking defect,
+    # §14.1.1 / queue T4) and must not be mixed into this measurement.
+    "palm_back_s1_very_slow": (
+        40.0,
+        "VERY SLOW palm<->back, PITCH axis: ~4s per FULL cycle. Do exactly 10 cycles.",
+        "detection-threshold sweep: the easy end -- if crossings are missed even "
+        "HERE, the problem is not speed",
+    ),
+    "palm_back_s2_slow": (
+        30.0,
+        "SLOW palm<->back, PITCH axis: ~2s per FULL cycle. Do exactly 15 cycles.",
+        "detection-threshold sweep",
+    ),
+    "palm_back_s3_medium": (
+        20.0,
+        "MEDIUM palm<->back, PITCH axis: ~1s per FULL cycle. Do exactly 20 cycles.",
+        "detection-threshold sweep",
+    ),
+    "palm_back_s4_fast": (
+        15.0,
+        "FAST palm<->back, PITCH axis: ~0.5s per FULL cycle. Do exactly 30 cycles.",
+        "detection-threshold sweep: the hard end -- expected to be where the sign "
+        "cue and/or MediaPipe detection break down",
     ),
     "occlusion": (
         30.0,
@@ -150,6 +224,10 @@ def main():
     parser.add_argument("--duration", type=float, default=None, help="override the default duration")
     parser.add_argument("--camera-index", type=int, default=0)
     parser.add_argument("--note", type=str, default="", help="free-text note stored in meta.json")
+    parser.add_argument("--cycles", type=int, default=None,
+                        help="number of FULL palm->back->palm cycles actually performed "
+                             "(defaults to the sequence's prescribed count). Stored in "
+                             "meta.json along with expected_sign_changes = 2 x cycles")
     parser.add_argument("--local", action="store_true",
                         help="record to the LOCAL capture root instead of the external drive "
                              "(use when E: is unavailable; move the session folder later)")
@@ -206,6 +284,8 @@ def main():
     print(f"[perception] sequence : {args.sequence}")
     print(f"[perception] duration : {duration:.1f}s (after a {COUNTDOWN_S:.0f}s countdown)")
     print(f"[perception] DO THIS  : {prompt}")
+    if args.sequence.startswith("palm_back") or args.sequence.startswith("pitch_sweep"):
+        print(f"[perception] AXIS     : {PITCH_AXIS_NOTE}")
     print(f"[perception] unblocks : {unblocks}")
 
     t0 = time.perf_counter()
@@ -311,6 +391,26 @@ def main():
             f"{args.sequence}|{width}x{height}|{getattr(mp, '__version__', '?')}".encode()
         ).hexdigest()[:12],
     }
+    # Ground truth for the chirality-flip metric, when this sequence has one.
+    # BOTH units are stored deliberately: the operator thinks in cycles, the
+    # analyser counts sign inversions, and comparing the wrong pair produced a
+    # wrong conclusion once (spec §0.7).
+    if args.sequence.startswith("palm_back") or args.sequence.startswith("pitch_sweep"):
+        meta["rotation_axis"] = "pitch"
+        meta["rotation_axis_note"] = PITCH_AXIS_NOTE
+
+    cycles = args.cycles if args.cycles is not None else DEFAULT_CYCLES.get(args.sequence)
+    if cycles is not None:
+        meta["counted_crossing_cycles"] = cycles
+        meta["expected_sign_changes"] = 2 * cycles
+        meta["counted_crossings_definition"] = (
+            "One CYCLE = palm -> back -> palm = TWO sign changes. The analyser counts "
+            "per-frame sign inversions, so compare its output against "
+            "expected_sign_changes, NEVER against counted_crossing_cycles."
+        )
+        meta["cycles_source"] = ("operator-supplied via --cycles" if args.cycles is not None
+                                 else "sequence-prescribed default")
+
     with open(os.path.join(session_dir, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
 
@@ -318,6 +418,21 @@ def main():
     print(f"[perception] Saved {len(records)} frames ({meta['measured_fps']} fps measured) to")
     print(f"             {session_dir}")
     print(f"[perception] frames with >=1 hand detected: {detected}/{len(records)}")
+    if cycles is not None:
+        print(f"[perception] ground truth: {cycles} cycles -> {2 * cycles} expected sign changes")
+
+    fps = meta["measured_fps"]
+    if fps is not None and fps < MIN_EXPECTED_FPS:
+        print()
+        print(f"[perception] ****************************  WARNING  ****************************")
+        print(f"[perception] Measured {fps} fps, below the {MIN_EXPECTED_FPS:.0f} fps floor.")
+        print(f"[perception] The corpus baseline is ~24 fps; low frame rate is caused by dim")
+        print(f"[perception] light (auto-exposure lengthens each frame) and makes this take")
+        print(f"[perception] NOT comparable to the rest of the corpus. It also widens the")
+        print(f"[perception] per-frame interval, which is a direct confound for crossing and")
+        print(f"[perception] motion-blur analysis.")
+        print(f"[perception] >>> ADD LIGHT AND RE-RECORD. Consider discarding this take. <<<")
+        print(f"[perception] ********************************************************************")
 
 
 if __name__ == "__main__":

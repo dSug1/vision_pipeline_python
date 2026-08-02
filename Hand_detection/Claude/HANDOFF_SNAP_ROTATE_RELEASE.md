@@ -48,8 +48,9 @@ full account.
 
 **One-line status**: translation redesign done and live-confirmed;
 thumb-outward inversion fixed and live-confirmed; Object Jump Correction
-root-caused and a fix (DR-1) built and replay-verified but **never run
-against a camera** — that live test is the immediate next step.
+root-caused and a fix (DR-1) built, replay-verified **and now
+live-confirmed against a camera (2026-08-02)** — so the immediate next
+step has moved on to item 0.2b, the remaining scripted sequences (§3).
 
 ### 2.1 Translation-pivot fix — DONE (designed, verified, live-confirmed, ported to production)
 
@@ -103,7 +104,14 @@ tested. **Not yet independently live-tested** — confirm thumb-inward now
 correctly permits grab in production before considering this fully
 closed. Full account: `GESTURE_PIPELINE_SPEC.md` §13.6.1.
 
-### 2.3 "Object Jump Correction" — root-caused; ADDRESSED by DR-1 (§2.5), not yet live-confirmed
+### 2.3 "Object Jump Correction" — root-caused; FIXED by DR-1 (§2.5), live-confirmed 2026-08-02
+
+> **Status note (2026-08-02).** DR-1's live test passed and the reported symptom
+> (a cube teleporting between hands) did not occur while the operator actively
+> tried to provoke it. **But the M0 regression metric has NOT been re-measured**
+> — "2 jumps → 0" needs a fresh recording replayed through
+> `AnalyzePerceptionBaseline.py`, which the live test does not produce. Treat
+> this as live-confirmed by observation, not yet closed by measurement (A10).
 
 **Use this exact name in future conversations to refer to this item.**
 
@@ -167,9 +175,9 @@ logic pure and simple.
   resolves the underlying depth-ambiguity problem at its source. Full
   account: `GESTURE_PIPELINE_SPEC.md` §13.7.1.
 
-### 2.5 DR-1 track-level hand identity — BUILT 2026-08-02, replay-verified, NOT live-tested
+### 2.5 DR-1 track-level hand identity — BUILT, replay-verified, and LIVE-CONFIRMED 2026-08-02
 
-**This is the current head of the work.** Object Jump Correction (§2.3) was
+**DONE.** Object Jump Correction (§2.3) was
 root-caused to **MediaPipe's handedness label being unstable**, not to two hands
 being confused: it flips on a *single* hand under rotation (18 recorded events at
 score ~0.66 vs a 0.95–0.99 baseline) and sometimes labels *both* hands the same
@@ -234,9 +242,22 @@ same defect that hid Object Jump Correction in the old recorder.
 **So `debug_snap.bat` and `launch.bat` now behave the same way**, and either can
 be used to test DR-1.
 
-**Also open**: never live-tested; `_ASSUMED_FPS = 24.0` is hard-coded and should
-come from measured timing; acquisition can still lock wrong (the switch branch is
-what recovers it). Full account: `PERCEPTION_LAYER_SPEC.md` §0.4–§0.5.
+**LIVE-CONFIRMED 2026-08-02** via `launch.bat`, deliberately rotating hands
+back-to-camera and crossing them while holding cubes — operator verdict *"it's
+working"*, no teleport and no spurious drop. 16 tracker events, **0 errors**;
+crucially the failure conditions were genuinely provoked, not merely absent —
+the glitch branch **held** a 3-frame mismatch and the swap branch **switched**
+on a full 12, the exact separation replay predicted.
+
+**One new finding, undiagnosed**: the duplicate-repair invariant — documented as
+a fuzz-found edge case — fired **3× in one short session**. No duplicate was
+emitted (it did its job), but the frequency wasn't predicted by the 7 recorded
+sessions. **Deliberately not tuned**; logged as queue item **N9**.
+
+**Also open**: `ASSUMED_FPS = 24.0` is hard-coded in `hand_identity.py` and should
+come from measured timing (N7); acquisition can still lock wrong — seen live
+twice, and the switch branch recovered it both times, which is exactly why that
+branch must exist. Full account: `PERCEPTION_LAYER_SPEC.md` §0.4–§0.6.
 
 ## 3. Next build targets — see the merged build queue
 
@@ -273,15 +294,38 @@ well-conditioned frames, 41.5× flip concentration in the edge-on band);
 object-jump metric baselined at exactly 2 jumps, both the known bug. Full
 results and the careful interpretation: `PERCEPTION_LAYER_SPEC.md` §0.2.
 
-**Immediate next step: LIVE-TEST DR-1 (§2.5).** It is replay-verified across 7
-sessions but has never run against a camera — and this project has already
-shipped a production-only bug that survived a "confirmed working" claim
-(§2.2). Launch `launch.bat`, then deliberately cross and overlap your hands
-while rotating them: a held cube should no longer teleport to the other hand or
-drop. Watch the console — the tracker logs every lock, hold and switch.
+**DR-1's live test is DONE (2026-08-02, §2.5) — passed.** It was the previous
+head of this list.
 
-**Then: item 0.2b — the remaining §7.2 scripted sequences.**
-This is now the binding constraint: three M0 metrics (resting jitter,
+**Immediate next step (paused 2026-08-02 at the owner's request, to resume in
+better daylight): record the four `palm_back_s1..s4` takes, then continue item
+0.2b.** They are already built into `RecordPerceptionSequence.py` — just run
+them; cycle counts and the pitch-axis briefing are baked in.
+
+Three things happened on 0.2b this evening — full account in
+`PERCEPTION_LAYER_SPEC.md` §0.7 / §0.7.1:
+
+1. **`palm_back` recorded, then DELETED along with an aborted take** — both ran
+   at 15–16 fps in poor light, and the owner discarded them rather than let that
+   pollute the analysis. Their indicative result (the sign cue **UNDER-detects**
+   crossings, 52/50 against 58 expected — reversing the prior suspicion of a
+   *spurious*-flip population) is **no longer backed by data**; don't cite it.
+   **Replaced by four speed-decoupled takes** that locate the *threshold* at
+   which crossings start being missed, with prescribed cycle counts and an
+   explicit **PITCH** axis (not yaw — yaw is T4's separate problem).
+2. **⚠ A unit trap that already caused one wrong reading.** The operator counts
+   palm→back→palm as ONE crossing; the analyser counts sign inversions — 2× apart.
+   Compare against `expected_sign_changes`, never the raw cycle count. Both are
+   stored in the session's `meta.json`.
+3. **⚠ Frame rate is environment-dependent, not the fixed ~24 fps finding N1
+   recorded** — 15.1/15.77 fps measured at 22:18 vs 24.09–24.14 earlier the same
+   evening, same camera and machine. This makes **N7 a correctness item**
+   (DR-1's 12-frame `SWITCH_MS` dwell is ~761 ms at 15.77 fps, not the intended
+   500) and is logged as **N10**. It is also the confound blocking N3 — hence
+   the re-record in better light.
+
+**Then: the rest of item 0.2b — the remaining §7.2 scripted sequences.**
+This remains the binding constraint: three M0 metrics (resting jitter,
 palm-normal jitter, crossing survival) simply cannot be computed from the
 existing grab-and-rotate recordings, and the *scripted non-crossing*
 sequence is what decides whether the mid-band sign flips are spurious —

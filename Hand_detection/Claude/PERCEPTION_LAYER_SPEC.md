@@ -685,13 +685,209 @@ exists in the codebase.
 
 ### Still open
 
-- **Not yet live-tested.** Replay-verified only, and this project has shipped a
-  production-only bug that survived a "confirmed working" claim before.
+- ~~**Not yet live-tested.**~~ **DONE 2026-08-02 — see §0.6 below.**
 - **Acquisition can still lock wrong.** If the first frames are mislabelled, the
   switch branch is what recovers it — which is now another reason that branch
-  must exist.
+  must exist. **Observed live twice (§0.6), and recovered both times.**
 - `_ASSUMED_FPS = 24.0` is hard-coded. It should come from measured frame timing
   once `HandState.tCapture` exists (M0/N1).
+
+---
+
+## 0.6 DR-1 LIVE-CONFIRMED against a camera (2026-08-02)
+
+Run via `launch.bat`'s exact code path (production: `VisionPipeline.py` +
+`Client.py`), the operator deliberately rotating hands to show the backs of
+them and crossing/overlapping them while holding cubes. **Operator verdict:
+"it's working"** — no cube teleported to the other hand and none was
+spuriously dropped.
+
+This closes the item the handoff called out as the one thing standing between
+replay verification and trust, and it matters because this project has shipped
+a production-only bug that survived a "confirmed working end-to-end" claim
+once already (§13.6.1 / handoff §2.2).
+
+**Console record — 16 tracker events, 0 errors or tracebacks:**
+
+| event | count | reading |
+|---|---|---|
+| `identity locked` | 5 | 3 by vote, 2 as the complement of an existing track |
+| `track ended` | 4 | hands leaving frame — identity correctly re-decidable |
+| **`duplicate label would have been emitted`** | **3** | the end-of-function invariant firing — **new, see below** |
+| `switch confirmed after 12 confident frames` | 2 | lone track, `Right`→`Left`: acquisition locked wrong, switch branch recovered it |
+| `switch confirmed` (with clash) | 1 | `Left`→`Right`, other track took `Left` — an association swap through a crossing |
+| **`transient glitch rejected, lock held`** | **1** | 3 confident mismatched frames held, then agreement — **the core design behaviour, proven live** |
+
+**The failure conditions were genuinely exercised, not merely absent.** Those
+events only fire when MediaPipe actually disagreed with the track, so this was
+not a run that passed by never provoking the bug — the glitch-rejection and
+switch branches both fired and both did the right thing.
+
+### One genuinely new finding: the duplicate-repair fallback is reachable in normal use
+
+§0.5 reported duplicates eliminated **structurally** ("two detections associate
+to two different tracks each emitting its own label"), and the explicit
+end-of-function invariant was described as an edge case found by fuzzing —
+reachable only when a detection jumps beyond the association limit with both
+track slots full.
+
+**It fired 3 times in a single short live session.** No duplicate was emitted —
+the invariant did exactly its job, which is why the run passed — but the
+frequency is new information that the 7 recorded sessions did not predict.
+
+Two readings, and this is **not yet diagnosed**:
+
+- `MAX_ASSOC_PALM_RATIO = 3.0` may be too tight for live motion. It was derived
+  from recorded frame-to-frame motion of 0.6–1.4 palm widths; a live operator
+  deliberately crossing hands fast may simply exceed it.
+- Or the association is failing for a different reason (a dropped frame — recall
+  §0.3's finding that 2.9% of frames lost detection entirely under fast motion —
+  leaves a stale `avg` position for a track).
+
+**Do not tune `MAX_ASSOC_PALM_RATIO` on this evidence.** Per A10, that is a
+measurement question, not a guess: the fallback firing is currently *harmless*
+(the invariant catches it), so the cost of leaving it alone is zero, and the
+next scripted-sequence recordings (queue 0.2b) can quantify it properly.
+**Logged as queue item N9.**
+
+### Also observed: `SWITCH_MS = 12` frames behaved correctly at both extremes
+
+The single transient glitch ran 3 confident frames and was **held** (correctly
+rejected), while the real association swap accumulated its full 12 and
+**switched**. That is the exact separation §0.5 predicted from the recorded
+populations (glitches ≤7 frames, real swaps 62–225), now confirmed against a
+live camera rather than replay. **No reason to re-derive `SWITCH_MS` at this
+time** — but the standing instruction still holds: re-derive it if the camera,
+frame rate or lighting change.
+
+---
+
+## 0.7 `palm_back` recorded (2026-08-02) — N3 ground truth, and a frame-rate surprise
+
+Queue item 0.2b continued. §7.2's *palm↔back rotation at 4 speeds* recorded with
+`RecordPerceptionSequence.py --sequence palm_back`, to E: per owner instruction.
+Session: `2026-08-02_221948_palm_back` (630 frames, 39.95 s, 628 with a hand).
+
+> **⚠ BOTH `palm_back` TAKES WERE DELETED (2026-08-02, owner instruction)** — the
+> counted one above and an earlier aborted one — because both were recorded in
+> poor light at 15–16 fps: *"I don't want the lack of light to pollute our
+> analysis."* **The numeric result below is retained as INDICATIVE ONLY; the data
+> behind it no longer exists and it must not be cited as a measurement.** What
+> survives as durable is the *method* — the unit trap, the frame-rate finding, and
+> the redesign in §0.7.1. Re-record in daylight before concluding anything.
+
+### The counting convention — read this before using the number
+
+**The operator counts one "crossing" as palm → back → palm, i.e. a full CYCLE.**
+The analyser counts per-frame **sign inversions**. One cycle is **two** sign
+changes, so the two units differ by 2×.
+
+> **This ambiguity produced a wrong reading on the first pass** — 29 was briefly
+> compared against 52 detected flips and misreported as a ~40% *spurious* rate,
+> when the correct comparison (58 expected) shows the opposite. Both numbers are
+> now stored explicitly in the session's `meta.json` as `counted_crossing_cycles`
+> (29) and `expected_sign_changes` (58). **Always compare against
+> `expected_sign_changes`.**
+
+### Result: the sign cue UNDER-detects crossings
+
+| | expected | detected | delta |
+|---|---|---|---|
+| Left | 58 | **52** | −6 |
+| Right | 58 | **50** | −8 |
+
+*(58 is a lower bound: the clip ends with the hand edge-on mid-turn and that
+trailing incomplete transition was not counted, so the true figure may be 59.)*
+
+**There is no evidence here of a large spurious-flip population** — the earlier
+working suspicion. If anything the cue misses genuine crossings. Detected flips
+span the whole edge-on range (0.015–0.949), and per the operator several cycles
+were deliberately fast, which is consistent with genuine crossings traversing the
+band between frames.
+
+**What totals alone CANNOT settle** — and this is the honest limit of this take:
+a compensating mix (some genuine crossings missed *plus* some spurious flips)
+also nets to 52. Separating them needs per-flip matching against the rotation
+timeline, not counts. **N3 is therefore advanced, not closed.**
+
+### ⚠ The pipeline does NOT run at a fixed ~24 fps — it is environment-dependent
+
+Finding N1 (§0.3) recorded ~24 fps as a property of the pipeline. **Two takes
+this evening measured 15.1 and 15.77 fps** — same recorder, same camera, same
+machine, same resolution. The seven earlier sequences were recorded 19:13–20:51
+and measured 24.09–24.14; these at 22:18–22:19.
+
+The likely mechanism is webcam **auto-exposure lengthening frame duration in
+dimmer light** — untested, so treat it as the leading hypothesis rather than a
+diagnosis. What matters is the consequence, which does not depend on the cause:
+
+- **Frame rate varies with ambient conditions**, so `ASSUMED_FPS = 24.0` in
+  `hand_identity.py` is not a constant to be measured once and hard-coded.
+- **Every DR-1 dwell derives from it.** `SWITCH_FRAMES = round(500 × 24/1000) =
+  12`. At 15.77 fps those 12 frames are **~761 ms, not the intended 500** — a 52%
+  overshoot, in the parameter §0.5 identified as the one most worth getting right.
+  The live test (§0.6) that validated the 12-frame dwell was itself run at an
+  unmeasured frame rate.
+- **N7 is therefore a correctness item, not tidiness.** Promoted. New queue item
+  **N10** records the environment-dependence itself.
+- This take is **not frame-rate-comparable** to the seven earlier sequences, and
+  the wider 63.4 ms interval is precisely the confound for the high-edge-on
+  question above. **Re-record `palm_back` in better light** before drawing
+  conclusions about where spurious flips live.
+
+### Housekeeping — both takes deleted
+
+`2026-08-02_221831_palm_back` (aborted, 24.9 s of 40) and
+`2026-08-02_221948_palm_back` (the counted one) were **both deleted on owner
+instruction**. The seven earlier sessions are intact and verified after the fact.
+
+*Incidental confirmation of N4: the delete itself failed part-way with `The device
+is not ready` — the E: dropout, live rather than historical. It completed on
+retry, and the result was re-verified rather than assumed.*
+
+---
+
+## 0.7.1 Redesign: four speed-decoupled `palm_back` takes (owner request, 2026-08-02)
+
+> *"It may be worth decoupling and do 4 recordings at different speeds, so we can
+> gauge what is the threshold where we lose detection."*
+
+**Why this is better than the single blended take.** Mixing four speeds into one
+clip yields one flip count that cannot answer the question that matters — *at what
+speed does the cue start missing crossings?* One take says "6–8 missed"; four
+takes locate the **threshold**, which is what a fix or a quality gate has to be
+designed against.
+
+Built into `RecordPerceptionSequence.py`:
+
+| sequence | cycle time | prescribed cycles | expected sign changes | duration |
+|---|---|---|---|---|
+| `palm_back_s1_very_slow` | ~4 s | 10 | 20 | 40 s |
+| `palm_back_s2_slow` | ~2 s | 15 | 30 | 30 s |
+| `palm_back_s3_medium` | ~1 s | 20 | 40 | 20 s |
+| `palm_back_s4_fast` | ~0.5 s | 30 | 60 | 15 s |
+
+Three deliberate design choices, each fixing something that bit us:
+
+1. **Cycle counts are PRESCRIBED, not recalled.** Ground truth comes from the
+   protocol, not from the operator remembering a number afterwards. `--cycles`
+   overrides when the actual count differs; whichever is used is written to
+   `meta.json` along with `expected_sign_changes = 2 × cycles`. **Both units are
+   always stored**, so the §0.7 unit trap cannot recur.
+2. **The axis is PITCH, stated explicitly** (owner instruction). Not incidental:
+   the open TODO is the *pitch*-plane crossing (T2 / §13.7), and the
+   `pitch_sweep_*` takes these are compared against are pitch — a yaw take would
+   not be comparable. Yaw has its own separate item (T4, §14.1.1) and must not be
+   mixed in. The recorder now prints the full axis description at briefing time
+   and stores `rotation_axis: "pitch"` in `meta.json`.
+3. **A low-frame-rate guard.** The recorder warns loudly at save time when
+   `measured_fps < 20`, telling the operator to add light and re-record. A quiet
+   15 fps take is worse than a failed one: it looks valid in analysis while being
+   non-comparable to the rest of the corpus.
+
+The original `palm_back` sequence is kept runnable but marked **SUPERSEDED**.
+
+**Not yet recorded** — deferred to daylight at the owner's request.
 
 ---
 
