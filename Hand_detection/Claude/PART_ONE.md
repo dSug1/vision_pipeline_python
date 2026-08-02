@@ -212,6 +212,86 @@ the 6-orientation recording grid in that document's §5 (`front`/
 earlier 3-orientation version. See §2's release-conditions bullet above
 for the design consequence (still applies to the new release trigger).
 
+## 3.1 Merged build queue — THE single TODO list (2026-08-02)
+
+**This is the only build queue. It supersedes every other ordered TODO
+list in the project**, including `PERCEPTION_LAYER_SPEC.md` §5's
+module→TODO mapping and the three-item queue previously carried in
+`HANDOFF_SNAP_ROTATE_RELEASE.md` §3. Those now point here. Do not
+maintain a second list anywhere.
+
+Created when `PERCEPTION_LAYER_SPEC.md` was integrated into the pipeline
+(2026-08-02, direct request: *"the list of TODO can be merged into one for
+the pipeline"*). It merges (a) the perception-layer modules M0–M10 and
+(b) the pipeline's own pre-existing TODOs, which were previously tracked
+separately and in some cases duplicated each other without knowing it.
+
+**Owner decisions on integration (2026-08-02)**: build the perception
+layer in **Python** under `Local_pc/` (the spec's `gestureConfig.js`
+target does not exist — see the spec's §0.1/A1), keeping the spec
+language-neutral for the later web/mobile port; run **Phases 0–2, then
+reassess** before committing to Phase 3+; **do not** replace §14.1's
+shipped translation mechanism with the spec's M8a until an A/B measures
+them (A7).
+
+**Governing rule (spec A10, binding):** every module must show a measured
+improvement on the M0 metrics via replay A/B on identical recorded input,
+or be **reverted**. A null result is recorded, not shipped hopefully.
+
+| # | Item | Kind | Status | Depends on | Notes |
+|---|---|---|---|---|---|
+| **PHASE 0 — instrumentation** ||||||
+| 0.2 | M0 baseline metrics on current pipeline | perception | **DONE 2026-08-02** | — | `AnalyzePerceptionBaseline.py`, 7 existing recordings, no new capture. **Bone CV 10.0% vs <3% target; palm rigidity 2.76 mm already at target; DR-2 validated (41.5× flip concentration, 0 flips above edge-on 0.60).** Results: `PERCEPTION_LAYER_SPEC.md` §0.2 |
+| 0.1 | M0 recorder/replay/metrics harness | perception | **NEXT** | — | Generalise `RecordTranslationPivotDebug.py` / `AnalyzeTranslationPivot.py` / `AnalyzePerceptionBaseline.py`; add `tCapture`, optional frame capture |
+| 0.2b | Record the §7.2 scripted sequences | perception | **4 of 9 DONE 2026-08-02** | — | `RecordPerceptionSequence.py` (raw capture, no gesture logic) + `AnalyzePerceptionSequences.py`. Done: static_hold, non_crossing, pitch_sweep_slow/fast. **Results corrected §0.2 — see §0.3.** Remaining: occlusion, two_hand_crossing, depth_sweep, fiducial grabs, free manipulation |
+| 0.3 | §6.2 end-to-end latency measurement | perception | queued | — | Manual, needs a 240 fps phone; instrument socket IPC separately (extra stage vs. the spec's table) |
+| **PHASE 1 — kill the singularities** ||||||
+| 1.1 | **M5d `K` fixture test** | perception | **queued — do first** | 0.1 | Hours, not days. Guards the exact production-only inversion bug shipped 2026-08-01 (§13.6.1). Recordings already exist |
+| 1.2 | M5a `edgeOnMeasure` (recover `\|s\|`) | perception | queued | — | Signed area itself is **already built** (`_is_thumb_outward`); only the magnitude is being discarded |
+| 1.3 | M6a verify no Euler in estimation path | perception | **already satisfied** | — | Tick and move on — quaternions since day one, §2 forbids Euler |
+| 1.4 | M2 bone-length calibration | perception | queued | — | Hard prerequisite for Z-axis control. **§0.3 corrects the rationale**: held still, bone CV is already 0.9–1.1% (inside target) — the 10% figure is motion/rotation-induced, not a sensor floor. So calibration is EASY (gate on low motion), but **the bone residual is a weaker M4 error signal than assumed — it reports "the hand is rotating", not "landmark 8 is bad", and must be pose-normalised** |
+| 1.5 | M3a hard anatomical constraints | perception | queued | 1.4 | Unidirectional-flexion prior breaks bas-relief ambiguity |
+| 1.6 | M4 precision weighting + χ² gating | perception | queued | 1.4 | Hard prerequisite for unsnap. **Verify against `jump_test4`** |
+| **PHASE 2 — temporal identity** ||||||
+| 2.1 | M5c DR-1 chirality lock | perception | **DELIVERED EARLY as N5 (2026-08-02)** | 1.1 | Built ahead of Phase 2 because Object Jump Correction needed it. Remaining: live test; drive `_ASSUMED_FPS` from measured timing instead of the hard-coded 24.0; reconcile with M4's quality gates |
+| 2.2 | M5e DR-2 edge-on band | perception | queued | 1.2, 2.1 | **Validated and its threshold SETTLED 2026-08-02** (§0.2 + §0.3): `non_crossing` gave **0 flips in 723 frames** with edge-on never below 0.353, so the 0.15 band is never entered in normal use — but 4.6–8.0% of normal frames fall below 0.60, so **raising the threshold toward 0.60 is contraindicated**. Keep 0.15. Reconcile with rule 3's armed-exception state machine |
+| 2.3 | M6b–e quaternion UKF, anisotropic covariance | perception | queued | 2.1 | **Deleting `HandOrientationFilter` is a deliverable** (A6). Re-verify chirality if the frame construction changes |
+| **— REASSESS (owner decision point) —** ||||||
+| R | Re-measure all M0 metrics; re-test Object Jump Correction; decide whether Phase 3 precedes feature work | — | gate | 2.3 | |
+| **PIPELINE TODOs — expected to close in Phases 1–2** ||||||
+| T1 | Back-of-hand rotation quality | pipeline | open, 4 attempts | 2.1, 2.3 | §13.7. Was "likely a monocular floor"; M6c's anisotropic covariance is the untried mechanism |
+| T2 | Pitch-plane crossing | pipeline | partly fixed | 2.2, 2.3 | §13.7. M6a already satisfied; M6c + DR-2 are the remainder |
+| T3 | **Object Jump Correction** | pipeline | **ROOT CAUSE CONFIRMED 2026-08-02** (§0.4) | 2.1 (+ N5 now) | **Not two-hand confusion** — a matched near-miss control produced 0 events despite 28.6% occlusion in the overlap take. Actual cause: **MediaPipe's handedness LABEL is unstable under rotation** — flips on a single hand (18 events in `pitch_sweep_fast`, at score 0.663 vs 0.95–0.99 baseline) and **duplicate labels** (both hands labelled the same: 4/9/12 frames). Ownership is keyed by handedness, and `extract_hand_by_type` returns the first match or nothing → wrong hand claims the cube, other hand reads as not-detected → tracking-loss drop. **DR-1 is now the primary fix; M4's χ² gate demoted to belt-and-braces.** Regression metric: 2 jumps in the old baseline → 0 |
+| T4 | Yaw / palm-sinking in translation | pipeline | deferred | 1.4, 1.2, 4.1 | §14.1.1. **Newly mapped** (A8): M9's foreshortening correction is the concrete fix its "startup calibration" note gestured at |
+| **PHASE 3 — latency and grab** ||||||
+| 3.1 | M7 dual-pathway + forward prediction | perception | queued | 0.3, 2.3 | Retires `ROTATION_SLERP_FACTOR` into the FORM channel |
+| 3.2 | M8b RTS retrospective smoothing | perception | queued | 2.3 | **Additive** to §14.1 — not blocked by the M8a deferral |
+| 3.3 | **M8a A/B vs. §14.1** | decision | queued | 2.3, 4.1 | A7. Measure grab-placement **accuracy**, not just jitter. Do not touch §14.1 before this |
+| 3.4 | M8c predictive grasp onset | perception | **blocked** | 4.3 | Today's snap is proximity-based; aperture enters the design only with §14.2 |
+| **PHASE 4 — unlock the features** ||||||
+| 4.1 | M9 metric depth | perception | queued | 1.4 | Refines §14.3's ratio design: never a single bone; foreshortening-corrected |
+| 4.2 | **Z-axis translation (§14.3)** | feature | designed, not built | 4.1 | Open: what happens to 3D snap gating when `depthValid` is false — undecided |
+| 4.3 | M10 commitment dynamics | perception | queued | 1.6 | **M10.7 changes `GAME_RULES.md` rule 2** (immediate drop → 400 ms grace) — raise with owner first |
+| 4.4 | **Hand-open release trigger (§14.2)** | feature | designed, not built | 4.3 | The sole active release plan since closed-fist was parked |
+| **PHASE 5 — optional** ||||||
+| 5.1 | M3b synergy subspace | perception | optional | 1.5 | May make parked row 2 viable again — **do not un-park without asking** |
+| 5.2 | M3 IK (26-DOF) | perception | optional | 5.1 | Subsumes 3a/3b, costs more |
+| 5.3 | Trajectory gesture classification | perception | optional | 5.1 | |
+| **NEW — surfaced by the 0.2/0.2b measurements** ||||||
+| N1 | Re-express all frame-count parameters in ms | perception | queued | — | §0.3: pipeline runs at **~24 fps, not 30** (older recorders synthesised a 33 ms cadence, hiding this). M5e's 3-frame dwell, M10's 3/4-frame dwells and M4's 8-frame coast are all ~38% longer in wall-clock than intended |
+| N2 | Pose-normalise the bone residual before M4 consumes it | perception | queued | 1.4 | §0.3: the raw residual tracks hand rotation, not per-landmark quality; used directly it would down-weight every landmark whenever the hand moves |
+| N3 | Counted-crossing sequence | perception | queued | — | §0.3: needed to decide whether the slow-sweep flips at edge-on 0.58–0.73 are genuine fast crossings or glitches — currently flagged suspicious, not diagnosed |
+| N4 | External capture drive is unreliable | infra | **open** | — | E: dropped out ~4× in 15 min on 2026-08-02 (reads and writes both, WinError 21). Recorder now preflights and refuses rather than losing a completed take; analyser retries. Check cable/port and USB power-management, or switch to `--local` capture |
+| **N5** | **DR-1 track-level hand identity (hysteresis)** | perception | **BUILT 2026-08-02, replay-verified, NOT live-tested** | — | §0.4/§0.5. A first stateless duplicate-resolver was built and **removed the same day** — score-based choice was a coin flip on 36% of frames and blind to 28 label flips. Replaced by `_HandIdentityTracker` in `hands_visualizer.py`: associate by **position** not label; lock after a vote; brief mismatch → hold, **long + confident mismatch → switch**; re-decide freely when a track ends. **A 'never switch' variant was tried and disproved** — position association swaps identities at a crossing, giving 528 overrides in runs of up to 225 frames. Replay result: duplicates **25 → 0**, longest wrong-hold **225 → 10 frames**, and **0 overrides/switches in all three control sequences**. This IS queue item 2.1 delivered early. **`SWITCH_MS` (12 frames/~500 ms) is TUNABLE — latency vs. false-glitch; re-derive if camera/fps/lighting change (spec §0.5)** |
+| **N6** | **DR-1 parity: debug tool now shares the perception code** | infra | **RESOLVED 2026-08-02** | — | Was: `LiveSnapDebug.py` bypassed `hands_visualizer.py`, so DR-1 was production-only. Fixed the architecturally correct way per owner instruction ("I do not want to have a debug tool which is not in tune with the production"): the tracker was **extracted to `Resources/hand_identity.py`** — standalone, pure stdlib, no cv2/mediapipe/window side effects — and is now **imported by both**, not copied. `LiveSnapDebug.py`'s own latent duplicate bug (it keyed hands by handedness in a dict, silently overwriting one of a duplicate pair — the same defect that hid Object Jump Correction in the old recorder) was fixed in the same change. **Verified: production and debug produce byte-identical identity output across all 7 recorded sessions**, and exactly one tracker definition exists in the codebase |
+| N7 | Drive `_ASSUMED_FPS` from measured frame timing | perception | queued | 0.1 | Hard-coded 24.0 in `hands_visualizer.py`; all DR-1 dwell constants derive from it, so a different camera silently changes every threshold. Should come from `HandState.tCapture` |
+| N8 | **Cube can be stolen by occluding the holding hand** | gameplay | **recorded only — not being fixed now** | 4.3 | Observed 2026-08-02. Hand A holds a cube; hand B moves in front of it; A's tracking is lost, rule 2 releases the cube, and B — which is right where A was, so inside the grab radius — snaps it a frame or two later. **Mechanism inferred from the rules, not instrumented.** §13.5's same-frame ordering fix only blocks re-snap on the SAME tick, not the next. Expected to resolve as a side effect of refining snap control: **M10.7's grace period would hold the cube through the occlusion, leaving nothing to steal**. Recorded so it isn't rediscovered as a new bug |
+| **UNSCHEDULED / NOT QUEUED** ||||||
+| U1 | Open-palm / closed-fist detection (row 2) | feature | **PARKED** | — | Priority decision, not only technical. 5.1 would help; still requires owner sign-off |
+| U2 | Real 3D-file import (OBJ/glTF) | feature | not started | — | §13.8; not blocking anything |
+| U3 | Web/mobile port | platform | deferred | — | `HandState` v2 is the contract it reimplements against |
+| U4 | `PART_ONE.md` §7.4 dangling reference | docs | open | — | §3 cites §7.4 for `gesture_config.json`; that section does not exist |
+
 ## 4. Known wire-protocol gap (live pipeline, not recording)
 
 The existing socket protocol (`VisionPipeline.py` → `Client.py` →

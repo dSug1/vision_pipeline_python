@@ -1,8 +1,11 @@
+import math
+
 import cv2
 from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
 import numpy as np
 from .facevisualizer import _normalized_to_pixel_coordinates as _normalized_to_px_coords
+from . import hand_identity
 
 MARGIN = 10  # pixels
 FONT_SIZE = 1
@@ -33,6 +36,30 @@ _MIRRORED_HANDEDNESS = {"Left": "Right", "Right": "Left"}
 
 def _mirror_handedness(category_name):
     return _MIRRORED_HANDEDNESS.get(category_name, category_name)
+
+
+# Track-level hand identity (DR-1) now lives in `hand_identity.py`, SHARED with
+# the debug tool (LiveSnapDebug.py) so the two cannot drift -- owner instruction
+# 2026-08-02: "I do not want to have a debug tool which is not in tune with the
+# production." Full rationale, measurements and the tunable trade-off are
+# documented there and in PERCEPTION_LAYER_SPEC.md §0.4-§0.5.
+_PALM_IDX = hand_identity.PALM_LANDMARKS
+
+
+def _xy_list(coords):
+    """hands_visualizer holds landmarks as {"x_px","y_px"} dicts; the shared
+    identity module works on plain (x, y) tuples."""
+    return [(c["x_px"], c["y_px"]) for c in coords]
+
+
+_hand_identity_tracker = hand_identity.HandIdentityTracker()
+
+
+def reset_hand_identity():
+    """Drop all identity tracks (e.g. when the pipeline restarts)."""
+    global _hand_identity_tracker
+    _hand_identity_tracker = hand_identity.HandIdentityTracker()
+
 
 def draw_landmarks_on_image(frame_image_shape, rgb_image, detection_result):
   hand_landmarks_list = detection_result.hand_landmarks
@@ -104,11 +131,32 @@ def draw_landmarks_on_image(frame_image_shape, rgb_image, detection_result):
                 (text_x, text_y), cv2.FONT_HERSHEY_DUPLEX,
                 FONT_SIZE, HANDEDNESS_TEXT_COLOR, FONT_THICKNESS, cv2.LINE_AA)
 
-    # Append to full list
+    # Append to full list. `score` is MediaPipe's own handedness confidence --
+    # carried through (2026-08-02) because the duplicate-label resolver below
+    # needs it, and because it is a measured early-warning signal: recorded label
+    # flips occur at ~0.66 against a 0.95-0.99 baseline (spec §0.4).
     all_hands_coords.append({
             "handedness": mirrored_handedness,
+            "score": float(handedness[0].score),
             "landmarks": handslandmarks_coords,
             "world_landmarks": handsworldlandmarks_coords
         })
+
+  # DR-1: assign each detection a TRACK-LEVEL identity by position, overriding
+  # MediaPipe's per-frame handedness. This runs after the loop so it sees all
+  # detections at once, and before anything downstream resolves hands by label.
+  observations = []
+  for hand in all_hands_coords:
+      observations.append((
+          hand_identity.palm_centroid(_xy_list(hand["landmarks"])),
+          hand["handedness"],
+          hand["score"],
+          hand_identity.palm_width(_xy_list(hand["landmarks"])),
+      ))
+  if all(o[0] is not None for o in observations):
+      resolved = _hand_identity_tracker.update(observations)
+      for hand, label in zip(all_hands_coords, resolved):
+          hand["raw_handedness"] = hand["handedness"]   # kept for diagnostics
+          hand["handedness"] = label
 
   return annotated_image, all_hands_coords

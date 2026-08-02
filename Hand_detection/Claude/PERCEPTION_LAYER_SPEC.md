@@ -1,0 +1,1715 @@
+# PERCEPTION_LAYER_SPEC.md
+
+**Scope:** Improvements to the hand-perception stack that sit *below* the gesture-logic layer.
+**Status:** Design spec — integrated into the pipeline 2026-08-02. Phases 0–2 are the immediate next build step; see the merged build queue in `PART_ONE.md` §3.1 (the single authoritative TODO list).
+**Architectural rule honoured:** every module in this document lives in the perception layer and is invisible to the gesture-logic layer. The only thing that changes at the boundary is the *quality and richness of the `HandState` struct*, whose schema is versioned in §2.
+
+**Precedence:** the project pipeline `.md` files are the authoritative record of failure
+analysis and lessons learned. Where this spec conflicts with them, they govern.
+
+**Revision 2** (author) — §3 replaced by a pointer to the pipeline docs; M5 rewritten around the
+signed-palm-area cue per owner review; M2 extended with per-user calibration policy (2f);
+M8/M9 flagged as subject to amendment; one earlier claim retracted (M5f).
+
+**Revision 3** (integration into the pipeline, 2026-08-02) — see §0.1 for the full amendment
+log. Summary: retargeted from JavaScript to Python (the JS target named in Rev. 2 does not
+exist); M5a/M5b and M6a marked **already built**; M8a conflict with `GESTURE_PIPELINE_SPEC.md`
+§14.1 resolved in favour of the pipeline docs; M4's scope narrowed per recorded evidence;
+governance kill-criterion added; §5's mapping superseded by the merged queue in `PART_ONE.md`
+§3.1.
+
+---
+
+## 0.1 Amendment log — integration into the pipeline (2026-08-02)
+
+Recorded per this project's standing rule that the pipeline docs govern. Each item below was
+found by checking the spec against the **actual shipped code**, not against discussion history.
+
+### A1 — Retargeted from JavaScript to Python (decided with the owner)
+
+Revision 2 was written throughout against `gestureConfig.js`, Three.js and `localStorage`.
+**That target does not exist:**
+
+- `gestureConfig.js` is not present anywhere in the repository.
+- `Web/src/` contains only `camera.js`, `cubeScene.js`, `handTracker.js`, `main.js` — that is
+  **Part Zero-bis** (a cube following a fingertip). It has no gesture layer at all: no snap, no
+  rotation, no thumb-outward rule, no 3D object manipulation.
+- Every Part One gesture actually built — snap, translate, rotate, thumb-outward restriction,
+  mesh-generic 3D rendering — is **Python**, under `Local_pc/`.
+- `PART_ONE.md` §1 records the confirmed sequencing: PC-only first, no parallel JS
+  implementation, specifically to avoid maintaining tuned thresholds in two languages.
+
+`gestureConfig.js` appears to have been the author's shorthand for the planned engine-agnostic
+`gesture_config.json` referenced in `PART_ONE.md` §3. (Note: `PART_ONE.md` §7.4, which that
+reference points to for the definition, **does not exist in the file** — a dangling reference,
+logged as a separate documentation defect.)
+
+**Resolution (owner decision): build L0–L6 in Python, under `Local_pc/`, and keep this spec's
+language engine-neutral so the eventual web/mobile rebuild can reimplement it directly.**
+Throughout this document:
+
+| Rev. 2 term | Read as |
+|---|---|
+| `gestureConfig.js` | **the gesture-logic layer** — today `Resources/HandsTriggeredActions.py` |
+| Three.js / scene graph | **the engine binding** — today `Resources/CubeWindow.py` (pygame); Three.js in the future web port |
+| `localStorage` | **a persisted profile file** — JSON under the capture root's `profiles/` |
+| "JS" / browser assumptions | language-neutral; the reference implementation is Python |
+
+**This is a strengthening, not a compromise.** The `HandState` v2 boundary maps directly onto
+the **existing socket wire protocol** (`hands` and `hands_world` packets between
+`VisionPipeline.py` and `PythonApp_Main.py`). That protocol is already designated in the
+project's cross-platform planning as *the contract a mobile rebuild reimplements against*.
+Making `HandState` v2 the versioned wire contract therefore serves the iOS/Android/Windows
+goal directly, rather than adding a second parallel abstraction.
+
+### A2 — M5a and M5b are already built and live-calibrated
+
+`Resources/HandsTriggeredActions.py`'s `_is_thumb_outward()` already computes:
+
+```python
+v1 = index_MCP - wrist          # p5 - p0
+v2 = pinky_MCP - wrist          # p17 - p0
+cross = v1.x*v2.y - v1.y*v2.x   # identical to M5a's `s`
+if handedness == "Left":
+    cross = -cross              # exactly M5b's chirality factoring
+```
+
+This is **byte-identical** to M5a's signed-area formula, and the per-handedness negation is
+precisely M5b's `sign(s) = chirality × palmFacing` factoring. The sign convention was
+calibrated live 2026-08-01 (`GESTURE_PIPELINE_SPEC.md` §13.6) and the rule built on it is
+`GAME_RULES.md` rule 3.
+
+**What is genuinely new in M5, and worth building:**
+
+1. **DR-1 — track-level chirality lock.** Not present today; handedness is read per frame.
+2. **The `K` fixture test (M5d).** Not present today. **Highest priority item in Phase 1** —
+   see A3.
+3. **`edgeOnMeasure` = |s| normalised.** The project currently uses only `sign(s)` and
+   discards the magnitude. Recovering it costs one division and yields the observability
+   signal M4/M6 need.
+4. **DR-2 — the edge-on band** and its gesture-suppression contract.
+
+### A3 — The `K` fixture test is validated by a real, recent production bug
+
+M5d warns that the sign convention depends on three independent flips (image-y direction,
+preview mirroring, MediaPipe's selfie-view handedness convention) and says *"one fixture test
+with a recorded known-hand-known-orientation clip settles it permanently."*
+
+**This project shipped exactly that bug on 2026-08-01** and it survived a "confirmed working
+end-to-end" claim: the thumb-outward rule was silently **inverted in production only**, because
+`VisionPipeline.py` runs detection on an un-mirrored frame while mirroring the landmark
+*coordinates* afterward — leaving the handedness *label* un-mirrored and inverting
+`_is_thumb_outward`'s chirality correction. Root cause and fix: `GESTURE_PIPELINE_SPEC.md`
+§13.6.1.
+
+M5d's fixture test is the permanent guard against that class of regression, and the recordings
+needed to build it (both hands, both orientations) already exist. **Build it first.**
+
+### A4 — M6a is already satisfied
+
+M6a ("remove Euler angles from the estimation path entirely") is **already true**. This project
+has used quaternions since rotation was first built, and `PART_ONE.md` §2 makes it a standing
+architectural rule: *"Never decompose into separate roll/pitch/yaw Euler angles at any point."*
+Verified against the shipped code — no Euler representation exists anywhere in the estimation
+path.
+
+**Phase 1's M6a line is a no-op: verify and tick, do not budget time for it.**
+
+### A5 — M4 is an occlusion/outlier mechanism, NOT a pitch-crossing fix
+
+M4 proposes per-landmark inverse-variance weighting. **The pipeline has recorded empirical
+evidence that this class of approach cannot fix the pitch-crossing failure**
+(`GESTURE_PIPELINE_SPEC.md` §13.7): both a thumb-based vector pair and a PCA/centroid fit over
+all four non-thumb MCPs were tested against recorded data and produced values *statistically
+indistinguishable* from the simple pair at the degenerate frames — proving the residual is a
+**systematic, correlated distortion of the whole knuckle-row reconstruction**, not independent
+per-landmark noise.
+
+Revision 2 already hedges correctly (§5 lists M4 as *Helpful*, not *Necessary*, for the
+pitch-crossing; M6c is the *Necessary* one). **This amendment makes the reason explicit so it
+is not re-litigated:** M4's value is occlusion detection, hallucinated-landmark gating and
+outlier rejection. Do not expect it to improve back-of-hand orientation precision, and do not
+read a null result there as an M4 implementation failure.
+
+M6c's anisotropic covariance is a *different* mechanism — it models the **direction** of
+uncertainty rather than per-landmark magnitude — and is fully consistent with the recorded
+finding.
+
+### A6 — M6 subsumes the existing rotation filter; removal is the success criterion
+
+`HandsTriggeredActions.py`'s `HandOrientationFilter` / `_predictive_filter_step` /
+`_reliability_alpha` is a hand-rolled, simplified instance of exactly what M6c and M7 describe:
+a predictive angular-velocity model blended against the raw reading, weighted by a
+conditioning-derived reliability signal.
+
+A filter audit on 2026-08-02 (`GESTURE_PIPELINE_SPEC.md` §13.7.1) kept that filter — its
+measured impact is real and substantial (all `>30°` and `>60°` per-frame jumps eliminated in
+the tested back-of-hand data) — but logged a TODO to **re-test it for redundancy once a more
+fundamental fix lands.** M6 is that fix.
+
+**Amendment: when M6 ships, the existing filter must be removed, not kept alongside it.**
+Two overlapping predictive filters is precisely the accumulation the owner has asked the
+project to avoid. Retiring it is a deliverable of M6, not an afterthought — and the A/B
+harness (M0) is how that removal gets justified rather than guessed.
+
+Related: M6b's `observability = 1 - S[2]/S[1]` overlaps with the existing `conditioning_norm`
+(the pre-normalisation length of the orthogonalised second frame vector). **Reconcile these
+into one metric; do not ship two competing observability signals.**
+
+### A7 — M8a is deferred to an A/B, not adopted (owner decision)
+
+**The conflict:** M8a states *"Anchor to the palm, not the fingertips… Fingertips determine
+whether a grab occurred; they must not determine where"*, and anti-pattern #6 names landmarks
+4 and 8 as "the worst points on the hand for position."
+
+`GESTURE_PIPELINE_SPEC.md` §14.1 — designed, verified and **shipped to production on
+2026-08-01** — does the opposite: a distance-weighted average of 5 fingertips + 4 MCPs, with
+weights frozen at the moment of grab. It was chosen deliberately over a single-frozen-offset
+design, is literature-grounded (Napier's grasp taxonomy; Unity XRI Dynamic Attach; Meta
+Horizon `GripPoint`), and was verified across 7 real hold intervals then live-confirmed.
+
+Revision 2 itself marks M8 "subject to amendment" and defers to the pipeline docs, so **§14.1
+governs.** But two facts complicate a simple "spec loses":
+
+1. The stated reason for rejecting the frozen-offset design was an unresolved **2D-pixel vs.
+   3D-world coordinate mismatch**. M6 and M9 supply a metric palm pose, which **dissolves that
+   specific objection.** The conditions under which the decision was made will have changed.
+2. Both open translation defects — the **yaw/palm-sinking limitation** (§14.1.1) and possibly
+   **Object Jump Correction** (§14.1.4) — are symptoms of exactly the fingertip/2D weakness
+   M8a predicts.
+
+**Resolution (owner decision): §14.1 stands unchanged for now. M8a is logged as a candidate
+replacement, to be A/B-tested against §14.1 on already-recorded data once M6 and M9 land** —
+decided by measurement on the M0 harness, not by which document is more recent. Until that
+A/B runs, do not modify §14.1's mechanism.
+
+M8b (RTS retrospective smoothing) and M8c (predictive grasp onset) are **additive to §14.1**
+and are not affected by this deferral — they can proceed independently.
+
+### A8 — M9 addresses the recorded yaw/palm-sinking limitation
+
+§14.1.1 recorded a deliberately-deferred defect: the computed grasp point swings toward the
+palm under **yaw** specifically (pitch and roll are fine), because a purely-2D weighting cannot
+distinguish yaw-driven foreshortening from genuine repositioning. The proposed direction at the
+time was a vague "startup Z-axis calibration step."
+
+**M9's foreshortening-corrected measure is a better-specified version of that idea**, and M5a's
+`edgeOnMeasure` supplies the `|cos θ|` correction term it needs. M2 + M5a + M9 together are the
+concrete fix. This mapping is now recorded in the merged queue (`PART_ONE.md` §3.1).
+
+### A9 — Object Jump Correction is absent from §5 but is likely addressed here
+
+§5 of Revision 2 notes that some pipeline TODOs are missing from its table, naming Object Jump
+Correction explicitly. Analysing it against this spec:
+
+The root cause (`GESTURE_PIPELINE_SPEC.md` §14.1.4) is a **MediaPipe hand-identity mix-up** —
+for a few frames all landmarks of the tracked hand move together, coherently, to a different
+on-screen location under the *same* handedness label, at high confidence, then self-correct.
+
+Three modules bear on it directly:
+
+- **M5 DR-1 (chirality lock)** removes the handedness label as a mechanism of confusion, and
+  embodies anti-pattern #5 ("deciding per frame what should be decided over time") — which is
+  the deeper structural cause.
+- **M4's χ² / NIS innovation gate** would reject a 509 px single-frame jump as physically
+  implausible and coast on the model instead of absorbing it.
+- **M10.7 (grace on loss of tracking)** prevents the recovery transient from causing a drop.
+
+**This is a genuine integration finding, not a restatement:** Object Jump Correction now has a
+credible fix path it did not have when it was deferred, and it should be re-tested after Phase 2
+rather than treated as independent work. Recorded in the merged queue.
+
+### A10 — Governance: the kill-criterion (added on integration)
+
+The owner has an explicit standing preference (recorded as project feedback) against
+accumulating filters that do not earn their keep: *"I do not want to keep accumulating filters
+which are useless, as they distort a game logic which shall be pure and simple."*
+
+This spec proposes a substantial amount of machinery. Two things reconcile it with that
+preference, and both are binding:
+
+1. **The boundary does the work.** Every module here lives below the `HandState` line. Today's
+   `HandsTriggeredActions.py` mixes perception (quaternion math, predictive filtering,
+   thumb-outward geometry) *with* game logic (ownership, snapping, translation). Moving
+   perception below the boundary makes the gesture layer **simpler than it is today**, not more
+   complex. If a module's implementation leaks complexity upward into the gesture layer, it has
+   been implemented wrongly.
+2. **Kill-criterion (binding).** Revision 2 §7.1 already says *"No perception change ships
+   without a replay A/B diff table."* This is hereby elevated to a removal rule:
+
+   > **Every module must demonstrate a measured improvement on the M0 metrics, via replay A/B
+   > on identical recorded input, or be reverted.** "It should help in principle" is not
+   > sufficient grounds to keep code. A module that shows a null result is removed, and the
+   > null result is recorded so it is not retried blindly.
+
+   Precedent: the first Object Jump Correction fix attempt was built, measured, found to make
+   no difference, and **discarded rather than shipped** (§14.1.4). That is the standard.
+
+---
+
+## 0.2 Baseline results (2026-08-02) — measured, before any module was built
+
+Merged-queue item 0.2, run via
+`Local_pc/Movement_with_hand_detection/AnalyzePerceptionBaseline.py` on the **7
+existing recordings** in `Position_during_rotation` — no new capture. Raw output:
+`Recordings_perception_layer/metrics/baseline_current_pipeline.jsonl`.
+
+These are the numbers every subsequent module is judged against under A10.
+
+| Metric | Target | **Measured** | Verdict |
+|---|---|---|---|
+| Bone-length CV | < 3% | **10.0%** mean (6.0–13.4 per session/hand) | **3.3× over target** |
+| Palm rigidity residual | < 3 mm | **2.76 mm** mean | **already at target** |
+| Palm-normal change, low-motion frames | < 1.5° | ~2.2° mean | indicative only — see caveat |
+| Object jumps > 100 px | 0 | **2**, both in `jump_test4`/Right (max 513.9 px) | the known §14.1.4 bug, nothing else |
+
+> **⚠ Finding 1 below was CORRECTED by the scripted-sequence results — read §0.3.**
+> The "3.3× over target" reading treated 10% bone CV as a static sensor floor. It
+> is not: held still, the same pipeline measures **0.9–1.1%**, comfortably inside
+> target. The 10% is motion- and rotation-induced. The *conclusion* (M2 is worth
+> building, and fingertips are the weak point) survives; the *reason* does not.
+
+**Finding 1 — M2 is strongly justified, but its value is in the fingers, not the
+palm.** Bone-length CV is 3.3× over target, and **the worst bones are consistently
+the distal phalanges** (`3-4` thumb tip, `7-8` index tip, `11-12`, `19-20`) at
+13–32%. That is exactly what the spec predicts: depth error dominates and is worst
+distally. But the **palm is already rigid to 2.76 mm, inside the < 3 mm target** —
+so M2's error-signal value, and M4's downweighting, apply mainly to fingertips. The
+palm frame that M6b builds on is already well-conditioned.
+*(Caveat: short bones inflate CV mechanically — `9-13`, adjacent MCPs, appears as a
+worst-bone in 3 sessions largely because its mean length is small. Do not read
+short-bone CV as equivalent to long-bone CV.)*
+
+**Finding 2 — the object-jump metric works and is clean.** Exactly 2 jumps across
+3801 frames, both in the one recording with a confirmed reproduction of Object Jump
+Correction, max 513.9 px (matching the 509 px figure in §14.1.4). Every other
+session: zero. This is now a usable regression metric — if M4's χ² gate works,
+these 2 go to 0 and nothing else changes.
+
+**Finding 3 — palm-normal jitter cannot be properly measured yet.** The ~2.2°
+low-motion figure is a stand-in computed from frames where the anchor moved < 2 px;
+it is **not** the spec's held-still metric and must not be quoted as one. It needs
+the §7.2 *static hold* sequence. Reported only to show the order of magnitude.
+
+### The hypothesis test: DR-2 validated
+
+M5/DR-2 assumes the palm/back sign is reliable everywhere **except** near edge-on.
+Tested by computing the edge-on measure retroactively per frame and bucketing the
+recorded sign flips:
+
+| edge-on band | frames | flips | flips / 1k frames |
+|---|---|---|---|
+| [0.00, 0.05) | 17 | 13 | **764.7** |
+| [0.05, 0.10) | 27 | 6 | **222.2** |
+| [0.10, 0.15) | 24 | 7 | **291.7** |
+| [0.15, 0.25) | 57 | 1 | 17.5 |
+| [0.25, 0.40) | 205 | 3 | 14.6 |
+| [0.40, 0.60) | 341 | 5 | 14.7 |
+| [0.60, 1.01) | **3130** | **0** | **0.00** |
+
+3801 frames, 35 flips. **74.3% of flips fall inside the proposed DR-2 band
+(< 0.15), which is only 1.8% of frames — a 41.5× over-representation**, with a
+cleanly monotonic gradient.
+
+**Two conclusions, at different confidence levels — the distinction matters:**
+
+1. **Solid: the sign is rock-stable when well-conditioned.** *Zero* flips across
+   3130 frames above edge-on 0.60 — 82% of all frames. The cue is trustworthy in
+   the bulk of normal operation, and every instability is confined to a narrow
+   band. This is what makes DR-2 both viable and cheap.
+2. **Solid: the lowest buckets are demonstrably chatter, not real rotation.** A
+   concentration of flips near edge-on is *expected even with a perfect sensor* —
+   a genuine palm↔back rotation must pass through edge-on, so a correct flip
+   happens there. Concentration alone therefore proves nothing. **But the rate
+   does**: 13 flips across 17 frames (≈0.57 s) is physically impossible as
+   genuine rotation; likewise 6 flips in 27 frames. Those are noise chatter,
+   confirmed by rate rather than assumed from position.
+3. **Not yet established: whether the mid-band flips (0.15–0.60) are spurious.**
+   1, 3 and 5 flips over 57–341 frames are entirely consistent with genuine
+   rotations. Separating them requires the §7.2 *scripted non-crossing motion*
+   sequence, which is what M0's chirality-flip-rate metric actually specifies.
+
+**Parameter amendment flagged, not applied.** `EDGE_ON_THRESHOLD = 0.15` was a
+starting guess. The data shows flips continuing at a flat ~15/1k rate up to 0.60
+and then stopping dead. That *may* argue for a higher threshold — but per
+conclusion 3, those mid-band flips may be legitimate rotations, and raising the
+threshold would suppress valid gestures over a much wider range (0.60 covers ~18%
+of frames vs. 1.8%). **Do not raise it on this evidence.** Re-derive it once the
+scripted non-crossing sequence exists.
+
+---
+
+## 0.3 Scripted-sequence results (2026-08-02) — item 0.2b, and one correction to §0.2
+
+Four §7.2 sequences recorded with `RecordPerceptionSequence.py` (pure raw capture,
+no gesture logic) and analysed with `AnalyzePerceptionSequences.py`. Sessions in
+`Recordings_perception_layer/sessions/`.
+
+| sequence | bone CV | resting jitter (mean / fingertips) | palm-normal | edge-on min | sign flips |
+|---|---|---|---|---|---|
+| **static_hold** | **0.89 / 1.14 %** ✅ | **0.45 mm** / 0.83 mm ✅ | **0.88 / 0.92°** ✅ | 0.714 | **0** |
+| **non_crossing** | 9.47 / 9.86 % | 5.73 / 10.45 mm | 3.49 / 3.88° | **0.353** | **0** |
+| pitch_sweep_slow | 24.96 % | 14.75 / 26.31 mm | 11.05° | 0.010 | 10 |
+| pitch_sweep_fast | 21.39 % | 12.22 / 21.80 mm | 13.17° | 0.088 | 11 |
+
+### Correction to §0.2: the 10% bone CV is not a sensor floor
+
+**Held still, this pipeline meets every M0 target it can be measured against** —
+bone CV 0.89–1.14% (target < 3%), resting jitter 0.45 mm (target < 1.5 mm),
+palm-normal jitter 0.88–0.92° (target < 1.5°). MediaPipe at rest is *excellent*.
+
+The error is **motion- and pose-driven**, and the gradient is steep and monotonic:
+
+```
+still 1%   ->   free translation 9.5%   ->   pitch rotation through edge-on 25%
+```
+
+§0.2 read the 10% figure (measured on grab-and-rotate recordings) as a static
+floor and concluded M2 was needed to fix a noisy sensor. **That reasoning was
+wrong.** The corrected picture:
+
+- **M2's calibration is much easier than assumed.** Clean 1%-CV samples are
+  readily available — just gate collection on low motion. The spec's §2f freeze
+  criterion (IQR < 2%) is comfortably achievable.
+- **But M2's bone-length *residual* is a weaker error signal than the spec
+  assumes.** M4 treats it as a per-landmark quality cue; this data says it will
+  mostly be reporting *"the hand is rotating"*, not *"landmark 8 is bad"*. It
+  conflates pose with per-landmark reliability. **Amendment: M4 must not use the
+  raw bone residual directly — it needs normalising against the current
+  pose/motion, or it will down-weight every landmark uniformly whenever the hand
+  moves**, which is both useless and actively harmful during fast gestures.
+- §2f's recorded pitfall is about pose diversity removing *bias*. This is a
+  different and additional effect: pose drives *variance*. Both matter.
+
+### The `EDGE_ON_THRESHOLD` question is settled: keep 0.15, do not raise it
+
+§0.2 flagged a temptation to raise the threshold toward 0.60, because flips in the
+old recordings continued up to that value. **The `non_crossing` sequence answers
+this decisively:**
+
+- **Zero sign flips across 723 frames on both hands**, during 30 s of deliberately
+  varied motion — translation, tilting, near the frame edges — with the palms
+  never turning over.
+- **Edge-on never dropped below 0.353** (Left) / **0.437** (Right). Normal
+  non-crossing motion *does not enter the danger band at all*: 0.0% of frames
+  below 0.15.
+- But **4.6–8.0% of those normal frames sit below 0.60.** A 0.60 threshold would
+  therefore suppress `palmFacing`-dependent gestures during ordinary use, for no
+  benefit — there were no flips to prevent.
+
+**Conclusion: `EDGE_ON_THRESHOLD = 0.15` is correct and safe.** It is never
+reached in normal motion, so DR-2 will only ever fire during a deliberate
+crossing — exactly its intent. Raising it toward 0.60 is now positively
+contraindicated, not merely unsupported.
+
+### Pitch sweeps: honest limits of what this shows
+
+Flips occur across the whole edge-on range (0.010–0.807). During a pitch sweep the
+hand *genuinely* crosses palm↔back, so most of these flips are **correct**, not
+errors — the slow sweep's 10 flips in 30 s is about right for ~3 s per sweep.
+
+What cannot be concluded without a ground-truth crossing count: whether the
+high-edge-on flips (0.584, 0.599, 0.729 in the *slow* sweep) are genuine fast
+crossings or glitches. At 24 fps (41.5 ms/frame) a fast rotation can legitimately
+jump the whole band between two frames, which explains the fast sweep's
+high-edge-on flips — but a *slow* sweep should linger near zero and flip there.
+**Flagged as suspicious, not diagnosed.** Resolving it needs a sequence with a
+counted number of deliberate crossings.
+
+### Two incidental findings worth carrying forward
+
+1. **The pipeline runs at ~24 fps, not 30.** All four sequences measured
+   24.09–24.14 fps from real `tCapture` timestamps. The older recorders
+   *synthesised* a 33 ms cadence, so this was invisible until now. Real interval is
+   ~41.5 ms. **Every "N frames at 30 fps" parameter in this spec is therefore
+   ~38% longer in wall-clock than intended** — M5e's 3-frame dwell, M10's 3/4-frame
+   dwells, M4's 8-frame coast limit. Re-express them in milliseconds.
+2. **14 of 480 frames lost detection entirely during the fast sweep** (2.9%), vs.
+   0 lost in every other sequence. Motion blur costs whole frames, not just
+   precision — which is what M4's coast limit and M7's prediction horizon exist to
+   ride out.
+
+---
+
+## 0.4 Object Jump Correction — root cause REFINED and confirmed (2026-08-02)
+
+Three more sequences recorded (`two_hand_overlap`, `two_hand_near_miss` as a
+matched control, and re-using `pitch_sweep_*`), analysed with
+`AnalyzeHandIdentity.py`. **The result overturned the working hypothesis and
+produced a complete, concrete mechanism.**
+
+### The hypothesis that was wrong
+
+§14.1.4 and A9 assumed the mixup came from **two hands being confused with each
+other** when close together, and the fix was framed as DR-1 + M4's χ² gate. The
+controlled comparison does not support the proximity story:
+
+| sequence | one-hand frames | teleports > 100 px | identity swaps |
+|---|---|---|---|
+| two_hand_overlap (hands genuinely occlude) | 205 / 717 | 2 | **0** |
+| two_hand_near_miss (visible gap, CONTROL) | 0 / 723 | **0** | **0** |
+
+Occlusion clearly *happened* (28.6% single-hand frames vs. 0% in the control),
+but produced no identity swap at all. **Proximity and occlusion are not the
+mechanism.**
+
+### The actual mechanism: MediaPipe's handedness label is unstable
+
+The mixups appeared in **`pitch_sweep_fast` — a ONE-HANDED sequence**, where
+confusing two hands is impossible by construction:
+
+| sequence | frames | duplicate-label frames | label flips | mean score at flip |
+|---|---|---|---|---|
+| static_hold | 288 | 0 | 0 | — |
+| non_crossing | 723 | 0 | 0 | — |
+| pitch_sweep_slow | 722 | 0 | 0 | — |
+| **pitch_sweep_fast** | 480 | **4** | **18** | **0.663** |
+| two_hand_crossing | 723 | **9** | 5 | 0.970 |
+| **two_hand_overlap** | 717 | **12** | 5 | 0.986 |
+| two_hand_near_miss | 723 | 0 | 0 | — |
+
+Two distinct failures, both real, both absent from every control:
+
+1. **Label flips on a single physical hand.** In `pitch_sweep_fast` one physical
+   hand was labelled `Left` on 448 frames and **`Right` on 14** — with continuous
+   position across the flip (e.g. frame 254 `Left` x=268.9 → 255 `Right` x=258.0
+   → 256 `Left` x=272.7). Obviously the same hand; only the label moved.
+2. **Duplicate labels — both detections carrying the SAME label** (`('Left','Left')`).
+   4 frames in fast rotation, 9 and 12 in the two-hand sequences. Zero in all
+   controls.
+
+Handedness confidence degrades monotonically with rotation, and flips cluster at
+the bottom of it:
+
+```
+static 0.981  ->  non_crossing 0.976  ->  pitch_slow 0.960  ->  pitch_fast 0.941
+                                          (11.5% of frames < 0.90, min 0.501)
+flips occur at mean score 0.663, against a ~0.95-0.99 baseline
+```
+
+**This is exactly what §5b predicts** — handedness is decided from *appearance*
+(knuckles, creases, shading), not landmark geometry, so it degrades under blur and
+when the back of the hand is shown. Handedness and palm-facing are the same bit,
+and rotation is what breaks it. The two-hand sequences did **not** reproduce it
+because the palms stayed toward the camera throughout, keeping those cues intact.
+
+### Why this produces the observed cube jump — confirmed in production code
+
+Cube ownership is keyed by handedness (`cube_owned_by(handedness)`,
+`_thumb_outward_snap_allowed[handedness]`), and the wire protocol resolves hands
+by label:
+
+```python
+def extract_hand_by_type(hands_array, handedness):
+    hand = next((h for h in hands_array if h.get("handedness") == handedness), None)
+    return hand.get("landmarks", []) if hand else []      # <- first match, or NOTHING
+```
+
+With duplicate labels `('Left','Left')`:
+
+- the `"Left"` lookup returns **whichever came first** — possibly the physically
+  *right* hand → that cube snaps across the screen to the other hand's position;
+- the `"Right"` lookup returns `[]` → `remap_keypoints` emits 21 zero points →
+  `_is_detected()` is False → **tracking-loss release fires and the cube is
+  dropped.**
+
+A transient label flip does the same thing one frame at a time. This accounts for
+both halves of the recorded §14.1.4 event — the 509 px teleport *and* its
+self-correction a few frames later.
+
+### Why this was invisible until now
+
+The older recorder stored hands in a **dict keyed by handedness**
+(`hand_data_by_hand[handedness] = {...}`). A duplicate label silently
+**overwrote** the first entry, so the failure mode was destroyed at record time
+and could never appear in analysis. The new recorder keeps the raw MediaPipe
+**list**, which is why the same bug that had resisted diagnosis for two sessions
+showed up within minutes.
+
+*This vindicates the pure-raw-capture design (§M0's integration note): derived or
+re-keyed data at record time can erase the very defect you are hunting.*
+
+### Consequences for the plan
+
+- **DR-1 (chirality lock) is confirmed as the correct fix, and is now the
+  primary one** — not DR-1 *plus* M4 as A9 assumed. Making handedness a
+  track-level property removes both failure modes at their source.
+- **A ready-made gate exists**: the handedness `score`. Flips occur at ~0.66
+  against a 0.95–0.99 baseline, so DR-1's acquisition rule ("accumulate over
+  frames where quality is high") has a directly usable signal.
+- **A stateless duplicate-label resolver was built and then REMOVED the same day
+  (2026-08-02) — see §0.5.** It chose between two same-labelled detections by
+  handedness score. Measurement killed it: the score gap was < 0.05 (a coin
+  flip) on 36% of affected frames, it disagreed with position continuity on 16%,
+  and it was structurally blind to the larger half of the problem — 28 recorded
+  single-hand label flips. It addressed ~47% of identity events. **DR-1 was built
+  in its place** (§0.5).
+- **M4's χ² gate is demoted** for this TODO from "necessary" to "useful
+  belt-and-braces": it would catch the *symptom* (an implausible jump) but not
+  the cause, and per A5 it should not be relied on where the real fix is upstream.
+
+---
+
+## 0.5 DR-1 built (2026-08-02) — and a design correction the data forced
+
+Owner decision: remove the stateless resolver ("it does not address the issue")
+and implement a **hysteresis-based track identity** instead. Built in
+`hands_visualizer.py` as `_HandTrack` / `_HandIdentityTracker`, at the same
+single source as `_mirror_handedness`.
+
+### The design
+
+1. **Associate detections to tracks by POSITION**, never by MediaPipe's label
+   (greedy nearest-neighbour, gated at `MAX_ASSOC_PALM_RATIO = 3.0` palm widths —
+   normal frame-to-frame motion measured 0.6–1.4 palm widths, the Object Jump
+   excursion was 513 px).
+2. **Lock the label** after a short weighted vote (`LOCK_VOTE_FRAMES`), or
+   immediately as the complement when a second track appears (DR-1's
+   two-simultaneous-hands rule).
+3. **A raw-label mismatch flags the track**: brief → hold (transient glitch);
+   long *and confident* → switch.
+4. **Re-decide freely when a track genuinely ends** (absent > `TRACK_END_MS`).
+
+All dwell constants are expressed in **milliseconds and converted at the measured
+~24 fps**, per finding N1 — not the 30 fps the spec's frame counts assumed.
+
+### The correction: "never switch mid-track" was wrong
+
+The first implementation followed a refinement suggested during design — *never*
+switch a locked label, on the reasoning that handedness cannot change within a
+track (your left hand does not become your right hand). **Replay disproved it.**
+
+That reasoning holds only if the track genuinely follows one physical hand — and
+**position-based association cannot guarantee that.** When two hands cross,
+nearest-neighbour association swaps them, the track identity itself becomes
+wrong, and a never-switch rule then locks that error in permanently.
+
+Measured on `two_hand_crossing` with the never-switch rule: **528 overrides,
+96.6% at score > 0.90**, in runs of **62 and 225 consecutive frames** — the
+tracker confidently holding a *wrong* label for ~9 seconds after a crossing.
+
+The owner's original "switch after YYY frames" was correct. What made it safe to
+implement was that the two cases separate cleanly in the data:
+
+| case | run length | score | correct action |
+|---|---|---|---|
+| transient sensor glitch | 1–2 frames | **0.52** | hold the lock |
+| association swap at a crossing | 62–225 frames | **0.97–0.98** | switch |
+
+So only mismatches at `score >= 0.90` accumulate toward a switch, and the dwell is
+longer than any observed glitch. Switches are applied **at tracker level,
+exchanging both labels together**, so two tracks can never transiently hold the
+same label.
+
+### ⚠ `SWITCH_MS` is a TUNABLE latency-vs-false-glitch trade-off
+
+Currently **12 frames (~500 ms)**. This is the one parameter here most worth
+revisiting, and the trade-off is genuinely two-sided. Measured populations:
+
+| | run length |
+|---|---|
+| longest glitch run correctly **held** | **7 frames (~292 ms)** |
+| genuine association swaps (raw disagreement) | **62–225 frames** |
+
+- **Lower** → faster correction after a real crossing, but the margin above the
+  7-frame glitch shrinks. At 7 or below, a glitch that actually occurred in these
+  recordings **would have caused a false switch** — a cube visibly jumping to the
+  wrong hand for no reason.
+- **Higher** → more margin, and real swaps still cannot be missed (they run
+  62–225 frames), at the cost of the wrong label persisting longer after a
+  genuine crossing.
+
+12 was chosen as the balance: 5 frames of margin above the worst observed glitch,
+half a second of worst-case correction latency. **Re-derive from fresh recordings
+if the camera, frame rate or lighting change** — the glitch population sets the
+floor and is blur/lighting dependent, so the safe minimum will move with them.
+
+*A cheaper structural discriminator was proposed and **refuted by measurement**:
+"both tracks mismatched simultaneously" does not separate the populations. Real
+swaps frequently have no second visible track at all (5 of 8 occurred with one
+hand detected — `pitch_sweep_fast` is one-handed throughout, and hands occlude
+during crossings), while two correctly-held glitches DID show both tracks
+mismatched for 5 frames each. Using it as a fast-track would have caused false
+switches on exactly the runs the current rule correctly rejects. Do not retry it
+without new evidence.*
+
+### Verified by replaying all seven recorded sessions
+
+| sequence | duplicates out | overrides (before → after) | longest wrong-hold run | switches |
+|---|---|---|---|---|
+| static_hold | 0 | 0 → **0** | 0 | 0 |
+| non_crossing | 0 | 0 → **0** | 0 | 0 |
+| pitch_sweep_slow | 0 | 0 → **0** | 0 | 0 |
+| pitch_sweep_fast | 0 | 116 → **41** | 26 | 1 |
+| two_hand_crossing | 0 | 528 → **71** | **225 → 10** | 4 |
+| two_hand_overlap | 0 | 322 → **24** | 10 | 1 |
+| two_hand_near_miss | 0 | 0 → **0** | 0 | 0 |
+
+- **Duplicate labels eliminated entirely** (25 → 0) — structurally, since two
+  detections associate to two different tracks each emitting its own label.
+- **Longest wrong-hold collapsed from 225 frames (~9 s) to 10 (~420 ms)** — the
+  intended dwell before a switch confirms, not a stuck error.
+- **Zero overrides and zero switches in all three control sequences.** The
+  tracker is inert when nothing is wrong, so it cannot introduce regressions in
+  normal use.
+
+`pitch_sweep_fast`'s 26-frame run exceeds the 12-frame dwell because low-score
+frames legitimately do not count toward a switch — correct behaviour (never
+switch on unreliable evidence), at the cost of a longer correction under heavy
+blur.
+
+### Shared by production AND the debug tool (2026-08-02)
+
+DR-1 was initially built inside `hands_visualizer.py`, which is server-side —
+making it **production-only**, since `LiveSnapDebug.py` runs MediaPipe in-process
+and never imports it. Owner instruction: *"I do not want to have a debug tool
+which is not in tune with the production."*
+
+Resolved the architecturally correct way rather than by copying: the tracker was
+extracted to **`Resources/hand_identity.py`** — standalone, pure stdlib, no
+cv2/mediapipe and no window side effects, operating on plain `(x, y)` tuples so
+each caller adapts its own landmark shape. Both consumers now **import** it.
+
+This is the §1 boundary discipline applied to the tooling itself: perception
+lives below the `HandState` line and is shared, not duplicated. Duplication is
+what let the thumb-outward sign convention drift between the two paths once
+already (§13.6.1).
+
+**The same change fixed a latent bug in the debug tool**: it stored hands in a
+dict keyed by handedness, so a duplicate label silently overwrote one of the
+pair — the very defect that hid Object Jump Correction in the old recorder.
+
+**Verified**: production and the debug tool produce **byte-identical identity
+output across all 7 recorded sessions**, and exactly one tracker definition
+exists in the codebase.
+
+### Still open
+
+- **Not yet live-tested.** Replay-verified only, and this project has shipped a
+  production-only bug that survived a "confirmed working" claim before.
+- **Acquisition can still lock wrong.** If the first frames are mislabelled, the
+  switch branch is what recovers it — which is now another reason that branch
+  must exist.
+- `_ASSUMED_FPS = 24.0` is hard-coded. It should come from measured frame timing
+  once `HandState.tCapture` exists (M0/N1).
+
+---
+
+## 0. Framing: what MediaPipe is, and what it is not
+
+MediaPipe Hands is a **stateless, per-frame, monocular shape estimator**. It answers "what configuration of a hand best explains this single image crop?"
+
+It does not answer:
+
+- *How is the hand moving?* (you are differentiating a noisy signal to get this)
+- *Which way is the palm facing?* (bas-relief ambiguity — sign of depth is under-determined from one monocular view)
+- *How far away is the hand?* (there is no metric scale in the screen landmarks)
+- *How confident should I be right now?* (there is no per-landmark precision output)
+
+Every one of the open TODO items is a direct consequence of one of those four missing answers. The strategy in this document is not "tune MediaPipe better." It is: **treat MediaPipe as a noisy sensor and build the estimator that the visual system builds around it.**
+
+The organising principle from biology:
+
+| Brain mechanism | What it buys | Module |
+|---|---|---|
+| Body schema (internal limb model) | Metric scale, rigidity, depth-sign disambiguation | M2 |
+| Postural synergies (Santello et al.) | 63 noisy DOF → ~7 real DOF | M3 |
+| Precision-weighted prediction error | Ignore bad frames instead of averaging them in | M4 |
+| Evidence accumulation to a bound (LIP/drift-diffusion) | Stable commitment on ambiguous sign | M5 |
+| Vestibular/proprioceptive fill-in through singularities | Survive the pitch-plane crossing | M6 |
+| Magno/parvo split + forward models | Low-lag motion channel + stable form channel | M7 |
+| Anticipatory grip aperture (peak aperture at ~75% of reach) | Fire the grab *on time*, not late | M8 |
+| Size-distance invariance from known object size | Real depth without a depth camera | M9 |
+| Perceptual hysteresis (bistable percepts) | No dithering at snap/unsnap | M10 |
+
+---
+
+## 1. Target architecture
+
+```
+L0  Capture          frame + monotonic timestamp + blur metric
+L1  MediaPipe        landmarks[21], worldLandmarks[21], handedness, scores
+L2  Observability    per-landmark precision, palm conditioning, edge-on measure   [M1, M4]
+L3  Body schema      calibrated skeleton, IK, synergy projection                  [M2, M3]
+L4  Hypothesis bank  chirality lock + evidence accumulator                        [M5]
+L5  Pose filter      quaternion UKF, anisotropic covariance, metric depth         [M6, M9]
+L6  Dorsal channel   velocity, angular velocity, trajectory features, prediction  [M7]
+══════════════════════ HandState v2 boundary ══════════════════════
+L7  Gesture logic    pure, engine-agnostic: HandState -> Intents                  [M8, M10]
+L8  Engine binding   pygame today; Three.js in the web port
+```
+
+**Current mapping (Python reference implementation):**
+
+| Layer | Today | After this spec |
+|---|---|---|
+| L0–L1 | `VisionPipeline.py`, `hands_visualizer.py` | unchanged in role; extended to emit timing + quality |
+| L2–L6 | *does not exist* — scattered inside `HandsTriggeredActions.py` | new perception modules, server-side |
+| boundary | `hands` + `hands_world` socket packets | **`HandState` v2** — the versioned wire contract |
+| L7 | `HandsTriggeredActions.py` (mixed with perception) | `HandsTriggeredActions.py`, perception removed |
+| L8 | `CubeWindow.py` (pygame) | unchanged |
+
+**Boundary discipline:** L0–L6 must not import the engine binding and must know nothing about
+objects, snapping, or scene units. L7 must not import from L0–L6 except the `HandState` type.
+This is testable — see §7.3.
+
+---
+
+## 2. `HandState` v2 — the contract
+
+Freeze this before starting implementation; the modules below are all *producers* of fields in this struct, so it is the integration point.
+
+**Integration note:** expressed below in JS-object notation for readability, but this is a
+**language-neutral wire contract**, versioned by `schema`. The Python reference implementation
+serialises it over the existing socket protocol, superseding the current `hands` /
+`hands_world` packet pair. Keep it serialisable and free of engine types — a future
+web/mobile rebuild reimplements against this, per the project's cross-platform planning.
+
+```js
+/**
+ * All positions in metres, hand-centric unless stated.
+ * All timestamps in ms, monotonic, from the same clock as capture.
+ */
+HandState = {
+  schema: 2,
+
+  // --- timing ---
+  tCapture,              // when the photons were captured (not when inference finished)
+  tPredicted,            // timestamp this state is valid FOR (may be > now; see M7)
+  latencyBudgetMs,       // measured end-to-end, used by consumers that need it
+
+  // --- existence ---
+  present,               // bool
+  handedness,            // 'left' | 'right'  -- track-level, locked (DR-1)
+  handednessConfidence,  // 0..1, from the accumulator (M5), NOT raw MediaPipe
+
+  // --- rigid pose of the palm ---
+  palm: {
+    position,            // vec3, metric, camera frame, origin = palm centroid
+    orientation,         // quaternion, camera frame  (NEVER expose Euler here)
+    linearVelocity,      // vec3 m/s
+    angularVelocity,     // vec3 rad/s, body frame
+    covTrace,            // scalar summary of positional uncertainty
+    orientationSigma,    // vec3, per-axis angular 1-sigma (rad) -- anisotropic!
+  },
+
+  // --- articulation ---
+  joints,                // 20 joint angles, radians, anatomical convention
+  synergyCoeffs,         // ~7 latent coefficients (M3)
+  landmarksCanonical,    // 21 x vec3, reconstructed from skeleton, hand frame
+  landmarksScreen,       // 21 x vec2, for debug overlay only
+
+  // --- derived scalars the gesture layer actually wants ---
+  aperture,              // thumb-index metric distance, m
+  apertureRate,          // d(aperture)/dt, m/s   <-- required by M8
+  palmFacing,            // -1..1, signed cos(theta) between palm normal and view axis
+  palmFacingConfidence,  // 0..1, from evidence accumulator
+  edgeOnMeasure,         // 0..1, normalised |s| from M5a -- drives DR-2
+  depth,                 // metric distance camera -> palm centroid (M9)
+  depthRate,
+
+  // --- quality gates: the gesture layer MUST branch on these ---
+  quality: {
+    overall,             // 0..1
+    orientationValid,    // bool  -- false during pitch-plane crossing
+    depthValid,          // bool
+    occlusionLevel,      // 0..1
+    motionBlur,          // 0..1
+    framesSinceMeasurement, // >0 means we are coasting on the model
+  },
+}
+```
+
+**Rule:** the gesture layer must never read `quality` and silently proceed. Every gesture
+definition declares its minimum quality requirements, and the dispatcher suppresses gestures
+whose requirements are unmet. This is what stops the pitch-crossing from producing a spurious
+unsnap later.
+
+**Migration note.** `HandState` v2 replaces the current wire protocol, which sends only raw
+pixel landmarks plus raw world landmarks. Two existing consumers must be migrated in the same
+change: `_is_thumb_outward` (becomes `palmFacing` + `edgeOnMeasure`, produced server-side) and
+the rotation quaternion path (becomes `palm.orientation`). Do not run both protocols in
+parallel — that reintroduces the debug/production divergence that caused the §13.6.1 bug.
+
+---
+
+## 3. Root-cause analysis — see the pipeline documentation
+
+**Deliberately not restated here.** The failure analysis for the open TODOs — back-of-hand
+tracking, pitch-axis rotation across the pitch plane, object positioning at the grab moment,
+and Object Jump Correction — has already been carried out and captured in the project pipeline
+`.md` files. **Refer to those documents as the authoritative record** of observed failure
+modes, root causes, and lessons learned.
+
+This spec does not re-derive that analysis and must not be read as amending it. Where any
+module below states a rationale that conflicts with the recorded pipeline analysis, **the
+pipeline `.md` files take precedence.** Raise the conflict and amend this spec; do not silently
+follow this document over the recorded lessons learned. §0.1 is the log of amendments made
+under that rule on integration.
+
+What this spec contributes is the *forward* half: the estimator design intended to address
+those recorded failures. The merged module → TODO mapping is in `PART_ONE.md` §3.1.
+
+---
+
+## 4. Modules
+
+Each module: brain analogue → design → math/pseudocode → parameters → acceptance test.
+
+---
+
+### M0 — Instrumentation and ground-truth-free metrics
+
+**Build this first. Nothing else is verifiable without it.**
+
+You have no motion-capture ground truth. You don't need it — the hand's own rigidity supplies self-supervised error metrics:
+
+| Metric | Definition | Why it works | Target |
+|---|---|---|---|
+| **Bone-length CV** | per-bone coefficient of variation of `‖p_child − p_parent‖` over a window, from `worldLandmarks` | bones are rigid; any variance is estimator error, and it is dominated by depth error | < 3% |
+| **Palm rigidity residual** | RMS residual of `{0,5,9,13,17}` against a rigidly-fitted calibrated palm | isolates palm-frame error from finger error | < 3 mm |
+| **Resting jitter** | std-dev of each landmark in the *hand frame* with the hand held still | separates true jitter from intentional motion | < 1.5 mm |
+| **Palm-normal jitter** | std-dev of the angle of the palm normal, hand still | direct proxy for rotation stability | < 1.5° |
+| **Chirality flip rate** | sign inversions of `palmFacing` per minute during scripted non-crossing motion | should be exactly zero | 0 |
+| **Crossing survival** | fraction of scripted ±120° pitch sweeps completed without a spurious flip or unlock | the pitch-crossing TODO metric | > 98% |
+| **Reacquisition time** | ms from hand re-entering frame to `quality.overall > 0.8` | occlusion robustness | < 200 ms |
+| **Object jump rate** *(added on integration)* | position discontinuities > 100 px per minute of held-object time | the Object Jump Correction metric (§14.1.4) | 0 |
+
+**Implementation:** a `PerceptionProbe` that writes a rolling JSONL of
+`{t, metrics, moduleVersions, configHash}`, plus a headless replay harness (§7).
+**Record raw MediaPipe output to disk, timestamped, at
+`E:\Python\Recordings for vision_pipeline\Recordings_perception_layer`, so every subsequent
+module can be A/B tested offline on identical input. This single decision will save more time
+than any other item in this document.**
+
+**Integration note — build on what exists, don't restart.** The project already has this
+discipline and two working tools: `RecordTranslationPivotDebug.py` (records real landmark
+streams by driving the actual snap/translate logic, so recorded state is real ground truth,
+not simulated) and `AnalyzeTranslationPivot.py` (offline replay + metric diffs). **M0
+generalises these**; it does not replace them. Two concrete extensions are needed:
+
+1. Record `tCapture` per frame (currently the recorders synthesise a 33 ms cadence).
+2. Optional frame capture, off by default — M4's motion-blur cue is the only consumer.
+
+**Immediate quick win:** the bone-length CV, resting-jitter and palm-normal-jitter baselines can
+be computed **today, on already-recorded sessions** in
+`E:\Python\Recordings for vision_pipeline\Position_during_rotation`. No new capture is required
+to establish the first baseline numbers.
+
+Suggested layout under the capture root:
+
+```
+Recordings_perception_layer\
+  sessions\
+    2026-08-02_143012_<label>\
+      raw_landmarks.jsonl      # per frame: landmarks[21], worldLandmarks[21],
+                               #            handedness, scores, tCapture
+      frames\                  # optional; needed only for blur-metric work (M4)
+      meta.json                # camera model, resolution, fps, MediaPipe version,
+                               #            config hash, user profile id
+  profiles\
+    <profileId>.json           # persisted M2 skeleton (see 2f)
+  metrics\
+    <configHash>.jsonl         # PerceptionProbe output, for A/B diff tables
+```
+
+Keep `frames\` optional and off by default — it dominates disk use, and most module A/B
+testing needs only the landmark stream.
+
+**Acceptance:** you can replay a recorded session through two pipeline configs and get a numeric diff table.
+
+---
+
+### M1 — Cue separation and fusion (screen vs. world landmarks)
+
+**Brain analogue:** maximum-likelihood cue combination (Ernst & Banks) — the brain weights each cue by its reliability rather than picking one.
+
+**Design.** MediaPipe gives you *two* outputs with complementary error structure, and most pipelines use only the first:
+
+- `landmarks` — normalised image coordinates. **Excellent x,y. Effectively no usable z.**
+- `worldLandmarks` — approximately metric 3D, origin at the hand's geometric centre. **Much better relative 3D structure and far better for orientation. Carries no screen position.**
+
+Fuse rather than choose:
+
+```
+screen position of hand    <- landmarks (x,y)  +  M9 depth
+orientation / articulation <- worldLandmarks, weighted by M4 precision
+metric scale               <- M2 calibration cross-checked against both
+```
+
+Weight each cue by inverse variance, with variances estimated online in M4 rather than hard-coded.
+
+**Integration note.** The project already uses both streams and already splits them this way by
+instinct — translation from pixel landmarks, rotation from `worldLandmarks`
+(`GESTURE_PIPELINE_SPEC.md` §13.7). M1 formalises the split and adds reliability weighting. Note
+also the recorded mirroring hazard: the two streams are mirrored at *different points* in the
+pipeline (`remap_keypoints` vs. `remap_world_keypoints`), which has already produced one live
+bug (§13.6.1). Any fusion code must handle both in one place with one convention.
+
+**Acceptance:** bone-length CV computed from the fused estimate is lower than from either cue alone, on the same recorded session.
+
+---
+
+### M2 — Body schema: online skeleton calibration
+
+**Brain analogue:** the body schema — a persistent internal model of limb dimensions, continuously recalibrated (cf. prism adaptation, the rubber-hand effect).
+
+**Why it matters here:** MediaPipe emits 21 *free* points, 63 DOF. A real hand has ~26 DOF with **20 fixed bone lengths**. Those 20 constants are the strongest prior available to you, they are free to obtain, and they unlock: depth-sign disambiguation, metric depth (M9), foreshortening-based pose, and a per-frame quality signal.
+
+**Design.**
+
+1. Define the 20 bones over the standard MediaPipe topology.
+2. During a short calibration (or continuously, gated on `quality.overall > 0.85`), collect `‖p_child − p_parent‖` from `worldLandmarks`.
+3. Robust estimate per bone: running **median** (not mean — outliers during occlusion are severe and one-sided).
+4. Converge when the interquartile range of each bone falls below 2%; then freeze into `HandModel`, persist per-user across sessions.
+5. Thereafter, per-frame **bone-length residual is your primary per-landmark error signal** feeding M4.
+
+```python
+# per frame, per bone
+r_b = (measured_length_b - calibrated_length_b) / calibrated_length_b
+# large |r_b| on a distal bone => that fingertip's depth is wrong => downweight it
+```
+
+**Foreshortening is a signal, not an error.** A bone whose projected length is 60% of its calibrated length is tilted ~53° out of the image plane. This gives you `|z|` per bone directly from the well-conditioned screen landmarks. Only the *sign* remains, which M5 handles.
+
+#### 2f. Per-user anatomy: what is calibrated, when, and by whom
+
+**Yes, the skeleton is person-specific — but not in the way that requires a calibration screen.**
+
+Separate two things that behave very differently:
+
+| Quantity | Inter-person variation | Observable monocularly? |
+|---|---|---|
+| **Bone *proportions*** (ratios between the 20 bones) | Modest — hands are geometrically similar across adults | Yes, well |
+| **Absolute hand *size*** | Substantial — adult hand length spans roughly 165–200 mm | **No** — not without a known focal length *and* a known reference size |
+
+The second row is the important one. Absolute metric scale is **fundamentally unobservable**
+from a single uncalibrated camera looking at a hand of unknown size: a large hand far away
+and a small hand close by are the same image. **You do not need it.** M9's depth control uses
+the ratio form `d/d₀`, in which the unknown scale factor cancels exactly. So the calibration
+target is *proportions plus a per-session scale constant that is arbitrary but internally
+consistent* — a much easier problem.
+
+**Recommended approach — implicit online calibration, no calibration step:**
+
+1. **Ship population-average proportions as the prior**, baked in at build time. This is the
+   starting point, not the answer.
+2. **Adapt online during normal play** with a fast-then-slow schedule: high adaptation rate
+   for the first ~200 tracked frames, then decay to the slow drift rate (α ≈ 0.001). Converges
+   within a few seconds of ordinary hand motion. The user never sees a calibration screen.
+3. **Persist the converged profile** (a JSON file under the capture root's `profiles/`, keyed
+   to a profile id) so returning users start converged. One profile per tracked hand.
+4. **Freeze** when per-bone IQR < 2%; thereafter allow only slow drift, gated on high quality.
+
+**Why fixed build-time geometry is not sufficient:** the whole value of M2 is the per-frame
+bone-length *residual* as an error signal (M4). If the model is 10% off for this user, every
+frame reports a 10% residual and the quality signal is swamped by a constant bias — you lose
+the outlier detection, which is the point. A per-user model is needed for the *error signal*
+even more than for the geometry.
+
+**One non-obvious pitfall.** Bone lengths measured from `worldLandmarks` carry the same depth
+error you are trying to characterise. The median over many frames works only because that
+error is roughly zero-mean *across varied hand orientations*. If the user holds the hand in
+one orientation throughout calibration, the bias will not average out and you will converge to
+a wrong skeleton with high confidence.
+
+*Mitigation:* **weight calibration samples by pose diversity.** Accept a sample only if the
+palm orientation differs by more than ~20° from recently-accepted samples. Track coverage of
+the orientation sphere and expose `calibrationCoverage` in the probe log. Do not freeze the
+profile until coverage is adequate, regardless of IQR.
+
+**Parameters:** calibration window 300 frames; freeze threshold IQR < 2%; slow drift adaptation α = 0.001/frame gated on high quality.
+
+**Acceptance:** calibrated lengths stable to <2% across three separate sessions with the same user; residual-based downweighting measurably reduces resting jitter.
+
+---
+
+### M3 — Postural synergies and anatomical constraints
+
+**Brain analogue:** hand postural synergies — roughly 7 principal components account for ~90%+ of the variance in natural human grasp postures. The CNS does not control 26 DOF independently.
+
+**Design.** Two layers, cheap → expensive. Implement the cheap one first; it may be sufficient.
+
+**3a. Hard anatomical constraints (implement first, ~1 day)**
+
+Project each frame's joint angles onto the feasible set:
+
+- Joint limits: MCP flexion ∈ [−20°, +90°]; PIP ∈ [0°, 110°]; DIP ∈ [0°, 80°]; MCP abduction ∈ [−20°, +20°].
+- **Interphalangeal coupling:** `DIP ≈ (2/3) · PIP` (tendon linkage). Enforce as a soft constraint.
+- **Unidirectional flexion.** Fingers do not hyperextend at PIP/DIP beyond a few degrees. **This is the constraint that breaks the bas-relief mirror symmetry** — a depth-reversed hand hypothesis implies backward-bending joints and is therefore anatomically impossible. Feed the violation magnitude as a log-likelihood term into M5. This is the single highest-value line of code in the back-of-hand fix.
+- Inter-finger: adjacent MCP abduction difference bounded.
+
+**3b. Synergy subspace (implement if 3a leaves too much jitter)**
+
+Collect a few thousand frames of your own gameplay postures; PCA the 20-dim joint-angle vector; keep k = 7 components at ~92% variance. Per frame, MAP-estimate in the latent space:
+
+```
+minimise  ‖J_measured − (μ + Φ·c)‖²_Σ⁻¹  +  λ‖c‖²_Λ⁻¹
+```
+
+with `Λ` the training eigenvalues. Expose `c` as `synergyCoeffs` — a 7-dim, near-noise-free, semantically meaningful gesture descriptor. Gesture classification on `c` is far more robust than on raw landmarks, and it is a *smaller* interface, which helps the engine-agnostic boundary.
+
+**Caveat:** a synergy prior will suppress genuinely unusual postures. Keep the residual `‖J_measured − reconstruction‖` and fall back to unconstrained joints when it exceeds threshold — the brain does the same thing (synergies are a default, not a cage).
+
+**IK (optional, phase 5):** solve for the 26-DOF pose minimising reprojection error against screen landmarks + fit to worldLandmarks + synergy prior + limits, via Levenberg–Marquardt warm-started from the previous frame (typically 2–3 iterations at 30 fps). Output `landmarksCanonical`. This subsumes 3a/3b but costs more; do not start here.
+
+**Integration note.** Joint-angle machinery from the archived pinch work already exists
+(`features.py`'s finger-curl-angle functions) and is directly reusable for 3a. Also note: if
+M3 delivers reliable joint angles and `synergyCoeffs`, the **parked** open-palm/closed-fist
+detection (`PART_ONE.md` §3 row 2) becomes materially more tractable than it was when it was
+parked. **Do not un-park it on that basis without asking the owner** — it was parked as a
+priority decision, not solely a technical one.
+
+**Acceptance:** resting jitter and bone-length CV both drop; visually, fingers stop passing through anatomically impossible configurations during occlusion.
+
+---
+
+### M4 — Observability estimation and precision weighting
+
+> **Scope amendment (A5).** M4 is an **occlusion / hallucinated-landmark / outlier-rejection**
+> mechanism. It is **not** a fix for back-of-hand orientation precision: the pipeline has
+> recorded empirical evidence (§13.7) that the residual error there is a *correlated* whole-
+> knuckle-row distortion, and that per-landmark selection and weighting schemes produce
+> statistically indistinguishable results at the degenerate frames. Expect no improvement there,
+> and do not read that null result as an implementation failure. M6c is the mechanism for that
+> failure mode.
+
+**Brain analogue:** predictive coding — prediction errors are weighted by their estimated precision. Low-precision evidence barely moves the posterior. This is also what saccadic suppression is doing: during fast motion, discount the sensory stream and rely on the model.
+
+**Design.** Produce a per-landmark inverse-variance `1/σᵢ²` each frame, combining:
+
+| Cue | Computation | Effect |
+|---|---|---|
+| Bone-length residual | from M2 | isolates 3D error per landmark |
+| Motion blur | variance-of-Laplacian on the hand crop, normalised | global downweight during fast motion |
+| Self-occlusion | fingertip projected inside the palm polygon, or distal bone strongly foreshortened | downweight the specific occluded landmarks |
+| Palm conditioning | σ₂/σ₃ from the palm SVD | drives `orientationValid` |
+| Edge-on measure | `edgeOnMeasure` from M5a (normalised signed palm area) — computed once there, consumed here | inflates orientation covariance about the unobservable axis |
+| Inter-frame acceleration | implausible acceleration vs. human limits | outlier rejection |
+| MediaPipe presence/tracking score | as published | weak prior only |
+
+Then, crucially: **the filter innovation itself is a quality signal.** Normalised innovation squared (NIS) exceeding its χ² bound means the measurement disagrees with the model beyond what the noise model allows — gate it out rather than absorbing it.
+
+```python
+nis = innovation.T @ inv(S) @ innovation
+if nis > CHI2_GATE_3DOF:   # ~11.34 at p=0.01
+    # reject as an outlier; coast on the model; increment framesSinceMeasurement
+else:
+    # accept, weighted by S
+```
+
+**This replaces "hallucinated landmarks during occlusion get silently averaged in" — which is currently a live failure mode, because MediaPipe reports occluded landmarks with the same apparent confidence as visible ones.**
+
+**Integration note — this is the Object Jump Correction gate (A9).** The recorded 509 px
+single-frame jump (§14.1.4) is exactly the case the χ² gate exists to reject. Verify M4 against
+`translation_pivot_jump_test4_20260802_174438.json`, which contains a confirmed reproduction.
+
+**Parameters:** χ² gate at p = 0.01; coast limit 8 frames before declaring `present = false`; blur normalisation calibrated per-camera during M0.
+
+**Acceptance:** injecting synthetic occlusion into a recorded session produces `occlusionLevel` rising and object pose *freezing* rather than jumping; the `jump_test4` excursion is rejected without suppressing legitimate fast motion in the same recording.
+
+---
+
+### M5 — Chirality lock and palm-facing determination
+
+> **Status amendment (A2).** **M5a and M5b are already implemented and live-calibrated** in
+> `_is_thumb_outward()` — the signed-area formula is byte-identical and the per-handedness
+> negation is exactly the chirality factoring. What is new and worth building is **DR-1**
+> (5c), the **`K` fixture test** (5d), **`edgeOnMeasure`** (the magnitude, currently
+> discarded), and **DR-2** (5e). Build the `K` fixture test first — see A3.
+
+**Brain analogue:** object constancy — perceptual identity is assigned once and held, not
+re-litigated each glance. Bistable percepts (Necker cube) commit and resist switching.
+
+---
+
+#### 5a. The primary cue: signed projected palm area — ALREADY BUILT
+
+Take three palm landmarks — **wrist (0), index MCP (5), pinky MCP (17)** — and compute the
+2D signed area in image coordinates (the scalar z-component of the 2D cross product):
+
+```python
+# image-plane coordinates from `landmarks`, NOT worldLandmarks
+s = (p5.x - p0.x) * (p17.y - p0.y) - (p5.y - p0.y) * (p17.x - p0.x)
+```
+
+This single scalar carries **both** quantities you need:
+
+```
+sign(s)  ->  which surface faces the camera        (the boolean already in use)
+|s|      ->  proportional to |cos θ|, the edge-on / observability measure
+```
+
+`|s|`, normalised by the calibrated palm triangle area at current scale (M2), *is* the
+edge-on measure referenced elsewhere in this document. Compute it here once; do not compute
+a separate projected-area metric in M4.
+
+**Why these three landmarks rather than the thumb:**
+
+- 0, 5 and 17 are wrist and MCP landmarks on the rigid palm. They are the **least
+  self-occluded** points on the hand and the **least mobile** — they do not move relative to
+  each other under finger articulation.
+- The thumb (landmarks 1–4) carries the same information in principle, but it is the most
+  mobile and most frequently occluded landmark group. **Use it as a redundant confirmation
+  cue, not the primary.**
+- No pinky-identification fallback is required: landmark indices are assigned by MediaPipe,
+  so finger identity is given, not inferred. The "smallest dimension = pinky" idea is
+  nevertheless worth keeping as a **validation check** — see 5d.
+
+#### 5b. The structural correction: `s` gives the product, not the answer — ALREADY BUILT
+
+`sign(s)` does not directly give palm-vs-back. The triangle 0–5–17 traverses in opposite
+rotational sense for a left hand versus a right hand. So:
+
+```
+sign(s)  =  chirality  ×  palmFacing
+```
+
+`s` is a robust measurement of the **product** of two bits. You need one more independent bit
+to factor it.
+
+This is not a defect in the approach — it is the actual structure of the problem, and it
+explains an observation that would otherwise be confusing: **a right hand seen from the back
+and a left hand seen from the palm have near-identical 2D landmark geometry.** The landmark
+skeleton is mirror-symmetric; it cannot distinguish them. MediaPipe's `handedness` classifier
+distinguishes them from *appearance* (knuckles, tendons, palmar creases, shading), not from
+landmark geometry — which is why handedness and palm-facing degrade together under blur, poor
+lighting and near-edge-on views. They are the same bit.
+
+**Consequence, and this is the whole design:** pin chirality independently, then `sign(s)`
+gives palm-facing deterministically, per frame, with no accumulator.
+
+#### 5c. Chirality lock (Design Rule DR-1) — NEW
+
+> **DR-1 — Handedness is a track-level property, not a per-frame observation.**
+> It is established once when a hand track is acquired, then held for the life of that track.
+> The gesture layer and all downstream consumers read `HandState.handedness`, never
+> MediaPipe's per-frame `handedness` output.
+
+Establish it at acquisition using whichever of these is available, in priority order:
+
+| Source | Strength | Notes |
+|---|---|---|
+| **Application context** | **Decisive** | Single-hand game with a declared or configured dominant hand. If the game is one-handed, this bit is free — take it and skip everything below. |
+| **Persisted user profile** | **Decisive** | Stored alongside the M2 skeleton profile. Returning users start locked. |
+| **Accumulated MediaPipe handedness at high quality** | Strong | Accumulate over the first ~20 frames where `quality.overall > 0.85` **and** `\|s\|` is well above the edge-on band **and** the thumb is visible. Under those conditions the classifier is reliable. Require a clear majority before locking. |
+| **Two simultaneous hands** | Strong | If two hands are tracked, they are almost certainly one of each; assign by horizontal ordering plus the classifier, jointly rather than independently. |
+
+Once locked, changing it requires the track to be dropped and reacquired (hand fully out of
+frame for > 500 ms). Do not permit mid-track chirality changes under any other condition.
+
+**Integration note.** This project's game uses **two hands simultaneously**, either of which can
+hold either object — so the fourth row is the operative one, and the first (single-hand
+context) does not apply. DR-1 is also a direct structural fix for **Object Jump Correction**
+(A9): the recorded failure is precisely a per-frame identity decision being allowed to change
+mid-track.
+
+#### 5d. Per-frame determination — the `K` fixture test is NEW and is the priority
+
+With chirality locked, per frame:
+
+```python
+palm_facing_raw = K * chirality_sign * sign(s)   # K = fixed convention constant
+edge_on_measure = abs(s) / calibrated_palm_area(scale)
+```
+
+**Determine `K` empirically once and lock it in a unit test.** The sign convention depends on
+(a) whether image y increases downward, (b) whether the camera preview is mirrored, and
+(c) MediaPipe's handedness convention, which assumes a mirrored (selfie-view) input image.
+Three independent sign flips is three chances to get it wrong by reasoning; one fixture test
+with a recorded known-hand-known-orientation clip settles it permanently. **Do this before
+anything else in M5.**
+
+> **A3 — this is not hypothetical.** This project shipped exactly this bug on 2026-08-01: the
+> thumb-outward rule was silently inverted **in production only**, because detection runs on an
+> un-mirrored frame while the landmark *coordinates* are mirrored afterward and the handedness
+> *label* was not. It survived an earlier "confirmed working end-to-end" claim. Full account:
+> `GESTURE_PIPELINE_SPEC.md` §13.6.1. Recordings of both hands in both orientations already
+> exist to build the fixture from.
+
+**Redundant confirmation cues** (use to raise `palmFacingConfidence`, and to alarm on
+disagreement rather than to override):
+
+1. **Thumb laterality** — signed offset of landmark 2 (thumb MCP) from the 0–9 palm axis.
+   Same information as `s`, computed from a different landmark. Agreement is a health check;
+   persistent disagreement means a landmark misassignment.
+2. **Finger flexion direction** in `worldLandmarks` — fingers curl toward the palm, never
+   away. Independent of the 2D projection and therefore a genuine second opinion. Weaker
+   (depends on the noisy z) but valuable when it fires.
+3. **Chain-length sanity (the pinky check)** — with the M2 calibrated skeleton, confirm the
+   index chain (5→8) is longer than the pinky chain (17→20). This does not determine
+   palm-facing, but it **catches gross landmark misassignment after re-detection**, which is a
+   real and otherwise-silent failure. Log it; don't gate on it.
+
+#### 5e. The edge-on band (Design Rule DR-2) — NEW
+
+`sign(s)` is reliable everywhere **except** where `|s| → 0`, i.e. when the palm is edge-on to
+the camera. There the sign is determined by noise and will chatter. This is the *only* place
+temporal machinery is required.
+
+> **DR-2 — Edge-on exclusion.** While `edgeOnMeasure < EDGE_ON_THRESHOLD` (start at 0.15),
+> the pipeline sets `quality.orientationValid = false`. The gesture layer must suppress every
+> gesture whose definition depends on `palmFacing` or on the palm normal for the duration.
+> Gestures depending only on the hand's long axis, on aperture, or on translation remain live
+> and must keep working — this band is a routine part of normal hand motion, not an error
+> state.
+
+Inside the band:
+
+- **Freeze** `palmFacing` at its last confident value. Do not update it from `sign(s)`.
+- **Carry the sign through** by integrating angular velocity from M6 across the crossing.
+  On exit, if the integrated rotation implies a surface change, apply it; otherwise restore
+  the frozen value. This is the kinetic depth effect: the motion, not the instantaneous
+  geometry, resolves the ambiguity.
+- On exit, require `|s|` to exceed `EDGE_ON_THRESHOLD × 1.6` (**hysteresis**) for 3
+  consecutive frames before resuming per-frame updates.
+
+**Integration note.** DR-2 interacts directly with `GAME_RULES.md` rule 3 (the thumb-outward
+snap restriction), which is a `palmFacing`-dependent gesture and must therefore be suppressed
+inside the band. Rule 3's existing "armed exception" state machine already has
+freeze-through-loss semantics and should be reconciled with DR-2's freeze rather than
+duplicating it.
+
+#### 5f. Correction to an earlier claim
+
+An earlier draft asserted that a **flat, fully-extended hand is maximally ambiguous** for
+palm/back determination. **That is wrong and is retracted.** It was true only of the
+flexion-direction cue. Under the signed-area cue, a flat hand facing the camera produces the
+*maximum* possible `|s|` and is the *best*-conditioned case.
+
+The ambiguous configuration is **edge-on**, not flat. This materially relaxes the gesture
+design constraints: flat-hand gestures are fine. Gestures that require the user to hold the
+palm perpendicular to the camera axis are not.
+
+**Parameters:** `EDGE_ON_THRESHOLD` 0.15; exit hysteresis ×1.6; exit dwell 3 frames; chirality
+lock 20 high-quality frames; track drop 500 ms.
+
+**Acceptance:** chirality flip rate = 0 across all scripted sequences (§7.2), including the
+palm↔back rotation set; crossing survival > 98%; `K` fixture test passes on recorded clips of
+both hands in both orientations.
+
+---
+
+### M6 — Quaternion pose filter with anisotropic covariance
+
+> **Status amendment (A4/A6).** **6a is already satisfied** — this project has never used Euler
+> angles in the estimation path and `PART_ONE.md` §2 forbids it. Verify and tick; budget no
+> time. **6b–6e also carry a removal obligation:** M6 subsumes the existing
+> `HandOrientationFilter`, and shipping M6 means **deleting** that filter, not running both.
+> Reconcile `observability` with the existing `conditioning_norm` into a single metric.
+
+**Brain analogue:** vestibular/proprioceptive fill-in through visually degenerate configurations; the CNS never parametrises limb orientation in a singular chart.
+
+**Design.**
+
+**6a. Remove Euler angles from the estimation path entirely.** Non-negotiable. Represent orientation as a unit quaternion; use an error-state formulation (small-angle 3-vector error in the tangent space around the nominal quaternion) so the covariance is 3×3 and well-behaved. Euler angles may exist *only* as a final display convenience, and must be computed after filtering, never fed back. *(Already satisfied — see A4.)*
+
+**6b. Palm frame construction.**
+
+```
+P = [p0, p5, p9, p13, p17] centred        # exclude landmark 1 (thumb CMC) -- it moves
+[U, S, V] = svd(P)
+e1 = V[:,0]   # long axis, best conditioned
+e2 = V[:,1]
+n  = V[:,2]   # palm normal -- ILL-CONDITIONED as S[1]/S[2] -> 1
+observability = 1 - S[2]/S[1]
+```
+
+Prefer `worldLandmarks` for this fit (M1). Orthonormalise; apply the M5 sign.
+
+**Integration note.** The existing frame construction uses `index_MCP→pinky_MCP` (width) +
+`wrist→middle_MCP` (length), chosen over an earlier wrist-anchored pair after a data-driven
+investigation, with **chirality preservation explicitly verified against recorded data**
+(§13.7). If M6b's SVD changes the frame, that chirality verification **must be repeated the
+same way** — the recorded lesson is that yaw/roll silently invert if the vector order changes.
+
+**6c. Anisotropic process/measurement noise — the crux.**
+
+The orientation covariance during the crossing is **not** large in all axes. Rotation *about* the well-observed long axis stays precise; rotation *about the axes that determine the normal* becomes unobservable. Encode this:
+
+```python
+# measurement covariance in the body frame, not isotropic
+R_orient = diag(
+    sigma_long**2,                                  # well observed throughout
+    sigma_base**2 / max(observability, eps),        # blows up at the crossing
+    sigma_base**2 / max(observability, eps),
+)
+```
+
+With this, a UKF will automatically coast on angular velocity along the unobservable directions and keep tracking precisely along the observable one — which is exactly the behaviour you want and exactly what isotropic smoothing cannot give you.
+
+**6d. Motion model.** Constant angular velocity with a decay term. Human wrist angular velocity rarely exceeds ~15 rad/s; use that to set process noise and to gate outliers.
+
+**6e. Expose `orientationSigma` (per-axis) in `HandState`.** Gestures that depend on the palm normal must check it. Gestures that depend only on the hand's long axis need not — and will keep working through the crossing. This is a real capability gain, not just a safety gate.
+
+**Acceptance:** during a scripted pitch sweep, yaw and roll remain finite and continuous; no discontinuity in the rendered object's orientation; `orientationSigma` visibly rises and falls around the crossing; **the existing `HandOrientationFilter` is deleted and the A/B diff shows no regression from its removal.**
+
+---
+
+### M7 — Dual-pathway filtering and forward-model prediction
+
+**Brain analogue:** the magnocellular/parvocellular split — a fast, transient, low-spatial-resolution motion pathway alongside a slow, sustained, high-resolution form pathway; plus cerebellar forward models that extrapolate to cancel ~100 ms of neural conduction delay (why the flash-lag illusion exists).
+
+**Key insight:** you currently have **one** filter serving two incompatible requirements. Position for rendering wants heavy smoothing. Interaction triggers want minimum lag. Any single cutoff frequency is wrong for one of them.
+
+**Design — split the channel:**
+
+```
+FORM  (parvo):  heavy smoothing, ~6 Hz cutoff
+                -> hand skeleton rendering, articulation display, static pose classification
+                -> lag is acceptable and invisible
+
+MOTION (magno): light smoothing, ~15 Hz, velocity/acceleration estimated as filter STATES
+                -> triggers, aperture rate, angular velocity, trajectory features
+                -> lag is unacceptable; some jitter is acceptable because
+                   downstream consumers integrate over a window anyway
+```
+
+Never compute velocity by finite-differencing the *smoothed* position — that combines the worst of both (noise amplification *and* group delay). Velocity is a **filter state** in M6, obtained from the motion model.
+
+**Forward prediction — spend the effort here, it is the biggest subjective quality win.**
+
+1. **Measure** your end-to-end latency (§6.2 procedure). Do not guess it.
+2. Predict the state forward by `L_total` using the constant-velocity/constant-angular-velocity model.
+3. Scale prediction horizon by confidence: `L_effective = L_total · clamp(quality.overall, 0, 1)`. Never extrapolate far on a low-quality state — overshoot looks worse than lag.
+4. Cap the prediction horizon at ~80 ms regardless; beyond that, model error dominates.
+5. Set `HandState.tPredicted` accordingly so consumers know what instant they are looking at.
+
+Net perceived latency can go to zero or slightly negative. Users read this as "responsive" far more strongly than they read jitter as "noisy."
+
+**Integration note.** `ROTATION_SLERP_FACTOR` (currently 0.35, raised from 0.25 for
+responsiveness) is the project's existing single-cutoff compromise and is exactly the knob M7
+replaces. When M7 lands, that constant should be retired into the FORM channel rather than
+left as an independent tuning parameter.
+
+**Acceptance:** measured end-to-end latency (§7.2) drops by ≥ 40 ms with no increase in overshoot on direction reversals.
+
+---
+
+### M8 — Grasp-onset prediction and retrospective anchoring
+
+> **Amended on integration (A7).** **M8a is NOT adopted.** `GESTURE_PIPELINE_SPEC.md` §14.1's
+> distance-weighted phalange-landmark mechanism is shipped, verified and live-confirmed, and it
+> governs. M8a is retained below **as a logged A/B candidate only**, to be measured against
+> §14.1 on recorded data once M6/M9 supply a metric palm pose — because the stated reason for
+> rejecting a palm-anchored design (a 2D/3D coordinate mismatch) will no longer hold at that
+> point. **Do not modify §14.1's mechanism before that A/B runs.** Anti-pattern #6 is
+> correspondingly downgraded — see §8.
+>
+> **M8b and M8c are additive to §14.1 and are not affected by this deferral.**
+
+**Brain analogue:** anticipatory grip aperture. In reach-to-grasp, aperture peaks at ~70–80% of the movement and scales with target size — the contact configuration is committed well before contact. The motor system does not wait to observe contact and then react.
+
+**Design — three independent fixes:**
+
+**8a. Anchor to the palm, not the fingertips.** *(A/B CANDIDATE ONLY — NOT ADOPTED, see above.)*
+
+The grab *position* would come from the palm frame (M6): a rigid, well-conditioned, 5-landmark fit. Fingertips determine *whether* a grab occurred; they would not determine *where*.
+
+```python
+grab_anchor_world = palm.position + palm.orientation * calibrated_grasp_offset
+# where calibrated_grasp_offset is a constant in the palm frame,
+# determined once during calibration, not per-grab from fingertips.
+```
+
+If you need a pinch point, use the midpoint of thumb IP (3) and index PIP (6) rather than the tips (4, 8) — one joint proximal, markedly less noisy and less occluded, and it moves with the same rigid transform.
+
+*Counter-evidence on record (§14.1):* the shipped mechanism deliberately includes fingertips
+because the object's grasp point genuinely depends on where in the phalange volume it was
+seized, which is object-size-dependent (Napier). The A/B must therefore test **grab-placement
+accuracy**, not just jitter — a palm anchor will trivially win on stability while potentially
+losing on correctness.
+
+**8b. Retrospective (backward) smoothing at the trigger instant.** *(Additive — proceed.)*
+
+Keep a 15-frame ring buffer of filter states *and* measurements. When a grab fires at `t_g`, do not use the live estimate. Run a **Rauch–Tung–Striebel backward pass** over the buffer to produce a smoothed estimate at `t_g` that uses frames from *after* `t_g`.
+
+```
+forward filter:   x̂(t | t)        -- what you have live, noisy at t_g
+RTS smoother:     x̂(t_g | t_g+k)  -- uses future frames, far more accurate
+```
+
+This costs one frame-time of extra lag on the *anchor computation only* (the object can appear immediately at the predicted pose and be corrected within one frame, imperceptibly), and it typically halves anchor error. **You already have this information; you are currently throwing it away.**
+
+**8c. Predict grasp onset instead of detecting it.** *(Additive — proceed.)*
+
+Track `apertureRate` (a filter state from M7, not a difference). Extrapolate to the closure threshold:
+
+```python
+t_contact = (aperture - APERTURE_CLOSED) / max(-aperture_rate, eps)
+if t_contact < latency_budget_ms and aperture_rate < -RATE_MIN and evidence > BOUND:
+    fire_grab_intent(anchor_from_rts)
+```
+
+Fire at `t_contact − L_total` so the object appears *as* the hand closes, not after. Guard with evidence accumulation (M10) and an asymmetric cost: a late grab is mildly annoying; a false early grab is much worse. Bias the bound accordingly.
+
+**Note.** Today's snap trigger is **proximity-based**, not aperture-based
+(`GAME_RULES.md` rule 1) — there is no aperture threshold in the shipped game. 8c therefore
+depends on a gesture-design decision that has not been made, and is **blocked on the
+hand-open release trigger work** (§14.2), which is where aperture first enters the design.
+
+**Acceptance:** grab-placement spread (§7.2 fiducial test) reduced by ≥ 50%; user-reported "the object appears where I grabbed."
+
+---
+
+### M9 — Metric depth from the body schema
+
+**Prerequisite for Z-axis control. Do not build Z-axis control on MediaPipe's `z`.**
+
+> **Amended on integration (A8).** This module is **compatible with, and a refinement of,**
+> `GESTURE_PIPELINE_SPEC.md` §14.3's confirmed Z-axis design — which already specifies an
+> apparent-hand-span *ratio* against a grab-time baseline, and already rejects raw
+> `world_landmarks` z. M9 improves it in two specific ways: **never use a single bone** (§14.3
+> currently specifies `wrist↔middle-MCP` alone) and **correct for foreshortening**. That second
+> point is the concrete fix for the recorded **yaw/palm-sinking** limitation (§14.1.1), whose
+> proposed remedy was an unspecified "startup Z-axis calibration."
+
+**Brain analogue:** size–distance invariance — known object size plus retinal size yields distance. Your "known object" is the user's own calibrated hand (M2).
+
+**Design.**
+
+```
+d = f · L_metric / L_pixels
+```
+
+where `L_metric` is a calibrated bone length (M2), `L_pixels` its projected length, and `f` the focal length in pixels.
+
+**Practical details that matter:**
+
+- **Focal length.** Either a one-time calibration (hold hand at a measured distance) or, better, express everything as a *ratio* `d/d₀` against a reference captured at snap time — this cancels `f` entirely and is sufficient for relative Z control. Prefer the ratio form; it removes a whole calibration step. *(§14.3 already chose the ratio form — keep it.)*
+- **Use a foreshortening-corrected measure.** Palm width (landmark 5 → 17) corrected by `|cos θ|` from M5/M6, or better, a robust fit over *all* bones weighted by M4 precision, with each bone's foreshortening accounted for by the current pose estimate. Never use a single bone.
+- **Noise scales as d².** Depth precision degrades quadratically with distance. Budget for this: define a working volume where precision is acceptable, and set `depthValid = false` outside it rather than letting Z control silently degrade.
+- **Sanity cross-check** against `worldLandmarks` scale; disagreement is a quality signal.
+- **Control–display gain.** Do not map depth linearly to object Z. Use a velocity-dependent gain (small hand movements → precise control; fast movements → large range), the analogue of the brain's mixed position/velocity control. This is also what makes limited depth resolution feel adequate.
+
+**Note on §14.3's 3D snap gating.** §14.3 specifies that snap becomes a 3D proximity check
+(X, Y **and** Z). That requires `depthValid` to be true at the moment of snap; the gating rule
+must define what happens when it is false — fall back to 2D proximity, or refuse to snap. **Not
+yet decided; raise with the owner when §14.3 is built.**
+
+**Acceptance:** `d/d₀` reproducible to < 5% at fixed distance with varied hand orientation (this is the test that catches foreshortening bugs); monotonic and jitter-free through a slow push-pull sweep; the §14.1.1 yaw/palm-sinking bias measurably reduced on the existing recordings.
+
+---
+
+### M10 — Commitment dynamics for snap/unsnap
+
+**Prerequisite for the unsnap feature.**
+
+**Brain analogue:** hysteresis in bistable perception; perception commits and resists switching. Also: release actions are *ballistic* — an intentional release has a characteristic velocity profile, whereas incidental hand drift does not.
+
+**Design.**
+
+1. **Schmitt triggers, never thresholds.** `apertureOpen > apertureClose` with a meaningful gap. A single threshold guarantees dithering at the boundary.
+2. **Dwell time.** A state change requires the condition to hold for N consecutive frames (suggest 3 at 30 fps for grab, 4 for release).
+3. **Evidence accumulation, not instantaneous test.** Bounds are asymmetric and *task-dependent*: accidental unsnap is far more costly than delayed unsnap, so `B_release > B_grab`.
+4. **Rate as a requirement, not just level.** Require `apertureRate > RATE_MIN` for release — an intentional open is fast; a slow drift past the threshold is not a release. This alone eliminates most accidental drops.
+5. **Refractory period.** ~200 ms lockout after any state change, mirroring the psychological refractory period.
+6. **Quality gating.** Release must not fire while `quality.overall` is low or `framesSinceMeasurement > 0`. **Occlusion must never cause a drop.** During the pitch crossing specifically, `orientationValid = false` — and unsnap must be suppressed unless it is unambiguously intentional by the rate criterion.
+7. **Grace on loss of tracking.** If the hand disappears, hold the object for ~400 ms and reacquire; only then drop. Losing tracking is not the same as letting go.
+
+**Integration note — item 7 changes an existing shipped rule.** `GAME_RULES.md` rule 2
+currently drops the object **immediately** on tracking loss, and that behaviour is live and
+verified. M10.7 proposes a ~400 ms grace period instead. This is a **deliberate game-rule
+change, not a perception improvement**, and must be raised with the owner rather than
+introduced as a side effect of building M10. Note also that the existing same-frame
+release/re-snap ordering fix (§13.5) interacts with any grace period — a cube held in limbo
+must be excluded from other hands' snap passes for the duration.
+
+**M10.7 also fixes a recorded gameplay defect (merged queue N8).** Observed
+2026-08-02: **a hand can steal another hand's cube simply by occluding it.** Hand A holds a
+cube, hand B moves in front of it, A's tracking is lost, rule 2 releases the cube, and B —
+which is by definition right where A was, therefore inside the grab radius — snaps it a frame
+or two later. §13.5's fix only blocks re-snapping on the *same* tick, not the next one. A
+grace period would keep the cube held through the occlusion, leaving nothing to steal.
+Recorded and deliberately **not** fixed now; the expectation is that refining snap control
+resolves it. *(Mechanism inferred from the rules, not instrumented — if it is ever worth
+confirming, the `two_hand_overlap` recorded sequence already reproduces the occlusion
+condition, with 205 of 717 frames showing only one hand detected.)*
+
+**Acceptance:** zero accidental unsnaps across a 10-minute scripted manipulation session including deliberate occlusions and pitch crossings.
+
+---
+
+## 5. Mapping: modules → TODOs
+
+**Superseded on integration.** The authoritative, merged, single build queue — covering both
+this spec's modules and the pipeline's own TODOs, in one ordered list — is
+**`PART_ONE.md` §3.1**. It is the only list; do not maintain a second one here.
+
+Two dependency facts from Revision 2 are preserved because they are load-bearing:
+
+- **M2 is a hard prerequisite for Z-axis control** (no calibrated skeleton → no metric scale →
+  no usable depth).
+- **M4 is a hard prerequisite for unsnap** (no occlusion detection → objects get dropped when a
+  hand is partially hidden).
+
+Building either feature before its prerequisite means building it twice.
+
+---
+
+## 6. Build order
+
+### 6.1 Phases
+
+**Owner decision (2026-08-02): execute Phases 0–2, then reassess** before committing to
+Phase 3+. Phases 0–2 are expected to close back-of-hand tracking, the pitch-plane crossing,
+and — per A9 — plausibly Object Jump Correction. Whether the release trigger and Z-axis
+control still need Phase 3 first is a decision to make with those results in hand.
+
+**Phase 0 — Instrumentation (do not skip).**
+M0. Recording + replay harness + metric dashboard, generalised from the existing
+`RecordTranslationPivotDebug.py` / `AnalyzeTranslationPivot.py` tools. Establish baseline
+numbers for every M0 metric on the current pipeline — **the first baselines can be computed
+from already-recorded sessions, no new capture needed.** Everything after this is measurable.
+
+**Phase 1 — Kill the singularities. Highest value per hour.**
+- **M5d `K` fixture test** — do this first (hours, not days; guards a bug this project has
+  already shipped once).
+- M5a `edgeOnMeasure` — recover the magnitude already being discarded.
+- M6a: *verify already satisfied* (A4) — no work expected.
+- M2: bone-length calibration (proportions online, per 2f).
+- M3a: hard anatomical constraints, including the unidirectional-flexion prior.
+- M4: bone-residual precision weighting + χ² innovation gating. **Verify against
+  `jump_test4`** (A9).
+
+*Expected: bone-length CV and resting jitter both drop; anatomically impossible poses
+disappear; Object Jump Correction's excursion is gated out.*
+
+**Phase 2 — Temporal identity.**
+- M5c–M5e: chirality lock (DR-1), redundant confirmation cues, edge-on band (DR-2) with
+  angular-velocity carry-through.
+- M6b–e: quaternion UKF with anisotropic covariance; expose `orientationSigma`,
+  `orientationValid`; **delete the superseded `HandOrientationFilter`** (A6).
+
+*Expected: back-of-hand and pitch-crossing TODOs closed. This is the phase that makes them
+genuinely work rather than merely not crash.*
+
+**→ REASSESS HERE (owner decision).** Re-measure all M0 metrics; re-test Object Jump
+Correction; decide whether Phase 3 precedes the feature work.
+
+**Phase 3 — Latency and grab.**
+- M7: dual-pathway split + measured-latency forward prediction; retire `ROTATION_SLERP_FACTOR`.
+- M8b: RTS retrospective smoothing (additive to §14.1).
+- **M8a A/B against §14.1** (A7) — measure, then decide.
+- M8c: predictive grasp onset — *blocked on the aperture-based gesture design (§14.2).*
+
+**Phase 4 — Unlock the next features.**
+- M9: metric depth → then build Z-axis control (§14.3).
+- M10: commitment dynamics → then build the hand-open release trigger (§14.2).
+  *Raise M10.7's grace-period game-rule change with the owner first.*
+
+**Phase 5 — Optional refinement.**
+- M3b: synergy subspace.
+- M3 IK: full 26-DOF inverse kinematics.
+- Trajectory-based gesture classification (small TCN/GRU over a 15–30 frame window of
+  `synergyCoeffs` + palm kinematics).
+
+### 6.2 Latency measurement procedure (needed by M7, do it in Phase 0)
+
+Guessing latency and then predicting by the guess is worse than not predicting.
+
+1. Display a large high-contrast element driven directly by hand position, with a frame counter burned into a corner of the screen.
+2. Film the screen *and* the hand together with a phone at 240 fps.
+3. Perform a sharp direction reversal.
+4. Count frames between the physical reversal and the on-screen reversal. At 240 fps each frame is 4.17 ms.
+5. Repeat 20×, take the median.
+6. Break the total down by instrumenting each stage (capture timestamp → inference done → filter done → render submitted) so you know which stage to attack.
+
+Typical budget to expect:
+
+| Stage | Typical |
+|---|---|
+| Camera exposure + readout | 10–30 ms |
+| MediaPipe inference | 8–20 ms |
+| Filter group delay (current smoothing) | 10–40 ms |
+| Render + compositor | 16–33 ms |
+| **Total** | **50–120 ms** |
+
+Note that "filter group delay" is entirely self-inflicted and is the first thing M7 removes.
+This project has an **additional** stage the table omits: **socket IPC between the vision
+server and the client process.** Instrument it separately — it is a real contributor here and
+is absent in a single-process design.
+
+---
+
+## 7. Test protocol
+
+### 7.1 Replay harness
+
+Record raw MediaPipe output (both landmark sets, handedness, scores, timestamps, and optionally the source frames) to the capture root per M0. Every module is then evaluated offline, deterministically, on identical input. Config is hashed into the metrics log. **No perception change ships without a replay A/B diff table** — and per A10, a module that shows a null result is **removed**, not kept hopefully.
+
+### 7.2 Scripted test sequences
+
+Record each once, reuse forever:
+
+| Sequence | Duration | Targets |
+|---|---|---|
+| **Static hold**, 5 poses × 10 s | 50 s | resting jitter, palm-normal jitter, bone CV |
+| **Slow pitch sweep**, −120° → +120°, 3 s per sweep, ×10 | 60 s | crossing survival, orientation continuity, sign stability, DR-2 entry/exit behaviour |
+| **Fast pitch sweep**, same range, 0.5 s per sweep, ×10 | 20 s | crossing survival under blur; angular-velocity carry-through |
+| **Palm↔back rotation** at 4 speeds | 40 s | chirality flip rate, hysteresis behaviour |
+| **Reach-and-grab to fiducials**: 5 marked physical positions, ×10 each | 3 min | grab-placement spread |
+| **Occlusion**: hand behind object, in/out of frame, finger-over-finger | 60 s | coast behaviour, reacquisition time, **zero accidental unsnaps** |
+| **Two-hand crossing** *(added on integration)*: hands pass close together and swap sides | 60 s | **Object Jump Correction** — the identity-mixup repro condition (§14.1.4) |
+| **Push–pull depth sweep**, 30 cm → 80 cm, varied orientation | 60 s | depth monotonicity, foreshortening-correction correctness |
+| **Direction reversals** for latency | 2 min | end-to-end latency, overshoot |
+| **Free manipulation**, 10 min unscripted | 10 min | regression net; catches what scripts miss |
+
+**Recording protocol note (from recorded project experience).** Ask the operator to confirm
+after **each** take whether the target behaviour actually occurred, and discard takes that did
+not reproduce it. Object Jump Correction took four takes to capture; analysing the first
+available recording instead would have produced a confident wrong conclusion. Also: request
+permission before each individual live-camera take rather than queueing several.
+
+### 7.3 Boundary enforcement
+
+- Static check (lint rule or build step): the perception layer (L0–L6) must not import the
+  engine binding or any scene module; the gesture layer must not import from L0–L6 other than
+  the `HandState` type.
+- The gesture layer must be unit-testable against synthetic `HandState` fixtures with no
+  camera and no renderer. If it isn't, the boundary has leaked.
+  *(Today it cannot be: `HandsTriggeredActions.py` opens a real pygame window as an import side
+  effect. Fixing that is part of the L7 cleanup and is a prerequisite for this test.)*
+- Ship a synthetic `HandState` generator (scripted trajectories, injectable noise and quality
+  drops) — this lets you test unsnap and Z-control logic *before* the perception work lands, in
+  parallel.
+
+---
+
+## 8. Anti-patterns to avoid
+
+1. **Increasing smoothing to fix jitter.** Trades a visible problem for an invisible one (lag), which users dislike more. Fix the estimator, not the low-pass.
+2. **Euler angles anywhere in the estimation path.** Guaranteed to fail at exactly the configuration in the pitch-crossing TODO. *(This project already complies.)*
+3. **Trusting MediaPipe's `z` for anything metric.** It is wrist-relative and weakly supervised. Use M9.
+4. **Trusting MediaPipe's handedness as an observation.** It is derived from the ambiguous cue and is often the thing that flips. Prior only.
+5. **Deciding per frame what should be decided over time.** Chirality, palm-facing, and gesture state are *persistent* properties. Re-deriving them each frame discards the temporal evidence that is the only thing capable of resolving them. *(This is the structural cause of Object Jump Correction.)*
+6. ~~**Anchoring to fingertips.**~~ **Downgraded on integration (A7).** The shipped, verified
+   mechanism (§14.1) deliberately includes fingertips because grasp location is genuinely
+   object-size-dependent. Fingertips are noisier — that is true and worth weighting for — but
+   "never anchor to them" overstates it and conflicts with the pipeline record. Revisit only
+   via the M8a A/B.
+7. **Averaging in hallucinated landmarks.** Occluded landmarks come back confident and wrong. Gate them out (M4).
+8. **Making an edge-on palm orientation a critical gesture.** When the palm is perpendicular to the camera axis, palm-facing is genuinely unobservable and no software fix exists. *(Flat, fully-extended hands are fine — that was an error in an earlier draft, retracted in M5f.)*
+9. **Guessing latency.** Measure it (§6.2).
+10. **Building Z-control before M2/M9, or unsnap before M4/M10.** You will build them twice.
+11. **Keeping a module that measured no improvement.** *(Added on integration, A10.)* Revert it
+    and record the null result.
+12. **Verifying only in the debug tool.** *(Added on integration.)* "Works in `LiveSnapDebug.py`"
+    and "works in production" are different claims whenever a wire-protocol boundary sits
+    between them — this project has shipped a production-only bug that survived exactly that
+    conflation (§13.6.1).
+
+---
+
+## 9. Selected background
+
+- Johansson (1973) — point-light biological motion; kinematics alone carry action identity.
+- Santello, Flanders & Soechting (1998) — postural synergies; ~2 PCs cover >80% of static grasp variance, ~7 for high fidelity.
+- Jeannerod (1984) — anticipatory grip aperture; peak aperture timing and size scaling in reach-to-grasp.
+- Ernst & Banks (2002) — statistically optimal, reliability-weighted multisensory cue integration.
+- Wallach & O'Connell (1953) — the kinetic depth effect; motion resolves monocular depth ambiguity.
+- Wolpert, Ghahramani & Jordan (1995) — internal forward models for motor prediction and delay compensation.
+- Gold & Shadlen (2007) — evidence accumulation to a bound as the mechanism of perceptual decision.
+- Friston (2009) — predictive coding and precision-weighted prediction error.
+- Casiez, Roussel & Vogel (2012) — 1€ filter; useful as a *baseline* for the jitter/lag trade-off you are trying to escape.
+- Napier (1956) — prehensile movements of the human hand; power vs. precision grip, object-size dependence. *(Added on integration — the basis for §14.1's shipped mechanism.)*

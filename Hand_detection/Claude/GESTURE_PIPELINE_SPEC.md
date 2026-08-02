@@ -3383,6 +3383,19 @@ source, the filter may no longer be pulling its weight and should be
 re-audited with the same cost-benefit discipline used here, not kept out
 of inertia.
 
+**TRIGGER NOW IDENTIFIED (2026-08-02, perception-spec integration — §15,
+and `PERCEPTION_LAYER_SPEC.md` A6)**: that "re-test for redundancy" TODO
+is no longer open-ended. **M6's quaternion UKF with anisotropic covariance
+subsumes this filter** — it is a hand-rolled, simplified instance of
+exactly what M6c + M7 describe (a predictive angular-velocity model
+blended against the raw reading, weighted by a conditioning-derived
+reliability signal). **When M6 ships, this filter is deleted, not kept
+alongside it** — two overlapping predictive filters is precisely the
+accumulation this audit exists to prevent. Its removal is a listed
+deliverable of M6 (merged queue item 2.3), justified by an A/B diff rather
+than assumed. Related: M6b's `observability` overlaps with this filter's
+`conditioning_norm` — reconcile into one metric, don't ship both.
+
 ### 13.8 Mesh-generic 3D rendering (2026-08-01) — the cube is a placeholder for future imported 3D objects
 
 Direct request, immediately after the morphing-bug fix above was
@@ -3457,17 +3470,26 @@ point here). **A third target, Z-axis translation, was added and its
 design confirmed in a later conversation (§14.3)** — queued after the
 first two, not started.
 
-**Confirmed build order (2026-08-01, later conversation)**: §14.1 (pivot
-fix, DONE — implemented, live-confirmed, ported to production) → §14.2
-(hand-open release) → §14.3 (Z-axis translation). Ask the user before
-reordering if this ever seems worth revisiting.
+**⚠ BUILD ORDER SUPERSEDED (2026-08-02) — see `PART_ONE.md` §3.1.**
+A perception-layer design spec (`Claude/PERCEPTION_LAYER_SPEC.md`) was
+integrated into the pipeline, and all TODOs — this section's §14.1-§14.3,
+§14.1.4's Object Jump Correction, §13.7's back-of-hand TODO, and the new
+perception modules M0–M10 — were **merged into one ordered queue** at
+`PART_ONE.md` §3.1, per direct request. That queue is now the single
+authoritative build order. **Do not follow the sequence described below;
+it is retained only as the record of what was decided before the merge.**
 
-**§14.1.4 "Object Jump Correction" added (2026-08-01, later same-day
-conversation)**: a new TODO, root-caused but NOT fixed, surfaced while
-verifying §14.1 in production. NOT yet placed in the build order above —
-ask the user where it fits (before/after/alongside §14.2-§14.3) when
-picking this work back up; it was explicitly deferred to "a future round
-of improvements" without a decided sequence.
+The material change: **the perception-layer work (Phases 0–2) now precedes
+the remaining features.** §14.2 (hand-open release) and §14.3 (Z-axis
+translation) are unchanged as designs but are gated behind their hard
+prerequisites — M10 and M9/M2 respectively — because building either
+first means building it twice. §14.1.4 (Object Jump Correction), which had
+no agreed sequence, is now mapped to M4 + M5-DR-1 and is expected to close
+in Phases 1–2.
+
+**Historical (2026-08-01)**: §14.1 (pivot fix, DONE — implemented,
+live-confirmed, ported to production) → §14.2 (hand-open release) → §14.3
+(Z-axis translation), with §14.1.4 unsequenced.
 
 ### 14.1 Grab-relative rigid attachment for translation (REDESIGNED, 2026-08-01, later conversation) — supersedes the original anchor-selection framing below
 
@@ -4126,3 +4148,88 @@ Per this project's standing discipline (`HANDOFF_SNAP_ROTATE_RELEASE.md`
 §4): verify the chosen hand-span-ratio-to-Z mapping against recorded or
 live data before committing to specific constants, same as every other
 build step in this document.
+
+---
+
+## 15. Perception-layer spec integrated (2026-08-02) — the current direction
+
+A design spec for the **hand-perception stack below the gesture layer** was
+written by the owner and integrated into the pipeline on 2026-08-02:
+**`Claude/PERCEPTION_LAYER_SPEC.md`**. Read it alongside this document —
+this file remains the authoritative record of *what failed and why*; that
+one is the *forward* design intended to fix it.
+
+**Why this is a direction change worth flagging.** Everything in §13-§14
+treated MediaPipe's output as the signal and built gesture logic directly
+on it, fixing failures one at a time as they were found live. The
+perception spec reframes MediaPipe as a **noisy sensor** and inserts an
+estimator layer (L0-L6) between it and the gesture logic, with a versioned
+`HandState` contract at the boundary. Several open TODOs in this document
+are consequences of that missing layer rather than independent bugs.
+
+**The merged build queue is `PART_ONE.md` §3.1** — the single ordered TODO
+list covering both this document's TODOs and the spec's modules. It
+supersedes §14's build order and the handoff's own queue.
+
+**Amendments made on integration** (full log in the spec's §0.1 — the
+short version, because these correct claims a reader of the spec alone
+would get wrong):
+
+- **A1 — retargeted from JavaScript to Python.** The spec was written
+  against `gestureConfig.js`/Three.js. That does not exist: `Web/` holds
+  only Part Zero-bis, and every Part One gesture is Python. Perception is
+  built in `Local_pc/`; `HandState` v2 becomes the versioned **socket wire
+  contract**, which doubles as the cross-platform contract a mobile
+  rebuild reimplements against.
+- **A2 — M5a/M5b are already built.** `_is_thumb_outward()`'s signed cross
+  product is byte-identical to the spec's signed-palm-area cue, and its
+  per-handedness negation is exactly the chirality factoring. New work is
+  DR-1, the `K` fixture test, `edgeOnMeasure`, and DR-2.
+- **A4 — M6a is already satisfied.** No Euler angles have ever been in the
+  estimation path (`PART_ONE.md` §2 forbids it). Verify and tick.
+- **A5 — M4 is scoped to occlusion/outliers, not the pitch crossing.**
+  §13.7 recorded that per-landmark selection and averaging schemes are
+  statistically indistinguishable at the degenerate frames, because the
+  residual is a *correlated* whole-knuckle-row distortion. M6c's
+  anisotropic covariance is the mechanism for that failure; M4 is not.
+  Do not read a null M4 result there as an implementation failure.
+- **A6 — M6 subsumes `HandOrientationFilter`; deleting it is a
+  deliverable.** This closes §13.7.1's open "re-test the filter for
+  redundancy after a more fundamental fix lands" TODO with a concrete
+  trigger.
+- **A7 — M8a (palm anchoring) is NOT adopted.** It contradicts §14.1's
+  shipped, verified, live-confirmed mechanism, and the pipeline docs
+  govern. It is logged as an **A/B candidate** to be measured once M6/M9
+  land — because the stated reason for rejecting a palm-anchored design
+  (a 2D/3D coordinate mismatch) will no longer hold then. **Do not modify
+  §14.1 before that A/B runs.** The spec's anti-pattern #6 ("never anchor
+  to fingertips") is downgraded accordingly.
+- **A8 — M9 is the concrete fix for §14.1.1's yaw/palm-sinking
+  limitation**, whose recorded remedy was an unspecified "startup Z-axis
+  calibration." M9's foreshortening correction, using M5a's
+  `edgeOnMeasure` as the `|cos θ|` term, is that idea made specific.
+- **A9 — §14.1.4 Object Jump Correction now has a fix path.** It was
+  absent from the spec's own mapping. DR-1 removes the per-frame identity
+  decision that is its structural cause; M4's χ² innovation gate would
+  reject the recorded 509 px excursion. Re-test after Phase 2 rather than
+  treating it as independent work.
+- **A10 — kill-criterion (binding).** Every module must show measured
+  improvement on the M0 metrics via replay A/B, or be **reverted**. This
+  is the spec's own §7.1 rule elevated to a removal rule, and it is what
+  reconciles the spec's substantial machinery with the owner's standing
+  preference against accumulating filters that do not earn their keep. The
+  precedent is already set: the first Object Jump Correction fix attempt
+  was built, measured, found to make no difference, and discarded rather
+  than shipped (§14.1.4).
+
+**Two items the spec surfaces that are game-design decisions, not
+perception work** — both need the owner, and neither should be introduced
+as a side effect of building a module:
+
+1. **M10.7 proposes a ~400 ms grace period on tracking loss.**
+   `GAME_RULES.md` rule 2 currently drops the object immediately, and that
+   behaviour is built and live-verified. Changing it is a rule change.
+2. **§14.3's 3D snap gating is underspecified**: what happens when
+   `depthValid` is false at the moment of snap — fall back to 2D
+   proximity, or refuse to snap? Not decided.
+

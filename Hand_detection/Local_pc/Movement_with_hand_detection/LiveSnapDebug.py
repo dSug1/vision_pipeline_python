@@ -1,6 +1,7 @@
 import argparse
 import math
 import os
+import sys
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -36,6 +37,16 @@ from mediapipe.tasks.python import vision
 # snap/translate design changes; this file is temporary and small enough
 # that a shared-abstraction refactor isn't worth it before it's deleted.
 
+# Shared perception module -- the SAME track-level hand identity (DR-1) the
+# production server uses, imported rather than copied so the debug tool cannot
+# drift out of tune with production (owner instruction 2026-08-02). It is pure
+# stdlib with no cv2/mediapipe/window side effects, so importing it here is safe
+# and pulls in nothing else from the server package.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..", "Python_Server_MediaPipe_vision_pipeline", "Resources"))
+import hand_identity  # noqa: E402  (path set immediately above)
+
 HAND_LANDMARKER_MODEL_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..", "Python_Server_MediaPipe_vision_pipeline", "Resources", "hand_landmarker.task",
@@ -54,6 +65,9 @@ HAND_LANDMARKER_MODEL_PATH = os.path.join(
 # GESTURE_PIPELINE_SPEC.md §13.4.
 
 TRACKED_HANDS = ("Left", "Right")
+
+# One tracker for the whole session, mirroring production's module-level one.
+_hand_identity_tracker = hand_identity.HandIdentityTracker()
 
 WRIST = 0
 INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP = 5, 9, 13, 17
@@ -931,6 +945,12 @@ def main():
 
             hand_data_by_hand = {h: None for h in TRACKED_HANDS}
             normalized_by_hand = {}
+            # Collect into a LIST first, not a dict keyed by handedness: MediaPipe
+            # can return BOTH detections with the SAME label (measured: 25 frames
+            # across the recorded sessions), and a dict silently overwrites one of
+            # them -- the exact defect that hid Object Jump Correction in the old
+            # recorder. The shared tracker below assigns the real identities.
+            detections = []
             for idx in range(len(result.hand_landmarks)):
                 handedness = result.handedness[idx][0].category_name
                 if handedness not in TRACKED_HANDS:
@@ -949,12 +969,36 @@ def main():
                 # need an explicit x-negation there -- verify live when that
                 # port happens, don't assume the same code is correct as-is.
                 world_landmarks = [(lm.x, lm.y, lm.z) for lm in result.hand_world_landmarks[idx]]
-                hand_data_by_hand[handedness] = {
+                detections.append({
+                    "raw_handedness": handedness,
+                    "score": float(result.handedness[idx][0].score),
                     "pixel_landmarks": pixel_landmarks,
                     "world_landmarks": world_landmarks,
-                    "thumb_outward": _is_thumb_outward(pixel_landmarks, handedness),
+                    "normalized": normalized,
+                })
+
+            # DR-1: resolve track-level identity by POSITION before anything
+            # keys off handedness. Identical code path to production.
+            observations = [
+                (hand_identity.palm_centroid(d["pixel_landmarks"]),
+                 d["raw_handedness"], d["score"],
+                 hand_identity.palm_width(d["pixel_landmarks"]))
+                for d in detections
+            ]
+            if detections and all(o[0] is not None for o in observations):
+                labels = _hand_identity_tracker.update(observations)
+            else:
+                labels = [d["raw_handedness"] for d in detections]
+
+            for d, label in zip(detections, labels):
+                # thumb_outward is chirality-sensitive, so it must be computed
+                # from the RESOLVED label, not MediaPipe's raw one.
+                hand_data_by_hand[label] = {
+                    "pixel_landmarks": d["pixel_landmarks"],
+                    "world_landmarks": d["world_landmarks"],
+                    "thumb_outward": _is_thumb_outward(d["pixel_landmarks"], label),
                 }
-                normalized_by_hand[handedness] = normalized
+                normalized_by_hand[label] = d["normalized"]
 
             update_hands(state, hand_data_by_hand)
 

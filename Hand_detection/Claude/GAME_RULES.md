@@ -21,6 +21,26 @@ plain language, not implementation detail (link to the code instead).
    the camera's view (tracking lost), the object un-snaps and freezes in
    place at its last position.
    - Same files as rule 1, tracking-loss release branch.
+   - **Proposed change, NOT yet decided (2026-08-02)**: the perception
+     spec's M10.7 argues for a **~400 ms grace period** before dropping —
+     "losing tracking is not the same as letting go." That would change
+     this rule's behaviour, so it is a **game-design decision for the
+     owner**, not something to introduce as a side effect of building
+     M10. Note it also interacts with the same-frame release/re-snap
+     ordering fix (a cube held in limbo must be excluded from other
+     hands' snap passes meanwhile). `PERCEPTION_LAYER_SPEC.md` M10.
+   - **KNOWN ISSUE (observed 2026-08-02, recorded only — not being fixed
+     now): a hand can steal another hand's cube by occluding it.** If
+     hand A is holding a cube and hand B moves in front of it, hand A's
+     tracking is lost, this rule releases the cube, and hand B — which is
+     by definition right where hand A was, hence within grab radius —
+     snaps it on a following frame. **Mechanism is inferred from the
+     rules, not instrumented**: the existing same-frame ordering fix
+     (§13.5) only prevents re-snapping on the *same* tick, not the next
+     one. Expected to be resolved as a side effect of refining snap
+     control — in particular M10.7's grace period would keep the cube
+     held through the occlusion, leaving nothing to steal. Recorded so it
+     is not rediscovered as a new bug. Merged queue item N8.
 
 3. **Thumb-outward snap restriction.** A hand cannot snap an object while
    oriented with the thumb outward (i.e. the camera is facing the back of
@@ -40,9 +60,17 @@ plain language, not implementation detail (link to the code instead).
      correct) — root cause was a mirrored-vs-unmirrored handedness label
      mismatch in the server's wire protocol (`hands_visualizer.py`), not
      the rule's own formula, which was identical in both files. Fixed at
-     the source (`_mirror_handedness()`). Not yet independently
-     live-confirmed after the fix. Full account: `GESTURE_PIPELINE_SPEC.md`
-     §13.6.1.
+     the source (`_mirror_handedness()`). Live-confirmed 2026-08-02. Full
+     account: `GESTURE_PIPELINE_SPEC.md` §13.6.1.
+   - **Two changes queued (2026-08-02, perception spec)**: (a) a **`K`
+     fixture test** locking this rule's sign convention permanently, so
+     the inversion above cannot regress silently — queued first in the
+     merged build queue; (b) **DR-2**: this rule depends on `palmFacing`,
+     so it must be **suppressed while the palm is edge-on to the camera**,
+     where the sign is genuinely unobservable and chatters on noise. Its
+     existing armed-exception state machine should be reconciled with
+     DR-2's freeze rather than duplicating it. `PERCEPTION_LAYER_SPEC.md`
+     M5d/M5e.
 
 4. **Rotation while snapped.** While a hand holds a cube, the cube's
    orientation follows the hand's rotation — but RELATIVE to how the hand
@@ -148,6 +176,10 @@ plain language, not implementation detail (link to the code instead).
      likely shares root cause with the not-yet-built Z-axis translation
      gesture. Deliberately deferred; proposed direction is a future
      startup Z-axis calibration step. `GESTURE_PIPELINE_SPEC.md` §14.1.1.
+     **Fix path identified 2026-08-02**: the perception spec's M9
+     (foreshortening-corrected depth, using M5a's edge-on measure as the
+     `|cos θ|` term) is that "startup calibration" idea made concrete.
+     Queued as item T4 in the merged build queue.
    - **Known issue (TODO, named "Object Jump Correction" for reference) —
      ROOT-CAUSED, NOT YET FIXED: the cube can jump to a completely
      different on-screen location and back.** No longer "spurious" —
@@ -164,6 +196,12 @@ plain language, not implementation detail (link to the code instead).
      to get right) — explicitly deferred to a future round of
      improvements, not attempted blind. Full account + reusable recorded
      data: `GESTURE_PIPELINE_SPEC.md` §14.1.4.
+     **Fix path identified 2026-08-02**: the perception spec maps this to
+     **DR-1** (make handedness a track-level property established once,
+     rather than a per-frame decision — which is the structural cause) plus
+     **M4's χ² gate** (reject the implausible single-frame excursion and
+     coast on the model). Queued as item T3 in the merged build queue;
+     expected to close in Phases 1–2 rather than needing its own filter.
 
 ## Not yet built
 
@@ -183,8 +221,11 @@ plain language, not implementation detail (link to the code instead).
   where fingers AND wrist would scale together instead). The closed-fist
   release plan is superseded by this, not coexisting with it, since
   closed-fist detection is parked above. Proposed recording-based
-  discrimination plan: `GESTURE_PIPELINE_SPEC.md` §14.2. **First priority**
-  after the translation-pivot fix below.
+  discrimination plan: `GESTURE_PIPELINE_SPEC.md` §14.2. **Re-sequenced
+  2026-08-02**: now gated behind its hard prerequisites — M4 (occlusion
+  detection: without it, a partially-hidden hand drops its object) and
+  M10 (commitment dynamics) — because building it first means building it
+  twice. Merged queue item 4.4.
 - Open-palm rotation gating — **not planned**: rotation stays permanently
   ungated now that open-palm/closed-fist detection is parked (rule 4).
 - **Z-axis (camera-view-axis) translation, design confirmed 2026-08-01, not
@@ -193,18 +234,27 @@ plain language, not implementation detail (link to the code instead).
   ratio (not raw MediaPipe `z`), mapped absolutely/continuously like
   today's X/Y translation. Snap itself would become a 3D proximity check
   (hand must be close to the cube on X, Y, **and** this new Z axis, not
-  just X/Y as today). Queued **third** in build order (unchanged), after
-  the translation-pivot fix and the hand-open release trigger above.
-  **Related (2026-08-01): likely shares root cause with the translation
-  fix's deferred yaw/palm-sinking limitation above** — a proposed future
-  startup Z-axis calibration step may address both together. Full design:
+  just X/Y as today). **Re-sequenced 2026-08-02**: gated behind M2
+  (calibrated skeleton) and M9 (metric depth) — no calibrated skeleton
+  means no usable depth. Merged queue item 4.2. **Related (2026-08-01):
+  shares root cause with the translation fix's yaw/palm-sinking
+  limitation above** — M9's foreshortening correction addresses both.
+  **Still undecided**: what the 3D snap check does when `depthValid` is
+  false — fall back to 2D proximity, or refuse to snap. Full design:
   `GESTURE_PIPELINE_SPEC.md` §14.3.
 
-**Confirmed build order (2026-08-01)**: translation-pivot fix →
-hand-open-quick-release trigger → Z-axis translation. Open-palm/closed-fist
-detection is parked, not queued at all for now.
+**Build order — see `PART_ONE.md` §3.1.** As of 2026-08-02 the project has
+**one merged build queue** covering both the gesture features above and
+the newly-integrated perception-layer modules
+(`Claude/PERCEPTION_LAYER_SPEC.md`). The previous ordering recorded here
+(translation-pivot fix → release trigger → Z-axis) is superseded:
+perception Phases 0–2 now come first, and the two remaining features are
+gated behind their prerequisites. Open-palm/closed-fist detection stays
+parked and unqueued.
 
 ## Status
 
 Current build target: Local_pc desktop prototype (`PART_ONE.md` §1). Web
-port planned later, after the Local_pc build is done.
+port planned later, after the Local_pc build is done — with `HandState` v2
+(`PERCEPTION_LAYER_SPEC.md` §2) as the contract that port reimplements
+against.
