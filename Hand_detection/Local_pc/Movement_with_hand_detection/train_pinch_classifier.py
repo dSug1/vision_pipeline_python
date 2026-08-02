@@ -41,7 +41,7 @@ BASE_CLASS_PREFIXES = {
     # examples (ratio up to ~0.51) overlapped almost exactly with some
     # hands' natural not-touching resting gap in cyclic recordings, and the
     # model couldn't tell them apart. Not yet recorded as of this comment --
-    # see HANDOFF_GESTURE_CLASSIFIER.md for the recording plan.
+    # see Claude/_archived_old_HANDOFF_GESTURE_CLASSIFIER.md for the recording plan.
     "pencil_rest_": "pencil_rest",
 }
 

@@ -98,6 +98,15 @@ plain language, not implementation detail (link to the code instead).
      a genuine floor of a single-monocular-camera setup rather than a
      software fix away. See `GESTURE_PIPELINE_SPEC.md`
      §13.7's last section before investigating further.
+   - **Filter audit (2026-08-01, later conversation): KEPT, but flagged
+     for future re-test.** Confirmed this filter's improvement is real and
+     substantial (eliminates all >30°/>60° jumps in tested data), not
+     marginal, so removing it now would be a regression. **TODO**: once
+     future improvements land (Object Jump Correction, Z-axis translation/
+     depth calibration), re-test whether this filter has become redundant
+     — don't keep it out of inertia if a later fix resolves the underlying
+     depth-ambiguity problem at its source. `GESTURE_PIPELINE_SPEC.md`
+     §13.7.1.
 
 5. **Cubes are real rotating 3D shapes, not flat squares — and the cube
    itself is just a placeholder for future imported 3D objects.** Each
@@ -139,14 +148,22 @@ plain language, not implementation detail (link to the code instead).
      likely shares root cause with the not-yet-built Z-axis translation
      gesture. Deliberately deferred; proposed direction is a future
      startup Z-axis calibration step. `GESTURE_PIPELINE_SPEC.md` §14.1.1.
-   - **Known issue (TODO, spurious, NOT YET ROOT-CAUSED): a live
-     production test found the cube once jump to the other hand and back**
-     — not reproducible on demand. Leading, unverified hypothesis: a
-     single fingertip landmark briefly misread (e.g. hand occlusion), with
-     no outlier rejection in this mechanism (unlike rule 4's
-     reliability-weighted rotation filter). Documented, not fixed — no
-     repro data to verify a fix against. `GESTURE_PIPELINE_SPEC.md`
-     §14.1.3.
+   - **Known issue (TODO, named "Object Jump Correction" for reference) —
+     ROOT-CAUSED, NOT YET FIXED: the cube can jump to a completely
+     different on-screen location and back.** No longer "spurious" —
+     made reproducible via a record-and-confirm-per-take workflow and
+     root-caused from real data: for a few frames, MediaPipe briefly mixes
+     up hand identity, reporting a DIFFERENT physical hand's position
+     under the SAME handedness label (all 9 candidate landmarks move
+     together coherently, high confidence throughout, self-corrects a few
+     frames later) — NOT frame-edge extrapolation, NOT per-landmark noise.
+     A first fix attempt (exclude out-of-bounds candidates) was built and
+     verified against real data to NOT help, and was discarded rather than
+     shipped anyway. A real fix needs a filter design comparable in
+     complexity to rule 4's own rotation filter (which took two iterations
+     to get right) — explicitly deferred to a future round of
+     improvements, not attempted blind. Full account + reusable recorded
+     data: `GESTURE_PIPELINE_SPEC.md` §14.1.4.
 
 ## Not yet built
 

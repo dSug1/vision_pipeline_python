@@ -3334,6 +3334,55 @@ active use for testing (direct request 2026-08-01: keep this debug view
 around for now, remove only once final production no longer needs
 landmark-level debugging).
 
+### 13.7.1 Filter audit (2026-08-01, later conversation) — keep for now, TODO: re-test for redundancy after future improvements
+
+Direct request: audit all accumulated filters/smoothing across the
+gesture pipeline (rotation, translation) and strip anything that didn't
+measurably contribute to solving rotation quality or "Object Jump
+Correction" (§14.1.4), or that only helped marginally at the cost of
+complexity/lag — the stated goal being to keep the game logic pure and
+simple, not accumulate filters that don't earn their keep.
+
+**Audit result, translation: nothing to strip.** Checked the actual
+shipped code, not just what was discussed — the Object Jump Correction
+investigation's candidate mitigations (exclude out-of-bounds candidate
+landmarks + renormalize + freeze-if-too-few-remain; light temporal
+smoothing on the combined position) were never merged into
+`LiveSnapDebug.py`/`HandsTriggeredActions.py`. The first was built and
+verified against real data to make no measurable difference and was
+correctly discarded before shipping (§14.1.4); the second was proposed
+but left conditional on data that never arrived, and was never built.
+Today's translation mechanism is exactly the weighted-average + no-pop
+residual, nothing layered on top.
+
+**Audit result, rotation: one real filter exists** (the predictive/
+reliability-weighted mechanism — "Attempt 3" above `CONDITIONING_ALPHA_LOW`),
+with no dead code left over from its two earlier, abandoned attempts
+(both were fully replaced in place, confirmed via grep — no orphaned
+`GEOMETRIC_DEGENERACY_NORM`/`RAW_ORIENTATION_GLITCH_DEG` constants remain,
+only historical comments referencing them). This filter's impact is
+**measured and substantial, not marginal**: eliminates all `>30°` jumps
+(4%→0%) and all `>60°` jumps (3%→0%) in the recorded back-toward-camera
+test data, mean jump 11.4°→7.8° — on top of an earlier geometric fix that
+had already reduced it from ~20.6°→12.1°. `ROTATION_SLERP_FACTOR` (basic
+easing, not bug-specific — already confirmed via a direct live test to
+not be the noise source, §13.7 above) was flagged separately as an
+ordinary responsiveness knob, not "accumulated complexity," and isn't in
+scope of this audit.
+
+**Decision (direct request): KEEP the predictive rotation filter for
+now.** The back-of-hand rotation-quality TODO remains open (this filter
+substantially reduces but doesn't eliminate it), so removing it now would
+be a real regression, not a simplification of dead weight. **New TODO,
+added to the future-improvements queue**: once future improvements land
+(candidates: "Object Jump Correction," Z-axis translation / the proposed
+startup depth-calibration step, or anything else that touches monocular
+depth ambiguity), **re-test whether this filter has become redundant** —
+if a later fix resolves the underlying depth-ambiguity problem at its
+source, the filter may no longer be pulling its weight and should be
+re-audited with the same cost-benefit discipline used here, not kept out
+of inertia.
+
 ### 13.8 Mesh-generic 3D rendering (2026-08-01) — the cube is a placeholder for future imported 3D objects
 
 Direct request, immediately after the morphing-bug fix above was
@@ -3409,8 +3458,16 @@ design confirmed in a later conversation (§14.3)** — queued after the
 first two, not started.
 
 **Confirmed build order (2026-08-01, later conversation)**: §14.1 (pivot
-fix) → §14.2 (hand-open release) → §14.3 (Z-axis translation). Ask the
-user before reordering if this ever seems worth revisiting.
+fix, DONE — implemented, live-confirmed, ported to production) → §14.2
+(hand-open release) → §14.3 (Z-axis translation). Ask the user before
+reordering if this ever seems worth revisiting.
+
+**§14.1.4 "Object Jump Correction" added (2026-08-01, later same-day
+conversation)**: a new TODO, root-caused but NOT fixed, surfaced while
+verifying §14.1 in production. NOT yet placed in the build order above —
+ask the user where it fits (before/after/alongside §14.2-§14.3) when
+picking this work back up; it was explicitly deferred to "a future round
+of improvements" without a decided sequence.
 
 ### 14.1 Grab-relative rigid attachment for translation (REDESIGNED, 2026-08-01, later conversation) — supersedes the original anchor-selection framing below
 
@@ -3738,6 +3795,14 @@ happens to catch it (check candidate-landmark positions frame-by-frame
 around any future occurrence for a stray outlier before assuming any
 other cause).
 
+**UPDATE (2026-08-01, later same-day conversation): this recurred, was
+made reproducible, and root-caused — see §14.1.4, "Object Jump
+Correction."** The "no outlier rejection" hypothesis above was directionally
+right but incomplete; the actual mechanism is more specific (a whole-hand
+identity mix-up, not per-landmark noise) and needs a different fix
+approach than a simple outlier-exclusion filter. Read §14.1.4 before
+picking this back up — don't restart from the hypothesis above.
+
 ---
 
 **Original framing (2026-08-01, superseded above — kept for context, not
@@ -3784,6 +3849,127 @@ an anchor-position adjustment rather than a grab-relative offset):
    offset along the hand's own local "into the palm" axis (derivable from
    the same orthonormal frame §13.7 already computes for rotation) toward
    the anatomically-correct pivot rather than the raw landmark centroid.
+
+### 14.1.4 "Object Jump Correction" — root cause found via recorded data, FIX NOT YET DESIGNED (TODO for a future improvements round)
+
+**Name this item "Object Jump Correction" in any future conversation** —
+direct request, so it can be referred to by name without re-explaining.
+This is the same bug §14.1.3 first reported as "spurious, not
+reproducible" — it recurred, was made reproducible, and is now
+root-caused with real data. **Read this section fully before attempting
+a fix** — the original "no outlier rejection" hypothesis (§14.1.3) was
+directionally right but incomplete, and a first fix attempt built on it
+(below) was tried, verified against real data, and found NOT to work.
+
+**Investigation process (recorded-data-first discipline, followed
+throughout)**:
+1. First hypothesis (frame-edge extrapolation): when a hand goes
+   partially off the camera frame, MediaPipe still returns 21 landmarks,
+   but the off-screen ones become extrapolated/unreliable. Built
+   `RecordTranslationPivotDebug.py` recordings (`edge_test1/2/3`,
+   `E:\Python\Recordings for vision_pipeline\Position_during_rotation`)
+   deliberately moving a hand near/off frame edges while holding a cube.
+   **Confirmed real**: out-of-bounds candidate landmarks (pixel x/y
+   outside `[0,width]×[0,height]`) correlate with elevated jitter (5.45px
+   mean vs 5.24px clean, and visibly compounding drift over sustained
+   multi-frame out-of-bounds stretches, e.g. `edge_test1` frames 70-136).
+2. **Proposed fix #1, built and verified, REJECTED because it didn't
+   help**: exclude out-of-bounds candidates from the weighted average
+   each frame, renormalizing the remaining weights (freeze if fewer than
+   3 valid candidates remain). Tested against all 3 `edge_test`
+   recordings, comparing old vs. fixed mean/max jitter, split by
+   clean-frame vs. out-of-bounds-frame. **Result: virtually no
+   difference** (clean: 5.24px vs 5.23px; out-of-bounds: 5.45px vs
+   5.49px). Investigating the single biggest recorded jump (60px) showed
+   ALL 21 landmarks were in-bounds with a 0.98 confidence score at that
+   frame — not explained by the out-of-bounds hypothesis at all.
+3. **Direct instruction**: don't analyze non-representative data — record
+   sessions one at a time, ask the operator after EACH one whether they
+   actually observed the reported jump, discard takes that didn't
+   reproduce it, keep recording until one does. Three takes
+   (`jump_test1/2/3`) did not reproduce it and were deleted. The fourth
+   (`jump_test4`, kept) did.
+
+**Root cause, confirmed from `jump_test4`'s actual data (Right hand,
+holding the small cube, frames ~100-112)** — NOT frame-edge extrapolation,
+NOT per-landmark noise:
+
+| Frame | Wrist x | All 9 candidate landmarks | Detection score |
+|---|---|---|---|
+| 100-103 | ~120-127 | clustered left side (~x=60-180) | 0.97-0.99 |
+| **104** | **608.5** | **ALL 9 jumped together** to the right side (~x=540-650) | 0.985 |
+| 105-106 | ~600-603 | stayed consistently at the NEW (wrong) location | 0.99+ |
+| 107 | 586.1 | still right side | **0.665** (notably low — a transition frame) |
+| 108 | 95.3 | jumped BACK, matching frame 103's location | 0.997 |
+
+Critically: at frame 108, the "Left" hand (undetected for the entire
+100-107 window) was briefly detected for exactly one frame, with its
+wrist at x=575 — almost exactly where "Right" had just been. **This is
+the signature of a hand-identity/handedness-slot mix-up in MediaPipe's
+own multi-hand tracking**, not a data-quality problem this pipeline's
+code caused: for several frames, whatever MediaPipe internally tracks as
+"the Right hand" pointed at a completely different (and differently
+located) hand-like detection, with normal-to-high confidence throughout
+(no low-confidence signal to gate on, except the one transition frame),
+before self-correcting. All 9 weighted-average candidates moved together
+coherently — this is why bounds-checking individual landmarks (fix #1)
+could never catch it: the teleported landmarks were mostly still WITHIN
+the visible frame the whole time, just reporting the wrong hand's
+position entirely.
+
+**Why this needs careful filter design, not a quick patch — direct
+parallel to this project's own rotation-filter history**: a naive
+"reject an implausibly large frame-to-frame jump, compare against the
+previous accepted position" filter would face the EXACT two traps
+rotation's filter needed two iterations to escape (§13.7's "Attempt 3"
+history):
+1. If frames 105-106 are compared against the frozen/rejected reference
+   from frame 104's correction rather than each other, the gap can look
+   even bigger than it is, incorrectly extending the rejection
+   (rotation's "self-reinforcing trap" bug).
+2. Even comparing raw-to-previous-raw has a subtler problem HERE
+   specifically: frames 104-106 are internally CONSISTENT with each
+   other (a sustained wrong state, not a single spike) — a filter that
+   only checks "does this frame agree with the last raw frame" would
+   correctly flag frame 104 (big jump from 103) but then get fooled by
+   105 and 106 (small jumps from 104), accepting the wrong state as the
+   new normal. Distinguishing "a brief bad spike" from "a real new
+   sustained state" is inherently the hard part — rotation's own
+   two-bug history is direct evidence this is easy to get subtly wrong
+   even with a clear design in mind, not a reason to skip the care, a
+   reason to budget for it.
+
+**NOT fixed — explicitly deferred to a future round of improvements**
+(direct request). Do not restart the investigation from scratch — the
+root cause above is confirmed, not hypothesized. What's still needed:
+1. Decide the filter's accept/reject/recovery logic (how many consecutive
+   consistent-but-different frames before accepting a new state as real,
+   mirroring how tracking-loss-then-reacquire already has its own timeout
+   semantics elsewhere in this codebase).
+2. Verify the chosen design against `jump_test4` specifically (does it
+   suppress the 104-107 excursion) AND against this same recording's
+   legitimate fast-motion frames (e.g. frames 57-61, ~40-48px/frame,
+   smooth multi-frame progression, NOT a glitch — a filter must not
+   suppress genuine fast motion) before considering it done.
+3. Decide where the fix lives: likely needs to operate on the OVERALL
+   computed translation output (or reuse `_hand_position`, already used
+   for grab-radius), not per-candidate-landmark, since the failure mode
+   is a coherent whole-hand shift, not individual-landmark corruption.
+4. Consider whether MediaPipe's own multi-hand tracking configuration
+   (e.g. `num_hands`, tracking confidence thresholds) offers any
+   upstream mitigation before building a downstream filter — not yet
+   investigated.
+
+**Reusable recorded data for whoever picks this up**: `jump_test4`
+(`E:\Python\Recordings for vision_pipeline\Position_during_rotation\translation_pivot_jump_test4_20260802_174438.json`)
+has the confirmed real jump (frames ~100-112, Right hand, small cube).
+The three `edge_test*` recordings remain useful for the separate,
+smaller-magnitude, lower-priority off-frame-extrapolation finding (item 1
+above) if that's ever worth revisiting on its own. The record-one-at-a-time
+-with-operator-confirmation workflow (`record_translation_pivot_debug.bat`,
+delete non-reproducing takes) is itself a reusable pattern for any future
+hard-to-reproduce live bug report — don't skip straight to analyzing
+whatever was captured first.
 
 ### 14.2 Unsnap by quickly fully opening the hand — new candidate release trigger
 
