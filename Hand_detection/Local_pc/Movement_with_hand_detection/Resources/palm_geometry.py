@@ -105,6 +105,113 @@ def is_edge_on(landmarks, threshold=EDGE_ON_THRESHOLD):
     return edge_on_measure(landmarks) < threshold
 
 
+# --------------------------------------------------------------------------
+# DR-2 -- edge-on exclusion (merged queue item 2.2, spec M5e)
+# --------------------------------------------------------------------------
+# Exit hysteresis: once inside the band, require edge-on to climb clearly ABOVE
+# the entry threshold, and stay there, before per-frame updates resume. Without
+# the gap, a value dithering around 0.15 would flap in and out of the band.
+EXIT_HYSTERESIS_FACTOR = 1.6          # spec M5e: exit above THRESHOLD * 1.6 = 0.24
+EXIT_DWELL_MS = 100.0                 # spec M5e says "3 consecutive frames"; that was
+                                      # written assuming 30 fps, so the INTENT is 100 ms
+                                      # (finding N1: frame-count parameters were ~38%
+                                      # longer in wall-clock than intended).
+_ASSUMED_FPS = 24.0                   # TODO (queue N7): drive from measured frame timing.
+                                      # Same hard-coded-fps problem as hand_identity.py,
+                                      # and N10 showed fps genuinely varies (19-27) with
+                                      # lighting. N7 covers BOTH; do not fix one alone.
+EXIT_DWELL_FRAMES = max(1, round(EXIT_DWELL_MS * _ASSUMED_FPS / 1000.0))
+
+
+class PalmFacingTracker:
+    """DR-2: freeze the palm/back sign while the palm is too close to edge-on.
+
+    WHY (measured, not assumed -- spec §0.2/§0.3): the sign is rock-stable when
+    well-conditioned (ZERO flips in 3130 frames above edge-on 0.60) and chatters
+    violently near edge-on (765 flips per 1k frames below 0.05 -- physically
+    impossible as real rotation at that rate). The band below 0.15 is never
+    entered during normal motion (`non_crossing` never dropped below 0.353), so
+    this fires ONLY during a deliberate palm<->back crossing. That is what makes
+    it cheap and safe.
+
+    WHAT IT PROTECTS, concretely: rule 3 disarms its snap exception on a single
+    thumb-inward reading (`if not thumb_outward: allowed = False`). One spurious
+    flip mid-crossing therefore silently revokes the exception. Freezing the value
+    through the band removes that failure mode.
+
+    ⚠ PARTIAL vs. the spec. M5e also wants the sign CARRIED THROUGH the band by
+    integrating angular velocity from M6 (the kinetic-depth effect), so a genuine
+    crossing registers instantly on exit. **M6 is item 2.3 and is not built**, so
+    that half is absent. Consequence: a real crossing is still detected correctly,
+    but only once the hand leaves the band and the exit dwell elapses -- i.e.
+    slightly LATE, never wrong. Revisit when 2.3 lands.
+    """
+
+    def __init__(self, threshold=EDGE_ON_THRESHOLD):
+        self.threshold = threshold
+        self.exit_threshold = threshold * EXIT_HYSTERESIS_FACTOR
+        self.frozen = None        # last confident thumb-outward value
+        self.in_band = False
+        self.exit_run = 0
+        # diagnostics
+        self.band_entries = 0
+        self.frames_frozen = 0
+        self.chatter_suppressed = 0
+
+    @property
+    def orientation_valid(self):
+        """False while the sign is being held rather than measured. Maps to
+        `HandState.quality.orientationValid` when that contract lands."""
+        return not self.in_band
+
+    def update(self, landmarks, handedness):
+        """Returns (thumb_outward, orientation_valid).
+
+        `thumb_outward` is the value the gesture layer should act on: measured
+        when well-conditioned, frozen while inside the band.
+        """
+        eo = edge_on_measure(landmarks)
+        measured = is_thumb_outward(landmarks, handedness)
+
+        if self.frozen is None:
+            # First sighting. Trust it even if edge-on: there is nothing to freeze
+            # to, and refusing to produce a value would block snapping outright.
+            self.frozen = measured
+
+        if not self.in_band:
+            if eo < self.threshold:
+                self.in_band = True
+                self.exit_run = 0
+                self.band_entries += 1
+            else:
+                self.frozen = measured
+                return measured, True
+        else:
+            # Inside the band: only a clear, sustained recovery resumes updates.
+            if eo > self.exit_threshold:
+                self.exit_run += 1
+                if self.exit_run >= EXIT_DWELL_FRAMES:
+                    self.in_band = False
+                    self.exit_run = 0
+                    self.frozen = measured
+                    return measured, True
+            else:
+                self.exit_run = 0
+
+        self.frames_frozen += 1
+        if measured != self.frozen:
+            # The raw cue disagreed with the held value while untrustworthy --
+            # precisely the chatter this exists to absorb.
+            self.chatter_suppressed += 1
+        return self.frozen, False
+
+    def reset(self):
+        """Drop held state (hand lost / track ended) without clearing counters."""
+        self.frozen = None
+        self.in_band = False
+        self.exit_run = 0
+
+
 def verify_matches_analyser(landmarks_list, analyser_edge_on, tol=1e-9):
     """Assert this module agrees with AnalyzePerceptionSequences.edge_on().
 

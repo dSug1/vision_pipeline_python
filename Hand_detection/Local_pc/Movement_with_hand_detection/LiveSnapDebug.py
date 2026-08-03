@@ -75,6 +75,11 @@ TRACKED_HANDS = ("Left", "Right")
 # One tracker for the whole session, mirroring production's module-level one.
 _hand_identity_tracker = hand_identity.HandIdentityTracker()
 
+# DR-2 palm-facing freeze, per hand -- mirrors production's `_palm_facing_trackers`
+# in HandsTriggeredActions.py (queue item 2.2). Same shared class, so the debug tool
+# and the game apply an identical edge-on policy.
+_palm_facing_trackers = {h: palm_geometry.PalmFacingTracker() for h in ("Left", "Right")}
+
 WRIST = 0
 INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP = 5, 9, 13, 17
 HAND_POSITION_LANDMARKS = [WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP]
@@ -997,10 +1002,17 @@ def main():
             for d, label in zip(detections, labels):
                 # thumb_outward is chirality-sensitive, so it must be computed
                 # from the RESOLVED label, not MediaPipe's raw one.
+                # DR-2 (queue item 2.2): freeze the palm/back sign while edge-on,
+                # exactly as production does -- same shared tracker class, same
+                # per-hand state. Mirrored here because the debug tool must stay in
+                # tune with production (owner instruction, 2026-08-02).
+                _dr2_outward, _dr2_valid = _palm_facing_trackers[label].update(
+                    d["pixel_landmarks"], label
+                )
                 hand_data_by_hand[label] = {
                     "pixel_landmarks": d["pixel_landmarks"],
                     "world_landmarks": d["world_landmarks"],
-                    "thumb_outward": _is_thumb_outward(d["pixel_landmarks"], label),
+                    "thumb_outward": _dr2_outward,
                 }
                 normalized_by_hand[label] = d["normalized"]
 

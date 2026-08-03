@@ -321,10 +321,24 @@ it still fails on real drift.
 > "simplify" either path** — the asymmetry is load-bearing, and §13.6.1 is what
 > happens when it is broken.
 
-**Immediate next step: continue item 0.2b** — the remaining §7.2 sequences
-(`occlusion`, `depth_sweep`, fiducial grabs, direction reversals = item 0.3, free
-manipulation). After that, Phase 1 items 1.2 (M5a `edgeOnMeasure`) and 1.4 (M2
-bone-length calibration) are the unblocked code work.
+**Item 1.2 (M5a `edgeOnMeasure`) is DONE and LIVE-CONFIRMED 2026-08-03** (§0.10).
+New shared module `Resources/palm_geometry.py`, imported by **both**
+`HandsTriggeredActions.py` and `LiveSnapDebug.py` — which also **retires the
+hand-synced duplicate `_is_thumb_outward`**, the exact duplication behind §13.6.1.
+Verified to 5.55e-16 against the analyser across 22,345 hand-frames, fixture test
+15/15, then live-tested: *"everything working"*, 0 errors, DR-1 inert.
+
+**Item 0.2b is substantially done** — 24 sessions on E:. Only fiducial grabs
+(needs 5 physical markers) and direction reversals (= item 0.3, needs a 240 fps
+phone) remain, and **neither blocks Phase 1–2**.
+
+**Immediate next step: item 2.2 (M5e DR-2 edge-on band)** — suppress
+palm-facing-dependent decisions when `edgeOnMeasure < 0.15`. Every prerequisite now
+exists (1.2 done, 2.1 done). ⚠ Unlike 1.2, this **changes game behaviour**, so
+"nothing changed" will NOT be the pass condition for its live test. It is also half
+of what T2 (pitch-plane crossing) needs; the other half is **2.3** (M6b–e quaternion
+UKF + anisotropic covariance, whose deliverable includes DELETING
+`HandOrientationFilter`). T1 needs 2.3 alone.
 
 Three things happened on 0.2b this evening — full account in
 `PERCEPTION_LAYER_SPEC.md` §0.7 / §0.7.1:

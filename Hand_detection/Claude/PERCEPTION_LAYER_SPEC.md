@@ -1078,14 +1078,146 @@ The fixture test now *additionally* asserts that **neither file has reinlined th
 maths** — that is the invariant that actually prevents drift now. Both the
 body-equality check and the delegation check are kept.
 
+### LIVE-CONFIRMED 2026-08-03
+
+Run via `launch.bat`'s production path immediately after the refactor. **Operator
+verdict: "everything working."** Checked: the thumb-outward rule in *both*
+orientations on *both* hands (the one non-handedness-symmetric step, and the exact
+thing §13.6.1 inverted), plus grab / translate / rotate / tracking-loss release.
+
+Console: **18 DR-1 events, all benign** — 9 identity locks, 9 track-ends as hands
+left frame — and **0 switches, 0 duplicate-label repairs, 0 glitch rejections,
+0 errors or tracebacks.** The tracker sitting inert is the correct result for
+normal use.
+
+This was a **regression test by design**: item 1.2 is behaviour-preserving, so
+"nothing changed" *is* the pass condition. It confirms the refactor — production
+and the debug tool now sharing one chirality implementation — did not disturb the
+shipped behaviour.
+
+*Incidental: this run produced no duplicate-repair events at all, where the first
+DR-1 live test (§0.6) produced three. Not enough to conclude anything about N9's
+frequency, and N9 stays open.*
+
 ### Still open
 
-- **Not live-tested.** The change is additive plus a pure-function move, and it is
-  replay-verified across the whole corpus, but production has not run against a
-  camera since. Fold this into the next live session rather than treating it as
-  confirmed.
 - **Nothing consumes `edgeOnMeasure` yet.** DR-2 (item 2.2) is the consumer, and
-  gating gesture rules on it is a behaviour change that needs its own live test.
+  gating gesture rules on it is a real behaviour change that needs its own live
+  test — unlike this one, "nothing changed" will NOT be the pass condition there.
+
+---
+
+## 0.11 DR-2 edge-on exclusion built (2026-08-03) — item 2.2, and a real rule-3 bug it closes
+
+`PalmFacingTracker` in `Resources/palm_geometry.py`, per hand, **shared by
+production and the debug tool** (same class, same policy — the tool cannot apply a
+different edge-on rule than the game).
+
+### The concrete defect this removes
+
+Rule 3 disarms its snap exception on a single reading:
+
+```python
+if not thumb_outward:
+    _thumb_outward_snap_allowed[handedness] = False
+```
+
+Near edge-on the raw sign chatters at up to **765 flips per 1000 frames** (§0.2) —
+impossible as real rotation. So **one** spurious flip silently revokes the
+exception. In play: release a cube showing the back of your hand (which arms the
+exception), pass through edge-on, and your re-grab is refused with nothing on
+screen explaining why. Freezing the sign through the band removes that path
+entirely.
+
+### Behaviour
+
+- `edge_on_measure >= 0.15` → measure per frame, as before.
+- `< 0.15` → **freeze** at the last confident value; `orientation_valid = False`.
+- Exit → resume only after edge-on exceeds `0.15 × 1.6 = 0.24` for ~100 ms
+  (`EXIT_DWELL_MS`, expressed in ms per finding N1 rather than the spec's
+  30 fps-assuming "3 frames").
+- Hand lost → `reset()`, so a stale sign is never carried across a reacquire.
+  `_last_known_thumb_outward` deliberately survives (rule 3 needs an orientation to
+  record at a tracking-loss release); only the frozen value is dropped.
+
+### A/B under A10 — modest but real, with zero regressions
+
+Replayed over all 24 sessions, measuring what the *gesture layer* sees:
+
+| | result |
+|---|---|
+| ground-truth streams improved | **2 of 10** |
+| ground-truth streams **worsened** | **0** |
+| unchanged | 8 |
+| chirality controls (`static_hold`, `non_crossing`) where DR-2 did anything | **0** |
+| fixture test after wiring | 15/15, exit 0 |
+
+Best case: `palm_back_s2_slow`/Right went from **4 off** ground truth to **exactly
+matching**. `two_hand_near_miss` shed 14 flips (10→0, 4→0) in a take where no
+crossing was ever scripted. **The effect is modest — 8 of 10 streams unchanged —
+and that is stated rather than dressed up**; it passes A10 on "measured
+improvement, no regression, inert on controls," not on magnitude.
+
+> **Test-design error worth recording:** the first A/B run flagged
+> `two_hand_near_miss` as a violated control. It is not a chirality control — it is
+> the *identity* control from §0.4, and 9.7–12% of its frames sit below edge-on
+> 0.15 because hands naturally turn edge-on as they pass each other. The true
+> chirality controls are `static_hold` and `non_crossing`, and DR-2 was inert on
+> both. The fault was in the test's control list, not in DR-2.
+
+### ⚠ Partial vs. the spec, deliberately
+
+M5e also specifies **carrying the sign through the band by integrating angular
+velocity from M6** (the kinetic-depth effect), so a genuine crossing registers
+instantly on exit. **M6 is item 2.3 and is not built.** Consequence: a real
+crossing is still detected correctly, but only after the hand leaves the band and
+the exit dwell elapses — **late by ~100 ms+, never wrong**. Revisit when 2.3 lands.
+
+### Live test 2026-08-03 — passed, with one test-design failure of mine
+
+Operator: **test 4 (regression) clean — "it does not seem anything regressed."**
+Zero errors across two runs; 3 identity switches, 0 duplicate repairs.
+
+**Test 3 was unobservable and that was my error.** I asked the operator to judge
+whether "the game agrees you have turned over" — but production exposes **no
+on-screen indicator** for the thumb-outward state; its only observable consequence
+is whether a grab is permitted. The operator correctly reported they could not
+tell. *Lesson: do not ask a human to verify a state the UI does not surface —
+measure it instead.*
+
+**Measured properly afterwards, over 144 freeze episodes in the corpus:**
+
+| | freeze duration |
+|---|---|
+| median | **96 ms** |
+| p90 | 163 ms |
+| p99 | **1781 ms** |
+| max | **3480 ms** |
+
+The median matches the ~100 ms design intent and is imperceptible (the operator
+felt nothing). **The tail was not anticipated**: `two_hand_near_miss` medians
+1.6 s and peaks at 3.5 s, because the hand is held *sustained sideways-on* and the
+cue is genuinely unreadable that whole time. Not a mechanism defect — but it means
+rule 3 can act on a reading up to ~3.5 s stale in that pose. Recorded in
+`GAME_RULES.md` rather than left implicit. A max-freeze cap was considered and
+**not** added: the spec's answer is to suppress `palmFacing`-dependent gestures via
+`orientationValid`, which is the correct fix once a consumer exists — inventing a
+cap now would be exactly the heuristic pile-up the project avoids.
+
+### A separate defect surfaced by the same test — see queue N12
+
+The operator observed a **held cube jumping as the hand crosses the horizontal
+(pitch) plane**, settling once the crossing completes. **Not DR-2** (which never
+touches a held cube's position). It is the **third independent symptom** of
+§14.1's fingertip-anchored translation, alongside T4's yaw/palm-sinking and Object
+Jump Correction — and precisely what M8a predicted. Strengthens the case for the
+M8a A/B (item 3.3). Full entry: `PART_ONE.md` §3.1 N12.
+
+### Still open
+- `orientation_valid` is computed and returned but **no rule consumes it yet** —
+  it is the natural hook for `HandState.quality.orientationValid`.
+- `_ASSUMED_FPS = 24.0` is hard-coded here as well as in `hand_identity.py`.
+  **N7 covers both; do not fix one alone.**
 
 ---
 

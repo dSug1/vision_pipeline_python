@@ -63,6 +63,22 @@ GRAB_RADIUS_MULTIPLIER = 1.5
 _last_known_thumb_outward: Dict[str, bool] = {h: False for h in TRACKED_HANDS}
 _thumb_outward_snap_allowed: Dict[str, bool] = {h: False for h in TRACKED_HANDS}
 
+# DR-2 (queue item 2.2, spec M5e): freeze the palm/back sign while the palm is too
+# close to edge-on for it to be trustworthy. Per-hand, and SHARED with
+# LiveSnapDebug.py via palm_geometry so the two cannot diverge.
+#
+# What this protects, concretely: the rule-3 line below disarms the snap exception
+# on a single thumb-inward reading (`if not thumb_outward: ... = False`). Near
+# edge-on the raw sign chatters at up to 765 flips per 1000 frames (spec §0.2), so
+# ONE spurious flip mid-crossing silently revokes the exception. Freezing through
+# the band removes that.
+#
+# Measured before shipping (A10): improved 2 of 10 ground-truth streams, worsened
+# NONE, and did nothing at all on both chirality controls. See spec §0.11.
+_palm_facing_trackers: Dict[str, palm_geometry.PalmFacingTracker] = {
+    h: palm_geometry.PalmFacingTracker() for h in TRACKED_HANDS
+}
+
 
 def _is_detected(landmarks: List[Tuple[float, float]]) -> bool:
     """A hand not detected this frame arrives as 21 (0, 0) placeholder
@@ -450,8 +466,19 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     for handedness, landmarks in hands:
         if not _is_detected(landmarks):
             _hand_orientation_filters[handedness] = HandOrientationFilter()  # avoid predicting from a stale reference on reacquire
+            # Same reasoning for DR-2's frozen sign: a value held from before the
+            # hand vanished is stale, and the hand may reappear in a different
+            # orientation. `_last_known_thumb_outward` deliberately survives this
+            # (rule 3 needs an orientation to record at a tracking-loss release);
+            # the FROZEN value must not.
+            _palm_facing_trackers[handedness].reset()
             continue
-        thumb_outward = _is_thumb_outward(landmarks, handedness)
+        # DR-2: measured when well-conditioned, frozen while edge-on. `orientation_valid`
+        # is False while frozen -- currently unused by any rule, and the natural hook
+        # for HandState.quality.orientationValid when that contract lands.
+        thumb_outward, _orientation_valid = _palm_facing_trackers[handedness].update(
+            landmarks, handedness
+        )
         _last_known_thumb_outward[handedness] = thumb_outward
         if not thumb_outward:
             _thumb_outward_snap_allowed[handedness] = False

@@ -55,6 +55,37 @@ plain language, not implementation detail (link to the code instead).
      `last_known_thumb_outward`/`thumb_outward_snap_allowed` per-hand state
      pair. Orientation sign convention calibrated live 2026-08-01 (see
      `GESTURE_PIPELINE_SPEC.md` §13.6).
+   - **⚠ KNOWN LATENCY, INTRODUCED 2026-08-03 — TO BE REMOVED BY QUEUE ITEM
+     2.3.** Turning the hand palm↔back is registered *late*: the game keeps
+     using the previous palm/back reading until the hand is clearly out of
+     the edge-on zone, then catches up. It is never *wrong*, only delayed.
+     - **Measured over 144 freeze episodes across the whole recording
+       corpus** (not estimated): **median 96 ms, p90 163 ms — but p99
+       1.8 s and max 3.5 s.** The long tail is not a defect in the
+       mechanism: it occurs when the hand is held **sustained sideways-on**
+       to the camera (worst in the two-hand near-miss/overlap takes), where
+       the cue is genuinely unreadable for that whole period. The typical
+       case really is about a tenth of a second, and a live test on
+       2026-08-03 could not perceive it at all.
+     - **The consequence to be aware of**: in a sustained sideways pose this
+       rule can act on a palm/back reading up to ~3.5 s stale. Nothing has
+       been observed to break because of it, and it is preferable to acting
+       on a coin-flip, but it is a real window and is recorded rather than
+       hidden.
+     - **Why it exists.** Passing through edge-on, the palm/back cue is
+       genuinely unreadable — measured at up to 765 sign flips per 1000
+       frames, which no real hand motion can produce. DR-2 (queue item 2.2)
+       therefore freezes the reading through that zone instead of acting on
+       noise. Without it, a single spurious flip silently revoked this
+       rule's own exception, so a legitimate re-grab was refused with no
+       visible cause.
+     - **Why it is temporary.** The design (spec M5e) also calls for
+       *carrying the sign through* the zone by integrating the hand's
+       angular velocity, so a genuine turn registers immediately on exit.
+       That needs the orientation estimator in **queue item 2.3**, which is
+       not built. **When 2.3 lands, this latency should be removed, not
+       kept** — it is the cost of a missing component, not a design choice.
+     - Full account: `PERCEPTION_LAYER_SPEC.md` §0.11.
    - **Bug found and FIXED (2026-08-01, later conversation): this rule was
      silently INVERTED in production only** (debug tool was always
      correct) — root cause was a mirrored-vs-unmirrored handedness label
