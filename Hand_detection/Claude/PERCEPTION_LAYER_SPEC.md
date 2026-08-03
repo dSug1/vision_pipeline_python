@@ -1390,6 +1390,169 @@ different behaviour and is exactly where 6c's benefit is supposed to live.
 filter, not the fixed-gain approximation. Do not re-run the fixed-P version and
 expect a different answer.
 
+### 0.13.1 — The propagated-covariance filter WAS built, and it also loses (2026-08-03)
+
+§0.13 said the fixed-P approximation was not a fair test and that a real filter must
+propagate covariance. **That filter was then built** — `Resources/orientation_filter.py`,
+a full error-state multiplicative Kalman filter on SO(3), numpy-free:
+
+```
+predict   q_pred = q ⊗ exp(ω);  ω *= OMEGA_DECAY;  P += Q      <- uncertainty GROWS while coasting
+update    dz = log(q_pred⁻¹ ⊗ q_meas)                          <- innovation, body frame
+          R  = diag(σ_long², σ_base²/obs, σ_base²/obs)         <- 6c anisotropy
+          K_i = P_i/(P_i+R_i);  q = q_pred ⊗ exp(K·dz)
+          P_i = (1-K_i)·P_i                                    <- shrinks ONLY when trusted
+```
+
+This is the growing-while-lost / snapping-back-when-found mechanism §0.13 identified
+as missing. **It works exactly as intended and still loses.**
+
+**54 configurations swept** (σ_long ∈ {0.02…0.3} × σ_base ∈ {0.6, 1, 2} × Q ∈ {0.005…0.3}):
+
+| config | >60 | p99 | max | trk_well | trk_fast |
+|---|---|---|---|---|---|
+| **shipped isotropic** | 589 | 120.2 | 180.0 | **1.40°** | **5.04°** |
+| UKF σ_l=0.3 σ_b=2.0 Q=0.005 | **1** | **38.0** | **62.7** | 23.65° | 42.40° |
+| UKF σ_l=0.02 σ_b=0.6 Q=0.3 | 596 | 102.7 | 175.9 | 3.56° | 7.55° |
+
+**The trade is absolute.** Push the tail down and tracking collapses; tighten
+tracking and the tail benefit vanishes entirely. **No configuration wins both.**
+
+### ⭐ Why the shipped heuristic is so hard to beat — the actual insight
+
+The shipped filter is **not really a continuous filter — it is a switch.**
+`alpha_iso` saturates at 1 when well-conditioned (so `fused == raw`, a pure
+passthrough, zero lag) and drops to 0 when degenerate (hard damp, full prediction
+trust). **That bimodality is matched to the failure mode**: degeneracy here is
+*rare and severe*, not gradual. A Kalman filter necessarily applies **graded**
+damping on every frame, so it pays lag continuously to buy protection that is only
+needed occasionally.
+
+**This reframes A6's "delete `HandOrientationFilter`" obligation.** The filter is
+not a crude stand-in for a principled estimator — its crudeness *is* the fit to the
+problem. Any replacement must reproduce that near-bimodal response, not smooth it
+away. **Four independent attempts have now failed to beat it** (SVD frame,
+observability-as-blend-weight, fixed-P anisotropic, propagated-covariance
+anisotropic).
+
+**Do not attempt a fifth without a new idea.** Candidates not yet tried, recorded so
+the next attempt is not a repeat: (a) gate the Kalman update so it is a passthrough
+above an observability threshold and only engages below it — i.e. keep the
+bimodality and use the covariance only inside the bad band; (b) full 3×3 `P` with
+the frame-rotation cross-term this diagonal version omits; (c) accept the tail and
+address it at the *source* (M2/M4 landmark quality) rather than by filtering.
+
+### 0.13.2 — ROOT CAUSE FOUND: the tail is NOT an observability problem (2026-08-03)
+
+Attempt 5 gated the KF to passthrough above an observability threshold, keeping the
+shipped filter's zero-lag bimodality and using the covariance only inside the bad
+band. **It tracked perfectly (0.000°) and left the tail untouched** (>60: 698–742 vs
+baseline 589; max unchanged at 180°).
+
+That result prompted the diagnostic that should have come first — **where do the
+large RAW jumps actually occur?**
+
+| observability | % of frames | >60° jumps | >60 per 1k frames |
+|---|---|---|---|
+| [0.00, 0.15) | 0.1% | 2 | **166.7** |
+| [0.15, 0.30) | 0.3% | 22 | **318.8** |
+| [0.30, 0.45) | 0.6% | 37 | **278.2** |
+| [0.45, 0.60) | 1.4% | 72 | **235.3** |
+| [0.60, 0.75) | 4.2% | 155 | 166.3 |
+| **[0.75, 0.90)** | **82.6%** | **349** | **18.9** |
+| [0.90, 1.01) | 10.9% | 93 | 38.3 |
+
+**Both readings are true and the second is the one that matters:**
+
+1. **Per frame, low observability IS ~17× more dangerous** (319/1k vs 19/1k). The
+   premise is not nonsense.
+2. **But 82% of all large jumps occur at observability ≥ 0.60** — because that is
+   97.7% of frames. **Only 18% of the problem lives in the band M6c can reach.**
+
+### This single fact explains all five failures
+
+- **Attempts 1–4** keyed damping to observability. To catch the 82% they had to damp
+  *everywhere*, which is why every tail improvement cost 3–17× worse tracking.
+- **Attempt 5** acted only inside the band. It therefore addressed only 18% of the
+  jumps and produced no tail benefit at all — while tracking perfectly.
+
+Two failure modes, one cause, seen from opposite sides. **M6c's mechanism is sound
+and simply does not apply to the dominant failure here.**
+
+### Consequence for the plan — redirect, do not iterate
+
+A sixth attempt at anisotropy is **not** warranted. The 82% of jumps occurring in
+well-conditioned frames are a **landmark-quality** problem, not a pose-estimation
+one: at 24 fps a >60° change in 41 ms implies >1460°/s, at or beyond the human wrist
+limit, so most of these are bad landmarks rather than real motion.
+
+That points at option (c) from §0.13.1, now with evidence behind it:
+
+- **1.4 (M2 bone-length calibration)** and **1.6 (M4 precision weighting + χ²
+  gating)** attack the tail at its source. M4's χ² innovation gate in particular is
+  designed to reject exactly this: a physically implausible single-frame excursion.
+- **T1/T2 were queued behind 2.3 on the assumption that better pose filtering would
+  fix them. That assumption is now measured false for 82% of the failures.** They
+  should be re-tested after 1.4/1.6, not after 2.3.
+
+**2.3 is therefore DEPRIORITISED, not merely paused** — and `orientation_filter.py`
+stays parked and unwired.
+
+### 0.13.3 — Salvage assessment: what the 5 failed attempts left behind (2026-08-03)
+
+Owner question: *do the built artifacts have value somewhere we did not think of?*
+Probed rather than assumed.
+
+**Tested and REJECTED — repurposing the machinery as M4's χ² gate.** A χ² innovation
+gate needs a prediction, an innovation and an innovation covariance; the parked
+filter has all three, and unlike graded anisotropy a gate is **bimodal** (the shape
+that keeps winning) and targets implausible jumps *wherever* they occur — including
+the 82% in well-observed frames. It looked like the right salvage. It is not:
+
+| | >60 | max | trk_well | rejected |
+|---|---|---|---|---|
+| shipped | **589** | 180° | **1.40°** | — |
+| χ² gate p=0.01 | **2167** | 180° | 17.16° | 14.6% |
+| physical gate 25° | **14319** | 180° | 102.96° | 59.9% |
+
+**3.7× and 24× worse.** Rejecting a measurement means coasting on the model; the
+model diverges; the eventual re-acceptance produces a *larger* jump than the one
+suppressed. **The gate manufactures the failure it targets.**
+
+### ⭐ The finding underneath ALL of it: the motion model is weak
+
+The physical gate rejects **60% of frames at a 25° threshold**, i.e. a one-frame
+constant-angular-velocity prediction routinely disagrees with the measurement by
+more than the typical motion (mean frame-to-frame change: 9.9°).
+
+**This unifies every failure in §0.13–§0.13.2.** The shipped filter wins because
+`alpha` saturates at 1 and it therefore *ignores the prediction almost always*.
+Graded blending, coasting and gating all lean on the model to different degrees, and
+all inherit its weakness.
+
+### Verdict
+
+**No value:** the anisotropic update; the χ² / physical gate for orientation.
+Both measured, both worse, both recorded so they are not retried.
+
+**Real value, two items:**
+
+1. **`palm_observability()` → `HandState.quality.orientationValid` (M6e).** It is a
+   *correct* observability signal — collapses at crossings, 0.046–0.908, matched to
+   numpy at 1.6e-11, numpy-free and portable. It simply is not what drives the tail.
+   Its home is the §2 quality contract that gestures branch on, not the filter.
+2. **⚠ A WARNING FOR ITEM 3.1 (M7), worth more than the code.** M7's forward
+   prediction extrapolates with *this same* constant-angular-velocity model, up to
+   ~80 ms ≈ 2 frames. **The model is measurably unreliable at ONE frame.**
+   **Before building M7, measure the model's prediction error and confirm it is fit
+   to extrapolate with.** M7's premise — "net perceived latency can go to zero" —
+   assumes a predictor this data does not yet support.
+
+*Caveat, stated because it bounds the claim: M4's χ² gate was designed for the
+Object Jump case — a whole-hand POSITION teleport, where the excursion is
+unambiguous and position is far easier to coast. **This result condemns the gate for
+ORIENTATION only**; item 1.6 should still evaluate it for position.*
+
 ### What this run did establish
 
 The shipped hand-rolled filter was **re-validated a third time** on the full
@@ -1400,6 +1563,82 @@ attempt to replace it.
 **A6's "delete `HandOrientationFilter`" obligation is therefore NOT met and the
 filter stays.** The bar is a replacement that is measurably better on *both*
 families of metric — which is a higher bar than "more principled".
+
+---
+
+## 0.14 M2 built and MEASURED (2026-08-03) — the fixed-bone-length prior does not exist in this sensor
+
+Queue item 1.4. `Resources/hand_model.py` built (numpy-free, portable): 21-bone
+topology, low-motion-gated collection, running **median** (never mean — occlusion
+outliers are severe and one-sided), IQR freeze gate, per-user persistence, plus
+`pose_normalised_residual()` for N2.
+
+**Then measured against the spec's own acceptance criterion, and it fails.**
+
+### The measurement
+
+Pooled **still frames only** (motion < 3% of hand size) across all 24 sessions —
+i.e. calibrated exactly as §2f prescribes, with pose diversity:
+
+| | IQR / median, per bone |
+|---|---|
+| **freeze gate requires** | **< 2%** |
+| Left, palm bones | median **10.49%**, worst 11.93% — **0/5 inside 2%** |
+| Left, fingertip bones | median 11.37%, worst 15.46% — 0/5 |
+| Right, palm bones | median **6.28%**, worst 12.59% — **0/5 inside 2%** |
+| Right, fingertip bones | median 11.36%, worst **22.21%** — 0/5 |
+
+Independent half-vs-half check (calibrate on half the sessions, verify on the
+other): worst bone disagreement **4.02%** (Left) and **24.33%** (Right), against a
+< 2% target.
+
+**Not a single bone, in any group, converges.** The best subset is Right-hand palm
+bones at ~6%, still 3× outside the gate.
+
+### This does NOT contradict §0.2 — it is a different quantity
+
+§0.2 measured the palm **rigidity residual** at 2.76 mm (inside target): a
+rigid-body fit of the palm *within* a pose. This measures bone length *across*
+poses. **Within a pose the palm is rigid; across poses the measured lengths shift
+by 6–12%.** Both are true, and the second is what a persistent body schema needs.
+
+### What it means
+
+**MediaPipe's `worldLandmarks` do not encode a pose-consistent hand skeleton.**
+Depth error is pose-dependent, so bone lengths derived from them inherit that
+dependence. M2's premise — that ~20 fixed lengths are "the strongest prior
+available, free to obtain" — **does not hold for this sensor at the stated
+precision.**
+
+Consequences, stated plainly because several queue items rest on this:
+
+- **1.4's acceptance criterion is unreachable as written.** Do not tune the gate to
+  make it pass; 2% is not available.
+- **N2 is confirmed and my proposed fix FAILED.** `pose_normalised_residual()`
+  (dividing out the rigid palm's common-mode scale) moved the moving/still residual
+  ratio only from **2.05× to 1.99×**. The pose effect is not common-mode, so it does
+  not divide out. **N2 stays open and needs a different idea.**
+- **1.6 (M4) loses its intended per-landmark error signal.** M4 was to consume the
+  bone residual; that residual is dominated by pose, not by landmark quality.
+- **4.1 (M9 metric depth) and T4 are at risk** — both depend on 1.4 supplying a
+  reliable scale reference, which it cannot at better than ~6–10%.
+
+### Options, none yet chosen
+
+1. **Relax the target and use bone lengths as a SOFT prior (~6–10%).** Still useful
+   for gross outlier rejection (a bone 3× too long is certainly wrong), useless for
+   precision depth.
+2. **Calibrate per-pose rather than globally.** Within a pose, bone CV is ~1%
+   (§0.3), so short-horizon consistency is achievable — but it does not persist,
+   which is most of what a body schema was for.
+3. **Question the input.** Bone lengths from `worldLandmarks` inherit its depth
+   error. Screen landmarks are far better conditioned (§0.2); a screen-based
+   foreshortening formulation may be the better route to M9 than a metric skeleton.
+
+*Implementation note: `_try_freeze` currently fires as soon as all bones pass with
+`MIN_SAMPLES`, which can freeze prematurely on an early tight window (observed:
+"0/21 stable" reported alongside "frozen=YES"). Fix before any use — though given
+the above, nothing should be relying on the frozen model yet.*
 
 ---
 
@@ -1520,6 +1759,14 @@ HandState = {
   quality: {
     overall,             // 0..1
     orientationValid,    // bool  -- false during pitch-plane crossing
+                         // ✅ PRODUCER ALREADY BUILT: palm_geometry.palm_observability()
+                         //    (numpy-free, verified to 1.6e-11 vs numpy over 22,345
+                         //    frames; 0.75-0.91 on controls, collapses to 0.05-0.15 at
+                         //    crossings). See M6e. Threshold not yet chosen.
+                         //    NOTE: this flags "is the palm normal well determined",
+                         //    NOT "will orientation jump" -- 82% of large jumps occur
+                         //    at observability >= 0.60 (§0.13.2). Do not use it as a
+                         //    jump predictor; that mistake cost five attempts.
     depthValid,          // bool
     occlusionLevel,      // 0..1
     motionBlur,          // 0..1
@@ -2050,6 +2297,32 @@ With this, a UKF will automatically coast on angular velocity along the unobserv
 
 **6e. Expose `orientationSigma` (per-axis) in `HandState`.** Gestures that depend on the palm normal must check it. Gestures that depend only on the hand's long axis need not — and will keep working through the crossing. This is a real capability gain, not just a safety gate.
 
+> ### ✅ 6e's INPUT IS ALREADY BUILT — `palm_observability()` (2026-08-03)
+>
+> `Local_pc/Movement_with_hand_detection/Resources/palm_geometry.py` implements
+> M6b's `observability = 1 − S₃/S₂` and it is the **one piece of the five failed
+> 2.3 attempts that carries real value** (§0.13.3). Do not rebuild it.
+>
+> | property | status |
+> |---|---|
+> | correctness | matched to numpy's SVD to **1.6e-11 over 22,345 frames** |
+> | discriminative range | **0.046 – 0.908** |
+> | behaviour at crossings | collapses to **0.05–0.15** |
+> | behaviour on controls | **0.75–0.91** (`static_hold` 0.818, `known_*` 0.834–0.890) |
+> | dependencies | **none** — closed-form 3×3 symmetric eigenvalues, no numpy, ports to JS/Swift/Kotlin by transliteration |
+>
+> **Its proper home is `HandState.quality.orientationValid` in §2, not the
+> orientation filter.** Five attempts to drive a filter with it failed, for a
+> measured reason: **82% of large orientation jumps occur at observability ≥ 0.60**
+> (§0.13.2), so it cannot gate the tail. But it is a *correct* observability signal —
+> it simply answers "is the palm normal well determined right now?", which is
+> exactly what a quality flag is for and what gestures branch on.
+>
+> **What is NOT yet built:** the per-axis `orientationSigma` vector. Only the scalar
+> exists. Deriving anisotropic sigmas from it is unfinished work — and note §0.13.2
+> before assuming per-axis sigmas will help, since the anisotropy premise is what
+> failed.
+
 **Acceptance:** during a scripted pitch sweep, yaw and roll remain finite and continuous; no discontinuity in the rendered object's orientation; `orientationSigma` visibly rises and falls around the crossing; **the existing `HandOrientationFilter` is deleted and the A/B diff shows no regression from its removal.**
 
 ---
@@ -2076,6 +2349,48 @@ MOTION (magno): light smoothing, ~15 Hz, velocity/acceleration estimated as filt
 Never compute velocity by finite-differencing the *smoothed* position — that combines the worst of both (noise amplification *and* group delay). Velocity is a **filter state** in M6, obtained from the motion model.
 
 **Forward prediction — spend the effort here, it is the biggest subjective quality win.**
+
+> ## ⚠⚠ STOP — MEASURE THE MOTION MODEL BEFORE BUILDING THIS (added 2026-08-03)
+>
+> **M7's forward prediction extrapolates with the constant-angular-velocity model.
+> That model has been measured on this project's own 24-session corpus and it is
+> WEAK.**
+>
+> | measurement | result |
+> |---|---|
+> | mean frame-to-frame orientation change | **9.9°** |
+> | one-frame prediction disagreeing with the measurement by >25° | **60% of frames** |
+> | ... by >15° | **66% of frames** |
+>
+> **The predictor is unreliable at ONE frame. M7 proposes extrapolating it to
+> ~80 ms — roughly TWO frames at the measured ~24 fps.**
+>
+> This is not speculation; it is the finding that explains why five separate
+> attempts at item 2.3 failed (§0.13–§0.13.3). Every approach that leaned on this
+> model — graded blending, coasting, χ² gating — inherited its weakness. The shipped
+> `HandOrientationFilter` wins precisely *because* its `alpha` saturates at 1 and it
+> therefore **ignores the prediction almost always**.
+>
+> ### Required first task for item 3.1
+>
+> **Measure the model's prediction error at 1, 2 and 3 frames ahead on the recorded
+> corpus, and decide whether it is fit to extrapolate with — BEFORE building
+> anything.** If it is not, M7's headline claim ("net perceived latency can go to
+> zero or slightly negative") does not follow, and steps 2–5 below should not be
+> built as written.
+>
+> ### What is still worth having even if prediction is unfit
+>
+> **The FORM/MOTION channel split (above) does not require prediction at all.** Its
+> value — one filter cannot serve both rendering smoothness and trigger latency — is
+> independent and stands on its own. If the predictor fails its measurement, build
+> the split and skip the extrapolation.
+>
+> *Substrate note: the motion model, `omega` as a public state, and
+> `predict_forward()` already exist in the parked `Resources/orientation_filter.py`
+> (§0.13.1). 3.1's old dependency on 2.3 was for exactly those and is satisfied
+> without shipping 2.3 — but inheriting the code does NOT inherit a working
+> predictor. Measure first.*
 
 1. **Measure** your end-to-end latency (§6.2 procedure). Do not guess it.
 2. Predict the state forward by `L_total` using the constant-velocity/constant-angular-velocity model.
