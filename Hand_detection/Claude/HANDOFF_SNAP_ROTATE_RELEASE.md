@@ -297,10 +297,34 @@ results and the careful interpretation: `PERCEPTION_LAYER_SPEC.md` §0.2.
 **DR-1's live test is DONE (2026-08-02, §2.5) — passed.** It was the previous
 head of this list.
 
-**Immediate next step (paused 2026-08-02 at the owner's request, to resume in
-better daylight): record the four `palm_back_s1..s4` takes, then continue item
-0.2b.** They are already built into `RecordPerceptionSequence.py` — just run
-them; cycle counts and the pitch-axis briefing are baked in.
+**DONE 2026-08-03 (daylight): all four `palm_back_s1..s4` takes + all four
+`known_*` fixture clips.** 8 sessions, 24–25 fps throughout, 100% detection.
+**N3 is CLOSED** — see `PERCEPTION_LAYER_SPEC.md` §0.8. Headline: *the totals were
+lying.* Flip counts land near ground truth at every speed, but the
+physically-implausible fraction rises **6% → 58%** as cycle time falls from 4.44 s
+to 0.96 s — missed crossings and spurious flips cancel in the total. Knee at
+**~1.3 s/cycle**.
+
+**Item 1.1 (M5d `K` fixture test) is also DONE 2026-08-03** — `VerifyChiralityFixture.py`,
+**788/788 on every check, exit 0** (§0.9). It exercises **production's real**
+`_is_thumb_outward`, headless via `SDL_VIDEODRIVER=dummy`; a test with its own copy
+of the formula would have passed while the game was inverted in 2026-08-01.
+Two defects found on first run were **in the test, not the pipeline**, and both are
+fixed — the drift guard was additionally **re-validated against 5 mutants** to prove
+it still fails on real drift.
+
+> ⚠ **Counter-intuitive fact worth knowing before touching any handedness code:**
+> the label carried through this pipeline is the **MIRRORED/apparent** hand, not
+> the physical one — a physical RIGHT hand carries the label `"Left"`. Established
+> by measurement across 1991 frames, not assumption. The recorder/debug path and
+> the production path reach it by *different* routes (§0.9's table). **Do not
+> "simplify" either path** — the asymmetry is load-bearing, and §13.6.1 is what
+> happens when it is broken.
+
+**Immediate next step: continue item 0.2b** — the remaining §7.2 sequences
+(`occlusion`, `depth_sweep`, fiducial grabs, direction reversals = item 0.3, free
+manipulation). After that, Phase 1 items 1.2 (M5a `edgeOnMeasure`) and 1.4 (M2
+bone-length calibration) are the unblocked code work.
 
 Three things happened on 0.2b this evening — full account in
 `PERCEPTION_LAYER_SPEC.md` §0.7 / §0.7.1:

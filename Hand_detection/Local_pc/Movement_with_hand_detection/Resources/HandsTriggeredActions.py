@@ -1,6 +1,9 @@
 import math
 from typing import Dict, List, Optional, Tuple
 from .CubeWindow import CubeWindow
+# Palm chirality geometry, SHARED with LiveSnapDebug.py so the sign convention
+# cannot drift between them again (§13.6.1). Pure stdlib, no side effects.
+from . import palm_geometry
 
 # Gesture design: Hand_detection/Claude/GESTURE_PIPELINE_SPEC.md §13
 # (proximity snap, open-palm rotate, closed-fist release) — replaces the
@@ -113,23 +116,26 @@ def _compute_grab_weights(object_pos_at_grab: Tuple[float, float], landmarks: Li
 
 def _is_thumb_outward(landmarks: List[Tuple[float, float]], handedness: str) -> bool:
     """True when the hand is oriented with the thumb outward (back of hand
-    facing the camera) — GESTURE_PIPELINE_SPEC.md §13.6. Sign of the 2D
-    cross product of (index_MCP-wrist) x (pinky_MCP-wrist) in mirrored
-    webcam-frame pixel coordinates, mirrored again per handedness for a
-    physically consistent sign across both hands. Calibrated live
-    2026-08-01 in LiveSnapDebug.py (kept in sync here) — positive
-    (mirrored-for-Left) = thumb-outward, confirmed by the operator showing
-    palm/back of hand for both hands against an on-screen sign display
-    before this threshold was trusted."""
-    wrist = landmarks[WRIST]
-    idx_mcp = landmarks[INDEX_MCP]
-    pinky_mcp = landmarks[PINKY_MCP]
-    v1 = (idx_mcp[0] - wrist[0], idx_mcp[1] - wrist[1])
-    v2 = (pinky_mcp[0] - wrist[0], pinky_mcp[1] - wrist[1])
-    cross = v1[0] * v2[1] - v1[1] * v2[0]
-    if handedness == "Left":
-        cross = -cross
-    return cross > 0
+    facing the camera) — GESTURE_PIPELINE_SPEC.md §13.6.
+
+    **Delegates to `Resources/palm_geometry.py`, which is SHARED with
+    `LiveSnapDebug.py`** (queue item 1.2, 2026-08-03). This function previously
+    carried its own copy of the formula, hand-synced with the debug tool's copy —
+    which is exactly how the convention drifted into the production-only inversion
+    of 2026-08-01 (§13.6.1). Same fix already applied to the identity tracker (N6).
+    Do NOT reinline the maths here."""
+    return palm_geometry.is_thumb_outward(landmarks, handedness)
+
+
+def _edge_on_measure(landmarks: List[Tuple[float, float]]) -> float:
+    """0..1, how far the palm is from edge-on — the magnitude `_is_thumb_outward`
+    used to discard (M5a, queue item 1.2). 0 = edge-on, where the palm/back sign is
+    a coin flip; 1 = knuckle row square to the camera.
+
+    Not yet consumed by any gesture rule: DR-2 (item 2.2) is what will gate on it.
+    Exposed now because it is the observability signal M4/M6 need, and because
+    recovering it costs one division."""
+    return palm_geometry.edge_on_measure(landmarks)
 
 
 def _top_left_for_center(center: Tuple[float, float], size: int) -> Tuple[float, float]:

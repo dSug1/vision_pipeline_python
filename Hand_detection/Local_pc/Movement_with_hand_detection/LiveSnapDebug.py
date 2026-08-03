@@ -47,6 +47,12 @@ sys.path.insert(0, os.path.join(
     "..", "Python_Server_MediaPipe_vision_pipeline", "Resources"))
 import hand_identity  # noqa: E402  (path set immediately above)
 
+# Palm chirality geometry -- SHARED with production's HandsTriggeredActions.py
+# (queue item 1.2). Same reasoning as hand_identity above: imported, never copied.
+# `Resources` is a package alongside this file; importing this ONE module does not
+# pull in HandsTriggeredActions/CubeWindow, so no pygame window is opened.
+from Resources import palm_geometry  # noqa: E402
+
 HAND_LANDMARKER_MODEL_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..", "Python_Server_MediaPipe_vision_pipeline", "Resources", "hand_landmarker.task",
@@ -376,24 +382,22 @@ class CubeState:
 
 def _is_thumb_outward(pixel_landmarks, handedness: str) -> bool:
     """True when the hand is oriented with the thumb outward (back of hand
-    facing the camera) -- GESTURE_PIPELINE_SPEC.md §13.6. Sign of the 2D
-    cross product of (index_MCP-wrist) x (pinky_MCP-wrist) in mirrored
-    webcam-frame pixel coordinates, mirrored again per handedness for a
-    physically consistent sign across both hands. CALIBRATED LIVE
-    2026-08-01: positive (mirrored-for-Left) = thumb-outward, confirmed by
-    the operator showing palm/back of hand for both hands via this file's
-    on-screen facing-sign display before this threshold was set (same
-    live-verify-before-trusting discipline that caught the Closed_Fist
-    problem)."""
-    wrist = pixel_landmarks[WRIST]
-    idx_mcp = pixel_landmarks[INDEX_MCP]
-    pinky_mcp = pixel_landmarks[PINKY_MCP]
-    v1 = (idx_mcp[0] - wrist[0], idx_mcp[1] - wrist[1])
-    v2 = (pinky_mcp[0] - wrist[0], pinky_mcp[1] - wrist[1])
-    cross = v1[0] * v2[1] - v1[1] * v2[0]
-    if handedness == "Left":
-        cross = -cross
-    return cross > 0
+    facing the camera) -- GESTURE_PIPELINE_SPEC.md §13.6.
+
+    **Delegates to Resources/palm_geometry.py, SHARED with production's
+    HandsTriggeredActions.py** (queue item 1.2, 2026-08-03). This file used to
+    carry its own copy of the formula, hand-synced with production's -- the same
+    duplication that produced the production-only inversion of 2026-08-01
+    (§13.6.1), and the same pattern already fixed for the identity tracker (N6).
+    Do NOT reinline the maths here; the whole point is one source."""
+    return palm_geometry.is_thumb_outward(pixel_landmarks, handedness)
+
+
+def _edge_on_measure(pixel_landmarks) -> float:
+    """0..1, how far the palm is from edge-on (M5a, queue item 1.2). Mirrors
+    production's `_edge_on_measure`. Not yet gating anything -- DR-2 (item 2.2)
+    is what will consume it."""
+    return palm_geometry.edge_on_measure(pixel_landmarks)
 
 
 def _hand_position(pixel_landmarks) -> Tuple[float, float]:

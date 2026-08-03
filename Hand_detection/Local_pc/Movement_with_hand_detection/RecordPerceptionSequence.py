@@ -152,10 +152,41 @@ SEQUENCES = {
         "detection-threshold sweep: the hard end -- expected to be where the sign "
         "cue and/or MediaPipe detection break down",
     ),
+    # SUPERSEDED 2026-08-03: this single prompt bundled three DIFFERENT occlusion
+    # mechanisms and did not say how many hands to use -- the operator could not
+    # act on it. Split into the three explicit takes below. All are ONE-HANDED on
+    # purpose: a second hand injects duplicate-label frames (spec §0.8 finding 4)
+    # and would contaminate the reacquisition timing this sequence exists to measure.
     "occlusion": (
         30.0,
+        "[SUPERSEDED - use occlusion_exit_reenter / _behind_object / _finger_over_finger] "
         "Occlude: hand behind object, out/in of frame, finger over finger",
         "coast behaviour, reacquisition time, accidental-unsnap safety",
+    ),
+    "occlusion_exit_reenter": (
+        15.0,
+        "ONE hand. Move it fully OUT of the camera view, then back IN. Repeat ~4x, "
+        "pausing ~1s each time it is back in view.",
+        "REACQUISITION TIME (M0): ms from the hand re-entering to a usable pose. "
+        "The hand leaves the frame ENTIRELY -- total loss, not partial",
+    ),
+    "occlusion_behind_object": (
+        15.0,
+        "ONE hand, stays INSIDE the view the whole time. Pass it BEHIND a "
+        "stationary object (mug, book, monitor edge) so it is briefly hidden, then "
+        "back out. Repeat ~4x.",
+        "COAST behaviour (M4's coast limit): the hand is occluded but never leaves "
+        "the frame -- distinct from exit/re-enter, because the estimator should "
+        "coast through rather than treat it as a fresh acquisition",
+    ),
+    "occlusion_finger_over_finger": (
+        15.0,
+        "ONE hand, fully in view, NO object. Curl and interlace the fingers so they "
+        "hide EACH OTHER - make a loose fist, splay, overlap fingers. Wrist stays "
+        "steady.",
+        "PER-LANDMARK occlusion: the hand is never lost, but individual landmarks "
+        "are hidden and hallucinated. This is M4's actual target -- occlusion "
+        "detection and per-landmark downweighting",
     ),
     # Two deliberately SEPARATE conditions. The original single "pass hands close
     # together" prompt was ambiguous (2026-08-02, operator feedback: unclear
@@ -189,6 +220,28 @@ SEQUENCES = {
         30.0,
         "Push one hand slowly toward the camera and pull it back, repeatedly",
         "depth monotonicity, foreshortening-correction correctness",
+    ),
+    # §7.2's regression net. DELIBERATELY UNSCRIPTED -- every other sequence here
+    # tests a hypothesis we already hold; this one exists to catch the failure
+    # modes nobody thought to script. Precedent: no scripted take would have
+    # surfaced Object Jump Correction, because "hands cross while rotating" was
+    # not a hypothesis anyone had until the bug forced it.
+    #
+    # ON SPLITTING (owner question, 2026-08-03): splitting by TIME is free -- there
+    # is no continuity requirement, so 3x2min == 1x6min. Splitting by ANNOTATION is
+    # NOT: labelling sub-sequences turns this back into a scripted take and
+    # destroys the only property that makes it useful. Run several short chunks;
+    # do not tell the operator what to do inside them.
+    #
+    # Length is a statistical argument, not an arbitrary one: rare events need
+    # exposure time. Object Jump Correction took FOUR takes to reproduce while
+    # being actively hunted.
+    "free_manipulation": (
+        120.0,
+        "UNSCRIPTED: use your hands naturally - both hands, move, rotate, reach, "
+        "overlap, leave and re-enter frame. No target behaviour.",
+        "regression net: catches what the scripted sequences miss. Run several "
+        "chunks rather than one long take",
     ),
     "known_right_palm": (
         8.0,
@@ -224,6 +277,11 @@ def main():
     parser.add_argument("--duration", type=float, default=None, help="override the default duration")
     parser.add_argument("--camera-index", type=int, default=0)
     parser.add_argument("--note", type=str, default="", help="free-text note stored in meta.json")
+    parser.add_argument("--hand", choices=("left", "right", "both"), default="both",
+                        help="which hand(s) the operator used. Recorded in meta.json. "
+                             "Use 'left'/'right' for single-hand takes: two-hand takes "
+                             "inject duplicate-label frames (spec §0.8 finding 4), which "
+                             "contaminate per-hand analysis")
     parser.add_argument("--cycles", type=int, default=None,
                         help="number of FULL palm->back->palm cycles actually performed "
                              "(defaults to the sequence's prescribed count). Stored in "
@@ -398,6 +456,14 @@ def main():
     if args.sequence.startswith("palm_back") or args.sequence.startswith("pitch_sweep"):
         meta["rotation_axis"] = "pitch"
         meta["rotation_axis_note"] = PITCH_AXIS_NOTE
+
+    meta["hands_used"] = args.hand
+    if args.hand != "both":
+        meta["hands_used_note"] = (
+            "SINGLE-HAND take. Two-hand takes inject duplicate-label frames that "
+            "contaminate per-hand streams (spec §0.8 finding 4); this take avoids that "
+            "and also isolates the Left/Right asymmetry logged as queue item N11."
+        )
 
     cycles = args.cycles if args.cycles is not None else DEFAULT_CYCLES.get(args.sequence)
     if cycles is not None:

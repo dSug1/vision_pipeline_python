@@ -891,6 +891,204 @@ The original `palm_back` sequence is kept runnable but marked **SUPERSEDED**.
 
 ---
 
+## 0.8 Speed-threshold sweep (2026-08-03, daylight) — N3 CLOSED, and totals were lying
+
+The four `palm_back_s*` takes recorded in daylight, all at **24.1–24.5 fps** (the
+N10 guard stayed silent), 100% detection on every take, both hands simultaneously.
+Operator-counted actual cycles, patched into each `meta.json`.
+
+| speed (s/cycle) | hand | expected | detected | delta | **implausible** | **implaus %** | dup-label frames |
+|---|---|---|---|---|---|---|---|
+| 4.44 very slow | L | 18 | 17 | −1 | 1 | **6%** | 0 |
+| 4.44 | R | 18 | 17 | −1 | 4 | **24%** | 0 |
+| 2.14 slow | L | 28 | 30 | +2 | 2 | **7%** | 1 |
+| 2.14 | R | 28 | 31 | +3 | 7 | **23%** | 1 |
+| 1.29 medium | L | 31 | 27 | −4 | 4 | **15%** | 8 |
+| 1.29 | R | 31 | 37 | +6 | 15 | **41%** | 8 |
+| 0.96 fast | L | 31 | 28 | −3 | 14 | **50%** | 11 |
+| 0.96 | R | 31 | 40 | +9 | 23 | **58%** | 11 |
+
+**"Implausible"** = a flip whose *both* straddling frames sit at edge-on > 0.60.
+The analyser reports a flip at `min(eos[k], eos[k-1])`, so this means the hand
+would have crossed s = 0 and re-emerged strongly oriented within one ~41 ms frame.
+That is beyond plausible hand-rotation speed, so these cannot be genuine crossings.
+*(The 0.60 cut is a judgement call, inherited from §0.2's observation that the cue
+was stable above it; the monotonic trend below does not depend on the exact value.)*
+
+### Finding 1 — the totals were lying, and this is the headline
+
+**Delta stays small at every speed** (−4 to +9). Judged on totals alone — which is
+all §0.7 could do — you would conclude the cue works fine at all four speeds.
+
+**It does not.** The implausible fraction rises monotonically from **6%** to
+**58%**. At the fast end, *half or more of every detected flip is physically
+impossible*, yet the total still lands near ground truth — because genuine
+crossings are being **missed** at roughly the same rate spurious ones are being
+**added**. The two errors cancel in the total.
+
+**This resolves the question §0.7 declared unresolvable.** §0.7 said a compensating
+mix of missed-plus-spurious "needs per-flip matching against the rotation
+timeline." It does not — the edge-on plausibility test separates them from the
+recorded data alone, with no timeline needed. **N3 is closed.**
+
+### Finding 2 — the knee is around 1.3 s/cycle
+
+6–24% at 4.44 s/cycle and 7–23% at 2.14 are broadly flat; degradation accelerates
+at 1.29 (15–41%) and is severe by 0.96 (50–58%). **Between ~2 s and ~1 s per cycle
+is where the sign cue stops being trustworthy.**
+
+**Honest limit:** the "fast" take only reached **0.96 s/cycle, not the 0.5 s
+prescribed** — the operator could not sustain the target rate. So the breakdown is
+bracketed, not bounded: we know it is already severe by ~1 s/cycle, but not where
+it saturates. A genuinely faster take would be needed for that, and may not be
+physically achievable by hand.
+
+### Finding 3 — the Left/Right asymmetry is systematic
+
+Right is worse than Left at **every** speed (24 vs 6, 23 vs 7, 41 vs 15, 58 vs 50).
+Consistent across four independent takes, so not noise. **Not diagnosed** — a
+candidate is the handedness-dependent chirality correction being the one
+non-symmetric step in the pipeline (§13.6.1's bug lived exactly there), but that is
+a hypothesis, not a finding. Logged as **N11**.
+
+### Finding 4 — duplicate labels scale with rotation speed
+
+Duplicate-label frames per take: **0 → 1 → 8 → 11**, monotonic with speed. This is
+precisely DR-1's target failure mode, and it independently reproduces §0.4's
+"handedness degrades under rotation" on fresh daylight data. These takes are **raw
+pre-DR-1 capture**, so this is the *unmitigated* rate — a direct measure of what
+DR-1 has to absorb, and further justification for it.
+
+*Tooling note: a first pass of this analysis under-counted flips because it
+appended every hand matching a label, while `AnalyzePerceptionSequences.py`'s
+`per_hand_stream` takes only the first per frame. Duplicate-label frames therefore
+produced same-index entries that the consecutive-frame check silently dropped. The
+discrepancy (33 vs 37) was chased rather than reported, and the corrected numbers
+above reconcile exactly with the analyser.*
+
+---
+
+## 0.9 M5d `K` fixture test — BUILT AND PASSING (2026-08-03). Item 1.1 DONE.
+
+`Local_pc/Movement_with_hand_detection/VerifyChiralityFixture.py`. Four ground-truth
+clips recorded in daylight (24–25 fps, 100% detection). **All 13 checks pass,
+exit 0.**
+
+**It exercises production's real `_is_thumb_outward`**, imported headlessly via
+`SDL_VIDEODRIVER=dummy` to work around the `CubeWindow()` import side effect
+(§7.3). This is the whole point: a fixture test carrying its own copy of the
+formula would have passed happily on 2026-08-01 while the game was inverted, and
+would have guarded nothing. When the L7 cleanup removes that side effect, two
+env-var lines can simply be deleted.
+
+Three checks per clip, plus a drift guard:
+
+| check | result |
+|---|---|
+| label matches ground truth | **788/788** across four clips |
+| **production sign is correct** | **788/788** — both hands, both facings |
+| negative control (label un-mirrored → answer must invert) | **788/788** |
+| drift guard: production vs. `LiveSnapDebug` copy | identical |
+
+### THE LABEL CONVENTION — established from data, and it is counter-intuitive
+
+**The label carried through this pipeline is the MIRRORED (apparent) hand, not the
+physical hand. A clip of the operator's physical RIGHT hand carries the label
+`"Left"`.**
+
+The first version of this test assumed the opposite and failed **0/788** on all
+four clips. That was resolved by measurement rather than by flipping the
+expectation until it went green:
+
+> In a mirrored preview the operator's physical right hand *necessarily* appears
+> on the right of the image — the mirror property, not an interpretation. Across
+> every recorded session, for frames holding exactly two distinctly-labelled
+> hands, the `"Right"` label fell on the image-**left** hand **100%** of the time
+> in every take where hands stay on their natural sides: `static_hold` (288
+> frames), `non_crossing` (723), `palm_back_s1_very_slow` (980). The two-hand
+> crossing takes sit near 30% precisely *because* the hands deliberately swap
+> sides — corroborating, not contradicting.
+
+**Both paths converge on this convention by different routes**, which is exactly
+what §13.6.1's fix established and why `_is_thumb_outward` is correct in both:
+
+| path | detection frame | MediaPipe returns | after | final label |
+|---|---|---|---|---|
+| recorder / debug tool | **mirrored** | mirrored/apparent hand | — | apparent |
+| production | **un-mirrored** | true anatomical hand | `_mirror_handedness()` | apparent |
+
+⚠ **Do not "simplify" either path to make the label the physical hand** without
+re-deriving this test. The asymmetry is load-bearing.
+
+### The drift guard was fixed, then PROVEN to still have power
+
+`LiveSnapDebug.py` keeps its own copy of `_is_thumb_outward` by design (it must not
+import production). Duplication is how the convention drifted once already, so the
+guard compares the two ASTs.
+
+Its first run was a **false positive**: it dumped identifiers, so production's
+`landmarks` vs the debug copy's `pixel_landmarks` read as drift. Now the landmarks
+parameter is canonicalised before comparison.
+
+**A guard changed until it passes is worthless unless it still fails on real
+drift**, so it was re-validated against mutants. It accepts a renamed parameter and
+different docstring, and **rejects all five**: sign inverted (the §13.6.1 bug
+itself), chirality correction dropped, chirality applied to `Right` instead,
+cross-product operands swapped, and pinky→ring landmark substitution.
+
+---
+
+## 0.10 M5a `edgeOnMeasure` built (2026-08-03) — item 1.2 DONE, and the duplicate is gone
+
+New shared module **`Local_pc/Movement_with_hand_detection/Resources/palm_geometry.py`**.
+
+**Two deliverables in one change**, and the second was not in the original scope:
+
+1. **The magnitude is recovered.** `_is_thumb_outward` computed the signed area `s`
+   and used only `sign(s)`. `edge_on_measure` = `|s| / (‖v1‖·‖v2‖)` = `|sin θ|`
+   between the palm vectors: 0 = edge-on (sign is a coin flip), 1 = knuckle row
+   square to camera. One division, and it is the observability signal DR-2, M4 and
+   M6 all need.
+2. **The hand-synced duplicate is retired.** `HandsTriggeredActions.py` and
+   `LiveSnapDebug.py` each carried their own copy of the sign formula. **That
+   duplication is the direct cause of §13.6.1's production-only inversion.** Both
+   now *delegate* to the shared module — the same fix already applied to the
+   identity tracker (N6) on the owner's instruction. The module is pure stdlib with
+   no cv2/pygame, so the debug tool can import it without triggering
+   `CubeWindow()`'s window side effect.
+
+### Verification
+
+| check | result |
+|---|---|
+| `edge_on_measure` vs `AnalyzePerceptionSequences.edge_on()` | **max abs diff 5.55e-16 over 22,345 hand-frames / 24 sessions** |
+| fixture test (item 1.1) after the refactor | **15/15, exit 0** — production sign unchanged, 788/788 |
+| corpus below `EDGE_ON_THRESHOLD = 0.15` | 1.54%, matching §0.3's predicted shape |
+
+The exact-match check is not ceremony: **every recorded threshold — above all
+`EDGE_ON_THRESHOLD = 0.15`, settled by measurement in §0.3 — is expressed in the
+analyser's normalisation.** A different scale in production would silently
+invalidate it, with no test failing. `palm_geometry.verify_matches_analyser()`
+keeps the two locked together and lives next to the code it constrains.
+
+### The drift guard was re-pointed, not deleted
+
+With both sides delegating, comparing their two one-line bodies is nearly vacuous.
+The fixture test now *additionally* asserts that **neither file has reinlined the
+maths** — that is the invariant that actually prevents drift now. Both the
+body-equality check and the delegation check are kept.
+
+### Still open
+
+- **Not live-tested.** The change is additive plus a pure-function move, and it is
+  replay-verified across the whole corpus, but production has not run against a
+  camera since. Fold this into the next live session rather than treating it as
+  confirmed.
+- **Nothing consumes `edgeOnMeasure` yet.** DR-2 (item 2.2) is the consumer, and
+  gating gesture rules on it is a behaviour change that needs its own live test.
+
+---
+
 ## 0. Framing: what MediaPipe is, and what it is not
 
 MediaPipe Hands is a **stateless, per-frame, monocular shape estimator**. It answers "what configuration of a hand best explains this single image crop?"
