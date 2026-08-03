@@ -20,6 +20,41 @@ governance kill-criterion added; §5's mapping superseded by the merged queue in
 
 ---
 
+## 0.0 WHERE THE EVIDENCE LIVES — measurement harnesses (added 2026-08-03)
+
+Every non-obvious number in §0.6–§0.14 was produced by a script in:
+
+> ### **`Local_pc/Movement_with_hand_detection/analysis/`**
+> **See that folder's `README.md`** — it maps each claim to the script that produced
+> it, and flags the four measurement bugs found mid-session.
+
+Run them from the parent directory:
+
+```
+cd Local_pc/Movement_with_hand_detection
+.venv/Scripts/python.exe analysis/where_are_jumps.py
+```
+
+**Why this matters more than usual here.** Several §0.x conclusions are *negative* —
+"the spec's premise does not hold for this sensor" — and they were used to kill or
+re-point queue items (2.3 deprioritised; T1/T2 re-pointed; 1.4's acceptance declared
+unreachable). **A negative result that cannot be re-run is an assertion, not a
+finding.** The load-bearing ones:
+
+| claim | script | consequence if wrong |
+|---|---|---|
+| 82% of large orientation jumps sit at observability ≥ 0.60 | `where_are_jumps.py` | 2.3 revives; T1/T2 re-point back |
+| no bone reaches M2's <2% gate (6–22% IQR) | `m2_which_bones.py`, `m2_pooled.py` | 1.4, M9, T4 and M4's error signal all revive |
+| the handedness label is the MIRRORED hand | `resolve_convention.py` | the chirality fixture test's expectations invert |
+
+**⚠ Four measurement bugs were caught DURING the session**, each having already
+produced confident wrong numbers (per-hand stream mixing, a mm-vs-metre units gate,
+`sigma_long`/`sigma_base` conflated twice, and a live test for a state the UI does
+not display). That is evidence of error density, not of rigour — **assume more
+survived, and start any audit in this folder.**
+
+---
+
 ## 0.1 Amendment log — integration into the pipeline (2026-08-02)
 
 Recorded per this project's standing rule that the pipeline docs govern. Each item below was

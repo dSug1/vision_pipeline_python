@@ -238,6 +238,16 @@ them (A7).
 improvement on the M0 metrics via replay A/B on identical recorded input,
 or be **reverted**. A null result is recorded, not shipped hopefully.
 
+**Where the evidence lives (added 2026-08-03):** every non-obvious number in this
+queue's status cells was produced by a script in
+**`Local_pc/Movement_with_hand_detection/analysis/`** — see that folder's
+`README.md`, which maps each claim to its script. Run them from the parent
+directory (`.venv/Scripts/python.exe analysis/<name>.py`). This matters because
+several statuses below are *negative* results used to kill or re-point items
+(2.3 deprioritised, T1/T2 re-pointed, 1.4 declared unreachable): **a negative
+result that cannot be re-run is an assertion, not a finding.** The README also
+lists the four measurement bugs caught mid-session — start any audit there.
+
 | # | Item | Kind | Status | Depends on | Notes |
 |---|---|---|---|---|---|
 | **PHASE 0 — instrumentation** ||||||
