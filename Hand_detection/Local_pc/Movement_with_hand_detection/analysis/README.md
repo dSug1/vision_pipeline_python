@@ -36,7 +36,66 @@ Four self-caught errors is not evidence of rigour — it is evidence of error de
 
 ---
 
+## ⚠⚠ THEY DID SURVIVE — audit of 2026-08-03. Read this before running anything here.
+
+The instruction above was acted on. **A fifth and sixth bug were found, both in
+scripts listed below**, and the corrected harnesses are:
+
+| script | what it audits |
+|---|---|
+| **`audit_jump_provenance.py`** | the jump census + every 2.3-era filter A/B + the motion-model claim, on identity-corrected streams |
+| **`audit_m2_proportions.py`** | M2's acceptance test, re-measured against *proportions* rather than absolute lengths |
+
+### Bug 5 — every 2.3-era A/B measured a pipeline that no longer exists
+
+`where_are_jumps.py`, `m6c_ab.py` (whose stream loop the others import),
+`obs_ab.py`, `m6_ukf_ab.py`, `m6_gated_ab.py` and `chi2_probe.py` all build
+per-hand streams keyed on the **raw MediaPipe handedness label**, with **no
+duplicate-label guard and no frame-continuity guard** — on the corpus recorded
+specifically *because* it contains label flips, duplicate labels and association
+swaps. Production runs DR-1 (`hand_identity.py`); these replayed pre-DR-1
+streams. Effect: **>60° jumps 730 → 572, and "82% at observability ≥ 0.60" →
+~77%.** The §0.13.2 *conclusion* survives; its numbers do not. **Re-running the
+filter A/Bs on corrected streams reproduces every null verdict** — the discards
+are safe.
+
+> **Binding rule now: build streams with `audit_jump_provenance.build_v2()`**
+> (DR-1 replay + dup-label skip + run-break at frame-index gaps). The old
+> raw-label loader survives there as `build_v0()` **only** to reproduce
+> historical numbers. Never key a stream on the raw label again.
+
+### Bug 6 — `chi2_probe.py`'s headline was a cascade statistic, not a prediction error
+
+Its "60% of frames disagree by >25°" was read as *the motion model is weak* and
+that claim reached the spec (M7's ⚠⚠ STOP block) and the queue. It is **closed
+loop**: a rejected frame makes the filter coast, the prediction drifts, and
+following frames keep failing until the 8-frame coast limit force-accepts — one
+bad frame books up to 8 rejections. Measured open loop, the one-frame model
+error is a **4.2–4.5° median** (>25° on 6.4–11.4%). **Claim retracted; item 3.1
+unblocked.** `audit_jump_provenance.py` also prints the full 1/2/3-frame horizon
+table, which is item 3.1's "required first task", done.
+
+### And the M2 kill was measured against the wrong quantity — but survives anyway
+
+`m2_which_bones.py` / `m2_pooled.py` pool **absolute metre lengths**, while the
+spec's §2f target is *proportions plus a per-session scale constant*.
+`audit_m2_proportions.py` re-measures proportions: **still 0/21 bones inside
+2%**, cross-session disagreement 32–40%. Verdict upheld on the correct quantity.
+
+**Lesson, for the next harness: state which quantity the module CLAIMS, and
+measure that one.** Two of three load-bearing negatives had a measurement-design
+flaw; only one of them changed the answer.
+
+---
+
 ## The claims and the scripts that produced them
+
+### Audit harnesses (2026-08-03) — run these before trusting the two tables below
+
+| script | produces |
+|---|---|
+| `audit_jump_provenance.py` | V0/V1/V2 jump census (V0 reproduces the published numbers exactly); open-loop 1/2/3-frame motion-model error; the 2.3 filter A/B re-run on identity-corrected streams |
+| `audit_m2_proportions.py` | M2 acceptance on absolute lengths (A), palm-normalised proportions (B) and cross-session normalised medians (C) |
 
 ### Load-bearing — if these are wrong, plans change
 
@@ -60,7 +119,7 @@ Four self-caught errors is not evidence of rigour — it is evidence of error de
 | `m6c_fixed.py`, `m6c_2d.py` | attempts 2–3, two-parameter form |
 | `m6_ukf_ab.py`, `m6_ukf_tight.py` | attempt 4: **propagated covariance** (the real filter) — 54 configs, none wins both |
 | `m6_gated_ab.py` | attempt 5: gated passthrough — tracked perfectly, **fixed nothing**, which triggered `where_are_jumps.py` |
-| `chi2_probe.py` | salvage probe: χ² / physical gate → **3.7× and 24× worse**; also the source of the M7 motion-model warning |
+| `chi2_probe.py` | salvage probe: χ² / physical gate → **3.7× and 24× worse**. ⚠ **Also the source of the RETRACTED M7 motion-model warning — see bug 6 above.** The gate's own failure is real (cascade); the generalisation drawn from it was not |
 
 ### Shipped-module verification
 

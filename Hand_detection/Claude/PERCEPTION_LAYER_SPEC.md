@@ -11,6 +11,14 @@ analysis and lessons learned. Where this spec conflicts with them, they govern.
 signed-palm-area cue per owner review; M2 extended with per-user calibration policy (2f);
 M8/M9 flagged as subject to amendment; one earlier claim retracted (M5f).
 
+**Revision 4** (audit + state-of-the-art review, 2026-08-03) — **§0.15** audits this
+project's own negative results (two artifacts found: the jump-tail numbers were inflated
+by identity contamination, and the "motion model is weak" claim is **retracted**; the
+five 2.3 nulls and the M2 premise-kill are **confirmed**), and **§10** is a literature
+addendum with adopted items **S1–S12**, each mapped to a build step. Correction boxes
+were added in place at §0.0, §0.13.2, §0.13.3, §0.14 and M7 — **read those before
+quoting any number from them.**
+
 **Revision 3** (integration into the pipeline, 2026-08-02) — see §0.1 for the full amendment
 log. Summary: retargeted from JavaScript to Python (the JS target named in Rev. 2 does not
 exist); M5a/M5b and M6a marked **already built**; M8a conflict with `GESTURE_PIPELINE_SPEC.md`
@@ -46,6 +54,14 @@ finding.** The load-bearing ones:
 | 82% of large orientation jumps sit at observability ≥ 0.60 | `where_are_jumps.py` | 2.3 revives; T1/T2 re-point back |
 | no bone reaches M2's <2% gate (6–22% IQR) | `m2_which_bones.py`, `m2_pooled.py` | 1.4, M9, T4 and M4's error signal all revive |
 | the handedness label is the MIRRORED hand | `resolve_convention.py` | the chirality fixture test's expectations invert |
+
+> **⚠ THE FIRST TWO ROWS WERE AUDITED 2026-08-03 AND PARTLY CORRECTED — see
+> §0.15.** Row 1's number is wrong (82% → ~77%) though its conclusion holds;
+> row 2's verdict holds but was measured against the wrong quantity. A third
+> claim, *"the motion model is weak"*, was **retracted outright** as a
+> measurement artifact. The audit harnesses are
+> `analysis/audit_jump_provenance.py` and `analysis/audit_m2_proportions.py`;
+> both reproduce the published numbers before correcting them.
 
 **⚠ Four measurement bugs were caught DURING the session**, each having already
 produced confident wrong numbers (per-hand stream mixing, a mm-vs-metre units gate,
@@ -740,7 +756,7 @@ spuriously dropped.
 This closes the item the handoff called out as the one thing standing between
 replay verification and trust, and it matters because this project has shipped
 a production-only bug that survived a "confirmed working end-to-end" claim
-once already (§13.6.1 / handoff §2.2).
+once already (`GESTURE_PIPELINE_SPEC.md` §13.6.1; summarised in the handoff §3.2).
 
 **Console record — 16 tracker events, 0 errors or tracebacks:**
 
@@ -1479,6 +1495,13 @@ address it at the *source* (M2/M4 landmark quality) rather than by filtering.
 
 ### 0.13.2 — ROOT CAUSE FOUND: the tail is NOT an observability problem (2026-08-03)
 
+> **⚠ NUMBERS CORRECTED BY THE §0.15 AUDIT — read it before quoting anything below.**
+> The census here was built on raw-label streams with no duplicate-label or
+> frame-continuity guard, which inflated the tail. Corrected on DR-1
+> identity-corrected streams: **>60° jumps 730 → 572, and the "82% at
+> observability ≥ 0.60" figure → ~77%** (73% with the strictest guards).
+> **The conclusion survives; the numbers do not.** Quote §0.15's.
+
 Attempt 5 gated the KF to passthrough above an observability threshold, keeping the
 shipped filter's zero-lag bimodality and using the covariance only inside the bad
 band. **It tracked perfectly (0.000°) and left the tail untouched** (>60: 698–742 vs
@@ -1556,6 +1579,21 @@ suppressed. **The gate manufactures the failure it targets.**
 
 ### ⭐ The finding underneath ALL of it: the motion model is weak
 
+> ## ⚠⚠ RETRACTED BY THE §0.15 AUDIT (2026-08-03). This subsection is WRONG.
+>
+> **"60% of frames" is a closed-loop cascade statistic, not a prediction error.**
+> Once the gate rejects a frame the filter coasts, the prediction drifts away
+> from the raw stream, and following frames keep failing until the 8-frame coast
+> limit force-accepts — so one bad frame books up to 8 "rejections". Measured
+> open-loop on identity-corrected streams, the one-frame constant-angular-velocity
+> model has **median error 4.2–4.5°** and exceeds 25° on only **6.4–11.4%** of
+> frames. The model is *sound in the bulk*; its tail is the same bad-landmark
+> population as the jump tail.
+>
+> **The χ² gate's own failure remains real** (a gate that coasts on any model
+> cascades — see S5's anti-cascade rule), but the generalisation drawn from it
+> does not. M7's ⚠⚠ STOP block is amended accordingly. Full horizon table: §0.15.
+
 The physical gate rejects **60% of frames at a 25° threshold**, i.e. a one-frame
 constant-angular-velocity prediction routinely disagrees with the measurement by
 more than the typical motion (mean frame-to-frame change: 9.9°).
@@ -1602,6 +1640,19 @@ families of metric — which is a higher bar than "more principled".
 ---
 
 ## 0.14 M2 built and MEASURED (2026-08-03) — the fixed-bone-length prior does not exist in this sensor
+
+> **✅ VERDICT UPHELD, measurement design corrected (§0.15).** The scripts below
+> pooled **absolute** metre lengths, while §2f defines the target as *proportions
+> plus a per-session scale constant*. Re-measured on the correct quantity
+> (`audit_m2_proportions.py`): palm-normalised **proportions** give median IQR
+> 6.5–8.7% and **0/21 bones inside 2%** — no better than absolute. Cross-session
+> disagreement of normalised medians reaches **32–40%**, worst on the
+> *back-of-hand* takes. **The premise-kill stands.** External corroboration
+> (§10.2): `worldLandmarks` are a GHUM-average-hand fit with a documented
+> **1.3–1.5 cm** mean 3D error, and Google has an **open issue (#5156) for palm
+> world landmarks collapsing when the back of the hand faces the camera.**
+> **→ The replacement is S7 (queue 1.7): impose a fixed skeleton by constrained
+> IK instead of measuring one.**
 
 Queue item 1.4. `Resources/hand_model.py` built (numpy-free, portable): 21-bone
 topology, low-motion-gated collection, running **median** (never mean — occlusion
@@ -1674,6 +1725,131 @@ Consequences, stated plainly because several queue items rest on this:
 `MIN_SAMPLES`, which can freeze prematurely on an early tight window (observed:
 "0/21 stable" reported alongside "frozen=YES"). Fix before any use — though given
 the above, nothing should be relying on the frozen model yet.*
+
+---
+
+## 0.15 AUDIT of this session's negative results (2026-08-03) — two artifacts found, the rest confirmed
+
+Owner instruction: *"Assume the nulls are artifacts of the measurement code until
+proven otherwise. Find the ones that are."* Audited by re-deriving every
+load-bearing number with corrected harnesses:
+`analysis/audit_jump_provenance.py` and `analysis/audit_m2_proportions.py`.
+Both reproduce the published numbers exactly before applying corrections, so the
+deltas below are attributable to the corrections alone.
+
+### The systematic flaw: every 2.3-era harness measured a pipeline that no longer exists
+
+All of `where_are_jumps.py`, `m6c_ab.py` (whose stream loop every other A/B
+imports), `obs_ab.py`, `m6_ukf_ab.py`, `m6_gated_ab.py` and `chi2_probe.py` build
+per-hand streams keyed on the **raw MediaPipe label**, with **no duplicate-label
+guard and no frame-continuity guard** — on a corpus deliberately recorded to
+contain label flips, duplicate labels and association swaps (they are what DR-1
+was built from, §0.4). Production runs DR-1; the A/Bs replayed pre-DR-1 streams.
+Three artifact mechanisms, all real in this data:
+
+1. **Duplicate-label frames** (25+ across the corpus): both hands enter the same
+   stream; the angle *between the two hands* is counted as a per-frame jump.
+   The §0.12 static-hold bug (575/576 false jumps), reduced but not eliminated.
+2. **Label flips**: the stream silently switches physical hand; the cross-hand
+   delta is counted as a jump — typically at HIGH observability, since both
+   hands are usually well-conditioned when this happens.
+3. **Detection-loss gaps** (2.9% of frames under fast motion): frames ~2–15
+   intervals apart compared as if consecutive.
+
+### Corrected raw-jump census (validated: V0 reproduces the published numbers)
+
+| variant | >30° | >60° | >60 at obs ≥ 0.60 |
+|---|---|---|---|
+| V0 published method (raw label, no guards) | **1533** | **730** | 597 (**81.8%**) |
+| V1 + dup-skip + continuity guard | 1194 | 482 | 352 (**73.0%**) |
+| V2 DR-1 identity-corrected + guards | 1350 | 572 | 440 (**76.9%**) |
+
+**⚠ 22–34% of the published jump tail was measurement artifact.** Corrected
+headline numbers: **~480–570** large jumps, **~73–77%** at observability ≥ 0.60.
+
+**The qualitative §0.13.2 conclusion SURVIVES**: even on clean streams, roughly
+three quarters of large jumps occur in well-observed frames, so the
+redirect away from observability-keyed anisotropy stands. Quote the corrected
+numbers from now on, not 730/82%.
+
+### VERDICT 1 — the five nulls are GENUINE (re-confirmed on clean streams)
+
+The full A/B was re-run on V2 identity-corrected streams (filters reset at every
+run break, as live tracking loss would):
+
+| config | >30 | >60 | p99 | max | trk_well |
+|---|---|---|---|---|---|
+| no filter | 1350 | 572 | 123.3 | 179.9 | — |
+| **shipped isotropic** | **1183** | **442** | **96.6** | 179.9 | **1.34°** |
+| UKF best-tail (σl 0.3, σb 2.0, Q 0.005) | 690 | 11 | 39.4 | 121.7 | 22.48° |
+| UKF best-track (σl 0.02, σb 0.6, Q 0.3) | 1242 | 526 | 98.4 | 175.9 | 3.20° |
+| UKF gated (gate 0.6) | 1351 | 578 | 119.6 | 179.9 | 0.00° |
+| iso blend driven by observability 0.40/0.90 | 1276 | 499 | 94.2 | 177.1 | 1.76° |
+
+The trade is structurally identical to the published one: every tail improvement
+still costs an order of magnitude in tracking; the gated variant still does
+nothing; observability as a blend signal still loses to `conditioning_norm`.
+**The Kalman-family discard, the SVD-frame discard and the shipped filter's
+retention are all CONFIRMED. Do not revisit on artifact grounds.**
+
+### VERDICT 2 — the "motion model is weak" finding is an ARTIFACT. M7's warning is retracted.
+
+`chi2_probe.py`'s "one-frame prediction disagrees by >25° on **60%** of frames"
+is a **closed-loop cascade statistic, not a prediction error**: after one
+rejection the filter coasts, the prediction drifts further from the raw stream,
+and subsequent frames keep failing until the 8-frame coast limit force-accepts —
+one bad frame books up to 8 "rejections". Measured honestly (open loop:
+ω from the last two raw frames, applied forward, on identity-corrected streams):
+
+| horizon | median | mean | p90 | >15° | >25° |
+|---|---|---|---|---|---|
+| 1 frame (~42 ms) | **4.2–4.5°** | 8.6–12.6° | 18.6–28.4° | 13–18% | **6.4–11.4%** |
+| 2 frames (~83 ms) | 7.3–8.0° | 15–20° | 34–51° | 27–31% | 15–20% |
+| 3 frames (~125 ms) | 10.8–11.8° | 21–26° | 51–72° | 39–43% | 25–29% |
+
+(Ranges: seeded-sane vs all triples.) **The constant-angular-velocity model is
+fine in the bulk at one frame and workable at M7's capped ~80 ms horizon with
+confidence scaling; the heavy tail is the same bad-landmark population as the
+jump tail, which M7 step 3 (scale horizon by quality) already handles.**
+This table IS item 3.1's "required first task", done. The ⚠⚠ STOP block in M7 is
+amended accordingly. *(Note: this measures ORIENTATION prediction; position
+prediction error is expected to be more benign and is still unmeasured.)*
+
+The χ² gate's closed-loop failure (§0.13.3) was real — a gate that coasts on
+this motion model does cascade — but its magnitude was inflated by the same
+artifact streams, and the generalisation drawn from it ("the model is
+measurably unreliable at ONE frame") was wrong.
+
+### VERDICT 3 — the M2 premise-kill is GENUINE, but it was measured against the wrong quantity
+
+§0.14's scripts pooled **absolute metre lengths across sessions and poses** and
+applied the <2% gate to those — while §2f defines the calibration target as
+*"proportions plus a per-session scale constant"*, and `hand_model.py`'s own
+header says worldLandmark units are "self-consistent-but-unscaled". The audit
+re-measured the right quantity (`audit_m2_proportions.py`, same still-frame
+gate, dup-label frames excluded):
+
+| measure | Left | Right |
+|---|---|---|
+| A absolute (published method) | median 7.6%, 0/21 inside 2% | median 7.5%, 0/21 |
+| B per-frame palm-normalised **proportions** | median 8.7%, 0/21 | median 6.5%, 0/21 |
+| C cross-session normalised worst disagreement | **39.9%** (`known_right_back`) | **32.3%** (`known_left_back`) |
+
+**Proportions do not rescue the gate. §0.14's verdict is CONFIRMED on the
+correct quantity** — and the worst cross-session offenders are the
+*back-of-hand* takes, which matches the externally documented failure mode
+(MediaPipe issue #5156, "hand world landmarks collapse for the back of the
+hand", open). The premise-kill stands; the measurement-design error is recorded
+so the next acceptance test is written against the quantity the module claims.
+
+### Binding rule for all future harnesses (add to §7.1)
+
+> **Stream construction in any replay harness must (a) replay
+> `hand_identity.py` (DR-1) to assign identity, (b) drop or resolve
+> duplicate-label frames, and (c) break runs at frame-index gaps.**
+> `audit_jump_provenance.py`'s `build_v2()` is the canonical loader — import or
+> copy it; do not key streams on the raw label again. The published-method (V0)
+> loader exists there too, solely to reproduce historical numbers.
 
 ---
 
@@ -2385,47 +2561,36 @@ Never compute velocity by finite-differencing the *smoothed* position — that c
 
 **Forward prediction — spend the effort here, it is the biggest subjective quality win.**
 
-> ## ⚠⚠ STOP — MEASURE THE MOTION MODEL BEFORE BUILDING THIS (added 2026-08-03)
+> ## ⚠ AMENDED 2026-08-03 (§0.15) — the "STOP" warning is LIFTED; build with the amended parameters
 >
-> **M7's forward prediction extrapolates with the constant-angular-velocity model.
-> That model has been measured on this project's own 24-session corpus and it is
-> WEAK.**
+> **The earlier warning here ("the motion model is WEAK — 60% of one-frame
+> predictions disagree by >25°") was an ARTIFACT** of a closed-loop cascade
+> statistic and contaminated streams. **Retracted — see §0.13.3's retraction box.**
 >
-> | measurement | result |
-> |---|---|
-> | mean frame-to-frame orientation change | **9.9°** |
-> | one-frame prediction disagreeing with the measurement by >25° | **60% of frames** |
-> | ... by >15° | **66% of frames** |
+> **The required first task is now DONE** (§0.15, `audit_jump_provenance.py`),
+> measured open-loop on DR-1 identity-corrected streams:
 >
-> **The predictor is unreliable at ONE frame. M7 proposes extrapolating it to
-> ~80 ms — roughly TWO frames at the measured ~24 fps.**
+> | horizon | median | mean | p90 | >25° |
+> |---|---|---|---|---|
+> | **1 frame (~42 ms)** | **4.2–4.5°** | 8.6–12.6° | 18.6–28.4° | **6.4–11.4%** |
+> | 2 frames (~83 ms) | 7.3–8.0° | 15–20° | 34–51° | 15–20% |
+> | 3 frames (~125 ms) | 10.8–11.8° | 21–26° | 51–72° | 25–29% |
 >
-> This is not speculation; it is the finding that explains why five separate
-> attempts at item 2.3 failed (§0.13–§0.13.3). Every approach that leaned on this
-> model — graded blending, coasting, χ² gating — inherited its weakness. The shipped
-> `HandOrientationFilter` wins precisely *because* its `alpha` saturates at 1 and it
-> therefore **ignores the prediction almost always**.
->
-> ### Required first task for item 3.1
->
-> **Measure the model's prediction error at 1, 2 and 3 frames ahead on the recorded
-> corpus, and decide whether it is fit to extrapolate with — BEFORE building
-> anything.** If it is not, M7's headline claim ("net perceived latency can go to
-> zero or slightly negative") does not follow, and steps 2–5 below should not be
-> built as written.
->
-> ### What is still worth having even if prediction is unfit
->
-> **The FORM/MOTION channel split (above) does not require prediction at all.** Its
-> value — one filter cannot serve both rendering smoothness and trigger latency — is
-> independent and stands on its own. If the predictor fails its measurement, build
-> the split and skip the extrapolation.
+> **Verdict: the model is fit to extrapolate ONE frame, not two.** That matches
+> the published envelope independently (~30–50 ms usable, artifacts clearly
+> perceived by 75 ms — §10.4/S2). Amendments to steps 2–5, all in **S2**:
+> robust/filtered derivative before extrapolating; speed-gated horizon with a
+> dead-band; damped extrapolation with a shorter orientation horizon; post-filter
+> the prediction; prefer LaViola double-exponential smoothing over a Kalman
+> predictor. **S3 additionally forbids predicted state reaching a gesture state
+> machine.** Cap the horizon at ~40 ms, not the 80 ms step 4 currently states.
+> *(This is orientation prediction; position prediction is still unmeasured and
+> expected to be more benign — measure it as part of 3.1.)*
 >
 > *Substrate note: the motion model, `omega` as a public state, and
 > `predict_forward()` already exist in the parked `Resources/orientation_filter.py`
-> (§0.13.1). 3.1's old dependency on 2.3 was for exactly those and is satisfied
-> without shipping 2.3 — but inheriting the code does NOT inherit a working
-> predictor. Measure first.*
+> (§0.13.1) — but that `omega` is a decayed finite difference, which is exactly
+> what S2(a) says not to extrapolate raw. Filter it first.*
 
 1. **Measure** your end-to-end latency (§6.2 procedure). Do not guess it.
 2. Predict the state forward by `L_total` using the constant-velocity/constant-angular-velocity model.
@@ -2759,6 +2924,254 @@ permission before each individual live-camera take rather than queueing several.
 
 ---
 
+## 10. ADDENDUM (2026-08-03) — state-of-the-art audit
+### *(placed after §9's bibliography in reading order; §9 remains the historical background list)*
+
+Produced with the §0.15 measurement audit, per owner request: compare the spec and
+the build record against (a) Google/MediaPipe's own publications and source, (b)
+2023–2026 monocular hand-pose SOTA, (c) prediction/latency-compensation
+literature incl. VR industry practice and AV motion forecasting (Waymo). Each
+adopted item carries a **Build at** step referencing the merged queue
+(`PART_ONE.md` §3.1). Sources at the end of each block.
+
+### 10.1 What the spec already gets right (external confirmation — no action)
+
+- **"Treat MediaPipe as a noisy sensor and build the estimator around it" is
+  exactly how shipping systems work.** Meta (MEgATrack/UmeTrack), Ultraleap and
+  Apple all use temporal state fed into the tracker plus forward prediction;
+  none relies on per-frame estimation alone. A raw MediaPipe pipeline is the
+  outlier, not the norm.
+- **DR-1 is correct practice, confirmed at the source.** MediaPipe's handedness
+  is a per-frame appearance classification head of the landmark CNN (Zhang et
+  al. 2020); **no persistent hand identity exists in any MediaPipe API** — the
+  Tasks API's `min_tracking_confidence` is only an IoU association threshold.
+  Track-level identity by position is the standard community remedy. The
+  mirrored-input handedness convention (§0.9, §13.6.1) is documented verbatim in
+  Google's docs.
+- **DR-2's premise is confirmed as fundamental.** HandFlow (VMV 2022) shows the
+  edge-on/depth-sign family of configurations is genuinely ill-posed for one
+  RGB view — the posterior over poses is multimodal, and no per-frame fix
+  exists. Meta's stated reason for multi-camera rigs is exactly this. Freezing
+  + suppressing (DR-2) and motion carry-through (M5e) are the right class of
+  answer for a single camera.
+- **M9's ratio-form depth is the right call.** Absolute camera-space hand
+  position from monocular RGB is ~3.5 cm state-of-the-art per frame (ScaleHP
+  2026; RootNet lineage); relative scale-ratio control needs only temporal
+  consistency of one anchor length. Palm width is the documented anchor of
+  choice (near pose-invariant). **One addition — see 10.4/S10.**
+- **MediaPipe applies NO smoothing to hand landmarks** — verified in both the
+  legacy graph and the Tasks graph. Every filter this project ships operates on
+  genuinely raw output; nothing is redundant with upstream.
+
+*Sources: arXiv 2006.10214; MediaPipe hand_landmark_tracking_cpu.pbtxt +
+hand_landmarker_graph.cc (no smoothing calculators); Tasks docs
+(min_tracking_confidence = IoU); HandFlow handtracker.mpi-inf.mpg.de; MEgATrack
+SIGGRAPH 2020; UmeTrack SIGGRAPH Asia 2022; arXiv 2606.25619 (ScaleHP); arXiv
+1907.11346 (RootNet); arXiv 2504.01888 (palm-width anchor).*
+
+### 10.2 Corrections to spec premises, from Google's own record
+
+1. **M2's premise-death (§0.14/§0.15) is documented sensor behaviour, not a
+   surprise.** `worldLandmarks` are produced by fitting the statistical **GHUM**
+   hand model to 2D annotations — a near-average-hand reconstruction with
+   documented mean 3D error of **1.3–1.5 cm** (~15% of a palm), with focal
+   length *assumed* when unknown. A pose-consistent personal skeleton was never
+   in this signal. There is also an **open, Google-acknowledged issue: palm/MCP
+   world landmarks collapse when the back of the hand faces the camera**
+   (#5156) — matching both §0.15's worst offenders (`known_*_back`) and T1.
+2. **The z of screen landmarks was trained on synthetic data only** (paper,
+   verbatim) — reinforcing anti-pattern #3 with a documented mechanism.
+3. **Google's own production One Euro tunings exist** (MediaPipe Pose filtering
+   graph): screen landmarks `min_cutoff 0.05, beta 80`; world landmarks
+   `min_cutoff 0.1, beta 40, disable_value_scaling`. These are the reference
+   starting parameters for any One Euro use here (10.4/S4).
+
+*Sources: TensorFlow blog Nov 2021 (3D hand pose / GHUM); arXiv 2111.00038
+(Sung et al. 2021 — also documents the improved 2021 landmark model and the
+two-vector ROI rotation scheme); github issues #5156, #3156, #742;
+pose_landmark_filtering.pbtxt.*
+
+### 10.3 The redirect after §0.13.2/§0.15, grounded in literature
+
+The corrected finding stands: ~75% of large orientation jumps occur in
+well-observed frames, i.e. **bad landmark frames, not pose-filter failures**.
+SmoothNet's published analysis of pose estimators says exactly this: errors are
+"highly unbalanced" — most frames fine, failures are large deviations over
+short runs. The field's remedies, in cost order: (1) consistency-cue outlier
+gating inside a recursive filter (never per-frame confidence scores, which are
+documented as poorly calibrated for exactly these failures); (2) anatomical
+validity constraints; (3) skeleton-constrained fitting; (4) small learned
+temporal networks. These are S5–S7 and S9 below and they replace the broken
+"redirect to 1.4" (M2 is dead and cannot supply the error signal).
+
+### 10.4 Adopted improvements — each with its build step
+
+> Numbering S1–S12 (S≠A to avoid clashing with §0.1's amendment log). Ordering
+> follows the queue, not importance.
+>
+> **⚠ These are NOT a second TODO list.** All twelve are folded into the merged
+> queue at `PART_ONE.md` §3.1, which carries an S→row index and remains the only
+> list to follow. What lives here is the *rationale and sources*; what lives
+> there is *what to build next*. S1→0.4, S2/S3/S4→3.1, S5→1.6, S6→1.5, S7→1.7,
+> S8→0.5, S9→5.4, S10→4.1, S11→5.5, S12→3.4.
+
+**S1 — Predictor evaluation harness: side-effect metrics + mandatory baselines.**
+Adopt Nancel et al.'s perceptual side-effect metrics (lateness, over-anticipation,
+wrong orientation, jitter, jumps, spring) for any prediction work, and require
+every predictor to beat **zero-velocity and constant-velocity baselines per
+horizon** — the AV literature's hard-won discipline (a constant-velocity model
+beat published LSTMs; zero-velocity beat published human-motion models).
+§0.15's horizon table is the seed. **Build at: 0.1 / first task of 3.1.**
+*Sources: UIST 2016 Nancel; arXiv 1903.07933 (Schöller); Martinez CVPR 2017.*
+
+**S2 — M7 prediction, amended parameters (replaces M7 steps 2–4 as written).**
+The convergent published envelope for kinematic prediction on noisy vision
+signals is **~30–50 ms usable, hard ceiling < 80 ms** (Azuma; Meta's 20–40 ms
+operating range; TurboTouch's best-in-class 32–48 ms; artifacts clearly
+perceived at 75 ms). At 24 fps that means: **predict ONE frame, never two**;
+hide ~40 ms and accept the rest. Mechanics, in priority order, all documented
+practice: (a) **robust derivative first** — never extrapolate a raw two-sample
+difference; low-pass ω/v before predicting (TurboTouch's 2–3× horizon gain came
+mostly from this); (b) **speed-gated horizon with a dead-band** — prediction
+OFF below ~0.03 rad/s, τ ramping with speed to the cap (shipped Oculus design);
+(c) **damped extrapolation** (λ ≈ 0.3–0.5 on the extrapolation term), orientation
+horizon shorter than position (hypothesis to measure, motivated by §0.15's
+horizon table); (d) **post-filter the predicted signal separately**; (e) use
+**LaViola double-exponential smoothing** as the predictor form — published
+≈equivalent accuracy to Kalman predictors at ~1/135 the cost, degrades to
+smoothing as τ→0. **Build at: 3.1.**
+*Sources: cs.unc.edu/~azuma/s95paper.pdf; Meta "Latent Power of Prediction";
+US9063330; UIST 2018 TurboTouch; LaViola 2003.*
+
+**S3 — Split predicted-for-rendering from smoothed-for-gestures (Apple's shipped
+design).** visionOS exposes exactly two hand streams: *predicted* (rendering /
+attachment, "at the expense of some accuracy") and *continuous/unpredicted*
+(gesture detection). Amendment to M7's channel split: the MOTION channel feeds
+triggers, but **predicted state must never reach a gesture state machine** —
+prediction artifacts must not latch. This subsumes and sharpens M7's existing
+FORM/MOTION rationale, and the split is worth building **even if prediction is
+skipped entirely**. **Build at: 3.1.**
+*Source: WWDC24 "Create enhanced spatial computing experiences with ARKit".*
+
+**S4 — One Euro on the FORM channel, Google's tunings as the starting point.**
+The FORM (rendering) channel's smoother should start from MediaPipe Pose's own
+production parameters (10.2.3) rather than guesses. Note the documented
+limitation: One Euro trades jitter/lag only — **it does not reject glitches**
+(a large excursion looks like fast motion and is followed). Glitch rejection is
+S5's job; do not tune One Euro to do it. **Build at: 3.1 (FORM channel).**
+*Sources: CHI 2012 1€ filter; pose_landmark_filtering.pbtxt.*
+
+**S5 — Consistency-gated frame rejection (M4's revised core, and the T1/T2
+redirect).** Per-frame confidence is documented as poorly calibrated for
+well-conditioned-pose failures; the field gates on **consistency cues**:
+bone-length deviation (as a *gross* outlier flag at the ~6–10% precision the
+sensor actually supports — not M2's dead 2%), frame-to-frame
+velocity/acceleration plausibility, palm-pixel-width collapse, and anatomical
+validity (S6). Rules learned from §0.13.3/§0.15, binding: compare candidates
+against the **last accepted measurement**, cap consecutive rejections at 1–2
+frames (anti-cascade — the χ² gate's cascade is what manufactured its own
+failure), evaluate **position first** (the Object Jump metric; the χ² verdict
+condemned orientation gating only). **Build at: 1.6 (M4), rescoped.**
+*Sources: arXiv 2112.13715 (SmoothNet, failure structure); arXiv 2605.02708
+(outlier-rejecting temporal recursion for 6D pose).*
+
+**S6 — Anatomical validity from published constraint sets (M3a, upgraded
+priority).** Spurr et al. (ECCV 2020) show biomechanical constraints (joint
+limits, unidirectional flexion, planar articulation) **halve depth error** on
+FreiHAND — the single strongest published lever on exactly the depth-error
+family behind T1/T2 — and a reusable PyTorch constraint set exists
+(Hand-BMC-pytorch). Use violations as (a) the per-frame validity bit feeding
+S5, (b) the bas-relief disambiguation term M5 already specifies. With M2 dead,
+**M3a is now the primary "attack the source" item — build it before any T1/T2
+retest.** **Build at: 1.5.**
+*Sources: arXiv 2003.09282; github MengHao666/Hand-BMC-pytorch.*
+
+**S7 — NEW MODULE M2b: impose a skeleton instead of measuring one
+(fixed-skeleton constrained IK / MANO-lite fit).** The literature's answer to
+"worldLandmarks are not length-consistent" is not better averaging — it is
+fitting a **fixed-bone-length kinematic model** to the landmarks each frame, so
+lengths are consistent *by construction* (MANO's raison d'être; documented
+precedents fit to 2D keypoints with bone-length preservation, warm-started
+~few LM iterations/frame, plausibly a few ms in Python). Deliverables: a
+pose-consistent 21-point skeleton, clean joint angles for M3, a better-
+conditioned orientation source, and the **per-session scale reference M9
+needs** — everything M2 was supposed to supply, from a mechanism that cannot
+have M2's failure mode. Population-average proportions suffice to start (§2f's
+own point); per-user refinement optional. **Build at: NEW queue item 1.7, after
+1.5/1.6, before 4.1 (M9); T1/T2 retest after it.**
+*Sources: ACM PETRA 2023 (MANO to 2D keypoints); arXiv 2409.13347 (V-Hands);
+Aristidou 2010/2018 constrained IK; arXiv 2605.09258 (2026, biomechanical IK on
+foundation models).*
+
+**S8 — Offline oracle for the corpus (M0 extension).** Standard evaluation
+trick in this literature: run a heavyweight offline model (HaMeR or WiLoR —
+GPU or slow CPU, offline is fine) over the 24 recorded sessions to produce
+pseudo-ground-truth, quantifying MediaPipe's error per pose class and giving
+S5/S6 gates something to be tuned against that is not MediaPipe judging itself.
+**Build at: 0.1 extension, optional, any time.**
+*Sources: arXiv 2409.12259 (WiLoR); CVPR 2024 HaMeR.*
+
+**S9 — Causal SmoothNet-class refinement (learned upgrade path).** If S5+S6
+leave residual glitch tail, the documented next step is a tiny per-joint
+temporal MLP (SmoothNet): plug-and-play, transfers across estimators, fixes
+exactly the short-run large-deviation failures — but verify the causal-mode
+accuracy drop (paper ablation) and window latency first. **Build at: NEW Phase
+5 item 5.4 — only after 1.5/1.6/1.7 are measured.**
+*Source: arXiv 2112.13715.*
+
+**S10 — M9 amendment: gate Z on the edge-on band.** The palm-width pixel anchor
+collapses edge-on; the depth ratio must freeze (reuse DR-2's tracker pattern)
+while `edgeOnMeasure` is in the band, else Z-control inherits the crossing
+failure. One sentence, but absent from §14.3 and M9 as written. **Build at:
+4.1/4.2.**
+
+**S11 — Multi-hypothesis prediction & tracking (Waymo's transferable core,
+minimal form).** What transfers from MultiPath++/MotionLM is a *principle*:
+predict distributions, not points, and keep discrete hypotheses where the
+future genuinely branches. Honest non-transfers: their data scale, 3–8 s
+horizons, lane-graph context, GPU inference — all inapplicable at 40 ms on a
+CPU; and at short horizons their own literature shows physics baselines win.
+Minimal adoptable forms: (a) prediction emits a variance growing with horizon
+and recent residual, used as the render blend weight (cheap MultiPath++);
+(b) 3-mode reversal blending {continue, decelerate, reverse} weighted by
+acceleration-sign consistency — targets exactly the overshoot-on-reversal
+failure; (c) research option: carry the mirror (bas-relief) pose hypothesis
+through the DR-2 band and let motion continuity select on exit (HandFlow's
+thesis, applied). **Build at: NEW Phase 5 item 5.5 — after S2 ships and only if
+its measured side-effect metrics (S1) justify more machinery.**
+*Sources: arXiv 2111.14973 (MultiPath++); arXiv 2309.16534 (MotionLM); arXiv
+2307.08243 (USST); HandFlow.*
+
+**S12 — Endpoint/intent prediction (the brain-mimicking layer, correctly
+placed).** Minimum-jerk models predict *where a ballistic reach ends*, not the
+next frame: published results are ~0.8 cm at 100 ms for ballistic VR reaches
+(min-jerk-derived model), and endpoint prediction needs ~50% of the movement
+observed. That is an **intent** signal — pre-arm snap/grab, choose the target
+object — not a render-latency tool. It is the published version of M8c's
+"anticipatory grip" idea and lands in the same place. **Build at: 3.4 (with
+M8c, still blocked on the aperture gesture design §14.2).**
+*Sources: UIST 2021 Gamage "So Predictable!"; CHI 2007 Lank; CHI 2014 Pasqual &
+Wobbrock (kinematic template matching).*
+
+### 10.5 Explicitly considered and NOT adopted
+
+- **Replacing MediaPipe with HaMeR/WiLoR/Hamba-class models live**: none is
+  CPU-real-time; MobRecon-class is the only plausible family and would be a
+  platform rewrite. Offline use only (S8). Revisit for the web/mobile port only
+  if MediaPipe proves insufficient there.
+- **Learned trajectory predictors (LSTM/transformer/diffusion) for latency
+  hiding**: repeatedly beaten by simple baselines at short horizons in
+  published comparisons; inference cost eats the frame budget. Revisit only
+  after S1–S3 ship and an intent layer exists.
+- **Two-thirds power law as a predictor**: constraint/sanity check at most; no
+  published use as an interface predictor found.
+- **MediaPipe Holistic switch** (body-pose-conditioned hand ROI): Google's own
+  answer to hand-ROI instability, but a pipeline swap with unknown fps cost on
+  this hardware; note kept here for the day T1-class failures dominate again.
+  Not queued.
+
+---
+
 ## 9. Selected background
 
 - Johansson (1973) — point-light biological motion; kinematics alone carry action identity.
@@ -2771,3 +3184,32 @@ permission before each individual live-camera take rather than queueing several.
 - Friston (2009) — predictive coding and precision-weighted prediction error.
 - Casiez, Roussel & Vogel (2012) — 1€ filter; useful as a *baseline* for the jitter/lag trade-off you are trying to escape.
 - Napier (1956) — prehensile movements of the human hand; power vs. precision grip, object-size dependence. *(Added on integration — the basis for §14.1's shipped mechanism.)*
+
+### 9.1 Added by the §10 addendum (2026-08-03) — the sources behind S1–S12
+
+**Sensor (what MediaPipe actually is):**
+- Zhang et al. (2020) — *MediaPipe Hands*, arXiv 2006.10214. Palm detector + landmark model; **handedness is a per-frame appearance classification head**; screen `z` trained on synthetic data only.
+- Sung et al. (2021) — *On-device Real-time Hand Gesture Recognition*, arXiv 2111.00038, + TensorFlow blog Nov 2021. **World landmarks come from fitting the GHUM model to 2D annotations; documented mean 3D error 1.3–1.5 cm**; focal length assumed when unknown.
+- MediaPipe source: `hand_landmark_tracking_cpu.pbtxt`, `hand_landmarker_graph.cc` (**no smoothing anywhere in the hand graphs**); `pose_landmark_filtering.pbtxt` (**Google's own One Euro tunings**); Tasks docs (`min_tracking_confidence` = IoU association, **no persistent hand ID in any API**).
+- Open issue #5156 — **palm/MCP world landmarks collapse when the back of the hand faces the camera** (T1's failure mode, unfixed upstream). Also #3156, #742, #3047/#4785 (handedness).
+
+**Estimator quality (S5–S9):**
+- Zeng et al. (2022) — *SmoothNet*, arXiv 2112.13715. Pose-estimator error is "highly unbalanced": large deviations over short runs, not white noise.
+- Spurr et al. (2020) — *Biomechanical constraints*, arXiv 2003.09282. **Joint-limit + flexion-direction constraints halve depth error** on FreiHAND.
+- MANO-to-2D-keypoint fitting (ACM PETRA 2023); V-Hands (arXiv 2409.13347); Aristidou (2010/2018) constrained IK; arXiv 2605.09258 (2026) biomechanical IK on foundation models — the S7 lineage.
+- Pavlakos et al. (2024) *HaMeR*; Potamias et al. (2025) *WiLoR*, arXiv 2409.12259 — offline oracle candidates (S8).
+- Wang et al. (2022) — *HandFlow*, VMV 2022. The **edge-on/bas-relief configuration is genuinely ill-posed**; the pose posterior is multimodal.
+
+**Prediction and latency (S1–S4, S11, S12):**
+- Azuma & Bishop (1995), SIGGRAPH — prediction error grows with interval **and signal frequency**; effective only below ~80 ms.
+- LaValle, *The Latent Power of Prediction* (Meta) — constant-rate vs constant-acceleration error tables; **recommended 20–40 ms operating range**.
+- Nancel et al. (2016), UIST — **perceptual side-effect metrics**; over/undershoot clearly perceived at 75 ms compensation.
+- Nancel et al. (2018), UIST — *TurboTouch*: robust derivative + speed-gated smoothing + post-filtering; **usable to 32–48 ms, 2–3× further than prior art**.
+- LaViola (2003) — **double-exponential smoothing ≈ Kalman accuracy at ~1/135 the cost** for predictive tracking.
+- Oculus patent family US9063330 — **velocity-gated prediction with a dead-band and a ramped horizon**.
+- Apple WWDC24, ARKit `handAnchors(at:)` — shipped **predicted-for-rendering vs unpredicted-for-gesture** split (S3).
+- Gamage et al. (2021), UIST — *So Predictable!*: minimum-jerk-derived hand trajectory prediction, ~0.8 cm at 100 ms for **ballistic** reaches. Lank et al. (2007) CHI; Pasqual & Wobbrock (2014) CHI — endpoint prediction (S12).
+- Varadarajan et al. (2022) *MultiPath++*; Seff et al. (2023) *MotionLM* (Waymo) — **predict distributions, not points**; learned anchors; intent conditioning (S11's transferable core).
+- Schöller et al. (2020) RA-L — **constant velocity beats LSTM/SR-LSTM**; last-step motion carries 68% of the signal. Martinez et al. (2017) CVPR — **zero-velocity baseline beat published learned models**. *(Together: S1's mandatory baselines.)*
+- Han et al. (2020) *MEgATrack*, SIGGRAPH; Han et al. (2022) *UmeTrack*, SIGGRAPH Asia — detection-by-tracking and temporal fusion; multi-view exists precisely for degenerate/occluded views.
+- Mueller et al. (2026) *ScaleHP*, arXiv 2606.25619; Moon et al. (2019) *RootNet*, arXiv 1907.11346; arXiv 2504.01888 (palm-width depth anchor) — the S10/M9 evidence.
