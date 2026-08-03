@@ -1221,6 +1221,188 @@ M8a A/B (item 3.3). Full entry: `PART_ONE.md` §3.1 N12.
 
 ---
 
+## 0.12 M6b measured BEFORE adoption (2026-08-03) — the SVD frame is a REGRESSION; keep the shipped frame, take the observability metric
+
+Item 2.3, stage 1. The spec warns that changing the frame construction can silently
+invert yaw/roll (§13.7's recorded lesson), so M6b's SVD frame was **measured against
+the shipped Gram-Schmidt frame on identical recorded input before any production
+change.** That decision paid for itself immediately.
+
+### Result: do NOT adopt M6b's frame
+
+| | shipped Gram-Schmidt | M6b SVD |
+|---|---|---|
+| left-handed frames (must be 0) | 0 | 0 |
+| **>30° per-frame orientation jumps** | **1533** | **3233** |
+
+**2.1× worse overall, and worse specifically where the shipped frame is clean:**
+
+| control sequence | shipped | SVD |
+|---|---|---|
+| `non_crossing` | 1 | **175** |
+| `depth_sweep` | 0 | **64** |
+| `two_hand_near_miss` | 0 | **57** |
+| `known_right_palm` | 0 | **15** |
+| `static_hold` | 0 | 0 |
+
+**Diagnosis (likely, not proven):** singular vectors are defined only up to sign,
+and when `S[1] ≈ S[2]` the 2nd and 3rd axes can **swap between consecutive
+frames**. The implementation enforced right-handedness but not *temporal
+continuity*. A continuity-enforcing variant may well fix it — but that is a **new
+design, not M6b as specified**, and would have to be measured the same way.
+
+**Under A10 this is a null/negative result and is recorded rather than retried
+blindly.** Chirality was never violated (0 left-handed frames in either
+construction), so this is a *stability* failure, not the inversion the spec warned
+about.
+
+### What IS validated: `observability` is a far better conditioning signal
+
+| signal | range across the whole corpus |
+|---|---|
+| **`observability` = 1 − S₃/S₂ (M6b)** | **0.046 → 0.908** |
+| `conditioning_norm` (shipped) | 0.058 → 0.092 |
+
+`observability` collapses to **0.05–0.15 at exactly the pitch crossings**
+(`pitch_sweep_slow` 0.046, `palm_back_s2_slow` 0.071–0.096) and sits at
+**0.75–0.91 on every control** (`static_hold` 0.818, `non_crossing` 0.749,
+`known_*` 0.834–0.890). `conditioning_norm` spans a narrow band across
+*everything* and barely discriminates. Per-session correlation between the two is
+only 0.27–0.81, with several near zero or negative — **they are not the same
+signal.**
+
+> ### ⚠ CORRECTION (same day): "adopt observability as the conditioning signal" was WRONG
+>
+> This section originally concluded that `observability` should **replace**
+> `conditioning_norm`, inferring it from the wider dynamic range. **That inference
+> was not tested when it was written, and when tested it failed.**
+>
+> A/B driving the *shipped* filter with each signal, identical input, same metric
+> the 2026-08-02 filter audit used (§13.7.1):
+>
+> | config | >30° jumps | >60° jumps |
+> |---|---|---|
+> | no filter at all (α ≡ 1) | 1533 | 730 |
+> | **shipped: `conditioning_norm` 0.015/0.06** | **1386** | **611** |
+> | best `observability` (0.40/0.90, swept) | 1473 | 663 |
+>
+> Observability beats no-filter but **loses to what is already shipped**, at every
+> threshold pair swept (0.10/0.40 through 0.40/0.90).
+>
+> **Why, and it is not mysterious:** `conditioning_norm` measures the conditioning
+> of *the frame actually in use* — the orthogonalised `wrist→middle_MCP` length
+> against the knuckle axis. `observability` measures the conditioning of the
+> **palm-plane fit**, i.e. of the construction rejected above. The useful
+> conditioning signal is the one matched to the estimator you are actually running.
+>
+> **Lesson: a wider dynamic range is not evidence of a better signal.** Measure the
+> thing you care about, not a proxy for it.
+
+**Revised conclusion:**
+
+- **Keep** the shipped Gram-Schmidt frame for orientation. *(unchanged)*
+- **Keep** `conditioning_norm` driving the current reliability blend. **Do not
+  swap it for `observability`.**
+- `palm_observability()` is built, numpy-free and verified to 1.6e-11 against
+  numpy — **retained for M6c**, where it is used to shape a *per-axis* covariance
+  rather than as a scalar blend weight. That is a different use, and this null
+  result does not condemn it there.
+- **A6's "one metric, not two" is therefore NOT yet settled.** It becomes a real
+  decision only when M6c ships and something actually consumes observability. Until
+  then only one metric is in the estimation path, so the constraint is not violated.
+
+*Implementation note for whoever builds M6c: computing singular values needs numpy,
+which `HandsTriggeredActions.py` does not currently import (it is pure `math`).
+Decide deliberately whether to add the dependency or compute the 3×3 eigenvalues in
+closed form.*
+
+### A tooling error caught in the same pass
+
+The first run of this comparison reported **575 of 576 frames in `static_hold` as
+>30° jumps** — impossible for a hand held still. Cause: iterating `rec["hands"]`
+with a single `prev`, so consecutive entries alternated Left→Right→Left and the
+angle *between the two hands* was being counted as a per-frame jump. **This is the
+same bug class as the §0.8 per-hand-stream error, caught the same way — by a number
+that could not be true.** Fixed to track the previous frame per hand; corrected
+figures are the ones above.
+
+---
+
+## 0.13 M6c anisotropic covariance — NOT DEMONSTRATED (2026-08-03). Nothing shipped.
+
+Item 2.3, stage 3. Three parameterisations tried, replayed over all 24 sessions.
+**None beat the shipped isotropic filter. `HandOrientationFilter` stays.**
+
+### What was built
+
+An **error-state** update rather than a full UKF: `q_err = q_pred⁻¹ ⊗ q_meas` →
+log map → 3-vector in the body frame → per-axis gain `k_i = P/(P + R_i)` → exp map
+→ compose. That is 6c's mechanism (diagonal `R` in the body frame), numpy-free so
+it ports to the web target. Sigma points buy process-nonlinearity handling that a
+small-angle error state largely removes.
+
+### Why the first two attempts looked like wins and were not
+
+**Attempt 1 (single sigma for all axes) scored spectacularly** — `>60°` jumps
+589 → **0**, max 180° → 53°. It was over-damping wearing an anisotropic costume:
+one parameter damped every axis uniformly.
+
+**The metric that caught it** — and which must be used in any future attempt:
+
+> `tracking_error = angle(fused, raw_measurement)` on frames where
+> `observability > 0.6`, i.e. where the measurement is trustworthy and the filter
+> has **no excuse to disagree**.
+
+| | well-cond | fast motion |
+|---|---|---|
+| shipped | **1.40°** | **5.04°** |
+| attempt 1, σ=4 | **37.32°** | 59.28° |
+
+**Jump counts reward a filter that ignores the hand.** A filter with gain ≈ 0 has
+zero jumps and is useless. Never judge an orientation filter on jump counts alone.
+
+**Attempt 2** conflated the two parameters again (one σ for both the well-observed
+and the blown axes), forcing a trade the spec never intended.
+
+### Attempt 3 — the spec's actual two-parameter form, and the honest result
+
+`R = diag(σ_long², σ_base²/obs, σ_base²/obs)`, swept σ_long ∈ {0.1, 0.2, 0.3} ×
+σ_base ∈ {0.5, 1, 2, 4}:
+
+| σ_long | σ_base | >60 | p99 | max | trk_well | trk_fast |
+|---|---|---|---|---|---|---|
+| *(shipped)* | | **589** | 120.2 | 180.0 | **1.40°** | **5.04°** |
+| 0.30 | 1.00 | 649 | 92.5 | 177.2 | 5.79° | 11.81° |
+| 0.30 | 2.00 | 562 | 85.7 | 173.7 | 13.92° | 25.12° |
+| 0.30 | 4.00 | 472 | 82.4 | 166.6 | 29.05° | 45.12° |
+
+**Every config that improves the tail costs 3–10× worse tracking.** No config wins
+both. Under A10 that is a null result: **not shipped, not tuned into looking good.**
+
+### ⚠ This does NOT disprove M6c — it disproves *this approximation of it*
+
+The implementation holds **P fixed at 1.0**; there is no covariance propagation. A
+real UKF grows `P` while coasting on an unobservable axis, which *raises* the gain
+when observability returns and lets it re-converge fast. That is materially
+different behaviour and is exactly where 6c's benefit is supposed to live.
+
+**A fair next attempt must propagate the covariance** — i.e. build the actual
+filter, not the fixed-gain approximation. Do not re-run the fixed-P version and
+expect a different answer.
+
+### What this run did establish
+
+The shipped hand-rolled filter was **re-validated a third time** on the full
+24-session corpus (1533 → 1374 `>30°`, 730 → 589 `>60°` versus no filter). The
+2026-08-02 audit kept it on a smaller sample; it has now survived a deliberate
+attempt to replace it.
+
+**A6's "delete `HandOrientationFilter`" obligation is therefore NOT met and the
+filter stays.** The bar is a replacement that is measurably better on *both*
+families of metric — which is a higher bar than "more principled".
+
+---
+
 ## 0. Framing: what MediaPipe is, and what it is not
 
 MediaPipe Hands is a **stateless, per-frame, monocular shape estimator**. It answers "what configuration of a hand best explains this single image crop?"

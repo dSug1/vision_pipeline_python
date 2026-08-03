@@ -212,6 +212,108 @@ class PalmFacingTracker:
         self.exit_run = 0
 
 
+# --------------------------------------------------------------------------
+# Palm observability (M6b's metric, queue item 2.3) -- NO numpy, by design
+# --------------------------------------------------------------------------
+# Deliberately closed-form arithmetic. The perception layer is meant to be
+# REIMPLEMENTED against the HandState contract for the web/mobile port, and numpy
+# has no direct equivalent in JS/Swift/Kotlin -- a numpy dependency here turns a
+# transliteration into a rewrite. Everything below is +-*/ and trig, so it ports
+# line by line. (Owner decision 2026-08-03: "do what is best, considering the
+# future transport to web.")
+#
+# WHY THIS METRIC AND NOT THE SHIPPED ONE (measured, spec §0.12):
+#     observability     range 0.046 - 0.908 across the corpus
+#     conditioning_norm range 0.058 - 0.092   <- barely discriminates
+# observability collapses to 0.05-0.15 at exactly the pitch crossings and sits at
+# 0.75-0.91 on every control sequence. They correlate only 0.27-0.81, so they are
+# NOT the same signal. A6 forbids shipping both; this is the one to keep.
+#
+# NOTE: M6b's SVD *frame* was measured and REJECTED (2.1x more >30 deg jumps than
+# the shipped Gram-Schmidt frame). Only the METRIC is adopted -- this function
+# deliberately computes singular values WITHOUT constructing a frame.
+
+PALM_3D_LANDMARKS = (0, 5, 9, 13, 17)   # wrist + 4 MCPs; landmark 1 (thumb CMC) moves
+
+
+def _symmetric_3x3_eigenvalues(a00, a01, a02, a11, a12, a22):
+    """Eigenvalues of a real symmetric 3x3 matrix, descending. Closed form
+    (Smith's trigonometric method) -- no iteration, no library.
+
+    Returns (l1, l2, l3) with l1 >= l2 >= l3 >= 0 for a positive-semidefinite
+    input such as a scatter matrix.
+    """
+    p1 = a01 * a01 + a02 * a02 + a12 * a12
+    if p1 <= 1e-24:
+        # Already diagonal.
+        ls = sorted((a00, a11, a22), reverse=True)
+        return ls[0], ls[1], ls[2]
+
+    q = (a00 + a11 + a22) / 3.0
+    d0, d1, d2 = a00 - q, a11 - q, a22 - q
+    p2 = d0 * d0 + d1 * d1 + d2 * d2 + 2.0 * p1
+    p = math.sqrt(p2 / 6.0)
+    if p <= 1e-18:
+        return q, q, q
+
+    # B = (A - qI)/p ; r = det(B)/2
+    b00, b11, b22 = d0 / p, d1 / p, d2 / p
+    b01, b02, b12 = a01 / p, a02 / p, a12 / p
+    det_b = (b00 * (b11 * b22 - b12 * b12)
+             - b01 * (b01 * b22 - b12 * b02)
+             + b02 * (b01 * b12 - b11 * b02))
+    r = max(-1.0, min(1.0, det_b / 2.0))
+
+    phi = math.acos(r) / 3.0
+    l1 = q + 2.0 * p * math.cos(phi)
+    l3 = q + 2.0 * p * math.cos(phi + 2.0 * math.pi / 3.0)
+    l2 = 3.0 * q - l1 - l3        # trace is preserved
+    return l1, l2, l3
+
+
+def palm_observability(world_landmarks):
+    """M6b's `observability` = 1 - S3/S2 of the centred palm point set.
+
+    0 = the palm points are collinear-in-projection, so the palm normal is
+    unobservable (the pitch-crossing degeneracy). 1 = well-conditioned.
+
+    Computed from the 3x3 scatter matrix's eigenvalues rather than an SVD:
+    singular values of the centred matrix P are sqrt of the eigenvalues of P^T P,
+    so S3/S2 == sqrt(l3/l2). Same number, no numpy.
+
+    Returns 0.0 when the fit is degenerate or landmarks are missing.
+    """
+    pts = []
+    for i in PALM_3D_LANDMARKS:
+        if i >= len(world_landmarks):
+            return 0.0
+        p = world_landmarks[i]
+        if p is None or len(p) < 3:
+            return 0.0
+        pts.append((float(p[0]), float(p[1]), float(p[2])))
+
+    n = len(pts)
+    cx = sum(p[0] for p in pts) / n
+    cy = sum(p[1] for p in pts) / n
+    cz = sum(p[2] for p in pts) / n
+
+    a00 = a01 = a02 = a11 = a12 = a22 = 0.0
+    for x, y, z in pts:
+        dx, dy, dz = x - cx, y - cy, z - cz
+        a00 += dx * dx
+        a01 += dx * dy
+        a02 += dx * dz
+        a11 += dy * dy
+        a12 += dy * dz
+        a22 += dz * dz
+
+    l1, l2, l3 = _symmetric_3x3_eigenvalues(a00, a01, a02, a11, a12, a22)
+    if l2 <= 1e-24:
+        return 0.0
+    ratio = max(0.0, l3) / l2          # clamp: tiny negatives are round-off
+    return 1.0 - math.sqrt(min(1.0, ratio))
+
+
 def verify_matches_analyser(landmarks_list, analyser_edge_on, tol=1e-9):
     """Assert this module agrees with AnalyzePerceptionSequences.edge_on().
 
