@@ -1,4 +1,5 @@
 import math
+import time
 
 import cv2
 from mediapipe import solutions
@@ -154,7 +155,12 @@ def draw_landmarks_on_image(frame_image_shape, rgb_image, detection_result):
           hand_identity.palm_width(_xy_list(hand["landmarks"])),
       ))
   if all(o[0] is not None for o in observations):
-      resolved = _hand_identity_tracker.update(observations)
+      # N7: supply a real monotonic capture time so DR-1's dwells are derived
+      # from the MEASURED frame rate. Without this the dwells assume 24 fps, and
+      # in dim light the pipeline runs at 15-16 (queue N10), which stretched
+      # SWITCH_MS to ~761 ms against an intended 500.
+      resolved = _hand_identity_tracker.update(
+          observations, now_ms=time.perf_counter() * 1000.0)
       for hand, label in zip(all_hands_coords, resolved):
           hand["raw_handedness"] = hand["handedness"]   # kept for diagnostics
           hand["handedness"] = label

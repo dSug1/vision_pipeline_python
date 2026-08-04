@@ -21,12 +21,22 @@ plain language, not implementation detail (link to the code instead).
    the camera's view (tracking lost), the object un-snaps and freezes in
    place at its last position.
    - Same files as rule 1, tracking-loss release branch.
-   - **Proposed change, NOT yet decided (2026-08-02)**: the perception
-     spec's M10.7 argues for a **~400 ms grace period** before dropping —
-     "losing tracking is not the same as letting go." That would change
-     this rule's behaviour, so it is a **game-design decision for the
-     owner**, not something to introduce as a side effect of building
-     M10. Note it also interacts with the same-frame release/re-snap
+   - **Proposed change — DEFERRED BY THE OWNER, 2026-08-04. Do not build it,
+     and do not re-propose it as a side effect of some other item.** The
+     perception spec's M10.7 argues for a **~400 ms grace period** before
+     dropping — "losing tracking is not the same as letting go" — and it
+     would also close N8 (cube-stealing). The owner has deliberately left
+     it undecided: *"I don't want to overbuild with layers of rules for the
+     moment."*
+     - **This is a standing design preference, not a one-off deferral.**
+       The rule set is meant to stay small and legible; a rule that exists
+       to patch the consequences of another rule is exactly what is being
+       avoided. Weigh any new *rule* proposal against that first, the same
+       way filter proposals are weighed against the no-heuristic-pile-up
+       rule.
+     - Revisit only if the immediate-drop behaviour becomes a felt problem
+       in live play, and raise it as an explicit question rather than
+       bundling it into a module. Note it also interacts with the same-frame release/re-snap
      ordering fix (a cube held in limbo must be excluded from other
      hands' snap passes meanwhile). `PERCEPTION_LAYER_SPEC.md` M10.
    - **KNOWN ISSUE (observed 2026-08-02, recorded only — not being fixed

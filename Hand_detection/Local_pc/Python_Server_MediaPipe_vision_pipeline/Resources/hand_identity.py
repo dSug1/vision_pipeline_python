@@ -50,13 +50,22 @@ MIRRORED_HANDEDNESS = {"Left": "Right", "Right": "Left"}
 
 PALM_LANDMARKS = (0, 5, 9, 13, 17)
 
-# Constants are expressed in milliseconds and converted using the MEASURED frame
-# rate (~24 fps, not the 30 fps the older recorders assumed -- spec §0.3 finding
-# N1), so they mean what they say in wall-clock terms.
-# TODO (queue item N7): drive this from measured frame timing instead of a
-# constant -- every dwell below scales with it, so a different camera silently
-# changes every threshold.
-ASSUMED_FPS = 24.0
+# Constants are expressed in milliseconds and converted using the frame rate, so
+# they mean what they say in wall-clock terms.
+#
+# ⭐ QUEUE ITEM N7, RESOLVED 2026-08-04: the frame rate is now MEASURED at
+# runtime, not assumed. This value survives only as the fallback used before
+# enough timing samples exist, and by callers that pass no timestamp.
+#
+# Why it was promoted from tidiness to CORRECTNESS: the pipeline's frame rate is
+# environment-dependent, not fixed (queue N10) -- 24.09-24.14 fps measured in
+# daylight versus 15.1-15.77 fps in dim light on the SAME camera and machine,
+# with auto-exposure the leading hypothesis. Every dwell below scales with it, so
+# at 15.77 fps `SWITCH_MS` silently became ~761 ms instead of 500 -- a 52%
+# overshoot in the one parameter §0.5 flagged as most worth getting right, in the
+# lighting people actually play in.
+FALLBACK_FPS = 24.0
+ASSUMED_FPS = FALLBACK_FPS      # retained for callers/tests that reference it
 
 _TRACK_END_MS = 500.0        # hand absent this long -> track ends, identity re-decidable
 _LOCK_VOTE_MS = 330.0        # accumulate label votes this long before locking
@@ -78,10 +87,89 @@ _POSITION_WINDOW_MS = 415.0  # rolling average used for association
 # floor and is blur/lighting dependent.
 _SWITCH_MS = 500.0
 
-TRACK_END_FRAMES = max(2, round(_TRACK_END_MS * ASSUMED_FPS / 1000.0))
-LOCK_VOTE_FRAMES = max(2, round(_LOCK_VOTE_MS * ASSUMED_FPS / 1000.0))
-POSITION_WINDOW = max(2, round(_POSITION_WINDOW_MS * ASSUMED_FPS / 1000.0))
-SWITCH_FRAMES = max(3, round(_SWITCH_MS * ASSUMED_FPS / 1000.0))
+def frames_for(ms, fps):
+    """Convert a wall-clock dwell to a frame count at a given rate.
+
+    The floors (2, 2, 2, 3) are deliberate and are the reason this is a function
+    rather than an expression: at a low enough frame rate a dwell could otherwise
+    round to 1 frame, and a 1-frame dwell is not a dwell -- it would make the
+    glitch-rejection logic fire on single-frame noise, which is the exact failure
+    DR-1 exists to prevent.
+    """
+    return {
+        "track_end": max(2, round(_TRACK_END_MS * fps / 1000.0)),
+        "lock_vote": max(2, round(_LOCK_VOTE_MS * fps / 1000.0)),
+        "position_window": max(2, round(_POSITION_WINDOW_MS * fps / 1000.0)),
+        "switch": max(3, round(_SWITCH_MS * fps / 1000.0)),
+    }[ms]
+
+
+# Module-level defaults at the fallback rate. Kept because the fixture tests and
+# several analysis scripts import them, and because a tracker that has not yet
+# seen two timestamps uses exactly these.
+TRACK_END_FRAMES = frames_for("track_end", FALLBACK_FPS)
+LOCK_VOTE_FRAMES = frames_for("lock_vote", FALLBACK_FPS)
+POSITION_WINDOW = frames_for("position_window", FALLBACK_FPS)
+SWITCH_FRAMES = frames_for("switch", FALLBACK_FPS)
+
+# --- measured frame-rate estimation (N7) ---
+# Median of a short ring buffer, not a mean: a dropped detection produces a
+# double-length interval (2.9% of frames under fast motion, §0.3) and a mean
+# would let those drag the estimate. A median ignores them outright.
+# ~2 s at 24 fps. Deliberately NOT shorter: the condition being corrected is a
+# SUSTAINED lighting-driven rate change (N10 -- minutes, not moments), so the
+# estimate should follow that and ignore per-second jitter. Measured at a
+# 15-frame window, the unscripted `free_manipulation` takes reported 15.7 fps at
+# the end of a session averaging 20.7 -- tracking noise, not the rate, and it
+# made the derived dwell swing between 8 and 12 frames within one recording.
+_FPS_WINDOW = 45
+_MIN_FPS_SAMPLES = 5             # below this, trust the fallback instead
+_MIN_INTERVAL_MS = 1.0           # guards against duplicate/zero timestamps
+_MAX_INTERVAL_MS = 500.0         # a gap longer than this is a stall, not a frame
+
+
+class FrameRateEstimator:
+    """Running frame-rate estimate from supplied capture timestamps.
+
+    Deliberately driven by CALLER-SUPPLIED timestamps rather than reading the
+    clock itself: a replay harness runs far faster than real time, and a tracker
+    that sampled wall-clock internally would compute a meaningless rate during
+    replay while looking correct in production -- precisely the debug/production
+    divergence class this project has been bitten by before.
+    """
+
+    def __init__(self, fallback_fps=FALLBACK_FPS):
+        self.fallback_fps = fallback_fps
+        self._intervals = []
+        self._last_ms = None
+
+    def reset(self):
+        self._intervals = []
+        self._last_ms = None
+
+    def observe(self, now_ms):
+        if now_ms is None:
+            return
+        if self._last_ms is not None:
+            dt = now_ms - self._last_ms
+            if _MIN_INTERVAL_MS <= dt <= _MAX_INTERVAL_MS:
+                self._intervals.append(dt)
+                if len(self._intervals) > _FPS_WINDOW:
+                    self._intervals.pop(0)
+        self._last_ms = now_ms
+
+    @property
+    def fps(self):
+        if len(self._intervals) < _MIN_FPS_SAMPLES:
+            return self.fallback_fps
+        s = sorted(self._intervals)
+        median = s[len(s) // 2]
+        return 1000.0 / median if median > 0 else self.fallback_fps
+
+    @property
+    def measured(self):
+        """True once the estimate is real rather than the fallback."""
+        return len(self._intervals) >= _MIN_FPS_SAMPLES
 
 # Only confident disagreements count toward a switch. Measured: correct holds
 # (transient glitches the lock SHOULD reject) occurred at score 0.52; genuine
@@ -124,7 +212,10 @@ def palm_width(points_xy):
 class HandTrack:
     """One persistent hand identity. `label` is provisional until `locked`."""
 
-    def __init__(self, centroid, raw_label, score, pw, log=print):
+    def __init__(self, centroid, raw_label, score, pw, log=print, owner=None):
+        # `owner` supplies the CURRENT frame-rate-derived dwells (N7). None means
+        # "use the module defaults", which keeps this class usable standalone.
+        self.owner = owner
         self.history = [centroid]
         self.votes = {"Left": 0.0, "Right": 0.0}
         self.votes[raw_label] = score
@@ -137,6 +228,9 @@ class HandTrack:
         self.palm_width = pw or 60.0
         self._log = log
 
+    def _dwell(self, name, default):
+        return getattr(self.owner, name) if self.owner is not None else default
+
     @property
     def avg(self):
         n = len(self.history)
@@ -145,7 +239,7 @@ class HandTrack:
 
     def observe(self, centroid, raw_label, score, pw):
         self.history.append(centroid)
-        if len(self.history) > POSITION_WINDOW:
+        while len(self.history) > self._dwell("position_window", POSITION_WINDOW):
             self.history.pop(0)
         if pw:
             self.palm_width = pw
@@ -155,7 +249,7 @@ class HandTrack:
             self.votes[raw_label] = self.votes.get(raw_label, 0.0) + score
             self.vote_frames += 1
             self.label = max(self.votes, key=self.votes.get)
-            if self.vote_frames >= LOCK_VOTE_FRAMES:
+            if self.vote_frames >= self._dwell("lock_vote_frames", LOCK_VOTE_FRAMES):
                 self.locked = True
                 self._log(f"[hands] identity locked: '{self.label}' "
                           f"(votes L={self.votes.get('Left', 0):.1f} "
@@ -177,15 +271,39 @@ class HandTrack:
 
     @property
     def wants_switch(self):
-        return self.mismatch_run >= SWITCH_FRAMES and self.pending_label
+        return (self.mismatch_run >= self._dwell("switch_frames", SWITCH_FRAMES)
+                and self.pending_label)
 
 
 class HandIdentityTracker:
     """Assigns stable identities across frames by position, not by label."""
 
-    def __init__(self, log=print):
+    def __init__(self, log=print, fallback_fps=FALLBACK_FPS):
         self.tracks = []
         self._log = log
+        self.rate = FrameRateEstimator(fallback_fps)
+        self._logged_fps = None
+
+    # --- N7: dwells derived from the MEASURED rate, re-evaluated every frame ---
+    @property
+    def fps(self):
+        return self.rate.fps
+
+    @property
+    def track_end_frames(self):
+        return frames_for("track_end", self.fps)
+
+    @property
+    def lock_vote_frames(self):
+        return frames_for("lock_vote", self.fps)
+
+    @property
+    def position_window(self):
+        return frames_for("position_window", self.fps)
+
+    @property
+    def switch_frames(self):
+        return frames_for("switch", self.fps)
 
     def _free_label(self):
         used = {t.label for t in self.tracks}
@@ -194,9 +312,22 @@ class HandIdentityTracker:
                 return lab
         return None
 
-    def update(self, observations):
+    def update(self, observations, now_ms=None):
         """observations: list of (centroid, raw_label, score, palm_width).
+        now_ms: capture timestamp in ms. OPTIONAL -- omitting it keeps the
+                pre-N7 behaviour exactly (dwells at FALLBACK_FPS), so existing
+                callers are unaffected until they choose to pass it.
         Returns a parallel list of assigned labels."""
+        self.rate.observe(now_ms)
+        if self.rate.measured:
+            f = round(self.fps, 1)
+            # Log only on a material change, so this never becomes per-frame spam.
+            if self._logged_fps is None or abs(f - self._logged_fps) >= 2.0:
+                self._logged_fps = f
+                self._log(f"[hands] measured {f} fps -> dwells: "
+                          f"lock {self.lock_vote_frames}, switch "
+                          f"{self.switch_frames}, track-end {self.track_end_frames} "
+                          f"frames (N7)")
         assigned = [None] * len(observations)
         used_tracks = set()
         obs_to_track = {}
@@ -234,7 +365,7 @@ class HandIdentityTracker:
             # With two hands tracked they are almost certainly one of each, so a
             # new track takes the label the existing track is not using.
             start_label = free if (free and self.tracks) else lab
-            tr = HandTrack(cen, start_label, sc, pw, log=self._log)
+            tr = HandTrack(cen, start_label, sc, pw, log=self._log, owner=self)
             if free and self.tracks:
                 tr.locked = True
                 self._log(f"[hands] identity locked: '{start_label}' "
@@ -253,7 +384,7 @@ class HandIdentityTracker:
                 a, b = switching
                 a.label, b.label = b.label, a.label
                 self._log(f"[hands] association swap confirmed after "
-                          f"{SWITCH_FRAMES} confident frames -- exchanged the "
+                          f"{self.switch_frames} confident frames -- exchanged the "
                           f"two track labels ('{b.label}' <-> '{a.label}')")
             else:
                 tr = switching[0]
@@ -298,9 +429,11 @@ class HandIdentityTracker:
             if ti not in used_tracks:
                 tr.missing += 1
         before = len(self.tracks)
-        self.tracks = [t for t in self.tracks if t.missing < TRACK_END_FRAMES]
+        track_end = self.track_end_frames
+        self.tracks = [t for t in self.tracks if t.missing < track_end]
         if len(self.tracks) < before:
-            self._log(f"[hands] track ended (absent > {TRACK_END_FRAMES} frames "
-                      f"~{_TRACK_END_MS:.0f} ms) -- identity may be re-decided")
+            self._log(f"[hands] track ended (absent > {track_end} frames "
+                      f"~{_TRACK_END_MS:.0f} ms at {self.fps:.1f} fps) "
+                      f"-- identity may be re-decided")
 
         return assigned

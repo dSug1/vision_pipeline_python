@@ -2,6 +2,7 @@ import argparse
 import math
 import os
 import sys
+import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -995,7 +996,12 @@ def main():
                 for d in detections
             ]
             if detections and all(o[0] is not None for o in observations):
-                labels = _hand_identity_tracker.update(observations)
+                # N7: same measured-frame-rate timestamp production supplies.
+                # Kept in step deliberately -- a debug tool running different
+                # dwells from production is the divergence class N6 was created
+                # to end.
+                labels = _hand_identity_tracker.update(
+                    observations, now_ms=time.perf_counter() * 1000.0)
             else:
                 labels = [d["raw_handedness"] for d in detections]
 
