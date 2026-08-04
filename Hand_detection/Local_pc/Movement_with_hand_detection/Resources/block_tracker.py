@@ -28,6 +28,37 @@ wrong, and what this module fixes:
       OWN recent residual scale, i.e. an adaptive distribution rather than a
       constant.
 
+⭐⭐ WHAT THIS IS **NOT** -- read before assuming the owner's design was tested
+------------------------------------------------------------------------------
+This implements roughly HALF of the design described in GESTURE_PIPELINE 16.
+The gaps are shortcuts, not findings, and none of them has been shown to matter:
+
+  asked for                        | built here
+  ---------------------------------|-------------------------------------------
+  6 blocks                         | 5 modelled: palm (as x, y, scale, quat) +
+                                   | 4 finger arcs = 8 channels. Thumb excluded
+                                   | by owner decision, carried raw.
+  1st AND 2nd derivatives          | IMPLICIT ONLY. A least-squares QUADRATIC is
+                                   | fitted over the window and evaluated one
+                                   | step ahead; velocity and acceleration live
+                                   | in the coefficients and are never extracted
+                                   | or used as quantities.
+  probability distribution over    | NOT IMPLEMENTED. An adaptive THRESHOLD:
+  possible next positions          | reject if residual > REJECT_SIGMA x
+                                   | median(recent residuals) AND > an absolute
+                                   | floor. Robust dispersion, but no density,
+                                   | no variance propagation, no likelihood.
+  over a couple of FUTURE frames   | ONE frame. No multi-frame horizon anywhere.
+  orientation motion model         | NONE -- zero-order hold, see _predict_quat.
+
+Why it was built reduced: the first question was whether the block CHANNELS
+separate teleports from fast real movement AT ALL. B2 and B3' could not answer
+it -- the corpus yields n=1 teleport, because DR-1 already removes the identity
+mixups that produce them (16.1/16.3). Adding a full probabilistic multi-frame
+estimator would not have changed a verdict that is gated on data, not on model
+richness. **Build the rest only if a corpus with real teleports makes the gate
+worth evaluating.**
+
 ⚠ NONE OF THAT MAKES IT WORK. It makes it worth measuring. The bar is explicit:
 it must beat 1.6's 4:1 by a wide margin **on rejections that are CLASSIFIED**
 (teleport vs real fast movement), not on a lower rejection count -- a count
@@ -173,21 +204,33 @@ class BlockTracker:
         return _poly_fit_predict(ts, vals, self.order)
 
     def _predict_quat(self):
-        """Constant-angular-velocity prediction, with the rate estimated over
-        the window rather than from the last pair -- the same fix as (a)."""
+        """⚠ ZERO-ORDER HOLD. This does NOT predict -- it returns the last
+        accepted orientation, and `_quat_allowance()` widens the acceptance band
+        by the median recent step so ordinary rotation is not flagged.
+
+        ⚠⚠ SAY SO PLAINLY, because an earlier version of this docstring claimed
+        "constant-angular-velocity prediction with the rate estimated over the
+        window" while the body returned qs[-1] -- which would later have been
+        read as "constant angular velocity was TRIED on the quaternion and did
+        not help." It has never been tried. The orientation channel is the one
+        block channel with NO motion model.
+
+        Why it was left this way, and it is a shortcut not a conclusion:
+        extrapolating a quaternion needs an axis as well as a rate, the axis is
+        ill-conditioned exactly where this gate matters (edge-on, where 0.18
+        shows the whole palm frame collapses), and the first question was
+        whether the block CHANNELS separate teleports at all -- which B2/B3'
+        could not answer for lack of teleports (n=1), so the extra machinery
+        would not have changed the verdict.
+
+        To close it properly: estimate angular velocity over the window as a
+        rotation vector (log map of q[k-1]*conj(q[k-2]) averaged, not a raw
+        two-sample step -- S2(a)), then apply it forward once. Do that only if a
+        corpus with real teleports makes the gate worth evaluating.
+        """
         qs = [st["quaternion"] for st in self._hist if st.get("quaternion")]
         if len(qs) < MIN_HISTORY:
             return None
-        # Average per-frame rotation magnitude over the window; direction is
-        # taken from the most recent step, which is where it is best defined.
-        steps = [_quat_angle(qs[i], qs[i + 1]) for i in range(len(qs) - 1)]
-        steps = [s for s in steps if s is not None]
-        if not steps:
-            return qs[-1]
-        # A zero-order prediction plus an allowance equal to the typical step is
-        # sufficient for OUTLIER DETECTION -- extrapolating the quaternion itself
-        # would add a second failure mode (S2's warning about damping) for no
-        # gain in a gate that only needs a plausible envelope.
         return qs[-1]
 
     def _quat_allowance(self):
