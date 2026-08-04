@@ -93,8 +93,23 @@ def main() -> None:
     parser.add_argument("--camera-index", type=int, default=0)
     parser.add_argument(
         "--label", type=str, default="session",
-        help="Free-text label for the filename only (e.g. 'large_pos1', 'small_pos2') -- "
+        help="Free-text label for the FILENAME only (e.g. 'large_pos1', 'small_pos2') -- "
         "purely organizational, the actual grabbed cube/position is read from the recording itself.",
+    )
+    # N17: before 2026-08-04 this tool had no way to record what the operator
+    # actually did, so annotations for the 2026-08-04 takes had to go in
+    # `.notes.json` sidecars. Stored IN the recording now.
+    parser.add_argument(
+        "--note", type=str, default="",
+        help="Free-text operator note stored INSIDE the recording (what was done, "
+             "why, any protocol deviation). Sidecar files are no longer needed.",
+    )
+    parser.add_argument(
+        "--cycles", type=float, default=None,
+        help="Number of full back-and-forth rotation cycles performed, if the "
+             "take is a rotation take. ⚠ The operator counts a cycle as "
+             "there-and-back; an analyser counting SIGN INVERSIONS should expect "
+             "2x this (the unit trap recorded in spec 0.7 / N3).",
     )
     args = parser.parse_args()
 
@@ -116,7 +131,25 @@ def main() -> None:
 
     window_name = "Translation-pivot debug recording"
     frames = []
-    timestamp_ms = 0
+    # ⭐ QUEUE N17, FIXED 2026-08-04. `timestamp_ms` used to be a counter
+    # incremented by a hard-coded 33 ms per frame -- a SYNTHESISED cadence, not a
+    # measurement. Consequences, found by noticing that every take in the corpus
+    # reported a suspiciously constant 30.33-30.45 fps (= 1000/33):
+    #
+    #   * the real rate is ~24 fps, so every recorded duration was ~25% short --
+    #     a 40 s take reported 31.9 s, and jump_test4 claims 11.8 s for a 15 s
+    #     recording;
+    #   * any velocity or acceleration derived in REAL TIME from these files was
+    #     wrong by that factor;
+    #   * it is the exact trap spec 0.3 / queue N1 already recorded against the
+    #     older recorders ("older recorders synthesised a 33 ms cadence, hiding
+    #     this"), still live in this tool.
+    #
+    # Now a real monotonic clock sampled at frame read, matching
+    # RecordPerceptionSequence.py. `time.perf_counter()` is monotonic, which
+    # `detect_for_video` requires -- it rejects non-increasing timestamps.
+    t0 = time.perf_counter()
+    timestamp_ms = 0.0
 
     print(
         f"[RecordTranslationPivotDebug] Get ready -- recording starts in {COUNTDOWN_S:.0f}s, "
@@ -155,13 +188,16 @@ def main() -> None:
                     break
 
                 ret, frame = cap.read()
+                # N17: sampled at frame READ, before any processing, so it times
+                # the camera rather than our own pipeline.
+                timestamp_ms = (time.perf_counter() - t0) * 1000.0
                 if not ret:
                     break
                 frame = cv2.flip(frame, 1)
 
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-                result = detector.detect_for_video(mp_image, timestamp_ms)
+                result = detector.detect_for_video(mp_image, int(timestamp_ms))
 
                 hand_data_by_hand = {h: None for h in debug_tool.TRACKED_HANDS}
                 normalized_by_hand = {}
@@ -199,7 +235,7 @@ def main() -> None:
                             state.cube_owned_by(handedness),
                         )
                 frames.append({
-                    "timestamp_ms": timestamp_ms,
+                    "timestamp_ms": round(timestamp_ms, 2),
                     "hands": hands_record,
                     "cubes": _cubes_record(state),
                 })
@@ -220,8 +256,6 @@ def main() -> None:
                 cv2.waitKey(1)
                 if not _window_open(window_name):
                     break
-
-                timestamp_ms += 33
     finally:
         cap.release()
         cv2.destroyAllWindows()
@@ -230,12 +264,37 @@ def main() -> None:
         print("[RecordTranslationPivotDebug] No frames captured, nothing saved.")
         return
 
+    # N17: measured span and rate, from the real timestamps above. Recorded so a
+    # future reader can check comparability BEFORE using a take (spec N10: the
+    # frame rate is environment-dependent, so `measured_fps` must be checked
+    # before any cross-session A/B).
+    span_s = (frames[-1]["timestamp_ms"] - frames[0]["timestamp_ms"]) / 1000.0
+    measured_fps = round(len(frames) / span_s, 2) if span_s > 0 else None
+
     out_name = f"translation_pivot_{args.label}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     out_path = os.path.join(RECORDINGS_DIR, out_name)
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump({"duration_s": args.duration, "label": args.label, "frames": frames}, f)
+        json.dump({
+            "duration_s": args.duration,
+            "label": args.label,
+            "note": args.note,                 # N17: operator annotations had
+            "cycles": args.cycles,             # nowhere to live before this
+            "actual_span_s": round(span_s, 3),
+            "measured_fps": measured_fps,
+            "timestamps": "REAL monotonic ms, sampled at frame read (N17 fix, "
+                          "2026-08-04). Takes recorded BEFORE that fix carry a "
+                          "SYNTHESISED 33 ms cadence and report ~30.4 fps when "
+                          "the real rate was ~24 -- their durations are ~25% "
+                          "short and any real-time derivative from them is wrong.",
+            "frames": frames,
+        }, f)
 
-    print(f"[RecordTranslationPivotDebug] Saved {len(frames)} frames to {out_path}")
+    print(f"[RecordTranslationPivotDebug] Saved {len(frames)} frames "
+          f"({measured_fps} fps measured over {span_s:.1f}s) to {out_path}")
+    if measured_fps is not None and measured_fps < 20.0:
+        print(f"[RecordTranslationPivotDebug] ** WARNING: {measured_fps} fps is "
+              f"below the 20 fps floor -- not comparable to the rest of the "
+              f"corpus (spec N10). Add light and re-record. **")
 
 
 if __name__ == "__main__":
