@@ -23,26 +23,33 @@ layered patches again, rewrite it rather than appending.
 
 ## 1. ⭐ START HERE — the next build step
 
-**Next item: `PART_ONE.md` §3.1 item 1.7 (M2b — impose a skeleton via constrained
-IK).** Then **T1/T2 retest → reassess (R)**. The queue's "YOU ARE HERE" block
-explains the ordering; do not re-derive it.
+**PHASE 1 IS CLOSED (2026-08-04). Items 1.5, 1.6 and 1.7 are all BUILT, MEASURED
+and PARKED. Read `PERCEPTION_LAYER_SPEC.md` §0.18 before touching any of them.**
 
-**Items 1.5 and 1.6 are both BUILT and measured (2026-08-04)** —
-`Resources/hand_anatomy.py` (§0.16) and `Resources/frame_gate.py` (§0.17).
-1.6 passes A10: **54% of large position excursions removed at a 0.40% rejection
-rate and essentially zero tracking cost.**
+They are not three separate disappointments — they are **one fact measured three
+ways**. The orientation frame is `wrist / index-MCP / middle-MCP / pinky-MCP`, and
+when MediaPipe's palm reconstruction collapses (Google issue #5156, back of hand)
+all four are wrong *together*. So filtering can't fix it (§0.13.2), re-weighting
+can't (A5), constraining bone lengths can't (the frame doesn't use them), and
+gating can't without destroying legitimate fast input (§0.17).
 
-**⚠ But read §0.17 before assuming 1.5 earned its place.** M3a was built to feed
-1.6's gate and **measurably does not** — wiring it in made the result slightly
-worse at double the rejections, because 80.8% of large position innovations occur
-on anatomically *valid* frames (a teleport moves every landmark coherently).
-M3a covers the ORIENTATION failure class, M4 the POSITION class, and **they do
-not compose.** So 1.5 currently has **no demonstrated consumer** and is a revert
-candidate under A10 unless an orientation-side consumer is built. That is an
-**owner decision**, not a technical one.
+**T1/T2 are reclassified from open bugs to a known single-camera sensor limit.**
+This agrees with the literature (HandFlow: the edge-on pose family is genuinely
+ill-posed for one RGB view; Meta uses multi-camera rigs for it). **Do not open a
+fifth attempt without a second camera.**
 
-**⚠ Neither module is wired into production, and neither has live-camera
-confirmation.** The game's behaviour is unchanged by both.
+**⚠ Binding rule added, and it cost the most to learn: any module that rejects or
+suppresses data must CLASSIFY what it removed, not merely count it.** Item 1.6
+initially PASSED its A/B and had to be reversed, because "excursions removed"
+scored the deletion of the owner's real fast movements as success.
+
+**✅ What survives**: `hand_skeleton.palm_width_world()` — the per-session scale
+reference M9 needs, which dead item 1.4 was supposed to supply. It needs no
+skeleton fit. **This unblocks 4.1 (M9) → 4.2 (Z-axis translation)**, which is the
+recommended next build.
+
+**⚠ None of the three is wired into production and none has live-camera
+confirmation. The game's behaviour is unchanged by all of them.**
 
 **⚠ Two binding constraints established 2026-08-04 — read before proposing any
 model or dependency:**

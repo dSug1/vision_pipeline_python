@@ -1,4 +1,50 @@
-"""M4 -- per-hand consistency gate (merged queue item 1.6).
+"""M4 -- per-hand consistency gate (merged queue item 1.6). ⚠ PARKED, DO NOT WIRE.
+
+⚠⚠ PARKED 2026-08-04 BY OWNER DECISION. This module is NOT used by production or
+by the debug tool, and it must not be wired in as it stands. It is kept only
+because its measurement harnesses and the null result below are worth more than
+the code.
+
+WHY IT IS PARKED -- and note the A10 verdict was REVERSED, not merely qualified.
+It first appeared to pass: 54% of large position excursions removed at a 0.40%
+rejection rate and ~zero tracking cost. But that metric counted removing the
+OWNER'S REAL FAST MOVEMENTS as a win. Audited properly
+(`analysis/m4_rejection_audit.py`), of 101 rejections:
+
+    teleport (came straight back, correctly rejected)    8   ( 7.9%)
+    partial                                             12   (11.9%)
+    CONTINUED (real movement, WRONGLY rejected)         81   (80.2%)
+
+and a threshold sweep shows the ratio never improves -- roughly 4 real
+movements rejected per teleport caught at EVERY setting of both cues:
+
+    config                rejects  teleport  REAL   >1.0 exc surviving
+    innov 1.0, w 0.5          101        20    81          0
+    innov 1.5, no width        63        10    53          6
+    innov 3.0, no width        34         3    31         21
+    no innov, w 0.5            38         8    30         28
+
+**Root cause: at this game's input envelope a teleport and a fast real movement
+are the same signal** -- both are large unpredicted displacement. Single-frame
+position innovation cannot separate them, and no threshold makes it. The owner's
+bar is explicit (2026-08-04): the rapid movements in the corpus are *legitimate
+expected input*, so taxing them ~83 ms is a regression, not an improvement.
+
+⚠ THE LESSON, WHICH GENERALISES: the A/B metric ("excursions removed") could not
+tell a correct rejection from a wrong one. That is the same class of error as
+0.12's "jump counts REWARD an over-damped filter" -- which this file's own
+harness quoted while walking into a variant of it. **Any future gate must
+classify what it rejected, not just count it.**
+
+The teleport signature that DOES separate is out-and-back within a few frames,
+which is inherently non-causal -- it needs a 2-3 frame delay (item 3.2, RTS
+retrospective smoothing) and buys latency for everyone. If this is ever revived,
+the rescoping to try first is gating ONLY while a cube is held, where a teleport
+is visibly destructive and a little lag is a fair trade.
+
+--- original design notes follow ---
+
+
 
 Decides, per hand per frame, whether the measurement is plausible enough to be
 accepted or should be rejected and coasted through. Pure stdlib, numpy-free, no

@@ -159,6 +159,29 @@ were built, measured and removed on 2026-08-04; the ablation table is preserved
 in `Resources/frame_gate.py`'s docstring so the null result is not retried
 blindly.
 
+### Phase 1 closure (items 1.5 / 1.6 / 1.7, all PARKED 2026-08-04)
+
+| script | produces |
+|---|---|
+| `m4_rejection_audit.py` | ⭐ **the measurement that reversed 1.6's A10 pass.** Classifies each rejection as teleport (came back within 6 frames) or real movement (kept going): **7.9% vs 80.2%**, and a threshold sweep showing the ~4:1 ratio never improves |
+| `m4_speed_tradeoff.py` | rejection rate vs hand speed and acceleration, per-session and within-session. Locates the operator's speed-ramp take and shows the deliberately fast `palm_back_s4_fast` at **0 rejections** |
+| `m2b_skeleton_ab.py` | the 1.7 A/B: fingers-only fit changes orientation by **0.0%** (structural — the frame uses no finger bones), whole-hand fit costs 3× the distortion for a noise-level change |
+
+⚠⚠ **BINDING RULE, learned the expensive way here.** Item 1.6 initially PASSED
+its A/B: "54% of position excursions removed at near-zero tracking cost." The
+metric could not tell a *correct* rejection from a *wrong* one, so deleting the
+owner's real fast movements scored as success. `m4_rejection_audit.py` exists
+because of that.
+
+> **Any module that rejects or suppresses data must CLASSIFY what it removed,
+> not merely count it.** A count cannot tell you whether you removed the failure
+> or the feature. This is the same trap as "jump counts reward an over-damped
+> filter" (below), and it was walked into by a harness quoting that very lesson.
+
+Owner's acceptance bar, recorded because it is a product decision rather than a
+technical one: *"what I captured in the recordings are rapid movements but still
+acceptable expected inputs for my game."* **Rapid movement is input, not noise.**
+
 ### Shipped-module verification
 
 | script | verifies |

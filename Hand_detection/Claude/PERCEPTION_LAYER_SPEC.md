@@ -2120,6 +2120,73 @@ independent confirmation of S5's 1–2 frame rule.
 
 ---
 
+## 0.18 Phase 1 closed (2026-08-04) — 1.5, 1.6 and 1.7 all PARKED; T1/T2 are a sensor floor
+
+Three consecutive items were built, measured and parked on the same day. They
+are not three separate disappointments — **they are three independent
+measurements of one fact**, and that fact is the useful output of this phase.
+
+| item | built | measured verdict |
+|---|---|---|
+| **1.5** M3a anatomical constraints | ✅ works: 0.00% FP on the control, 92% coverage / 33.8× lift on orientation jumps | **no viable consumer.** 1.6 measured that wiring it in makes results worse (different failure class); using it to gate orientation would reject 33–59% of frames during rotation — legitimate input |
+| **1.6** M4 consistency gate | ✅ works: 54% of position excursions removed at ~0 tracking cost | **over-filters 4:1.** 80.2% of its rejections are real fast movement, at every threshold of both cues. A teleport and a fast real movement are the same signal |
+| **1.7** M2b imposed skeleton | ✅ works: phalange bone CV → exactly 0.000 | **cannot affect orientation, by construction** — the frame uses 4 palm landmarks, no finger bones. 0.0% change |
+
+### The one fact underneath all three
+
+The orientation frame is `wrist / index-MCP / middle-MCP / pinky-MCP`. When
+MediaPipe's palm reconstruction collapses (Google issue **#5156**, back of hand),
+those four points are wrong **together, coherently**. Consequently:
+
+- **filtering** cannot fix it — §0.13.2: the jumps are in *well-observed* frames;
+- **re-weighting** cannot fix it — A5/§13.7: the residual is a correlated
+  whole-knuckle-row distortion, so landmark selection is statistically
+  indistinguishable at the degenerate frames;
+- **constraining bone lengths** cannot fix it — §0.16/here: the frame does not
+  use those bones;
+- **gating** cannot fix it without destroying legitimate fast input — §0.17.
+
+**T1 and T2 are therefore reclassified from open bugs to a known limit of a
+single monocular camera at back-of-hand and edge-on poses.** This matches the
+literature rather than contradicting it: HandFlow (VMV 2022) shows that pose
+family is genuinely ill-posed for one RGB view — the posterior is multimodal —
+and Meta ships multi-camera rigs for precisely this. Do not open a fifth attempt
+without either a second camera or a fundamentally different sensor.
+
+### ⚠ The methodological lesson, which cost the most to learn
+
+**1.6 initially PASSED its A/B and the verdict had to be reversed.** The metric
+("excursions removed") could not distinguish a correct rejection from a wrong
+one, so removing the owner's real fast movements scored as success. This is the
+same class of error as §0.12's "jump counts REWARD an over-damped filter" — and
+it was walked into by a harness whose own docstring quoted that lesson.
+
+> **Binding, from now on: any module that REJECTS or SUPPRESSES data must
+> classify what it removed, not merely count it.** A count cannot tell you
+> whether you removed the failure or the feature.
+
+The owner's acceptance bar that exposed it is worth recording verbatim, because
+it is a product decision and not a technical one: *"what I captured in the
+recordings are rapid movements but still acceptable expected inputs for my
+game."* Rapid movement is input, not noise.
+
+### ✅ What survives Phase 1
+
+- **`palm_width_world()`** — the per-session scale reference **M9 (item 4.1)**
+  needs, which dead item 1.4 was supposed to supply and could not. It requires no
+  skeleton fit, just the observed palm width, the documented pose-invariant
+  anchor (§10.1). **This unblocks 4.1 → 4.2 (Z-axis translation).**
+- Five daylight recordings at a 0.02 fps spread, and the recorder's
+  `--save-frames` and early-stop instrumentation.
+- Four measurement harnesses that close off whole families of approach.
+
+**Recommendation recorded for the owner: treat this as the queue's R
+(reassess) gate arriving early, and spend effort on features — 4.1/4.2 Z-axis
+translation, or M10.7's grace period which also closes N8 — rather than a fifth
+attempt at the orientation floor.**
+
+---
+
 ## 0. Framing: what MediaPipe is, and what it is not
 
 MediaPipe Hands is a **stateless, per-frame, monocular shape estimator**. It answers "what configuration of a hand best explains this single image crop?"

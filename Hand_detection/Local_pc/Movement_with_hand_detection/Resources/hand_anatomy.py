@@ -1,5 +1,29 @@
 """M3a -- hard anatomical constraints on a hand pose (merged queue item 1.5).
 
+⚠ PARKED AS A GATE / VALIDITY BIT (2026-08-04, owner decision) -- but KEPT AND
+STILL USED: item 1.7 (`hand_skeleton.py`) consumes the joint limits below to
+build its constrained skeleton fit. Do not delete this file; deleting it would
+only mean rewriting these limits inside 1.7.
+
+**Why the validity bit itself is parked.** It is measurably a superb detector --
+0.00% false positives on the control, 92% coverage and 33.8x lift on >60 deg
+orientation jumps (spec 0.16) -- but it has no viable CONSUMER:
+  * item 1.6 measured that wiring it into the position gate makes results
+    WORSE, because 80.8% of position teleports occur on anatomically valid
+    frames (a teleport moves every landmark coherently). Different failure
+    class; the two do not compose.
+  * using it to gate ORIENTATION would repeat 1.6's over-filtering failure in a
+    worse form: it flags 33-59% of frames during rotation, so it would reject a
+    third to a half of every fast rotation -- legitimate input under the owner's
+    stated bar.
+
+So it is a good measurement instrument and a bad gate. It stays available for
+analysis, and its CONSTRAINTS live on in 1.7, which CORRECTS poses rather than
+rejecting frames and therefore cannot over-filter.
+
+--- original design notes follow ---
+
+
 Delivers the two things item 1.5 owes the queue:
   (a) a per-frame anatomical VALIDITY BIT, to be consumed by item 1.6's
       consistency gate as one of its cues;
