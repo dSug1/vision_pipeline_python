@@ -172,13 +172,19 @@ def main():
     print("=" * 78)
     print(f"\npivot corpus: {PIVOT_DIR}\n")
 
-    arms = ("A 14.1 (9 pts)", "B palm+scale", "C palm rigid")
+    # Arm D tests B4's own jitter-max hypothesis: arm C has no scale term, so
+    # its worse tail must come from the MCP-ROW DIRECTION going unstable
+    # edge-on. If freezing the rotation through the band (DR-2's exact pattern,
+    # already shipped for the palm SIGN) removes the tail, the hypothesis holds.
+    arms = ("A 14.1 (9 pts)", "B palm+scale", "C palm rigid", "D C+frozen rot")
     pop = {a: [] for a in arms}            # no-pop at grab (px)
     jit = {a: [] for a in arms}            # jitter while still (px/frame)
     band = {a: ([], []) for a in arms}     # (edge-on, open) motion px/frame
     sink = {a: ([], []) for a in arms}     # (|anchor-palm|/scale, edge_on)
     tele = {a: [] for a in arms}           # motion during jump_test4
     n_int = 0
+    n_frames = n_band = 0                  # did arm D's freeze ever fire?
+    rot_step = []                          # MCP-row direction change per frame
 
     for take, frames in load_takes():
         for cube, hand, idxs in grab_intervals(frames):
@@ -200,9 +206,11 @@ def main():
                               target[1] - anchor141(px0, w)[1])),
                 arms[1]: to_local(f0, target, True),
                 arms[2]: to_local(f0, target, False),
+                arms[3]: to_local(f0, target, False),
             }
             prev = {a: None for a in arms}
             prev_palm = None
+            frozen_rot = None          # arm D: last well-conditioned (ex, ey)
             for i in idxs:
                 px = px_of(frames[i], hand)
                 if px is None:
@@ -211,11 +219,28 @@ def main():
                 if fr is None:
                     continue
                 eo = PG.edge_on_measure(px)
+                n_frames += 1
+                if eo is not None and eo < EDGE_ON_BAND:
+                    n_band += 1
+                if frozen_rot is not None:
+                    c = max(-1.0, min(1.0, fr[1][0] * frozen_rot[0][0]
+                                      + fr[1][1] * frozen_rot[0][1]))
+                    rot_step.append(math.degrees(math.acos(c)))
+                # arm D: hold the last well-conditioned rotation through the
+                # band; the ORIGIN still tracks the measured palm centroid, so
+                # the cube keeps following the hand -- only the frame's
+                # orientation is frozen, exactly as DR-2 freezes only the sign.
+                if eo is not None and eo >= EDGE_ON_BAND:
+                    frozen_rot = (fr[1], fr[2])
+                rot = frozen_rot if (eo is not None and eo < EDGE_ON_BAND
+                                     and frozen_rot) else (fr[1], fr[2])
+                fr_d = (fr[0], rot[0], rot[1], fr[3])
                 pos = {
                     arms[0]: (anchor141(px, ref[arms[0]][0])[0] + ref[arms[0]][1][0],
                               anchor141(px, ref[arms[0]][0])[1] + ref[arms[0]][1][1]),
                     arms[1]: from_local(fr, ref[arms[1]], True),
                     arms[2]: from_local(fr, ref[arms[2]], False),
+                    arms[3]: from_local(fr_d, ref[arms[3]], False),
                 }
                 if i == g:
                     for a in arms:
@@ -236,7 +261,13 @@ def main():
                     prev[a] = pos[a]
                 prev_palm = fr[0]
 
-    print(f"grab intervals replayed: {n_int}\n")
+    print(f"grab intervals replayed: {n_int}")
+    print(f"grab frames {n_frames}, of which edge-on (<{EDGE_ON_BAND}): "
+          f"{n_band} ({100.0 * n_band / max(1, n_frames):.2f}%)  "
+          f"<- arm D's freeze can only act here")
+    print(f"MCP-row direction change per frame: p50 {pct(rot_step,50):.3f} deg, "
+          f"p95 {pct(rot_step,95):.3f}, max "
+          f"{max(rot_step) if rot_step else float('nan'):.3f}\n")
     if not n_int:
         raise SystemExit("no grab intervals found -- check the corpus")
 

@@ -256,6 +256,27 @@ SEQUENCES = {
         "Object Jump Correction CONTROL: if the mixup happens here too, occlusion "
         "is not the mechanism",
     ),
+    # THE ONE ROTATION THE CORPUS HAS NEVER CONTAINED. Every existing rotation
+    # take is PITCH by deliberate design (palm_back_*, pitch_sweep_*), because
+    # the open crossing TODO is the pitch plane. Yaw was left as a separate item
+    # (T4) and never recorded -- which is why GESTURE_PIPELINE 14.3.1 could only
+    # INFER, not measure, that palm width collapses under yaw while palm length
+    # survives. That inference gates the multi-anchor design for Z-axis
+    # translation (4.2), and it also matters to B4's yaw-sink result.
+    #
+    # CONSTANT DEPTH IS THE WHOLE POINT: the hand must not move toward or away
+    # from the camera, so that any change in apparent scale is attributable to
+    # rotation alone. A depth change would confound exactly the measurement this
+    # take exists to make.
+    "yaw_sweep_constant_depth": (
+        30.0,
+        "ONE hand, held at a FIXED distance. Rotate about the VERTICAL axis "
+        "(yaw, like turning a doorknob or a page) so the palm turns edge-on to "
+        "the camera and back. ~3s per full sweep. Do NOT move the hand closer "
+        "or further away, and do NOT tip the fingers toward/away (that is pitch).",
+        "the yaw axis, never recorded: palm-width collapse under yaw (14.3.1), "
+        "the multi-anchor scale reference for 4.1/4.2, and T4's yaw-sink",
+    ),
     "depth_sweep": (
         30.0,
         "Push one hand slowly toward the camera and pull it back, repeatedly",
