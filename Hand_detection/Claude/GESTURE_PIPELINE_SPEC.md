@@ -4421,6 +4421,54 @@ corpus, and aimed at a class DR-1 already handles. Revisit only if B4 leaves a
 residual that a gate could plausibly catch, or if a corpus with real teleports is
 recorded. Do not wire it on the strength of 1/1.
 
+### 16.4 B4 — the A7 anchor A/B is RUN. Palm-rigid wins. (2026-08-04)
+
+`analysis/b4_anchor_ab.py`, **28 grab intervals** replayed from the
+`Position_during_rotation` takes. Three anchors, all in 2D pixel space — which
+dissolves A7's "2D/3D coordinate mismatch" objection without needing M6 or M9,
+neither of which is going to land.
+
+| metric | A — §14.1 (9 pts) | B — palm+scale | **C — palm rigid** |
+|---|---|---|---|
+| 1 no-pop at grab (px) | 0.000000 | 0.000000 | **0.000000** |
+| 2 jitter still, p95 | 2.270 | 1.769 | **1.736** |
+| 2 jitter still, max | **8.543** | 11.941 | 11.712 |
+| 3 yaw-sink \|r\| (T4) | 0.138 | 0.097 | **0.003** |
+| 4 edge-on motion p95 (N12) | 11.953 | 9.067 | **9.067** |
+| 5 teleport max (T3) | **511.3** | 515.9 | 516.5 |
+
+**⭐ VERDICT: arm C — palm frame, rotation only, NO scale — is the best anchor.**
+
+- **T4 is essentially eliminated**: yaw coupling |r| 0.138 → **0.003**. §14.1's
+  documented value is −0.25 (§14.1.1); we reproduce the same sign and rough
+  magnitude, and arm C removes it.
+- **N12 improves 24%**: anchor motion inside the edge-on band 11.95 → 9.07 px,
+  matching §16.1's independent 25–30% figure from a different measurement.
+- **Jitter bulk is 23% tighter** (p95 2.27 → 1.74), and no-pop is preserved
+  exactly — the property that killed the pre-§14.1 zero-offset design.
+
+⭐ **B vs C confirms §14.3.1's prediction.** Including palm width as a scale term
+(arm B) is *worse* than omitting it (arm C) on yaw coupling — 0.097 vs 0.003 —
+because palm width collapses edge-on and arm B feeds that collapse straight into
+cube position. That was predicted from the anchor measurements before this A/B
+ran, and it held.
+
+⚠ **Two honest costs, neither disqualifying:**
+
+1. **Jitter MAX is worse** — 11.7 px vs §14.1's 8.5. The bulk is tighter but the
+   tail is not, and arm C has no scale term, so the culprit is the **MCP-row
+   direction** becoming unstable edge-on — the same collapse as everywhere else.
+   The natural remedy is DR-2's pattern: freeze the palm ROTATION inside the
+   edge-on band. Untested; do not assume it.
+2. **No teleport advantage** — max ~511–516 px for all three. Expected: a
+   teleport moves the whole hand, palm included, so no anchor choice helps. T3
+   remains DR-1's job.
+
+**Consequence for A7**: the gate has run, and it favours replacing §14.1's
+9-point weighted anchor with a palm-rigid frame. ⚠ **Not yet ported to
+production, and not yet live-confirmed** — this is replay evidence on 28
+intervals from one recording session.
+
 ### ⚠ Binding architectural constraint (spec S3, Apple's shipped design)
 
 **Predicted state must NEVER reach a gesture state machine.** The split is:
