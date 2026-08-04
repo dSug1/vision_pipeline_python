@@ -4320,6 +4320,107 @@ teleports — the `Position_during_rotation/translation_pivot_jump_test4` take i
 the named reproduction, and it is currently **unreadable from Python** in this
 environment (PermissionError on that subfolder; PowerShell reads it fine).
 
+### 16.2 What happens on rejection — the coasting policy (owner question, 2026-08-04)
+
+*"if a next set of frames is outside this probabilities distribution, the flag can
+be activated and the cube position is inferred from prediction until the measured
+frames return to the correct probabilities."*
+
+Adopted, with one change that is not negotiable: **"until it returns" is
+unbounded, and unbounded coasting is the cascade that already failed here.**
+§0.13.3: a rejected frame makes the filter coast, the prediction drifts further
+from the measurement, so the next frame fails too — **one bad frame booked up to
+8 rejections**, and the resulting statistic was mistaken for a weak motion model
+and had to be retracted (§0.15). The policy below keeps the inference and bounds
+the coast.
+
+**1. Rejection is PER CHANNEL, not per frame.** The block decomposition makes
+this possible and it is the main advantage over 1.6's all-or-nothing gate. The
+channels are independent quantities — arc extension is a scale-free intra-finger
+ratio and does not depend on the palm transform, and vice versa. So:
+
+- fingers confused at a pitch crossing (**N12**) → arcs rejected, **measured palm
+  kept**;
+- identity teleport (**T3**) → palm position/quaternion rejected, **measured arcs
+  kept**.
+
+Rejecting the whole hand because one finger is wrong throws away good data.
+
+**2. A rejected channel is INFERRED from its own prediction** — the windowed
+extrapolation, not the last value — and is flagged `valid = False`.
+
+**3. ⚠ THE COAST IS CAPPED AT 2 CONSECUTIVE FRAMES PER CHANNEL.** On the third,
+the measurement is **force-accepted** and that channel's estimator is
+**re-seeded** (derivative history cleared, residual scale reset). Rationale: a
+sustained disagreement means *our model is stale*, not that the sensor is wrong
+three times running. Two frames at 24 fps is ~83 ms.
+
+**4. Full reset on tracking loss or run break** — same contract as
+`PalmFacingTracker.reset()`. A new track must never be judged against the old
+one's trajectory.
+
+**5. ⚠ CONSUMERS SPLIT (S3, binding — Apple ships exactly this).**
+
+| consumer | uses |
+|---|---|
+| rendering / cube attachment | the output transform, inferred or measured — this is what keeps the cube smooth |
+| **grab / release state machine** | **measured state only.** While `valid = False` it must HOLD — take no new snap and trigger no release — rather than decide on inferred data |
+
+A prediction artifact must never latch into a gesture. This mirrors DR-2's
+existing `orientation_valid` contract, which already freezes rather than acting
+on an unobservable sign.
+
+**6. The estimator never learns from an inferred value.** Only accepted
+measurements enter the history and the residual scale. Feeding predictions back
+in is how a filter convinces itself it is right.
+
+### 16.3 B3′ built and evaluated (2026-08-04) — INCONCLUSIVE on detection, and the reason matters
+
+`Resources/block_tracker.py` + `analysis/b3_block_gate_eval.py`. Built with every
+fix identified against 1.6: windowed least-squares derivatives (not a raw
+two-sample velocity — S2(a), the dominant error source), second order, seven
+channels, per-channel rejection, adaptive residual scale with absolute floors,
+2-frame coast cap, history trained on accepted measurements only.
+
+Evaluated on the `Position_during_rotation` takes — the only corpus containing a
+real Object Jump (`jump_test4`) — with rejections **classified**, not counted.
+
+| config | teleports caught | real flagged |
+|---|---|---|
+| blocks, σ=4, order 2 | **1/1** | 6/16 |
+| order 1 (velocity only) | 1/1 | **4/16** |
+| order 2 (velocity+accel) | 1/1 | 6/16 |
+| window 3 / 5 / 9 | 1/1 | 7 / 6 / 7 of 16 |
+| suppress edge-on <0.35 | 1/1 | 5/16 |
+
+**⚠ n = 1 TELEPORT. Detection performance is NOT MEASURABLE from this, and the
+"ratio" is one event divided by sixteen.** It is reported as inconclusive.
+
+What the data *does* say, on the false-positive side (n=16, still small):
+
+- The gate flags **~⅓ of real fast movements**, and **the fixes did not help**:
+  second-order derivatives scored *worse* than first-order (6 vs 4), and longer
+  windows did not improve on 5. The specific weaknesses identified in 1.6 were
+  addressed and the false-positive rate did not fall.
+- Edge-on suppression barely moves it (6 → 5), so those rejections are **not** the
+  known unobservable band — they are ordinary fast rotation.
+
+**⭐ THE STRUCTURAL FINDING, which matters more than the numbers.** The teleport
+population is nearly empty *because DR-1 already fixed it*. §0.4: duplicates
+25 → 0, longest wrong-hold 225 → 10 frames. A gate that catches identity
+teleports is solving a problem that no longer reaches it in production.
+
+So what remains for a gate to do is the **finger** channel — N12's confusion at a
+pitch crossing — and §16.1 measured that **anchoring the cube to the palm removes
+that path entirely** (palm anchor 25–30% quieter in every band). **B4 and the arc
+gate are alternative solutions to the same remaining problem, and B4 is far
+simpler**: no prediction, no coasting, no threshold, nothing to cascade.
+
+**Verdict: B3′ stays BUILT AND UNWIRED.** Not disproven — untestable on this
+corpus, and aimed at a class DR-1 already handles. Revisit only if B4 leaves a
+residual that a gate could plausibly catch, or if a corpus with real teleports is
+recorded. Do not wire it on the strength of 1/1.
+
 ### ⚠ Binding architectural constraint (spec S3, Apple's shipped design)
 
 **Predicted state must NEVER reach a gesture state machine.** The split is:
