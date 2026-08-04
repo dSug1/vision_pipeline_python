@@ -4585,6 +4585,75 @@ the corpus contains the condition under test** — the same lesson as §0.15's
 pipeline that no longer exists". Before trusting any A/B, ask what is IN the
 takes.
 
+### 16.6 B3″ — the FULL prediction model, built and MEASURED. It fails. (2026-08-04)
+
+The owner rejected conclusions drawn with the half-implementation and specified
+the model properly: explicit velocity and acceleration, a real predictive
+probability distribution, multi-frame horizon, and — the vigilance condition —
+**it must not reject genuine changes of direction.**
+
+Built as `Resources/block_predictor.py`: explicit `p, v, a` from a least-squares
+quadratic over 7 accepted frames; OLS **prediction variance**
+`s²(1 + x(h)ᵀ(XᵀX)⁻¹x(h))` as a real distribution; angular velocity **and**
+acceleration by log map; per-channel rejection with a horizon that grows while
+coasting. Correctness proven on synthetic data where ground truth is known
+(`analysis/verify_block_predictor.py`): p/v/a recovered exactly, ω = 6.0000°/frame,
+α = 1.0000°/frame², variance growing with horizon, a 200 px teleport caught while
+25 px/frame smooth motion is untouched. Floors **derived** from `static_hold`
+(p99.5 of resting residuals), verified 4.0–16.5× below real failure residuals.
+
+**⭐ AND THEN IT FAILS THE VIGILANCE TEST, DECISIVELY:**
+
+| | channel-frames | rejected |
+|---|---|---|
+| **at a direction reversal** | 20,927 | **11.65%** |
+| elsewhere | 214,392 | 1.57% |
+| | | **7.43× over-rejection** |
+
+Reversals were labelled **non-causally** from raw velocity sign changes,
+independent of the gate. One reversal frame in nine is rejected — in a game
+built on pitch and yaw cycles, that is a visible artifact at every direction
+change.
+
+**Why, and it is structural rather than a tuning failure**: a reversal is
+**unpredictable from past data by construction**. The quadratic says "continue at
+the current v and a", the hand turns, the residual spikes — and σ stays narrow,
+because the fit residual over the smooth approach *to* the reversal was small.
+
+**The principled remedy was tried and does not work.** Acceleration is the least
+trustworthy coefficient, so σ was widened by its own contribution
+`|½·a·h²|` (`ACCEL_UNCERTAINTY`). Overall rejections fell 15.81% → 12.12%, but
+**the ratio was unchanged: 7.33× → 7.43×**. It scales everything down without
+separating reversals, because at a reversal the residual is ≈ 2|v| while the
+acceleration term is only ≈ ½|a| — far smaller for a sharp turn.
+
+**And it solves none of the four target problems:**
+
+| target | raw | gated | verdict |
+|---|---|---|---|
+| jitter, still hand (p95 / max) | 0.0174 / 0.0695 | 0.0179 / **3.0248** | **worse** — 43× worse max |
+| edge-on band motion (p95) | 0.3607 | 0.3541 | marginal (2%) |
+| back-of-hand orientation | — | identical | **no effect** (gate never fires on still hands) |
+| teleport | — | — | already solved by DR-1 (n=1 survives) |
+
+**VERDICT: B3″ is PARKED alongside 1.6 and `block_tracker.py`.** This is the
+second, much better-specified attempt at a predictive outlier gate, and it fails
+the same way — which is itself the finding.
+
+⭐ **THE GENERALISABLE RESULT, now measured twice with very different models:**
+**at this input envelope, a forward-extrapolation gate cannot separate a
+genuine direction change from an outlier.** 1.6 failed with a two-sample
+velocity and a fixed threshold; B3″ fails with fitted derivatives, a real
+predictive distribution and a growing horizon. **The limitation is not model
+quality — it is that the information needed is not in the past frames.** Do not
+attempt a third variant without a fundamentally new signal (a second camera, or
+a non-causal buffer that can see *past* the reversal, i.e. item 3.2's RTS
+smoothing, which costs latency for everyone).
+
+⚠ **Consequence for the anchor question**: because the gate does not work, it
+cannot clean the outliers that dominate B4's jitter tails, so **it cannot
+reorder arms A/B/C**. §16.5's conclusions stand or fall on their own evidence.
+
 ### ⚠ Binding architectural constraint (spec S3, Apple's shipped design)
 
 **Predicted state must NEVER reach a gesture state machine.** The split is:

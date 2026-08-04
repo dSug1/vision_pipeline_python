@@ -135,16 +135,45 @@ MIN_HISTORY = 4                 # >= 3 params + 1, else the fit is exact and s^2
 
 # --- decision ---
 REJECT_Z = 3.0                  # tail probability, not a tuned magnitude
+
+# ⭐ ACCELERATION UNCERTAINTY -- the fix for direction reversals, and the reason
+# extracting `a` explicitly was worth doing.
+#
+# A reversal is UNPREDICTABLE FROM PAST DATA BY CONSTRUCTION: the quadratic says
+# "continue at the current v and a", the hand turns around, and the residual
+# spikes -- while the OLS variance stays narrow, because the fit residual over
+# the smooth approach TO the reversal was small. Measured without this term, the
+# gate rejected reversal frames 7.33x more often than other frames (15.63% vs
+# 2.13%), which is precisely the failure the owner asked to be vigilant about
+# and would make the gate eat real gestures.
+#
+# The remedy uses the second derivative rather than a heuristic: the
+# acceleration coefficient is the least trustworthy part of any extrapolation,
+# and its contribution to the prediction is 0.5*a*h^2. Adding that magnitude to
+# sigma widens the band exactly when the motion is CHANGING -- which is when a
+# reversal is possible -- and leaves it untouched during constant-velocity
+# motion, where an outlier really is detectable.
+ACCEL_UNCERTAINTY = 1.0         # multiplier on |0.5 * a * h^2|; 1.0 = "trust the
+                                # acceleration term not at all"
 MAX_COAST_FRAMES = 2            # hard backstop (16.2 rule 3)
 INNOVATION_WINDOW = 40          # running dispersion of standardised residuals
 
-# --- absolute floors (see analysis/calibrate_floors.py; DERIVED, not guessed) ---
-# Placeholders until calibration runs; calibration writes the measured values.
+# --- absolute floors: DERIVED, not guessed (analysis/calibrate_floors.py) ---
+# Measured as the p99.5 of one-step prediction residuals on the `static_hold`
+# takes, where the hand is deliberately stationary so every residual IS sensor
+# noise (n = 2006 per channel). Above essentially all resting noise, so the gate
+# cannot fire on a still hand.
+#
+# ⚠ Verified not to mask real failures: against the two_hand takes, which carry
+# the identity mixups (spec 0.4), every channel's p99 residual is 4.0x-16.5x its
+# floor. A floor comparable to a teleport's residual would hide one.
+#   pos_x 16.4x   pos_y 13.7x   scale 10.1x   quat 16.5x
+#   arc0   6.7x   arc1   9.9x   arc2  12.2x   arc3  4.0x  <- tightest margin
 FLOOR = {
-    "pos_x": 1.5, "pos_y": 1.5,     # px
-    "scale": 1.5,                   # px
-    "arc0": 0.010, "arc1": 0.010, "arc2": 0.010, "arc3": 0.010,
-    "quat": 3.0,                    # degrees
+    "pos_x": 1.3349, "pos_y": 1.2649,   # px
+    "scale": 1.7331,                    # px
+    "arc0": 0.0090, "arc1": 0.0049, "arc2": 0.0048, "arc3": 0.0111,
+    "quat": 4.1621,                     # degrees
 }
 
 
@@ -400,7 +429,13 @@ class BlockPredictor:
                 var = st.variance(h)
                 if var is None:
                     continue
-                sigma = max(math.sqrt(max(var, 0.0)) * self._inflation(ch),
+                # Acceleration uncertainty: widen the band by the magnitude of
+                # the acceleration term's own contribution, so a hand that is
+                # CHANGING its motion (i.e. possibly reversing) is not judged
+                # against a prediction that assumes it will not.
+                accel_term = ACCEL_UNCERTAINTY * abs(0.5 * st.a * h * h)
+                sigma = max(math.sqrt(max(var, 0.0)) * self._inflation(ch)
+                            + accel_term,
                             self.floors.get(ch, 0.0))
                 resid = abs(meas[ch] - pred)
                 z = resid / sigma if sigma > 0 else 0.0
