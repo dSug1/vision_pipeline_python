@@ -19,8 +19,28 @@ Two consequences worth knowing:
   * There is no cube, no snap, no window overlay -- only the camera preview and
     the sequence prompt. Nothing to grab.
 
+OPTIONAL FRAME CAPTURE (`--save-frames`, queue item 0.1 deliverable; required by
+item 0.5, the offline HaMeR/WiLoR oracle). Off by default, so existing behaviour
+is byte-for-byte unchanged unless asked for.
+
+  * The 24 sessions recorded before 2026-08-03 contain NO image data at all, so
+    the oracle cannot be run over them retroactively -- any take intended to feed
+    0.5 must be re-recorded with this flag.
+  * What is saved is the MIRRORED, PRE-OVERLAY frame -- byte-identical to the
+    array handed to MediaPipe. This matters: detection runs on the flipped image
+    (`detection_on_mirrored_frame`), so an oracle fed the unflipped frame would
+    produce mirrored poses and inverted chirality, and the comparison against the
+    recorded landmarks would be silently meaningless. The `REC ...` / prompt
+    overlays are drawn only AFTER the frame is buffered.
+  * Frames are buffered in RAM and encoded AFTER the take, never inside the
+    capture loop. Encoding per frame costs milliseconds against a ~41 ms budget,
+    and a take that drops below MIN_EXPECTED_FPS is not comparable to the rest of
+    the corpus (N10) -- i.e. paying encode cost during capture could corrupt the
+    exact property that makes the recording usable.
+
 Usage:  record_perception_sequence.bat <sequence> [duration_s] [camera_index]
         python RecordPerceptionSequence.py --sequence static_hold
+        python RecordPerceptionSequence.py --sequence depth_sweep --save-frames
 """
 
 import argparse
@@ -78,6 +98,26 @@ PITCH_AXIS_NOTE = (
 # 15-fps take is worse than a failed one, because it looks valid in analysis
 # while being non-comparable to the rest of the corpus, so warn LOUDLY here.
 MIN_EXPECTED_FPS = 20.0
+
+# --- optional frame capture (--save-frames), queue item 0.1 / needed by 0.5 ---
+#
+# Frames are held in RAM for the duration of the take and encoded afterwards (see
+# the module docstring for why encoding must stay out of the capture loop). That
+# trades the fps risk for a memory ceiling, so the ceiling is preflighted rather
+# than discovered by an OOM half way through an operator's take -- the same
+# "fail before the operator's effort, never after it" rule the capture-root
+# preflight already follows.
+#
+# 4 GiB on a 15.4 GB machine leaves ample headroom for MediaPipe and the OS. At
+# 640x480x3 = 921 KB/frame that is ~4600 frames ~= 190 s at 24 fps, so every
+# sequence in SEQUENCES fits at stride 1 -- including the 120 s free_manipulation
+# take (2880 frames, ~2.6 GiB).
+MAX_FRAME_BUFFER_BYTES = 4 * 1024 ** 3
+# JPEG at quality 95 lands around 50 KB/frame at 640x480. Lossy, but PNG costs
+# roughly 10x the disk and far more encode time; use --frame-format png when a
+# take is specifically meant to rule out compression artifacts as a confound for
+# the oracle.
+DEFAULT_JPEG_QUALITY = 95
 
 # PERCEPTION_LAYER_SPEC.md §7.2. (default_duration_s, on-screen prompt, what it unblocks)
 SEQUENCES = {
@@ -291,7 +331,26 @@ def main():
                              "(use when E: is unavailable; move the session folder later)")
     parser.add_argument("--capture-root", type=str, default=None,
                         help="explicit capture root, overriding both defaults")
+    parser.add_argument("--save-frames", action="store_true",
+                        help="also save the raw camera frames alongside the landmarks "
+                             "(queue item 0.1; REQUIRED by item 0.5's offline oracle -- "
+                             "the pre-2026-08-03 corpus has no images, so an oracle take "
+                             "must be re-recorded with this). Saves the MIRRORED, "
+                             "pre-overlay frame detection actually ran on")
+    parser.add_argument("--frame-format", choices=("jpg", "png"), default="jpg",
+                        help="jpg (default, ~50 KB/frame) or png (lossless, ~10x the "
+                             "disk; use to rule out compression artifacts as a confound)")
+    parser.add_argument("--frame-stride", type=int, default=1,
+                        help="save every Nth frame (default 1 = all). The landmark JSONL "
+                             "always keeps every frame; this only subsamples the images, "
+                             "for when the oracle does not need per-frame density")
     args = parser.parse_args()
+
+    if args.frame_stride < 1:
+        raise SystemExit("[perception] --frame-stride must be >= 1.")
+    if (args.frame_format != "jpg" or args.frame_stride != 1) and not args.save_frames:
+        print("[perception] NOTE: --frame-format/--frame-stride have no effect "
+              "without --save-frames.")
 
     capture_root = args.capture_root or (LOCAL_CAPTURE_ROOT if args.local else CAPTURE_ROOT)
 
@@ -305,8 +364,11 @@ def main():
     # effort, never after it.
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     session_dir = os.path.join(capture_root, "sessions", f"{stamp}_{args.sequence}")
+    frames_dir = os.path.join(session_dir, "frames")
     try:
         os.makedirs(session_dir, exist_ok=True)
+        if args.save_frames:
+            os.makedirs(frames_dir, exist_ok=True)
         probe = os.path.join(session_dir, ".writable")
         with open(probe, "w", encoding="utf-8") as f:
             f.write("ok")
@@ -336,8 +398,31 @@ def main():
         raise RuntimeError("Could not read an initial frame from the webcam.")
     height, width = frame.shape[:2]
 
+    # Frame-buffer preflight, BEFORE the countdown -- same rule as the capture-root
+    # probe above: an operator's take must never be lost to a condition that was
+    # knowable in advance. Assumes the corpus baseline ~25 fps as the worst case.
+    if args.save_frames:
+        bytes_per_frame = width * height * 3
+        est_frames = int(duration * 25.0 / args.frame_stride) + 1
+        est_bytes = est_frames * bytes_per_frame
+        if est_bytes > MAX_FRAME_BUFFER_BYTES:
+            max_duration = MAX_FRAME_BUFFER_BYTES * args.frame_stride / (bytes_per_frame * 25.0)
+            cap.release()
+            raise SystemExit(
+                f"[perception] --save-frames would buffer ~{est_bytes / 1024 ** 3:.1f} GiB "
+                f"({est_frames} frames at {width}x{height}), over the "
+                f"{MAX_FRAME_BUFFER_BYTES / 1024 ** 3:.0f} GiB ceiling.\n"
+                f"             Refusing before the take rather than failing during it.\n"
+                f"             Options: --duration below ~{max_duration:.0f}s, or raise "
+                f"--frame-stride (currently {args.frame_stride})."
+            )
+        print(f"[perception] frames   : saving ~{est_frames} {args.frame_format} images "
+              f"(stride {args.frame_stride}), buffering ~{est_bytes / 1024 ** 3:.1f} GiB")
+
     window_name = f"Perception capture - {args.sequence}"
     records = []
+    frame_buffer = []  # (record_index, BGR frame copy) -- encoded after the take
+    stop_reason = "unknown"
 
     print(f"[perception] sequence : {args.sequence}")
     print(f"[perception] duration : {duration:.1f}s (after a {COUNTDOWN_S:.0f}s countdown)")
@@ -376,11 +461,17 @@ def main():
             while True:
                 elapsed = time.perf_counter() - record_start
                 if elapsed >= duration:
+                    stop_reason = "duration reached"
                     break
 
                 ret, frame = cap.read()
                 t_capture_ms = (time.perf_counter() - t0) * 1000.0  # real monotonic clock
                 if not ret:
+                    # Camera returned no frame. Distinct from a closed window, and
+                    # the two were indistinguishable before 2026-08-04, when two
+                    # takes in a row stopped early (21.5s and 3.2s of a requested
+                    # 30s) with no way to tell which cause it was.
+                    stop_reason = "camera read failed (cap.read() returned False)"
                     break
                 frame = cv2.flip(frame, 1)
 
@@ -399,7 +490,19 @@ def main():
                         "world_landmarks": [[round(lm.x, 5), round(lm.y, 5), round(lm.z, 5)]
                                             for lm in result.hand_world_landmarks[idx]],
                     })
-                records.append({"tCapture": round(t_capture_ms, 2), "hands": hands})
+                record = {"tCapture": round(t_capture_ms, 2), "hands": hands}
+
+                # Buffer the frame BEFORE any overlay is drawn. `frame` is the
+                # mirrored array `rgb` (and therefore MediaPipe) was derived from,
+                # and cv2.putText mutates it in place a few lines below -- so an
+                # oracle fed a later copy would be reading the REC banner and the
+                # prompt text baked into the image. .copy() is also required
+                # because cap.read() may reuse its buffer.
+                if args.save_frames and (len(records) % args.frame_stride == 0):
+                    name = f"{len(records):06d}.{args.frame_format}"
+                    frame_buffer.append((name, frame.copy()))
+                    record["frame"] = f"frames/{name}"
+                records.append(record)
 
                 # minimal overlay: no landmark drawing, to keep this tool free of
                 # any dependency on the gesture/visualiser layer
@@ -410,6 +513,7 @@ def main():
                 cv2.imshow(window_name, frame)
                 cv2.waitKey(1)
                 if not _window_open(window_name):
+                    stop_reason = "preview window reported not visible"
                     break
     finally:
         cap.release()
@@ -418,15 +522,54 @@ def main():
     if not records:
         print("[perception] No frames captured, nothing saved.")
         try:
+            # frames/ is created by the preflight, so it must go first or the
+            # session dir is left behind as an empty stub.
+            if os.path.isdir(frames_dir):
+                os.rmdir(frames_dir)
             os.rmdir(session_dir)  # don't leave an empty session behind
         except OSError:
             pass
         return
 
+    # LANDMARKS FIRST, ALWAYS. The JSONL is the irreplaceable part of a take (a
+    # few hundred KB); the frames are bulk that a re-record can regenerate. An
+    # earlier version of this wrote frames first, which put an operator's
+    # completed take at the mercy of a disk-full or an E: dropout (N4) during a
+    # multi-hundred-MB write -- the same "fail before the operator's effort,
+    # never after it" rule the capture-root preflight exists to enforce.
     jsonl_path = os.path.join(session_dir, "raw_landmarks.jsonl")
     with open(jsonl_path, "w", encoding="utf-8") as f:
         for rec in records:
             f.write(json.dumps(rec) + "\n")
+
+    # Now the bulk. The camera is released and the operator is done, so nothing
+    # here can affect measured_fps. Failures are reported and recorded in
+    # meta.json rather than raised: by this point the take is already safe, and
+    # killing the process would only lose the metadata too.
+    frames_written = 0
+    frames_bytes = 0
+    frames_error = None
+    if frame_buffer:
+        encode_params = ([int(cv2.IMWRITE_JPEG_QUALITY), DEFAULT_JPEG_QUALITY]
+                         if args.frame_format == "jpg" else [])
+        print(f"[perception] landmarks saved; writing {len(frame_buffer)} frames...")
+        encode_start = time.perf_counter()
+        try:
+            for name, img in frame_buffer:
+                path = os.path.join(frames_dir, name)
+                if not cv2.imwrite(path, img, encode_params):
+                    raise OSError(f"cv2.imwrite returned False for {path}")
+                frames_written += 1
+                frames_bytes += os.path.getsize(path)
+        except OSError as e:
+            frames_error = str(e)
+            print(f"[perception] ** FRAME WRITE FAILED after {frames_written} frames: {e}")
+            print(f"[perception] ** The landmark data IS saved -- the take is not lost.")
+            print(f"[perception] ** Re-record if the frames are needed.")
+        else:
+            print(f"[perception] {frames_written} frames written "
+                  f"({frames_bytes / 1024 ** 2:.0f} MB) in "
+                  f"{time.perf_counter() - encode_start:.1f}s")
 
     span_s = (records[-1]["tCapture"] - records[0]["tCapture"]) / 1000.0
     meta = {
@@ -445,6 +588,8 @@ def main():
         "mirrored_preview": True,
         "detection_on_mirrored_frame": True,
         "recorded_at": stamp,
+        "stop_reason": stop_reason,
+        "completed_full_duration": span_s >= duration - 1.0,
         "config_hash": hashlib.sha256(
             f"{args.sequence}|{width}x{height}|{getattr(mp, '__version__', '?')}".encode()
         ).hexdigest()[:12],
@@ -456,6 +601,25 @@ def main():
     if args.sequence.startswith("palm_back") or args.sequence.startswith("pitch_sweep"):
         meta["rotation_axis"] = "pitch"
         meta["rotation_axis_note"] = PITCH_AXIS_NOTE
+
+    meta["frames_saved"] = frames_written
+    if frames_error:
+        meta["frames_error"] = frames_error
+        meta["frames_incomplete"] = True
+    if frames_written:
+        meta["frame_format"] = args.frame_format
+        meta["frame_stride"] = args.frame_stride
+        meta["frame_jpeg_quality"] = DEFAULT_JPEG_QUALITY if args.frame_format == "jpg" else None
+        meta["frames_bytes"] = frames_bytes
+        meta["frames_note"] = (
+            "Saved images are the MIRRORED, PRE-OVERLAY frames MediaPipe itself ran on "
+            "(detection_on_mirrored_frame is true). An offline oracle (queue item 0.5, "
+            "HaMeR/WiLoR) MUST be fed these as-is: un-flipping them, or using an "
+            "un-mirrored capture, inverts chirality and makes any comparison against "
+            "the recorded landmarks meaningless. Each JSONL record carries its own "
+            "'frame' path; frames are indexed by record position, so a stride > 1 "
+            "leaves records without a 'frame' key by design."
+        )
 
     meta["hands_used"] = args.hand
     if args.hand != "both":
@@ -484,8 +648,22 @@ def main():
     print(f"[perception] Saved {len(records)} frames ({meta['measured_fps']} fps measured) to")
     print(f"             {session_dir}")
     print(f"[perception] frames with >=1 hand detected: {detected}/{len(records)}")
+    if frames_written:
+        print(f"[perception] images saved: {frames_written} ({frames_bytes / 1024 ** 2:.0f} MB) "
+              f"-> {frames_dir}")
     if cycles is not None:
         print(f"[perception] ground truth: {cycles} cycles -> {2 * cycles} expected sign changes")
+
+    # A take that ended early looks perfectly valid in analysis -- same fps, same
+    # detection rate, just fewer frames -- so say so loudly here rather than
+    # leaving it to be noticed by dividing frames by fps afterwards.
+    if span_s < duration - 1.0:
+        print()
+        print(f"[perception] ****************************  WARNING  ****************************")
+        print(f"[perception] Take ended EARLY: {span_s:.1f}s of a requested {duration:.1f}s.")
+        print(f"[perception] Stop reason: {stop_reason}")
+        print(f"[perception] >>> Check whether the target behaviour was completed. <<<")
+        print(f"[perception] ********************************************************************")
 
     fps = meta["measured_fps"]
     if fps is not None and fps < MIN_EXPECTED_FPS:

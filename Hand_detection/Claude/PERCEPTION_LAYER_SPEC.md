@@ -1853,6 +1853,137 @@ so the next acceptance test is written against the quantity the module claims.
 
 ---
 
+## 0.16 M3a anatomical constraints BUILT (2026-08-04) — item 1.5 DONE, and the control caught a wrong constraint
+
+`Resources/hand_anatomy.py` (stdlib-only, numpy-free, no import side effects —
+importable by production and the debug tool alike, per the N6 precedent), with
+`analysis/m3a_violations.py` and `analysis/m3a_diagnose.py`.
+
+### The headline
+
+| condition | violation rate |
+|---|---|
+| **`static_hold` CONTROL (valid poses)** | **0.00%** (0 / 1446 hand-frames) |
+| back-of-hand (`known_right_back`, hand under test) | 5.12% |
+| finger self-occlusion (hand under test) | 5.62% |
+| pitch / edge-on crossing (`pitch_sweep_*`, `palm_back_*`) | **33–59%** |
+
+A zero false-positive rate on the control is the property that matters: 1.6 will
+gate on this bit, and a validity bit that fires on good frames is worse than no
+bit at all.
+
+### ⚠ The first version was WRONG, and only the control revealed it
+
+It reported **93.7% violations on `static_hold`** — i.e. it claimed a still,
+ordinary hand is anatomically impossible 94% of the time. Diagnosed by dumping
+distributions (`m3a_diagnose.py`) rather than by relaxing thresholds, which is
+the trap §0.14 records against M2 ("do not tune the gate to make it pass"). Two
+genuine errors:
+
+1. **"All three joints of a finger co-flex" is anatomically false.** The MCP is a
+   condyloid joint that extends — indeed hyperextends to ~45° — while the
+   interphalangeal joints flex. That is an ordinary resting posture. Measured:
+
+   | axis pair | negative on valid hands |
+   |---|---|
+   | dot(MCP axis, PIP axis) | **31.1%** |
+   | dot(PIP axis, DIP axis) | **0.0%** (min +0.41, p05 +0.69) |
+
+   Only the IP joints are obligate co-flexors, so the unidirectional prior — and
+   with it the bas-relief disambiguation term — belongs to the **PIP↔DIP pair
+   alone**. The surviving constraint has an enormous margin: worst observed
+   agreement +0.41 against a threshold of 0.0.
+
+2. **The hinge plane was ill-conditioned.** Built from metacarpal×proximal it
+   reported a median 25.5° out-of-plane "violation" on a still hand, because the
+   MCP bend has a median of only ~14° so the two vectors are near-parallel and
+   their cross product is noise. Rebuilt from **proximal×middle**, testing the
+   distal phalanx: median 11.5°, p95 16.7°, max 19.4°.
+
+### Where the numbers come from — and the trap that was avoided
+
+S6 cites Spurr et al. for constraints that halve depth error (FreiHAND depth
+error 15% → 50% reduction, confirmed from the paper). **But that paper publishes
+no table of limits — its limits are FITTED FROM DATA.** The reference
+implementation, `MengHao666/Hand-BMC-pytorch`, is **MIT but ships no constraint
+values at all**: it generates `bone_len_*`, `curvatures_*`, `PHI_*` and
+`CONVEX_HULLS.npy` from RHD, GANerated, STB and FreiHAND. The MIT licence covers
+that code, **not** those research-licensed datasets.
+
+Two reasons that route was rejected, either sufficient on its own:
+- **Licensing** — this project is intended for commercial release (queue N13).
+- **Circularity** — fitting the gate to MediaPipe-derived data is precisely the
+  "MediaPipe judging itself" weakness that item 0.5 existed to remove, and 0.5 is
+  now dropped, so nothing would have caught it.
+
+The constraint **form** is therefore taken from the paper (a method, freely
+usable) and the **numbers** from clinical goniometry norms — anatomical facts,
+unlicensed: MCP flexion 0–90° / hyperextension to 45° / abduction ±25°; PIP
+flexion 0–100°; DIP flexion 0–80°; and **abduction occurs only at the MCP, never
+at the interphalangeal joints**, which is the planar-articulation constraint
+stated as anatomy rather than as a tuned threshold. **Do not re-derive these from
+the corpus.**
+
+### Deliberately chirality-free
+
+No constraint here reads the handedness label. That is a design choice, not an
+oversight: the label carried through this pipeline is the MIRRORED/apparent hand
+(§0.9), the two code paths reach that convention by different routes, and a sign
+error there has already shipped once (§13.6.1). A constraint set that never asks
+cannot get it wrong. The PIP↔DIP test achieves this by comparing a finger's
+bends against *each other* rather than against the palm normal — which is also
+exactly why it disambiguates bas-relief: a depth-mirrored reconstruction flips
+the out-of-plane component of the bends so the senses stop agreeing, while every
+2D projection is unchanged.
+
+### Still open
+
+- **Nothing consumes the validity bit yet.** Under A10 this is characterisation,
+  not a demonstrated pipeline improvement; **1.6** is what converts it.
+- The thumb is **excluded** — its CMC saddle joint has two coupled axes and a far
+  wider envelope, so "no abduction at the IP joint" is simply false for a thumb in
+  opposition. Constraining it needs its own model.
+- One expectation was **wrong and is recorded as such**: finger self-occlusion was
+  predicted to be the richest source of impossible poses. It is not (5.6%);
+  rotation and edge-on crossing are (33–59%). The constraints are most useful
+  where **T2** lives, not where M4's occlusion story does.
+
+### The 2026-08-04 takes this was built on, and what to record next
+
+Five takes, all at **24.13–24.15 fps** — a 0.02 fps spread, which is what makes
+them cross-comparable under N10:
+
+| take | hands | span | frames | detection |
+|---|---|---|---|---|
+| `static_hold` (**the control**) | both | 29.9 s | 723 | 100% |
+| `known_right_back` | both ⚠ N16 | 29.9 s | 723 | 100% |
+| `known_left_back` | left | 30.0 s | 723 | 100% |
+| `occlusion_finger_over_finger` | both ⚠ N16 | 45.0 s | 1085 | 100% |
+| `pitch_sweep_slow` | right | 44.9 s | 1084 | 98.9% |
+
+**Proposed next recording session**, in priority order — the first three exist to
+serve **1.6**, which needs frames that are *bad in a known way*:
+
+1. **`known_right_back` retake, genuinely single-hand** — closes N16 and restores
+   the matched pair with `known_left_back` that N11 needs. Check the frame for a
+   resting hand before starting.
+2. **A back-of-hand + finger-occlusion variant** — deliberately *not* recorded on
+   2026-08-04, because mixing two documented failure mechanisms in one take makes
+   them inseparable (the mistake the original `occlusion` prompt and the
+   `two_hand_overlap`/`near_miss` split both record). Worth having now as its own
+   take, precisely because §0.16 shows the two mechanisms fire at very different
+   rates.
+3. **`pitch_sweep_fast`** — §0.16's violation rate rises with rotation speed, and
+   the existing fast take is from a different session/lighting.
+4. Optional: a first **`--save-frames`** take of any sequence, to exercise that
+   path on real hardware — it is compile-checked but has never run live.
+
+⚠ Prefer **daylight**: the corpus's own record is that the two takes which had to
+be discarded for low fps were recorded at 22:18 (15 fps), while the good ones ran
+19:13–20:51 (N10). "Later" is not the same as "better lit".
+
+---
+
 ## 0. Framing: what MediaPipe is, and what it is not
 
 MediaPipe Hands is a **stateless, per-frame, monocular shape estimator**. It answers "what configuration of a hand best explains this single image crop?"
@@ -3084,6 +3215,14 @@ family behind T1/T2 — and a reusable PyTorch constraint set exists
 S5, (b) the bas-relief disambiguation term M5 already specifies. With M2 dead,
 **M3a is now the primary "attack the source" item — build it before any T1/T2
 retest.** **Build at: 1.5.**
+> ✅ **BUILT 2026-08-04 — see §0.16.** 0.00% false positives on the control;
+> 5–59% on the failure poses. ⚠ **Two corrections to this item as written:**
+> (1) the reusable constraint set is **not** reusable here — Hand-BMC-pytorch is
+> MIT but ships no values, generating them from research-licensed datasets, and
+> the paper publishes no table; §0.16 uses **clinical goniometry norms** instead.
+> (2) The unidirectional-flexion prior applies to the **PIP↔DIP pair only** — the
+> MCP legitimately extends while the IPs flex, measured at 31.1% "violation" on
+> valid hands when included.
 *Sources: arXiv 2003.09282; github MengHao666/Hand-BMC-pytorch.*
 
 **S7 — NEW MODULE M2b: impose a skeleton instead of measuring one
@@ -3103,12 +3242,26 @@ own point); per-user refinement optional. **Build at: NEW queue item 1.7, after
 Aristidou 2010/2018 constrained IK; arXiv 2605.09258 (2026, biomechanical IK on
 foundation models).*
 
-**S8 — Offline oracle for the corpus (M0 extension).** Standard evaluation
-trick in this literature: run a heavyweight offline model (HaMeR or WiLoR —
-GPU or slow CPU, offline is fine) over the 24 recorded sessions to produce
-pseudo-ground-truth, quantifying MediaPipe's error per pose class and giving
-S5/S6 gates something to be tuned against that is not MediaPipe judging itself.
-**Build at: 0.1 extension, optional, any time.**
+**S8 — ~~Offline oracle for the corpus~~ — DROPPED 2026-08-04, do not restart.**
+Standard evaluation trick in this literature: run a heavyweight offline model
+(HaMeR or WiLoR) over the recorded sessions to produce pseudo-ground-truth,
+giving S5/S6 gates something to be tuned against that is not MediaPipe judging
+itself. **Killed by two independent blockers, one permanent:**
+**(a) Licensing, decisive** — both models depend on **MANO**, licensed for
+non-commercial scientific research only (commercial licensing is separate, via
+Meshcapade). This project is intended for commercial release, so MANO is out
+even for offline tooling that never ships (queue **N13**).
+**(b) The corpus has no pixels** — the entire capture root is landmark JSON,
+**zero image bytes**, and no recorder ever wrote frames, so "over the 24 recorded
+sessions" was never achievable at any budget (queue **N14**).
+**Commercially-clean substitutes if an external reference is ever needed:**
+ArUco/ChArUco fiducials (BSD, `opencv-contrib-python` already installed, and they
+give REAL ground truth rather than pseudo — the corpus plan already pencils in a
+fiducial take for item 3.3), or RTMPose-Hand (Apache-2.0, but 2D keypoints only,
+so it cannot bound the depth errors behind T1/T2).
+⚠ **Consequence for S5/S6: their gates have no external referee and will not get
+one.** That is why §0.16's constraint thresholds are clinical norms rather than
+corpus-fitted values — with 0.5 gone, nothing would catch the circularity.
 *Sources: arXiv 2409.12259 (WiLoR); CVPR 2024 HaMeR.*
 
 **S9 — Causal SmoothNet-class refinement (learned upgrade path).** If S5+S6

@@ -23,9 +23,29 @@ layered patches again, rewrite it rather than appending.
 
 ## 1. ⭐ START HERE — the next build step
 
-**Next item: `PART_ONE.md` §3.1 item 1.5 (M3a — hard anatomical constraints).**
-Then **1.6 → 1.7 → T1/T2 retest → reassess (R)**. The queue's "YOU ARE HERE"
+**Next item: `PART_ONE.md` §3.1 item 1.6 (M4 — consistency gate).**
+Then **1.7 → T1/T2 retest → reassess (R)**. The queue's "YOU ARE HERE"
 block explains why each is next; do not re-derive that ordering.
+
+**Item 1.5 (M3a anatomical constraints) is DONE (2026-08-04)** —
+`Resources/hand_anatomy.py`, 0.00% false positives on a 1446-hand-frame control,
+firing on 5–59% of the poses MediaPipe is documented to fail. Full account:
+`PERCEPTION_LAYER_SPEC.md` **§0.16**. It produces a per-frame validity bit that
+**nothing consumes yet** — 1.6 is what turns it into a measured improvement under
+A10, which is why 1.6 is next.
+
+**⚠ Two binding constraints established 2026-08-04 — read before proposing any
+model or dependency:**
+- **N13: the game is intended for commercial release, so non-commercial /
+  research-only licences are out**, including for offline tooling that never
+  ships. This **killed item 0.5** (MANO → HaMeR/WiLoR). ⚠ It also means item
+  **1.7 must NOT be built with real MANO** despite the spec calling it
+  "MANO-lite" — population-average bone proportions are free and sufficient.
+  Note the trap: a permissive licence on *code* does not cover *data* it
+  generates from research datasets.
+- **N14: the recorded corpus contains no image data at all** — 415 files, 334 MB,
+  zero pixels. No image-based model can be run over the existing sessions
+  retroactively. `--save-frames` now exists for new takes.
 
 **⚠ If you find work in progress on M6 (queue item 2.3): stop there.** It is
 deprioritised, five attempts all produced null results, and an audit on
@@ -34,10 +54,14 @@ reach ~77% of the large orientation jumps, because those occur in *well-observed
 frames — they are **bad landmarks, not bad pose filtering**. `orientation_filter.py`
 stays parked and unwired. The shipped `HandOrientationFilter` stays.
 
-Two items are optional, parallelisable and block nothing: **0.4** (predictor
-evaluation harness) and **0.5** (offline HaMeR/WiLoR oracle over the recorded
-corpus — worth starting when the machine is idle, since 1.5/1.6's gates
-otherwise have nothing to be tuned against but MediaPipe judging itself).
+**0.4** (predictor evaluation harness) remains optional, parallelisable and
+blocks nothing. **0.5 is dropped — do not restart it** (see the two constraints
+above). Its loss has a real consequence to be honest about: 1.5/1.6's gates have
+**no external referee and will not get one**, which is exactly why 1.5's
+thresholds are published clinical norms rather than values fitted to this
+corpus. If an external reference is genuinely needed later, the
+commercially-clean route is **ArUco/ChArUco fiducials** (BSD, `opencv-contrib`
+already installed, real ground truth rather than pseudo).
 
 ---
 

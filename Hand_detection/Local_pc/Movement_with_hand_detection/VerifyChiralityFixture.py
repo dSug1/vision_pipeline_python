@@ -143,7 +143,7 @@ def _load(session_dir):
 
 
 def _check_session(seq, session_dir):
-    """Returns (passed, list_of_message_lines)."""
+    """Returns (status, list_of_message_lines) where status is PASS/FAIL/SKIP."""
     physical_hand, expected_outward = GROUND_TRUTH[seq]
     expected_hand = MIRRORED_LABEL[physical_hand]   # see MIRRORED_LABEL above
     meta, frames = _load(session_dir)
@@ -151,10 +151,33 @@ def _check_session(seq, session_dir):
     msgs = [f"  session: {os.path.basename(session_dir)}  "
             f"({meta.get('frames')} frames, {meta.get('measured_fps')} fps)"]
 
+    # A clip whose metadata DECLARES more than one hand is not a fixture
+    # candidate -- ground truth here is "exactly one known hand is present", and
+    # sessions are discovered by FILENAME, so a two-hand take named known_* is
+    # simply the wrong kind of clip rather than evidence of a broken convention.
+    #
+    # Added 2026-08-04, after a two-hand `known_right_back` take (queue N16) made
+    # this whole guard exit 1 while every real check still passed 100%. A guard
+    # that cries wolf gets ignored, which would be a far worse outcome than the
+    # mislabelled take itself.
+    #
+    # ⚠ THIS DOES NOT WEAKEN THE GUARD, and the distinction is deliberate:
+    #   * hands_used == "both"  -> SKIP (wrong kind of clip, says so up front)
+    #   * hands_used single, but no single-hand frames found -> still FAIL below
+    # A clip that CLAIMS to be single-hand and is not remains a hard failure.
+    hands_used = meta.get("hands_used")
+    if hands_used == "both":
+        requested = meta.get("hands_used_requested")
+        extra = f" (requested {requested!r}; see queue N16)" if requested else ""
+        msgs.append(f"  ** SKIPPED: meta says hands_used='both'{extra} -- ground "
+                    f"truth requires a single-hand clip, so this is not a fixture "
+                    f"candidate. Not a convention failure. **")
+        return "SKIP", msgs
+
     if not meta.get("detection_on_mirrored_frame", False):
         msgs.append("  ** meta says detection was NOT run on a mirrored frame -- "
                     "this file's convention assumptions do not hold. ABORT. **")
-        return False, msgs
+        return "FAIL", msgs
 
     n = label_ok = outward_ok = neg_control_inverted = 0
 
@@ -185,8 +208,10 @@ def _check_session(seq, session_dir):
             neg_control_inverted += 1
 
     if n == 0:
-        msgs.append("  ** no single-hand frames found -- unusable clip **")
-        return False, msgs
+        msgs.append("  ** no single-hand frames found, but meta does NOT declare "
+                    "hands_used='both' -- the clip disagrees with its own metadata. "
+                    "This is a REAL failure, not a skip. **")
+        return "FAIL", msgs
 
     label_rate = label_ok / n
     outward_rate = outward_ok / n
@@ -209,7 +234,7 @@ def _check_session(seq, session_dir):
     if outward_rate < MIN_AGREEMENT and label_rate >= MIN_AGREEMENT:
         msgs.append("      -> THE SIGN CONVENTION IS INVERTED. This is the §13.6.1 class of bug. "
                     "Do not 'fix' it by flipping the expectation in this file.")
-    return passed, msgs
+    return ("PASS" if passed else "FAIL"), msgs
 
 
 def _check_debug_copy_has_not_drifted():
@@ -308,6 +333,7 @@ def main():
     all_passed &= ok
     print("\n".join(msgs))
 
+    skipped = 0
     for seq in GROUND_TRUTH:
         print(f"\n--- {seq} ---")
         sessions = _find_sessions(seq)
@@ -315,10 +341,20 @@ def main():
             missing.append(seq)
             print("  (no recording found)")
             continue
+        usable = 0
         for s in sessions:
-            ok, msgs = _check_session(seq, s)
-            all_passed &= ok
+            status, msgs = _check_session(seq, s)
+            if status == "SKIP":
+                skipped += 1
+            else:
+                usable += 1
+                all_passed &= (status == "PASS")
             print("\n".join(msgs))
+        # Skipping must never let a sequence pass by having NO evidence: if every
+        # clip for this sequence was skipped, the convention is uncertified here.
+        if usable == 0:
+            missing.append(seq)
+            print(f"  ** every {seq} clip was skipped -- no usable ground truth **")
 
     print("\n" + "=" * 78)
     if missing:
@@ -330,6 +366,9 @@ def main():
         return 2
     if all_passed:
         print("ALL CHECKS PASSED -- the chirality convention is correct end-to-end.")
+        if skipped:
+            print(f"({skipped} clip(s) skipped as not-single-hand -- see queue N16. "
+                  f"Every sequence still had at least one usable clip.)")
         print("=" * 78)
         return 0
     print("FAILURES ABOVE -- the sign convention or the label convention is wrong.")

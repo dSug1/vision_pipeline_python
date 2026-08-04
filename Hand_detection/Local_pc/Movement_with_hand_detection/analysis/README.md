@@ -121,6 +121,26 @@ flaw; only one of them changed the answer.
 | `m6_gated_ab.py` | attempt 5: gated passthrough — tracked perfectly, **fixed nothing**, which triggered `where_are_jumps.py` |
 | `chi2_probe.py` | salvage probe: χ² / physical gate → **3.7× and 24× worse**. ⚠ **Also the source of the RETRACTED M7 motion-model warning — see bug 6 above.** The gate's own failure is real (cascade); the generalisation drawn from it was not |
 
+### M3a anatomical constraints (item 1.5, 2026-08-04)
+
+| script | produces |
+|---|---|
+| `m3a_violations.py` | violation rates per session for `Resources/hand_anatomy.py`, with the **control first** (`static_hold` — every violation there is a false positive) and a **per-hand-label breakdown**. Headline: **0/1446 control hand-frames, 5–59% on the failure poses** |
+| `m3a_diagnose.py` | the distributions behind the constraint design — bend angles, rotation-sense agreement per axis pair, and both candidate hinge-plane definitions. **This is what caught the first version's 93.7% false-positive rate** |
+
+⚠ **`m3a_diagnose.py` is the reason the module is correct**, and the pattern
+generalises: the first M3a constraint set fired on 93.7% of a *still, valid* hand.
+Dumping distributions showed why in one run — `dot(MCP axis, PIP axis)` was 31.1%
+negative on valid hands (the MCP extends while the IPs flex, so that pair is not
+an anatomical constraint at all) while `dot(PIP axis, DIP axis)` was 0.0%
+negative. **Always have a control take, and diagnose against it rather than
+loosening the threshold until the corpus goes quiet.**
+
+⚠ **The thresholds are clinical goniometry norms, NOT corpus-fitted.** Do not
+"improve" them by tuning against these recordings: item 0.5 (the external oracle
+that would have caught such circularity) is dropped and is not coming back, so
+nothing downstream would notice.
+
 ### Shipped-module verification
 
 | script | verifies |
