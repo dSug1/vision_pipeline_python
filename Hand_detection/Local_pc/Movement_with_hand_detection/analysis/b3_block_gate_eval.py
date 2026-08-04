@@ -61,7 +61,9 @@ def pivot_runs():
         print(f"⚠ no pivot recordings under {PIVOT_DIR}")
         return
     for f in files:
-        with open(f, encoding="utf-8") as fh:
+        if f.endswith(".notes.json"):
+            continue          # operator-annotation sidecar, not a recording
+        with open(f, encoding="utf-8-sig") as fh:
             d = json.load(fh)
         take = d.get("label", os.path.basename(f))
         seqs = {}

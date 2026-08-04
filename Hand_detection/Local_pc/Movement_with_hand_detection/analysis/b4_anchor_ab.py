@@ -112,8 +112,17 @@ def from_local(frame, local, use_scale):
 
 # --------------------------------------------------------------------------
 def load_takes():
+    # Skip `*.notes.json` operator-annotation sidecars: they are not recordings,
+    # and PowerShell wrote them with a UTF-8 BOM that json.load rejects outright.
+    # (The sidecars exist only for takes predating the N17 fix, which added a
+    # --note option to the recorder itself.)
+    only = sys.argv[2] if len(sys.argv) > 2 else None   # substring take filter
     for f in sorted(glob.glob(os.path.join(PIVOT_DIR, "*.json"))):
-        with open(f, encoding="utf-8") as fh:
+        if f.endswith(".notes.json"):
+            continue
+        if only and only not in os.path.basename(f):
+            continue
+        with open(f, encoding="utf-8-sig") as fh:
             d = json.load(fh)
         yield d.get("label", os.path.basename(f)), d.get("frames", [])
 
@@ -282,8 +291,15 @@ def main():
         print(f"  {a:<18}{len(v):>7}{pct(v,50):>9.3f}{pct(v,95):>9.3f}"
               f"{max(v) if v else float('nan'):>9.3f}")
 
-    print("\n--- 3. yaw-sink (T4): coupling of the anchor to palm facing ---")
+    print("\n--- 3. EDGE-ON SINK (T4 family): anchor coupling to palm facing ---")
     print("  correlation of |anchor - palm centroid| / scale with edge_on_measure.")
+    print("  ⚠ NOT yaw-specific, despite T4's name: edge_on_measure drops under")
+    print("  BOTH yaw and pitch, so the axis comes from WHICH TAKE is run, not")
+    print("  from this metric. ⚠⚠ AND THE SIGN FLIPS BETWEEN AXES -- 14.1 scores")
+    print("  +0.323 on pitch (anchor sinks TOWARD the palm, T4 as described) and")
+    print("  -0.822 on yaw (drifts AWAY). Pooling takes therefore lets the two")
+    print("  CANCEL: that is how 16.4 measured a benign 0.138 pooled while the")
+    print("  isolated axes are 0.822 and 0.323. ALWAYS read this per take.")
     print("  ⚠ Read the MAGNITUDE, not the sign. 14.1's documented yaw-sink is")
     print("  r = -0.25 (14.1.1), so the defect appears NEGATIVE in this project's")
     print("  convention; the exact quantity it was correlated against is not")

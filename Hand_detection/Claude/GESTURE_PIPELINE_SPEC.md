@@ -4174,6 +4174,44 @@ when distance genuinely changes. Measured CV over the corpus:
    expect a clean metric depth signal from this sensor; expect a usable
    *relative* one, which is all §14.3's ratio design ever claimed.
 
+### 14.3.2 ⚠ THE YAW AXIS IS NOW MEASURED (2026-08-04) — §14.3.1's reasoning was half wrong
+
+§14.3.1 predicted from geometry that palm **width** collapses under yaw while
+palm **length** survives, mirroring pitch. That half was an **inference**, flagged
+as such, because the corpus contained no yaw take. It now does
+(`yaw_sweep_constant_depth`, 741 frames, 9 cycles, hand passing fully through to
+back-of-hand). Measured (`analysis/m9_depth_anchors.py`, CV — lower is better):
+
+| rotation | width | length | max(w,l) | max4 |
+|---|---|---|---|---|
+| **PITCH** (5 takes) | 0.094 | **0.301** | 0.088 | 0.085 |
+| **YAW** (1 take) | 0.128 | **0.125** | **0.080** | **0.056** |
+
+- **Pitch: prediction CONFIRMED.** Length collapses, width survives — a 3.2×
+  asymmetry, exactly as the foreshortening argument says.
+- **⚠ Yaw: prediction REFUTED.** Width and length degrade **equally** (0.128 vs
+  0.125). There is no asymmetry, and no anchor is immune.
+
+**Why, and the answer was already in the corpus**: §0.18 established that at
+edge-on **all four palm-frame landmarks collapse together**. Once the palm is
+edge-on it does not matter which axis got it there. The orthogonal-foreshortening
+argument holds only for pitch, where the hand reaches foreshortening *without*
+the palm going edge-on.
+
+**Consequences — the recommendation survives, the rationale changes:**
+
+1. **Multi-anchor is MORE valuable under yaw, not less.** `max(w,l)` beats width
+   alone by **37%** there (0.080 vs 0.128) and `max4` by **56%** (0.056), against
+   only 6% under pitch. So §14.3.1's rule stands and is strengthened.
+2. **⚠ But the mechanism is different, and it matters.** The gain is not "one
+   axis is immune" — it is "take whichever anchor is least corrupted *this
+   frame*". Since under yaw **both** degrade, **S10's freeze is REQUIRED, not
+   optional**: there is no surviving anchor to fall back on inside the band.
+   §14.3.1's point 4 already said the freeze is needed as a backstop; this
+   promotes it from backstop to prerequisite.
+3. n = 1 yaw take. The direction is clear (equal degradation, not asymmetry) but
+   the magnitudes should not be quoted as settled.
+
 **Not yet resolved — defer to whoever actually picks this up, don't guess
 in advance**:
 - The exact mapping function from hand-span ratio to a Z position/depth
@@ -4468,6 +4506,84 @@ ran, and it held.
 9-point weighted anchor with a palm-rigid frame. ⚠ **Not yet ported to
 production, and not yet live-confirmed** — this is replay evidence on 28
 intervals from one recording session.
+
+### 16.5 ⚠⚠ B4's VERDICT IS OVERTURNED (2026-08-04, same day) — arm C does not fix T4
+
+§16.4 concluded that **arm C (palm rigid, no scale) is the best anchor**, on
+yaw-sink |r| = 0.003 against §14.1's 0.138. That was measured on the seven
+`Position_during_rotation` takes recorded in August 2026 for the
+*translation-pivot* work — **none of which contains a sustained yaw hold or a
+pitch crossing while holding a cube**, i.e. neither of the two conditions the
+claim was about.
+
+Two purpose-built takes were then recorded (`t4_yaw_hold`, 12 cycles;
+`n12_pitch_crossing`, 11 cycles; cube held in 100% of frames in both). Re-run:
+
+| take | metric | A §14.1 | B palm+scale | C palm rigid |
+|---|---|---|---|---|
+| `t4_yaw_hold` | jitter p95 | **2.235** | 5.486 | 6.848 |
+| | **yaw-sink \|r\|** | 0.822 | **0.001** | 0.815 |
+| `n12_pitch_crossing` | jitter p95 | 4.173 | 1.431 | **1.423** |
+| | yaw-sink \|r\| | 0.323 | **0.005** | 0.194 |
+
+**⭐ CORRECTIONS, in order of importance:**
+
+1. **Arm C does NOT fix T4.** |r| = 0.815, essentially identical to §14.1's
+   0.822. The 0.003 in §16.4 was an artifact of takes without sustained yaw.
+2. **Arm B (palm + SCALE) fixes it almost completely** — |r| = 0.001. **The
+   scale term is essential, which is the opposite of §16.4's conclusion.**
+3. **The mechanism, now understood**: under yaw the palm foreshortens, so an
+   offset held at fixed PIXEL length (arm C) juts further out as the hand
+   shrinks — *that is the sink*. Scaling the offset with palm width (arm B)
+   shrinks it with the hand and removes it. §14.3.2 showed palm width is *noisy*
+   under yaw; both are true, and it is still the right term, because the anchor
+   must track foreshortening even through a noisy proxy.
+4. **§14.1's T4 defect is far worse than documented** — |r| = 0.822 on a
+   purpose-built yaw take, against the −0.25 recorded in §14.1.1. The defect was
+   under-measured because it had never been provoked deliberately.
+5. **On N12 the palm arms win decisively** — jitter p95 4.173 → 1.43, and max
+   15.6 → 2.0. That half of §16.4 survives.
+
+### ⚠ AND PITCH-SINK IS REAL TOO — the metric was mis-named, and pooling cancelled it
+
+"Yaw-sink" is a misnomer for what is measured. The metric correlates the anchor's
+distance from the palm against `edge_on_measure`, which drops under **both** yaw
+and pitch — the axis comes from *which take is run*, not from the metric. Per
+axis:
+
+| take (axis) | A §14.1 | B palm+scale | C palm rigid |
+|---|---|---|---|
+| `n12_pitch_crossing` (**pitch**) | **+0.323** | +0.005 | −0.194 |
+| `t4_yaw_hold` (**yaw**) | **−0.822** | +0.001 | −0.815 |
+
+1. **Pitch-sink exists**: §14.1 scores |r| = 0.323 on pure pitch, and the sign is
+   **positive** — the anchor sinks *toward* the palm, exactly as §14.1.1
+   describes T4.
+2. **Under yaw the sign FLIPS to negative** — the anchor drifts *away*. Same
+   defect family, opposite direction.
+3. ⭐ **That is the second reason §16.4 was wrong.** Pooling yaw and pitch takes
+   lets the opposite-signed drifts **partially cancel**, which is how §14.1
+   scored a benign 0.138 pooled while being 0.822 and 0.323 on the isolated
+   axes. **Always read this metric per take; never pool rotation axes.**
+4. **Arm C fixes NEITHER axis** (0.194 pitch, 0.815 yaw) — it is not merely weak
+   on yaw. **Arm B decouples both** (0.005, 0.001), and is the only arm that
+   does.
+
+**⚠ NO ARM IS A CLEAN WIN, and this is an owner trade-off, not a technical
+call.** §14.1 is smoother during yaw (jitter p95 2.235 vs B's 5.486) but
+systematically drags the cube toward the palm as the hand turns (|r| 0.822).
+Arm B is ~2.5× noisier there but has essentially no systematic bias. A
+systematic drift is the defect the operator actually reported; jitter is not.
+
+**Arm B is the leading candidate. Do not port anything to production yet.**
+
+⭐ **THE METHODOLOGICAL POINT, which is the durable output**: §16.4 was measured
+on data that did not contain the failure it claimed to fix, and it produced a
+confident, wrong, three-decimal answer. **A/B results are only as good as whether
+the corpus contains the condition under test** — the same lesson as §0.15's
+"a replay harness that reconstructs streams differently silently measures a
+pipeline that no longer exists". Before trusting any A/B, ask what is IN the
+takes.
 
 ### ⚠ Binding architectural constraint (spec S3, Apple's shipped design)
 

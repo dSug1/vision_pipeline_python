@@ -95,16 +95,36 @@ def main():
     def fmt(x):
         return f"{x:.3f}" if x is not None else "  --  "
 
-    rot = [r for r in rows if r[0].startswith(("palm_back", "pitch_sweep"))]
-    other = [r for r in rows if r not in rot]
+    # ⭐ PITCH and YAW are separated deliberately, and this is the whole test.
+    # 14.3.1 predicted from geometry that palm WIDTH collapses under YAW (the
+    # MCP row foreshortens) while palm LENGTH collapses under PITCH (the
+    # wrist->middle-MCP axis foreshortens) -- orthogonal rotations hitting
+    # orthogonal anchors. Until 2026-08-04 the corpus contained ONLY pitch, so
+    # only half of that could ever be seen, and the yaw half stayed an
+    # inference. Pooling them would re-hide exactly what the yaw take was
+    # recorded to expose.
+    pitch = [r for r in rows if r[0].startswith(("palm_back", "pitch_sweep"))]
+    yaw = [r for r in rows if r[0].startswith("yaw_sweep")]
+    other = [r for r in rows if r not in pitch and r not in yaw]
 
-    print("  --- ROTATION IN PLACE (want LOW: any variation is false depth) ---")
-    for n, a, b, c, d in sorted(rot):
-        print(f"  {n[:33]:<34}{fmt(a):>9}{fmt(b):>9}{fmt(c):>10}{fmt(d):>9}")
-    for label, vals in (("width", 0), ("length", 1), ("max(w,l)", 2), ("max4", 3)):
-        got = [r[vals + 1] for r in rot if r[vals + 1] is not None]
-        if got:
-            print(f"  {'MEAN ' + label:<34}{sum(got)/len(got):>9.3f}")
+    def group(title, rot, note):
+        if not rot:
+            return
+        print(f"  --- {title} ---")
+        print(f"      {note}")
+        for n, a, b, c, d in sorted(rot):
+            print(f"  {n[:33]:<34}{fmt(a):>9}{fmt(b):>9}{fmt(c):>10}{fmt(d):>9}")
+        for label, vals in (("width", 0), ("length", 1),
+                            ("max(w,l)", 2), ("max4", 3)):
+            got = [r[vals + 1] for r in rot if r[vals + 1] is not None]
+            if got:
+                print(f"  {'MEAN ' + label:<34}{sum(got)/len(got):>9.3f}")
+        print()
+
+    group("PITCH ROTATION IN PLACE (want LOW: variation is false depth)", pitch,
+          "prediction: LENGTH degrades (wrist->middle-MCP foreshortens), width survives")
+    group("YAW ROTATION IN PLACE -- recorded 2026-08-04, first time", yaw,
+          "prediction: WIDTH degrades (the MCP row foreshortens), length survives")
 
     print("\n  --- EVERYTHING ELSE (depth_sweep wants HIGH) ---")
     for n, a, b, c, d in sorted(other):
