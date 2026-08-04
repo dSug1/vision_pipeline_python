@@ -2030,6 +2030,96 @@ be discarded for low fps were recorded at 22:18 (15 fps), while the good ones ra
 
 ---
 
+## 0.17 M4 frame gate BUILT (2026-08-04) — item 1.6. Two cues shipped, two measured out.
+
+`Resources/frame_gate.py` (stdlib-only, numpy-free, no side effects), with
+`analysis/m4_cue_distributions.py` (threshold derivation) and
+`analysis/m4_gate_ab.py` (the A10 A/B + ablation).
+
+### Shipped configuration and its measured result
+
+Two cues, both scale-free (divided by palm width), compared against the **last
+accepted** frame, with rejections capped at **2 consecutive frames**:
+
+| | raw | gated | removed |
+|---|---|---|---|
+| position excursions > 0.5 palm widths | 142 | 89 | 37% |
+| **> 1.0** | **71** | **33** | **54%** |
+| **> 2.0** | **56** | **26** | **54%** |
+
+Rejection rate **0.40%** (118 of 29,164 hand-frames), of which 39 hit the
+anti-cascade cap. **Tracking cost on trustworthy frames (raw innovation < 0.2 and
+anatomically valid): mean 0.00004 palm widths, p99 exactly 0.** The gate is
+effectively invisible when the measurement deserves to be believed.
+
+**A10: PASSES on both metric families** — excursions materially down, tracking
+cost ~0. Reporting only the first would have been the over-damping trap §0.12
+records.
+
+### ⭐ Two cues were built, measured, and REMOVED
+
+Ablation against >1.0-palm-width excursions (71 in the raw stream):
+
+| configuration | rejects | left | removed | track cost |
+|---|---|---|---|---|
+| **position + width (SHIPPED)** | **118** | **33** | **54%** | **0.00004** |
+| + bone deviation | 507 | 35 | 51% | 0.00021 |
+| + M3a tightening | 227 | 33 | 54% | 0.00013 |
+| bone deviation ALONE | 323 | 72 | **−1%** | 0.00016 |
+| without position innovation | 54 | 61 | 14% | 0.00004 |
+| without palm-width collapse | 86 | 47 | 34% | 0.00007 |
+
+- **Bone-length deviation REMOVED.** It changed the outcome by one excursion
+  while causing 296 of 507 rejections — 58% of all rejections for a 2-point
+  effect — and alone it is *worse than doing nothing*. World-landmark bone
+  lengths are simply too jittery to gate on (§0.14 measured 6–22% IQR; the
+  all-frames p95 of frame-to-frame change is 51%).
+- **M3a tightening REMOVED — and this is the uncomfortable one.**
+
+### ⚠ Item 1.5 is NOT consumed by item 1.6
+
+M3a was built as the cue that would feed this gate. Measured, it does not: using
+the validity bit to tighten these thresholds made the result **slightly worse**
+(35 vs 33 excursions) at nearly double the rejections. The reason is measured and
+coherent — **80.8% of the largest position innovations occur on anatomically
+VALID frames**, exactly as §14.1.4's root cause predicts, because a teleport moves
+every landmark together coherently and leaves the hand anatomically perfect while
+putting it in the wrong place.
+
+**M3a and M4 address different failure classes and do not compose.** M3a covers
+the orientation-jump class (92% coverage, 33.8× lift, §0.16); M4 covers the
+position-teleport class. That is consistent with **A5**, which already said M4 is
+an occlusion/outlier mechanism and not a pitch-crossing fix — the converse now
+also holds.
+
+**Consequence for 1.5, stated plainly: it currently has NO demonstrated
+consumer.** Its A10 justification was "1.6 will gate on it", and 1.6 measures
+that it should not. It is not thereby disproven — the orientation-side signal is
+real and strong — but it is **unconsumed code**, and under A10 that is a revert
+candidate unless an orientation-side consumer is built. Do not treat §0.16's
+lift figure as a licence to keep it indefinitely. **Owner decision.**
+
+### The anti-cascade cap is not a formality
+
+Loosening it to 4 frames costs **170× worse tracking** (0.00693 vs 0.00004) to
+remove one additional excursion. That is the §0.13.3 cascade starting, measured
+directly here on position rather than inferred from the orientation χ² failure —
+independent confirmation of S5's 1–2 frame rule.
+
+### Still open
+
+- **Not wired into production.** `frame_gate.py` is built, measured and unused;
+  nothing imports it yet. The game's behaviour is unchanged, and this has had **no
+  live-camera confirmation.**
+- **T3 (Object Jump Correction) is not closed by this.** 54% of large excursions
+  removed is a real improvement, not a fix, and the remaining ones are largely
+  multi-frame teleports that outlast the 2-frame cap by design.
+- **`translation_pivot_jump_test4` has not yet been replayed through the gate** —
+  the named reproduction for this item lives in `Position_during_rotation/` with a
+  different schema from the perception corpus.
+
+---
+
 ## 0. Framing: what MediaPipe is, and what it is not
 
 MediaPipe Hands is a **stateless, per-frame, monocular shape estimator**. It answers "what configuration of a hand best explains this single image crop?"

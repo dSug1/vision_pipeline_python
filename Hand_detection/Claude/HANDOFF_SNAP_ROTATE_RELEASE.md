@@ -23,16 +23,26 @@ layered patches again, rewrite it rather than appending.
 
 ## 1. ⭐ START HERE — the next build step
 
-**Next item: `PART_ONE.md` §3.1 item 1.6 (M4 — consistency gate).**
-Then **1.7 → T1/T2 retest → reassess (R)**. The queue's "YOU ARE HERE"
-block explains why each is next; do not re-derive that ordering.
+**Next item: `PART_ONE.md` §3.1 item 1.7 (M2b — impose a skeleton via constrained
+IK).** Then **T1/T2 retest → reassess (R)**. The queue's "YOU ARE HERE" block
+explains the ordering; do not re-derive it.
 
-**Item 1.5 (M3a anatomical constraints) is DONE (2026-08-04)** —
-`Resources/hand_anatomy.py`, 0.00% false positives on a 1446-hand-frame control,
-firing on 5–59% of the poses MediaPipe is documented to fail. Full account:
-`PERCEPTION_LAYER_SPEC.md` **§0.16**. It produces a per-frame validity bit that
-**nothing consumes yet** — 1.6 is what turns it into a measured improvement under
-A10, which is why 1.6 is next.
+**Items 1.5 and 1.6 are both BUILT and measured (2026-08-04)** —
+`Resources/hand_anatomy.py` (§0.16) and `Resources/frame_gate.py` (§0.17).
+1.6 passes A10: **54% of large position excursions removed at a 0.40% rejection
+rate and essentially zero tracking cost.**
+
+**⚠ But read §0.17 before assuming 1.5 earned its place.** M3a was built to feed
+1.6's gate and **measurably does not** — wiring it in made the result slightly
+worse at double the rejections, because 80.8% of large position innovations occur
+on anatomically *valid* frames (a teleport moves every landmark coherently).
+M3a covers the ORIENTATION failure class, M4 the POSITION class, and **they do
+not compose.** So 1.5 currently has **no demonstrated consumer** and is a revert
+candidate under A10 unless an orientation-side consumer is built. That is an
+**owner decision**, not a technical one.
+
+**⚠ Neither module is wired into production, and neither has live-camera
+confirmation.** The game's behaviour is unchanged by both.
 
 **⚠ Two binding constraints established 2026-08-04 — read before proposing any
 model or dependency:**

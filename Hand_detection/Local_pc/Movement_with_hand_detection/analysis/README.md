@@ -142,6 +142,23 @@ loosening the threshold until the corpus goes quiet.**
 that would have caught such circularity) is dropped and is not coming back, so
 nothing downstream would notice.
 
+### M4 frame gate (item 1.6, 2026-08-04)
+
+| script | produces |
+|---|---|
+| `m4_cue_distributions.py` | the cue distributions the gate's thresholds are DERIVED from (not guessed), plus the measurement that **80.8% of large position innovations occur on anatomically valid frames** — which is why M3a is not wired into the gate |
+| `m4_gate_ab.py` | the A10 A/B: **54% of >1.0 palm-width excursions removed at 0.40% rejection and 0.00004 palm widths of tracking cost**, plus the per-cue ablation that removed two of the four cues. Verifies its own centroid/width primitives against `hand_identity`'s before reporting |
+
+⚠ **Report BOTH metric families or the result is void** — excursions removed AND
+tracking cost on trustworthy frames. This is the same discipline the orientation
+work learned the hard way (see "Two metrics" below): a gate that rejects
+everything scores perfectly on the first.
+
+⚠ **Do not re-add bone-length deviation or M3a tightening to the gate.** Both
+were built, measured and removed on 2026-08-04; the ablation table is preserved
+in `Resources/frame_gate.py`'s docstring so the null result is not retried
+blindly.
+
 ### Shipped-module verification
 
 | script | verifies |
