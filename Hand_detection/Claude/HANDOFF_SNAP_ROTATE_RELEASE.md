@@ -23,6 +23,31 @@ layered patches again, rewrite it rather than appending.
 
 ## 1. ⭐ START HERE — the next build step
 
+**⭐ CURRENT DIRECTION (owner, 2026-08-04): THE BLOCK REPRESENTATION — Phase B in
+`PART_ONE.md` §3.1. Design: `GESTURE_PIPELINE_SPEC.md` §16.**
+
+For the grab, rotate and translate signals the hand is **6 blocks**: the palm as
+one transform (2D position, quaternion, scale) and each finger as an **arc** with
+a single "how bent" scalar. Not 21 independent landmarks.
+
+**The corpus had already measured both halves before the idea was proposed** —
+palm rigidity **2.76 mm** (§0.2) and PIP↔DIP co-flexion **0.0% negative across
+~29,000 hand-frames, min +0.41** (§0.16), i.e. a finger really is ONE degree of
+freedom. It also reframes T4, T3 and N12 as one cause: per-landmark noise leaking
+into a quantity that should come from the rigid part.
+
+Scope is deliberately narrow: **grab/rotate/translate only** (future gestures may
+need raw landmarks), **thumb stays raw** for now, stdlib/numpy-free/web-portable.
+
+Build order: **B1** derived view → **B2** measure palm predictability (position
+prediction error has never been measured — this gates B3) → **B3** predictor →
+**B4** the 3.3 three-arm A/B → **B5** grab from arcs.
+
+⚠ **S3 is binding**: predicted state must NEVER reach a gesture state machine —
+predicted blocks for rendering, unpredicted for grab/release.
+
+---
+
 **PHASE 1 IS CLOSED (2026-08-04). Items 1.5, 1.6 and 1.7 are all BUILT, MEASURED
 and PARKED. Read `PERCEPTION_LAYER_SPEC.md` §0.18 before touching any of them.**
 

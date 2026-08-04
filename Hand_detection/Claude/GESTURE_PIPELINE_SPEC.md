@@ -4202,6 +4202,89 @@ build step in this document.
 
 ---
 
+## 16. THE BLOCK REPRESENTATION (owner design, 2026-08-04) — the current direction
+
+**Owner's formulation**, recorded verbatim because the framing is the
+contribution: *"what really matter on the hand are 6 blocks: the palm, and each
+of the 5 fingers arcs. The information is contained there, not in the individual
+positions of each knuckle landmark... There is no added value to know all the
+specifics of a finger knuckles, and each finger may be grouped as an arc which is
+more or less extended or bent."*
+
+    palm    : transform -- 2D position, rotation quaternion, scale (z = 0 for now)
+    fingers : 5 arcs, each an offset child of the palm transform plus a single
+              "arc deployment" scalar (how extended / how bent)
+
+### ⭐ Why this is adopted: the corpus already measured both halves
+
+This is not a plausible idea being tried — it is the representation the data has
+been pointing at all along. Both claims were measured **before** they were
+proposed:
+
+| claim | measurement | where |
+|---|---|---|
+| "the palm is one block" | palm rigidity **2.76 mm**, already at target, vs 13–32% CV on distal bones | §0.2 |
+| "a finger is an arc, not 3 knuckles" | `dot(PIP axis, DIP axis)` **0.0% negative over ~29,000 hand-frames, min +0.41, p05 +0.69** — PIP and DIP *always* co-flex | §0.16 (item 1.5) |
+
+That second number is the strong one: a finger's bend is essentially **one degree
+of freedom**, not three, with an enormous empirical margin. The "arc deployment"
+scalar is exactly that quantity.
+
+It also has a name and a home in the literature — **postural synergies**, queue
+item 5.1 / M3b, where ~2–3 components are published as explaining most grasp
+variance. This is a structured, interpretable instance of it.
+
+**And it reframes three open failures as one cause.** T4 (yaw/palm-sinking), T3
+(Object Jump) and N12 (held cube jumps as the hand crosses the horizontal) are
+all cases where **noisy per-landmark detail leaked into a quantity that should
+have come from the rigid part of the hand**. The block model makes that leak
+structurally impossible rather than filtering it afterwards — which matters,
+because §0.18 showed filtering, gating and constraining all fail here.
+
+### Scope — deliberately narrow (owner, 2026-08-04)
+
+- **Applies to the GRAB, ROTATE and TRANSLATE signals only.** Future gestures may
+  legitimately need raw landmarks; this is not a global replacement for them, and
+  the landmark stream stays available.
+- **The thumb stays as RAW LANDMARKS for now.** Its CMC is a saddle joint with
+  two coupled axes, so "more or less bent" does not describe opposition — the
+  same reason M3a excluded it (§0.16). What to do with the thumb is deferred, not
+  answered.
+- **Stdlib, numpy-free, no side effects, and transportable to the web port** —
+  same contract as `palm_geometry.py` / `hand_identity.py`, with golden vectors
+  before the port exists (the discipline established in queue U3, which caught a
+  real banker's-vs-half-up rounding divergence).
+
+### Why this is the right substrate for prediction
+
+Predicting **6 low-DOF blocks** is far more tractable than 21 noisy points, and
+the parent/child structure means palm motion is not re-predicted per landmark.
+
+⭐ **The specific hypothesis worth testing, which item 1.6 lacked:** the recorded
+Object Jump is MediaPipe reporting *a different physical hand* under the same
+label (§14.1.4). So a teleport should show a large palm displacement **together
+with a discontinuous jump in the arc vector** (a different hand, in a different
+pose), whereas genuine fast motion shows large palm displacement with
+**continuous arcs**. That is a two-channel signature, and it is exactly what
+single-channel position innovation could not provide — 1.6 was measured to reject
+**4 real fast movements per teleport caught, at every threshold**, because at
+this input envelope a teleport and a fast movement are the same signal
+(§0.17).
+
+⚠ **This hypothesis is NOT yet evidence.** It must be proven the way 1.6 was
+disproven: **classify what gets rejected, never merely count it** (§0.18's
+binding rule). A richer state may separate them; that is a measurement, not a
+conclusion.
+
+### ⚠ Binding architectural constraint (spec S3, Apple's shipped design)
+
+**Predicted state must NEVER reach a gesture state machine.** The split is:
+predicted blocks for *rendering / attachment*, unpredicted blocks for *grab and
+release decisions*. Prediction artifacts must not latch into a gesture. Build the
+split even if prediction is later skipped entirely.
+
+---
+
 ## 15. Perception-layer spec integrated (2026-08-02) — the current direction
 
 A design spec for the **hand-perception stack below the gesture layer** was
