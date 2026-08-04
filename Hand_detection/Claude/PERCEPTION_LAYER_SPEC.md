@@ -1948,6 +1948,52 @@ the out-of-plane component of the bends so the senses stop agreeing, while every
   rotation and edge-on crossing are (33–59%). The constraints are most useful
   where **T2** lives, not where M4's occlusion story does.
 
+### ⭐ Does the validity bit actually predict the jumps? YES — and the useful direction is inverted
+
+`analysis/m3a_predicts_jumps.py`, run before starting 1.6. §0.16 established that
+the constraints are clean and that they fire more often in poses MediaPipe fails
+at. That is **not** the same claim as "they fire on the frames that actually go
+wrong", and only the second makes them useful. Streams built exactly as
+`build_v2()` builds them, **verified by reproducing its jump census** (>30: 1413,
+>60: 586 — larger than §0.15's 1350/572 only because the corpus grew by the five
+2026-08-04 sessions; same method).
+
+Violation at **either endpoint** of the transition (a jump is a property of a
+transition, validity of a frame, and the bad landmark may sit at either end):
+
+| | >30° | >60° |
+|---|---|---|
+| base rate | 4.97% | 2.06% |
+| P(jump \| **anatomically ok**) | 0.89% | **0.22%** |
+| P(jump \| violation) | 17.0% | 7.5% |
+| **lift** | **19.1×** | **33.8×** |
+| **coverage** (jumps flagged) | 86.6% | **92.0%** |
+| frames flagged | 25.3% | 25.3% |
+
+**A10: item 1.5 SURVIVES.** A lift of 33.8× is not 1.0; the bit carries real
+information about the failure it is meant to catch.
+
+⚠ **BUT IT IS AN EXCULPATOR, NOT AN ACCUSER — build 1.6 accordingly.**
+- **As an accuser it is poor**: only 7.5% of flagged frames actually jump, i.e.
+  wrong 92.5% of the time, and it flags **a quarter of the whole corpus**. A 1.6
+  that rejects every violating frame would discard 25% of the stream to catch 2%
+  of it, and would run straight into S5's binding anti-cascade rule (cap
+  consecutive rejections at 1–2 frames — the cascade is what manufactured the χ²
+  gate's own failure, §0.13.3).
+- **As an exculpator it is excellent**: anatomically valid ⇒ **99.78%** chance
+  this is not a large jump.
+
+**Design consequence for 1.6**: use M3a as a cheap FIRST-STAGE PASS that clears
+~75% of frames from further scrutiny, and run the expensive consistency cues
+(velocity/acceleration plausibility, palm-pixel-width collapse, comparison
+against the last accepted measurement) only on the flagged quarter. That is also
+what keeps rejections rare enough for the anti-cascade cap to be satisfiable.
+
+⚠ **This is co-occurrence, not forecasting.** A badly-estimated frame both
+violates anatomy and produces a jump — two symptoms of one cause. That is exactly
+what a gate needs, but it is not prediction and must not be described as such
+(nor reused as one in 3.1, which has its own measured motion model).
+
 ### The 2026-08-04 takes this was built on, and what to record next
 
 Five takes, all at **24.13–24.15 fps** — a 0.02 fps spread, which is what makes

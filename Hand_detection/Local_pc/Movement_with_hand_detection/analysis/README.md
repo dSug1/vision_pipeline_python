@@ -127,6 +127,7 @@ flaw; only one of them changed the answer.
 |---|---|
 | `m3a_violations.py` | violation rates per session for `Resources/hand_anatomy.py`, with the **control first** (`static_hold` — every violation there is a false positive) and a **per-hand-label breakdown**. Headline: **0/1446 control hand-frames, 5–59% on the failure poses** |
 | `m3a_diagnose.py` | the distributions behind the constraint design — bend angles, rotation-sense agreement per axis pair, and both candidate hinge-plane definitions. **This is what caught the first version's 93.7% false-positive rate** |
+| `m3a_predicts_jumps.py` | **the A10 gate on item 1.5, and the design input for 1.6.** Crosses the validity bit against the large orientation jumps on `build_v2` streams: **lift 33.8×, coverage 92.0%** on >60°, but only 7.5% of flagged frames jump. Verifies its own stream construction by reproducing `build_v2()`'s census before reporting anything |
 
 ⚠ **`m3a_diagnose.py` is the reason the module is correct**, and the pattern
 generalises: the first M3a constraint set fired on 93.7% of a *still, valid* hand.
