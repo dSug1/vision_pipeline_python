@@ -182,6 +182,24 @@ Owner's acceptance bar, recorded because it is a product decision rather than a
 technical one: *"what I captured in the recordings are rapid movements but still
 acceptable expected inputs for my game."* **Rapid movement is input, not noise.**
 
+### N7 — measured frame rate (2026-08-04)
+
+| script | produces |
+|---|---|
+| `n7_measured_fps_ab.py` | the DR-1 A/B: **20 of 21 sessions within 1 fps of 24 give IDENTICAL assignments** (a no-op where the old assumption held is the pass condition), while 19–21 fps sessions move from a 12- to a 10–11-frame switch dwell |
+| `n7_dr2_dwell_ab.py` | ⭐ **the REJECTED half.** A time-based dwell for DR-2 froze **+47.4% more frames (595 → 877)** — the variant lives in this script, not in the shipped module, so the null result stays reproducible without dead code in production |
+
+⚠ **Lesson worth carrying beyond N7**: `exit_run >= 2` exits on the SECOND
+consecutive frame — **one frame interval, ~42 ms at 24 fps, not the ~83 ms that
+"2 frames" suggests.** Mis-reading that produced a confident wrong prediction
+(~20% ceiling) which the measurement then blew past, and that mismatch is what
+forced the re-think.
+
+**The distinction it established**: a *"resume after N consecutive
+confirmations"* **debounce** belongs in frames. N1's "re-express frame parameters
+in ms" applies to dwells representing real elapsed **time** — DR-1's voting
+windows do; a debounce does not. Converting one to the other silently doubles it.
+
 ### Web/mobile port contracts
 
 | script | verifies |

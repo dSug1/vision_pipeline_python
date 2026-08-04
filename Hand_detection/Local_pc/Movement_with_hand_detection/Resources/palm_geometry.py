@@ -116,10 +116,30 @@ EXIT_DWELL_MS = 100.0                 # spec M5e says "3 consecutive frames"; th
                                       # written assuming 30 fps, so the INTENT is 100 ms
                                       # (finding N1: frame-count parameters were ~38%
                                       # longer in wall-clock than intended).
-_ASSUMED_FPS = 24.0                   # TODO (queue N7): drive from measured frame timing.
-                                      # Same hard-coded-fps problem as hand_identity.py,
-                                      # and N10 showed fps genuinely varies (19-27) with
-                                      # lighting. N7 covers BOTH; do not fix one alone.
+# ⭐ N7 EXAMINED HERE AND DELIBERATELY NOT APPLIED (2026-08-04). Measured.
+#
+# N7 made `hand_identity`'s dwells frame-rate-driven, and the obvious next step
+# was to do the same here. It was built, measured, and REVERTED:
+#
+#   * This dwell is a DEBOUNCE -- "resume only after N consecutive confirmations"
+#     -- not a physical duration. Consecutive-confirmation counts belong in
+#     frames. N1's "re-express frame parameters in ms" applies to dwells that
+#     represent real elapsed time, which DR-1's voting windows are and this
+#     is not.
+#   * The shipped count exits on the SECOND consecutive above-threshold frame,
+#     i.e. after ONE frame interval (~42 ms at 24 fps) -- not the ~83 ms a naive
+#     reading of "2 frames" suggests. A time-based 100 ms dwell therefore needs
+#     FOUR frames at 24 fps, and measured across the corpus it froze DR-2 for
+#     **+47.4% more frames** (595 -> 877), lengthening exactly the staleness
+#     window `GAME_RULES.md` rule 3 warns about.
+#   * That is a felt behaviour change to a rule-affecting mechanism, bought for
+#     no correctness gain. `analysis/n7_dr2_dwell_ab.py` reproduces it.
+#
+# So the frame count STAYS, and `_ASSUMED_FPS` here is not the same defect as
+# the one N7 fixed in `hand_identity`: nothing about a 2-frame debounce depends
+# on knowing the frame rate. The name is kept only because the arithmetic below
+# is a frames-per-ms convenience, not a rate assumption anything acts on.
+_ASSUMED_FPS = 24.0
 EXIT_DWELL_FRAMES = max(1, round(EXIT_DWELL_MS * _ASSUMED_FPS / 1000.0))
 
 
@@ -152,7 +172,7 @@ class PalmFacingTracker:
         self.exit_threshold = threshold * EXIT_HYSTERESIS_FACTOR
         self.frozen = None        # last confident thumb-outward value
         self.in_band = False
-        self.exit_run = 0
+        self.exit_run = 0         # consecutive frames above the exit threshold
         # diagnostics
         self.band_entries = 0
         self.frames_frozen = 0
@@ -169,6 +189,11 @@ class PalmFacingTracker:
 
         `thumb_outward` is the value the gesture layer should act on: measured
         when well-conditioned, frozen while inside the band.
+
+        ⚠ No timestamp parameter, deliberately -- see the EXIT_DWELL note above.
+        A time-based dwell was built here and measured to freeze DR-2 47% longer
+        for no correctness gain, because this is a consecutive-confirmation
+        debounce rather than a duration.
         """
         eo = edge_on_measure(landmarks)
         measured = is_thumb_outward(landmarks, handedness)
@@ -182,6 +207,7 @@ class PalmFacingTracker:
             if eo < self.threshold:
                 self.in_band = True
                 self.exit_run = 0
+                self.exit_started_ms = None
                 self.band_entries += 1
             else:
                 self.frozen = measured
