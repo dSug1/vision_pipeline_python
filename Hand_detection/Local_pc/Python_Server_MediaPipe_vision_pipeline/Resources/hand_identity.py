@@ -87,6 +87,24 @@ _POSITION_WINDOW_MS = 415.0  # rolling average used for association
 # floor and is blur/lighting dependent.
 _SWITCH_MS = 500.0
 
+def _round_half_up(x):
+    """Round half AWAY FROM ZERO, matching JavaScript's `Math.round`.
+
+    ⚠ PORTABILITY, and this is not pedantry -- it was caught by the golden
+    vectors. Python's built-in `round()` uses BANKER'S rounding (half-to-even):
+    `round(6.5)` is 6, `round(7.5)` is 8. JavaScript's `Math.round` always
+    rounds half up: 6.5 -> 7. The dwells land exactly on .5 at odd frame rates
+    (500 ms x 13 fps = 6.5 frames), so a JS port using `Math.round` would
+    silently compute a DIFFERENT dwell from Python at 13, 17, 19... fps -- a
+    divergence that would never show up in normal testing and would be
+    miserable to find later.
+
+    Fixing the convention here, in the shared code, means the port is a
+    transcription. Inputs are always positive here, so the simple form is exact.
+    """
+    return int(x + 0.5)
+
+
 def frames_for(ms, fps):
     """Convert a wall-clock dwell to a frame count at a given rate.
 
@@ -97,10 +115,10 @@ def frames_for(ms, fps):
     DR-1 exists to prevent.
     """
     return {
-        "track_end": max(2, round(_TRACK_END_MS * fps / 1000.0)),
-        "lock_vote": max(2, round(_LOCK_VOTE_MS * fps / 1000.0)),
-        "position_window": max(2, round(_POSITION_WINDOW_MS * fps / 1000.0)),
-        "switch": max(3, round(_SWITCH_MS * fps / 1000.0)),
+        "track_end": max(2, _round_half_up(_TRACK_END_MS * fps / 1000.0)),
+        "lock_vote": max(2, _round_half_up(_LOCK_VOTE_MS * fps / 1000.0)),
+        "position_window": max(2, _round_half_up(_POSITION_WINDOW_MS * fps / 1000.0)),
+        "switch": max(3, _round_half_up(_SWITCH_MS * fps / 1000.0)),
     }[ms]
 
 
@@ -136,6 +154,41 @@ class FrameRateEstimator:
     that sampled wall-clock internally would compute a meaningless rate during
     replay while looking correct in production -- precisely the debug/production
     divergence class this project has been bitten by before.
+
+    ⭐ PORT CONTRACT -- THIS CLASS IS A DESIGNATED WEB/MOBILE PORT UNIT.
+    ------------------------------------------------------------------
+    The cross-platform target (iOS/Android/Windows, `Specification.md` §12) means
+    this logic will be reimplemented, most likely in JavaScript. It is written to
+    make that a transcription rather than a redesign, following the precedent of
+    `palm_geometry.palm_observability` (numpy-free closed form, verified against
+    numpy to 1.6e-11 specifically so the port could be trusted).
+
+    Guarantees this class upholds, and which the port must preserve:
+
+      * **No dependencies at all.** Not numpy, not `math`, not `time` -- only
+        list operations, comparison and division. Everything here exists in
+        every target language.
+      * **No clock access.** The caller supplies the timestamp. In Python that
+        is `time.perf_counter() * 1000`; in the browser it is
+        `performance.now()`, which is already milliseconds and monotonic. In a
+        replay harness it is the recording's own `tCapture`. **The port must not
+        substitute `Date.now()`** -- it is wall-clock, not monotonic, and jumps
+        on NTP correction.
+      * **Milliseconds throughout.** No frame-count arithmetic escapes this
+        class; `frames_for()` converts at the boundary.
+      * **Deterministic.** The same timestamp sequence yields the same fps and
+        the same dwells, with no hidden state, randomness or ordering
+        dependence.
+
+    ⚠ **`analysis/verify_frame_rate_estimator.py` holds GOLDEN VECTORS** --
+    timestamp sequences with their expected fps and dwell outputs. That file is
+    the executable specification for the port: a JavaScript reimplementation is
+    correct when it reproduces those numbers, and is not to be trusted until it
+    does. Do not change the vectors to match a port; fix the port.
+
+    One translation note: `_intervals.pop(0)` is a list shift. In JS use
+    `Array.prototype.shift()`; the window is 45 elements so the O(n) cost is
+    irrelevant, and a ring buffer would only obscure the intent.
     """
 
     def __init__(self, fallback_fps=FALLBACK_FPS):

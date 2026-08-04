@@ -439,7 +439,7 @@ Optional and parallelisable at any time: **0.4** (predictor eval harness, S1) an
 | **UNSCHEDULED / NOT QUEUED** ||||||
 | U1 | Open-palm / closed-fist detection (row 2) | feature | **PARKED** | — | Priority decision, not only technical. 5.1 would help; still requires owner sign-off |
 | U2 | Real 3D-file import (OBJ/glTF) | feature | not started | — | §13.8; not blocking anything |
-| U3 | Web/mobile port | platform | deferred | — | `HandState` v2 is the contract it reimplements against |
+| U3 | Web/mobile port | platform | deferred | — | `HandState` v2 is the contract it reimplements against. ⭐ **Port-readiness discipline established 2026-08-04**: a module designated for the port gets **golden vectors BEFORE the port exists**, not after — see `analysis/verify_frame_rate_estimator.py` (and `verify_observability.py`, the precedent). **This is not ceremony: the very first run caught a real bug.** Python's `round()` is banker's rounding (half-to-even), JavaScript's `Math.round` is half-up, and the DR-1 dwells land exactly on `.5` at odd frame rates (500 ms × 13 fps = 6.5 frames) — Python gave 6, a JS port would have given 7, and nothing in normal testing would have surfaced it. Fixed in shared code via `hand_identity._round_half_up()`. **Reasoning about cross-language equivalence is not evidence.** Port units so far: `palm_observability`, `FrameRateEstimator` (47 dependency-free lines) |
 | U4 | `PART_ONE.md` §7.4 dangling reference | docs | open | — | §3 cites §7.4 for `gesture_config.json`; that section does not exist |
 
 ## 4. Known wire-protocol gap (live pipeline, not recording)

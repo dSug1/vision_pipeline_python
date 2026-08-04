@@ -182,6 +182,25 @@ Owner's acceptance bar, recorded because it is a product decision rather than a
 technical one: *"what I captured in the recordings are rapid movements but still
 acceptable expected inputs for my game."* **Rapid movement is input, not noise.**
 
+### Web/mobile port contracts
+
+| script | verifies |
+|---|---|
+| `verify_frame_rate_estimator.py` | ⭐ **GOLDEN VECTORS for `FrameRateEstimator`** (N7). Timestamp sequences → expected fps and dwells. **This is the executable specification for the JS port**: a reimplementation is correct when it reproduces the table, and untrusted until it does. Do not edit the expectations to match a port |
+| `verify_observability.py` | the same idea for `palm_observability` — numpy-free closed form matches numpy SVD to 1.6e-11 |
+
+⚠ **The vectors earned their keep on their first run**, by catching a real
+portability bug: Python's `round()` is banker's rounding (half-to-even) while
+JavaScript's `Math.round` is half-up, and the DR-1 dwells land exactly on `.5`
+at odd frame rates (500 ms × 13 fps = 6.5 frames). Python gave 6, a JS port
+would have given 7 — a divergence that would never surface in normal testing.
+`hand_identity._round_half_up()` now fixes the convention in shared code.
+
+**Rule this establishes**: anything designated for the port gets golden vectors
+*before* the port exists, not after. Reasoning about equivalence is not
+evidence — the two languages disagreed on arithmetic nobody would have thought
+to check.
+
 ### Shipped-module verification
 
 | script | verifies |
