@@ -4123,6 +4123,57 @@ the order asked):
 targets — after §14.1 (translation-pivot fix) and §14.2 (hand-open
 release trigger). Not started next; do §14.1 first.
 
+### 14.3.1 The scale anchor must be MULTI-ANCHOR, not palm width alone (2026-08-04)
+
+**Owner observation that prompted this**: palm width works as a depth anchor
+*"except when the hand rotates around the yaw axis and shows the hand edge to the
+camera"*, and other markers may be needed depending on what the hand presents.
+**Correct, and measured** (`analysis/m9_depth_anchors.py`).
+
+A depth anchor must be CONSTANT while the hand rotates in place and move only
+when distance genuinely changes. Measured CV over the corpus:
+
+| take type | palm **width** (5↔17) | palm **length** (0↔9) | **max(w, l)** |
+|---|---|---|---|
+| rotation in place (mean) | 0.094 | **0.301** | **0.088** |
+| `depth_sweep` (want HIGH) | 0.456 | 0.422 | 0.449 |
+| steady hand, face-on | 0.003–0.008 | 0.004–0.012 | 0.003–0.008 |
+
+**Three conclusions, all load-bearing for 4.1/4.2:**
+
+1. **Use the MAXIMUM of the rigid palm-quad spans, normalised to their own
+   grab-time baselines — never palm width alone.** It is never worse than width
+   in any take, and it stays fully responsive on `depth_sweep` (0.449 vs 0.456).
+   Foreshortening only ever *shrinks* an apparent span, so the largest normalised
+   span is the one least corrupted, and taking the max automatically selects
+   whichever anchor the current hand pose has left intact — which is exactly the
+   owner's "depending on what the hand is showing to the camera".
+
+2. **⚠ Use the RIGID palm quad, NOT finger lengths.** The owner's instinct was
+   "finger length ratios", and the direction is right but the landmarks must not
+   be: any MCP→TIP span changes with GRIP, so it would conflate "the hand closed"
+   with "the hand moved away" — catastrophic for a grab gesture, where the hand
+   closes at exactly the moment depth must stay stable. The rigid spans are the
+   four palm-quad measures: `5↔17` (width), `0↔9` (length), `0↔5` and `0↔17`
+   (diagonals). Adding the two diagonals gains a further 0.088 → 0.085.
+
+3. **⚠ THE YAW CASE IS STILL UNTESTED — the corpus contains no yaw take.** Every
+   rotation recording is PITCH by deliberate design (`palm_back_*` and
+   `pitch_sweep_*`; yaw is a separate open item, T4). That is why *length* scores
+   so badly above: pitch foreshortens the wrist→middle-MCP axis while leaving the
+   MCP row intact. Under yaw the geometry inverts — width collapses, length
+   survives — which is precisely the owner's scenario and precisely what max(w, l)
+   is designed to absorb, **but it is inferred from geometry, not measured.**
+   **A `yaw_sweep_constant_depth` take is a prerequisite for building 4.2.**
+
+4. **Even the best anchor carries ~9% false depth during rotation.** So the
+   multi-anchor rule is necessary but not sufficient: S10's freeze (reuse
+   `PalmFacingTracker`'s pattern on `edge_on_measure`) is still required as the
+   backstop for when *all* anchors are foreshortened at once — a combined
+   yaw+pitch pose — and Z output will likely need rate-limiting on top. Do not
+   expect a clean metric depth signal from this sensor; expect a usable
+   *relative* one, which is all §14.3's ratio design ever claimed.
+
 **Not yet resolved — defer to whoever actually picks this up, don't guess
 in advance**:
 - The exact mapping function from hand-span ratio to a Z position/depth
