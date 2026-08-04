@@ -9,6 +9,12 @@ layered patches again, rewrite it rather than appending.
 
 ## 0. Read order
 
+> ⭐ **STARTING A FRESH CONVERSATION TO BUILD THE PREDICTION GATE? Go straight to
+> `Claude/BUILD_PREDICTION_GATE.md`.** It is a self-contained brief for queue
+> items **B7** (confirmation gate) and **B8** (quadratic optimisation), written
+> 2026-08-04 — design, sweep, test protocol, acceptance criteria, file map and
+> the environment traps. You should not need to re-derive anything.
+
 | # | Document | Read it for |
 |---|---|---|
 | **1** | **`Claude/PART_ONE.md` §3.1** | ⭐ **THE single build queue — what to do next.** Starts with a "YOU ARE HERE" block giving the exact ordered path. §3 above it is the gesture/signal matrix (what is built vs not, per row) |
