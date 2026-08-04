@@ -4276,6 +4276,50 @@ disproven: **classify what gets rejected, never merely count it** (§0.18's
 binding rule). A richer state may separate them; that is a measurement, not a
 conclusion.
 
+### 16.1 B1 built, B2 measured (2026-08-04) — the anchor claim holds, the outlier claim does not
+
+`Resources/hand_blocks.py` + `analysis/b2_block_separability.py`. Palm
+centroid/scale verified against `hand_identity` **29,164/29,164**.
+
+**⭐ THE DECISIVE RESULT — anchor stability, §14.1's 9 points vs the palm**
+(frame-to-frame anchor movement in palm widths):
+
+| band | n | §14.1 p50 | §14.1 p95 | palm p50 | palm p95 |
+|---|---|---|---|---|---|
+| edge-on (<0.15) | 353 | 0.065 | **0.925** | 0.058 | **0.699** |
+| near (0.15–0.35) | 617 | 0.083 | 0.425 | 0.065 | 0.390 |
+| open (>0.35) | 28,144 | 0.038 | 0.235 | 0.027 | 0.169 |
+
+**The palm is a quieter anchor by ~25–30% in every band.** That is real, it is
+consistent, and it is the first positive result for the block model — **B4 (the
+3.3 A/B) is worth running on this evidence.**
+
+⚠ **But it does NOT remove the edge-on spike**: both anchors still jump ~4× when
+the palm goes edge-on (palm p95 0.169 → 0.699). So **N12 would be REDUCED, not
+eliminated**, by palm anchoring. The residual is §0.18's documented floor — at
+edge-on the palm reconstruction itself collapses, so there is no quieter point on
+the hand to anchor to. DR-2's freeze pattern remains the right answer for that
+band, not a better anchor.
+
+**⚠ THE TWO-CHANNEL OUTLIER HYPOTHESIS (B6) IS NOT SUPPORTED BY THIS DATA.**
+
+- **Teleport separability: INCONCLUSIVE, not negative.** Only **3 teleports
+  survive in 29,164 frames**, far too few to test anything — and that is itself a
+  finding: `build_v2` replays DR-1, **DR-1 is the fix for Object Jump**, so the
+  identity-teleport population is largely already gone. It is indirect support
+  for T3 being closed.
+- **At edge-on, arcs give no distinctive signature.** Both channels degrade by
+  about the same factor (palm p95 0.158 → 0.320; arc p95 0.104 → 0.185), so
+  "palm moves while arcs stay continuous" does not hold in the band that matters
+  for N12.
+
+**Consequence for the plan**: the *representation* earns its place on the anchor
+result; the *outlier gate* does not yet have evidence and must not be built on
+the strength of the idea. Testing it properly needs a corpus that still contains
+teleports — the `Position_during_rotation/translation_pivot_jump_test4` take is
+the named reproduction, and it is currently **unreadable from Python** in this
+environment (PermissionError on that subfolder; PowerShell reads it fine).
+
 ### ⚠ Binding architectural constraint (spec S3, Apple's shipped design)
 
 **Predicted state must NEVER reach a gesture state machine.** The split is:
