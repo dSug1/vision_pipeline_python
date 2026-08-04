@@ -4660,6 +4660,15 @@ reorder arms A/B/C**. §16.5's conclusions stand or fall on their own evidence.
 (22 synthetic checks, all passing) + `analysis/b7_eval.py` (15 configurations
 over the 33-session corpus, 235,319 channel-frames).
 
+**To see it live**: `debug_prediction.bat` (`LiveBlockPredictionDebug.py`) runs
+RAW and GATED cube behaviour **side by side off one camera** — one capture, one
+MediaPipe pass, one DR-1/DR-2 pass, then the stream forks, so every visible
+difference is the gate and nothing else. It draws the hand as the **six blocks**
+rather than the 21 landmarks: palm quad + centroid + scale bar + axis gizmo (the
+four palm channels), each finger as an arc whose bow is computed from its
+extension scalar alone, and the thumb dashed and labelled RAW because §16 leaves
+it unmodelled. Amber = that channel is PENDING, red = its frames were discarded.
+
 The design from `BUILD_PREDICTION_GATE.md` §1, built in full: flag at F but do
 **not decide**; buffer F…F+L; coast the *output* while the *measurement* waits;
 decide at F+L; discard only what later frames prove was an outlier. Per-channel,
@@ -4695,7 +4704,7 @@ Best configuration: **L=2, `pred` verdict, `hold` coast, blend 3, B8's fit.**
 |---|---|---|---|
 | 1 | reversal-discard ratio ≤ 1.5× | **9.44×** best (B3″ 7.43×) | ❌ **FAIL** |
 | 2 | discards majority outlier, not real movement | **89.5% / 3.4%** (1.6 was 7.9% / 80.2%) | ✅ PASS |
-| 3 | jitter and edge-on improved, max not worse | jitter max 0.0695 → **0.4971**; edge-on max 3.4555 → **1.8617** | ❌ **FAIL on jitter** |
+| 3 | jitter and edge-on improved, max not worse | jitter max 0.0695 → **0.4971**; edge-on max 3.4555 → **1.8617** | ❌ FAIL on jitter — ⚠ **OVERTURNED BY §16.9**: this is the PALM level; measured on the CUBE it passes, and the cube is the level the operator sees |
 | 4 | latency stated in ms and accepted | **83 ms** at L=2 @ 24.1 fps (124 / 166 / 248 at L=3/4/6) | owner's call |
 
 **VERDICT: B7 is BUILT, MEASURED and UNWIRED**, alongside 1.6, `block_tracker.py`
@@ -4790,6 +4799,260 @@ configuration is passed in by the caller.
 ⚠ **Do not read this as "prediction is useless here."** It says the *quadratic
 extrapolator* is, at horizons past ~2 frames, on this sensor. Item 3.1's
 dual-pathway work should treat "hold" as the baseline to beat, not as a straw man.
+
+### 16.9 ⚠⚠ B7 MEASURED LIVE — §16.7's criterion 3 is OVERTURNED (2026-08-04)
+
+A **450-second live take** (10,092 frames, 22.43 fps measured, cube held in
+86.1% of frames, 14.2% still and 25.3% fast) recorded through
+`debug_prediction.bat` and re-measured by `analysis/b7_live_ab.py`, which
+replays the whole pipeline offline under any configuration.
+
+#### ⭐ First: a wiring bug that invalidated the first pass, found BY EYE
+
+The owner, watching the two windows: *"if I hold my hand edge-on palm up… in the
+prediction gate window, the arc and vertices literally jump all around the
+window."*
+
+The gated `scale` channel was being realised as a similarity transform,
+`f = gated_scale / raw_scale`, applied to all 21 landmarks. **Its denominator
+collapses.** Edge-on, measured palm width fell to **2.43 px** while the gate
+coasted ~86 px, so `f` reached **35.4** and threw the landmarks **5235 px**
+across a 640 px window. The 118 frames with >100 px of displacement had median
+palm width 41.8 px against 91.6 px overall, and median `edge_on` 0.319 against
+0.747 — precisely the edge-on band.
+
+⭐ **And it was wrong before it was unstable: edge-on the palm is FORESHORTENED,
+NOT SHRUNK.** "Palm width should be 86 px" has no valid realisation as landmark
+coordinates. This is the reciprocal of §14.3.1/§16.5's trap, where feeding
+palm-width collapse *into* cube position was the measured difference between
+anchor arms B and C — **the spec had already written this down twice.**
+
+Fixed by never back-projecting `scale` (it is gated and displayed as the knuckle
+bar's *length*): max displacement **5235 → 219.8 px**, frames >100 px **118 → 6**.
+
+⚠ **Every cube number from the first pass measured that bug and is void.** The
+lesson is the §0.15 one again: a harness that reconstructs the stream
+differently silently measures a pipeline that does not exist. It took a human
+looking at the screen to catch it, which is an argument for this tool existing.
+
+#### The corrected live result, on held-only frames
+
+Restricted to frames where the cube is actually held, so the S3 hold cannot
+flatter the gate (raw holds 86.1% of frames, gated 80.5%):
+
+| held-only cube step | RAW | B7 | B7 `reject_z`=4.0 |
+|---|---|---|---|
+| p50 | 7.55 px | 7.66 px | 7.75 px |
+| p95 | 41.11 | 39.99 | 40.08 |
+| **max** | **156.51** | **124.33** | **109.58** |
+| **still-hand max** | **73.16** | **38.65** | **38.65** |
+| grabs taken | 144 | 138 | 140 |
+
+| # | criterion | corpus §16.7 | LIVE | |
+|---|---|---|---|---|
+| 1 | reversal-discard ratio ≤ 1.5× | 9.44× | **5.63×** (best 2.62× at L=6) | ❌ **confirmed FAIL** |
+| 2 | discards majority outlier | 89.5% | **95.3%** | ✅ confirmed PASS |
+| 3 | max not worse | jitter max 7× worse | **cube max −21%, still-max −47%** | ⭐ **OVERTURNED → PASS** |
+| 4 | latency in ms | 83 ms | **89 ms** @22.43 fps | owner's call |
+
+⭐ **WHY CRITERION 3 FLIPPED, AND IT IS A MEASUREMENT-DESIGN LESSON, NOT A
+CONTRADICTION.** §16.7 judged it on *palm channels*, because the corpus contains
+no cube. But the cube's anchor is a weighted mean over 9 landmarks plus a frozen
+residual offset — **it low-passes exactly the coast-and-rejoin transient the gate
+adds**, while the raw excursions the gate removes *do* reach the cube. Both
+numbers are correct; only the cube one describes what the operator sees.
+**The criterion was being evaluated one level above where the defect lives.**
+
+⚠ The out-and-back classifier scored exactly **100.0%** "teleport" for
+`verdict_test='p_pre'` on live data too — the tautology of §16.7 reproducing
+itself outside the corpus.
+
+#### Degrees of freedom: what actually moves anything
+
+| knob | effect |
+|---|---|
+| ⭐ **`reject_z` 3.0 → 4.0** | **the best single tune.** Flags −44% (3002→1672), cube max 124→**110**, still-max unchanged, grabs 138→140, reversal discards 6.52%→3.96%. No latency cost |
+| `L` (lag) | trades criterion 1 against everything: L=6 reaches 2.62× but costs **267 ms** and pushes still-max 38.65→**148.20**. Bad trade |
+| `blend` | 1 is clearly wrong (cube max 229); 3 or 5 are fine |
+| `window` | 5 marginally best on cube max, +26% flags |
+| `coast_mode` | barely matters once `scale` is out of the wiring |
+| ⚠ **`ACCEL_UNCERTAINTY`** | **DEAD PARAMETER.** 0 and 2 give byte-identical results, because B8's order-1 fit makes `a = 0.0` and the term is always zero. The build brief listed it as a DOF to sweep; it cannot act unless order 2 returns, and §16.8 measured order 2 as clearly worse |
+| ⭐ **the channel→landmark mask** | **the dominant DOF, and not a gate parameter at all.** No gate knob came close to its effect size — it was the difference between a 5235 px artifact and a working tool |
+
+#### ⭐ Replicated on a SECOND live take (2026-08-04, `gate_z4`)
+
+A second take recorded at `reject_z = 4.0` — 1155 frames, 50 s, 23.12 fps.
+
+⚠ **The two takes are NOT content-comparable**, and that governs how they may be
+read (§16.5's rule, applied before the numbers): take 2 has **0.8% still frames
+against 14.2%**, is faster (palm p50 11.98 vs 6.83 px/frame), holds a cube 73.2%
+vs 86.1% of the time, and its largest palm excursion is 50.9 px against 512.9.
+Reversal content is identical at 19.1% of channel-frames. So z=3 vs z=4 is
+compared **within** each take by replay, never across them.
+
+| claim | take 1 (450 s) | take 2 (50 s) | |
+|---|---|---|---|
+| criterion 1 fails at every setting | 5.63× | 4.25× (best 2.39× at L=6) | ✅ replicated |
+| criterion 2, discards majority outlier | 95.3% | 83.8% (93.9% at z=4) | ✅ replicated |
+| held-cube max step improves | 156.5 → 124.3 | 80.7 → 70.1 | ✅ replicated |
+| `ACCEL_UNCERTAINTY` inert | identical | identical | ✅ replicated |
+| `p_pre` classifier tautological | 100.0% | 100.0% | ✅ replicated |
+| grab loss small | 144 → 138 | 15 → 15 | ✅ replicated |
+
+⭐ **And the wiring fix is visible in the data**: raw-vs-gated cube separation is
+now **p50 0.86 px** where the buggy pass measured 80.82 px. The arms track each
+other and diverge only during a flag, which is the intended behaviour.
+
+**`reject_z` 3.0 → 4.0, head to head within each take:**
+
+| | take 1 | take 2 |
+|---|---|---|
+| flags | −44% | **−47%** |
+| **S3 hold, % of frames** | 17.1% → **9.4%** | 21.3% → **10.3%** |
+| reversal discards | 6.52% → 3.96% | 4.84% → **3.60%** |
+| discards that are outliers | 95.3% → 95.2% | 83.8% → **93.9%** |
+| held-cube max | 124.3 → **109.6** | 70.1 → 72.4 |
+
+**z=4.0 is CONFIRMED and is the recommended setting**: it roughly halves both the
+flag rate and the S3 hold fraction — i.e. halves how often the gate is
+intrusive — while *improving* the quality of what it discards.
+
+⚠ **Two honest limits on that.** The cube-max advantage of z=4 over z=3 did
+**not** replicate (better on take 1, marginally worse on take 2) — call it
+neutral, not a win. And **still-hand metrics cannot be evaluated on take 2 at
+all**: 7 qualifying frames, so its `stillMx` figures are one frame's worth of
+noise and are not evidence in either direction.
+
+#### ⚠⚠ CRITERION 1 IS RETRACTED AS A DISQUALIFIER (owner challenge, 2026-08-04)
+
+The owner, from watching both windows: *"I did not see flagrant cases where the
+change of direction was completely missed, even at relatively high speed. I think
+you are over interpreting the reversal-discard ratio."*
+
+**Measured directly, on the cube — the only thing on screen.** Raw-cube direction
+changes (>2 px/frame either side), matched against the gated cube's:
+
+| take | direction changes | lag p50 | lag p90 | unmatched |
+|---|---|---|---|---|
+| 450 s | 1671 | **0 frames (0 ms)** | 0 frames | 10.1% |
+| 50 s | 118 | **0 frames (0 ms)** | 0 frames | ~10% |
+
+**The gated cube turns on the SAME FRAME as the raw cube.** The unmatched ~10%
+are small reversals that fall below the 2 px/frame detection threshold once
+smoothed — not missed turns.
+
+⭐ **FOUR REASONS THE METRIC WAS WRONG, and they are the durable output:**
+
+1. **It was carried across a mechanism change without revalidation.** Criterion 1
+   was written for B3″, where a rejection replaced the measurement *and could
+   cascade* — §0.13.3 measured one bad frame booking up to 8 rejections. There
+   it was a fair proxy for "the cube fails to follow a direction change." Under
+   B7 a discard is **bounded to L frames and always resumes from the
+   measurement**. The same count means something far milder.
+2. **A ratio is not a magnitude.** 5.63× reads as alarming; the absolute rate is
+   3.96% of reversal channel-frames, each removing ≤2 frames of ONE channel of
+   eight, feeding an anchor that averages 9 landmarks. Several attenuating
+   stages sit between the metric and anything visible, and it models none.
+3. ⚠ **The operator-visible measurement was available and was not taken.** Both
+   cube tracks were in the recording. Reporting the channel-level proxy instead
+   is EXACTLY the error §16.9 had just diagnosed in criterion 3 — *measured one
+   level above where the defect lives* — found and then not generalised by a
+   single section.
+4. **The label contamination was flagged and then ignored.** A teleport also
+   produces two velocity sign changes, so every such ratio is an upper bound —
+   stated in §16.7, then used as if clean.
+
+> **Before treating a criterion as a disqualifier, measure the harm it is a
+> proxy for.** All four failures share one root: a proxy was trusted after the
+> thing it proxied for had changed.
+
+**B7 passes every criterion that has been measured against observable harm.**
+Criterion 1 fails as literally written and is retracted as a blocker; criteria
+2-3 pass; criterion 4 (~89 ms hold per flag, ~4% of grabs delayed) is a product
+judgement.
+
+### ⭐ 16.9.1 OWNER DECISION: B7 IS PARKED, NOT WIRED (2026-08-04)
+
+> *"I agree there is almost no visual difference between the raw and the
+> prediction gated outcomes. I would therefore keep the raw to keep the pipeline
+> lean and without adding additional layers. However, I would park the build in
+> order not to lose all what we have built."*
+
+**And this is the right call on the evidence, not a rejection of it.** The gate
+was cleared of its technical blockers and then declined on a product ground the
+measurements support: a 21%/47% cut in the cube's worst steps is real but not
+*visible*, and it costs a per-hand predictive layer, ~89 ms of hold at every
+flag, and ~4% of grabs delayed. **A layer that cannot be seen is not worth its
+own failure modes** — this build produced two of them (the `scale`
+back-projection, the quaternion rejoin) inside one session.
+
+⚠ **Nothing was wired.** Production (`HandsTriggeredActions.py`, `CubeWindow.py`,
+the client/server pipeline) is untouched; `confirmation_gate.py`,
+`hand_blocks.py` and `block_predictor.py` are imported only by
+`LiveBlockPredictionDebug.py` and by `analysis/`. The single production-adjacent
+change is `LiveSnapDebug.update_hands`'s `snap_blocked=frozenset()` default,
+a no-op for every existing caller.
+
+**To revive it, this is the whole configuration — do not re-derive it:**
+
+    reject_z    4.0        (3.0 halves nothing; 4.0 halves flags AND the S3 hold)
+    lag L       2          (~89 ms; L=4/6 measurably worse on the cube)
+    verdict     "pred"     (distance from the PREDICTED trajectory, 0.38x)
+    coast_mode  "hold"     (B8: the fit loses to holding at every horizon)
+    blend       3
+    fit         order 1, exponential weights, half-life 2 frames
+
+**Still runnable**: `debug_prediction.bat` (live A/B, blocks overlay),
+`analysis/b7_live_ab.py` (replay any config over a recorded take),
+`analysis/verify_confirmation_gate.py` (24 synthetic checks), plus two live
+takes on E: under `Recordings_prediction_gate`.
+
+⚠ **Do not restart this line of work on the strength of the idea.** Three
+measured attempts (1.6, B3″, B7) and the conclusion is stable: gating buys
+little here because DR-1 already removed the teleports, and what remains is
+either sustained (a sensor floor) or already invisible.
+
+### 16.10 ⭐ WHERE THE CUBE'S NOISE ACTUALLY COMES FROM (measured 2026-08-04)
+
+Found while explaining the pipeline to the owner, and it reframes the next step.
+**The cube transform has only two live components**, driven by disjoint landmark
+sets — they do not mix:
+
+| cube property | driven by | note |
+|---|---|---|
+| position | `_weighted_position`, the **9 landmarks** (5 fingertips + 4 MCPs) | ⚠ NOT smoothed — assigned directly |
+| quaternion | `_hand_orientation_quaternion`, the **4 palm world landmarks** | slerp-smoothed |
+| **scale** | **nothing — `size` is a constant** | there is no scale channel on the cube |
+| *(grab test only)* | `_hand_position`, the **5 palm landmarks** = `hand_blocks.PALM_LANDMARKS` | never touches the transform |
+
+The translation anchor is a **fixed linear combination of 9 landmark pixel
+positions**, its coefficients frozen at grab by inverse distance from the cube,
+plus a frozen residual offset.
+
+**⭐ THE MEASUREMENT: A PERFECTLY STILL PALM STILL MOVES THE CUBE.**
+On the 450 s take, restricted to frames where the 5 palm landmarks barely moved:
+
+| palm moved | n | anchor moved p50 | p95 | max | amplification p50 |
+|---|---|---|---|---|---|
+| < 0.5 px | 249 | **0.570 px** | 1.701 | **17.51 px** | **1.66×** |
+| < 1.5 px | 1344 | 1.013 px | 3.050 | 22.03 px | 1.15× |
+
+Because the frozen weights include the **5 fingertips**, any finger flex moves
+the cube. Even grabbing at the palm centroid — the most MCP-favourable case
+there is — the fingertips carry a **median 27% of the total weight** (p95 42%),
+and they are the 13-32% CV landmarks (§0.2) against the palm's 2.76 mm rigidity.
+
+⚠ **This is not palm noise leaking through. The anchor deliberately includes the
+noisiest points on the hand**, by a §14.1 design chosen to fix a different
+problem (the translation pivot). It is the same defect §16.5 measured as
+|r| = 0.822 yaw-sink and 0.323 pitch-sink.
+
+⭐ **And the remedy does not add a layer — it REMOVES one.** Anchoring to the
+palm transform (the 5-landmark position and the 4-landmark frame, both already
+computed every frame) deletes the fingertip path entirely. That is §16.5's
+**arm B**, the only arm that decoupled both axes (|r| 0.005 / 0.001). It is
+independent of B7, it is a replacement rather than an addition, and it is aimed
+at the edge-on/pitch complaint the gate could not touch.
 
 ### ⚠ Binding architectural constraint (spec S3, Apple's shipped design)
 

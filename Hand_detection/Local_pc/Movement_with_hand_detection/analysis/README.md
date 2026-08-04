@@ -190,8 +190,42 @@ acceptable expected inputs for my game."* **Rapid movement is input, not noise.*
 | `b7_eval.py` | the B7 sweep: verdict test × coast mode × lag × fit, judged on reversal safety first. Imports `b3_full_eval`'s stream builder and reversal labeller so every row is comparable to B3″'s line by line |
 | `b8_fit_sweep.py` | 15 fit configurations (weighting × window × order) against the two baselines **S1** makes mandatory, open loop, **stratified by hand speed**. ⚠⚠ **All 15 lose to "hold the last value"** at some horizon — including the orientation model. Order 2 is measurably worse than order 1 everywhere |
 
-**Verdicts**: B7 fails 2 of its 4 pre-agreed criteria and is unwired (§16.7);
-B8's S1 check fails for every configuration (§16.8).
+| `b7_live_ab.py` | ⭐ **the LIVE A/B** on a take recorded by `debug_prediction.bat`: what the gate did to the **CUBE**, plus a replay sweep over every degree of freedom. Replays the full pipeline offline and deterministically, so a config sweep is an exact A/B rather than a second live session |
+
+**Verdicts**: ⛔ **B7 is PARKED** (owner, 2026-08-04, §16.9.1) — measured, cleared
+of both its apparent blockers, then declined because the gain is real but **not
+visible**. B8's S1 check fails for every configuration (§16.8).
+
+⚠⚠ **BOTH of B7's "failed" criteria were MEASUREMENT ERRORS, and they were the
+same error twice.** Criterion 3 was judged on palm channels because the corpus
+has no cube; on the cube it passes. Criterion 1 was a B3″-era proxy for a
+*cascading* mechanism B7 does not have — measured directly, the gated cube turns
+on the **same frame** as the raw one (lag p50 = p90 = 0 ms over 1671 direction
+changes). Both were caught only after someone looked at what the criterion was a
+proxy *for*.
+
+> **Ask what level a criterion is evaluated at, and what harm it proxies for —
+> not merely whether it passes.** A corpus can only measure what it contains, and
+> a proxy inherited across a mechanism change measures the old mechanism.
+
+⚠⚠ **§16.7's criterion 3 was measured ONE LEVEL ABOVE THE DEFECT, and live data
+overturned it.** The corpus contains no cube, so "max not worse" was evaluated on
+palm channels — where the gate does make things worse. On the cube, whose anchor
+is a weighted mean over 9 landmarks and therefore low-passes exactly the
+coast/rejoin transient the gate adds, the same gate *improves* the worst step by
+21% and the worst still-hand step by 47%.
+
+> **Ask what level a criterion is evaluated at, not just whether it passes.** A
+> corpus can only measure what it contains, and a metric one level above the
+> defect can invert the verdict.
+
+⚠ **And the first live pass measured a bug, not the gate.** The gated `scale`
+channel was back-projected onto landmarks as `gated_scale / raw_scale` — a ratio
+whose denominator COLLAPSES edge-on. It reached 35.4 and threw the hand 5235 px
+across a 640 px window. **It was caught by the owner watching the screen, not by
+any harness here**, which is the argument for `debug_prediction.bat` existing at
+all. Fixed by never back-projecting `scale` (see
+`LiveBlockPredictionDebug.LANDMARK_CHANNELS`); the numbers from that pass are void.
 
 ⚠⚠ **A TAUTOLOGY GOT INTO THE FIRST RUN OF `b7_eval.py`, and it printed a
 triumph.** Discards were classified with the out-and-back test at a 6-frame

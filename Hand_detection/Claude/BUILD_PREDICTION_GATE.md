@@ -1,15 +1,21 @@
 # Build brief — confirmation gate (B7) and quadratic optimisation (B8)
 
-> ## ✅ EXECUTED 2026-08-04. Read the OUTCOME before this brief.
+> ## ⛔ EXECUTED, THEN PARKED, 2026-08-04. Read the OUTCOME before this brief.
 >
 > Both items are built and measured. **The results are in
 > `GESTURE_PIPELINE_SPEC.md` §16.7 (B7) and §16.8 (B8)** — this file is now the
 > *brief*, i.e. what was intended, not what was found. Where the two disagree,
 > the spec wins. Headlines:
 >
-> - **B7 fails 2 of the 4 acceptance criteria in §5 and is UNWIRED.** But the
->   half that works is worth keeping: deferring the decision to F+L genuinely
->   separates, at **0.38×**.
+> - **B7 is PARKED by the owner (§16.9.1), NOT wired.** ⚠ Both of its apparent
+>   criterion failures turned out to be MEASUREMENT ERRORS — criterion 3 was
+>   judged on palm channels (the corpus has no cube) and criterion 1 was a
+>   B3″-era proxy for a cascading mechanism B7 does not have; measured on the
+>   cube, it turns on the SAME FRAME as raw (0 ms lag, 1671 direction changes).
+>   It was declined on a product ground instead: the gain is real but invisible.
+> - ⚠ **§1.4's sweep is answered**: `reject_z` — a knob the brief never listed —
+>   is the best single tune (4.0 halves flags AND the S3 hold), while `L` beyond
+>   2 is measurably worse on the cube.
 > - ⚠ **§1.2's coherence test had to be replaced, not just re-thresholded.** The
 >   inherited m4 shape scores **1.13× — no discrimination at all** — because on a
 >   signed scalar a reversal returns *through* the value it started from. §1.2's

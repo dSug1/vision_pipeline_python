@@ -691,10 +691,19 @@ def _try_snap(state: CubeState, handedness: str, hand_pos: Tuple[float, float], 
     return best_name
 
 
-def update_hands(state: CubeState, hand_data_by_hand) -> None:
+def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset()) -> None:
     """hand_data_by_hand: {handedness: {"pixel_landmarks": [...],
     "world_landmarks": [...], "thumb_outward": bool} or None (not detected
     this frame)}.
+
+    `snap_blocked`: handednesses that may take NO NEW SNAP this frame. Empty by
+    default, so nothing here changes for existing callers. It exists for **S3,
+    binding** (GESTURE_PIPELINE_SPEC.md §16.2 rule 5): when a predictive gate is
+    withholding judgement on a hand, the grab/release state machine must HOLD
+    rather than decide on inferred data. Only the *decision* freezes -- a cube
+    already held keeps being translated and rotated, and a release on tracking
+    loss is unaffected, because tracking loss is measured and never predicted.
+    `LiveBlockPredictionDebug.py` is the caller that uses it.
 
     Two passes, not one combined per-hand pass — bug found live
     (2026-08-01): releasing and re-snapping in the same per-hand pass let a
@@ -779,7 +788,8 @@ def update_hands(state: CubeState, hand_data_by_hand) -> None:
 
         owned = state.cube_owned_by(handedness)
         if owned is None:
-            can_snap = (not thumb_outward) or state.thumb_outward_snap_allowed[handedness]
+            can_snap = ((not thumb_outward) or state.thumb_outward_snap_allowed[handedness])
+            can_snap = can_snap and handedness not in snap_blocked   # S3, see docstring
             if can_snap:
                 owned = _try_snap(state, handedness, hand_pos, exclude=released_this_frame)
                 if owned is not None:

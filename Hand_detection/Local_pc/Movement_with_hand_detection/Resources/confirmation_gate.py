@@ -1,5 +1,25 @@
 """B7 -- the CONFIRMATION GATE: a selective fixed-lag smoother over the block state.
 
+⛔⛔ PARKED BY THE OWNER, 2026-08-04. NOT WIRED, AND NOT TO BE WIRED WITHOUT A
+    NEW DECISION. Built, measured on the corpus and on two live takes, cleared
+    of both of its technical blockers -- and then declined, because the
+    improvement is real but NOT VISIBLE:
+
+      "I agree there is almost no visual difference between the raw and the
+       prediction gated outcomes. I would therefore keep the raw to keep the
+       pipeline lean and without adding additional layers. However, I would
+       park the build in order not to lose all what we have built."
+
+    A layer that cannot be seen is not worth its own failure modes, and this
+    build produced two inside one session (the `scale` back-projection and the
+    quaternion rejoin). Full story: GESTURE_PIPELINE_SPEC 16.7 / 16.9 / 16.9.1.
+
+    ⭐ TO REVIVE, THIS IS THE MEASURED CONFIGURATION -- do not re-derive it:
+        reject_z 4.0 | lag 2 | verdict "pred" | coast "hold" | blend 3
+        fit: order 1, exponential weights, half-life 2 frames
+    They are already the defaults below.
+
+
 Owner design, 2026-08-04 (BUILD_PREDICTION_GATE.md 1.1):
 
     "F-7 frames provide the quadratic, the F frame flags if it is an outlier, F+1
@@ -98,16 +118,30 @@ PRESERVED FROM THE EXISTING DESIGN (binding -- each already cost real time)
     logic HOLDS -- no new snap, no release. Rendering uses `output`.
   * FULL RESET on tracking loss or run break (`reset()`).
 
-⚠⚠ MEASURED VERDICT, 2026-08-04 -- THIS MODULE IS BUILT AND UNWIRED
+⚠⚠ MEASURED VERDICT -- AND BOTH "FAILURES" WERE MEASUREMENT ERRORS
 ------------------------------------------------------------------------------
-`analysis/b7_eval.py`, 15 configurations over 235,319 channel-frames. Judged
-against the four criteria fixed in advance (BUILD_PREDICTION_GATE 5):
+`analysis/b7_eval.py` (15 configs, 235,319 corpus channel-frames) then
+`analysis/b7_live_ab.py` (two live takes, 450 s + 50 s). Judged against the four
+criteria fixed in advance (BUILD_PREDICTION_GATE 5):
 
-  1 reversal-discard ratio <= 1.5x        9.44x best (B3'' 7.43x)   FAIL
-  2 discards majority outlier, not real   89.5% / 3.4%              PASS
-  3 jitter + edge-on better, max not worse  jitter max 0.0695 -> 0.4971  FAIL
-                                            edge-on max 3.4555 -> 1.8617  ok
-  4 latency stated in ms                  83 ms at L=2 @ 24.1 fps   owner's call
+  1 reversal-discard ratio <= 1.5x   corpus 9.44x, live 5.63x    FAIL AS WRITTEN
+    ⭐ RETRACTED AS A DISQUALIFIER. Measured directly on the cube -- the only
+    thing on screen -- the gated cube turns on the SAME FRAME as the raw one:
+    lag p50 = p90 = 0 ms over 1671 direction changes. Criterion 1 was a B3''-era
+    proxy for a CASCADING mechanism (one bad frame booking up to 8 rejections,
+    0.13.3); B7's discards are bounded to L frames and always resume from the
+    measurement. The proxy was carried across a mechanism change unrevalidated.
+  2 discards majority outlier         corpus 89.5%, live 95.3%   PASS
+  3 jitter + edge-on better, max not worse                       PASS ON THE CUBE
+    ⭐ OVERTURNED. On PALM channels it fails (jitter max 0.0695 -> 0.4971), but
+    the corpus has no cube, and the cube's anchor is a weighted mean over 9
+    landmarks that LOW-PASSES exactly the coast/rejoin transient the gate adds.
+    Held-cube worst step 156.5 -> 109.6 px; worst still-hand step 73.2 -> 38.7.
+  4 latency stated in ms              ~89 ms per flag at L=2      owner's call
+
+⭐ BOTH ERRORS ARE THE SAME ERROR: a criterion evaluated ONE LEVEL ABOVE THE
+DEFECT, on a proxy that was never checked against observable harm. Ask what
+level a criterion measures at, not merely whether it passes.
 
 ⭐ THE HALF THAT WORKS, and the reason this file is kept rather than deleted:
 DEFERRING THE DECISION REALLY DOES SEPARATE. Of the flags raised, the `pred`
@@ -151,6 +185,13 @@ CHANNELS = BP.CHANNELS
 # out-last it; but L frames of latency are paid at every flag, so it must not be
 # larger than it needs to be. The ground-truth labeller uses 6.
 LAG = 2
+
+# ⭐ The gate's OWN flag threshold, deliberately not `block_predictor.REJECT_Z`
+# (which stays 3.0 so every B3'' number remains reproducible). 4.0 was measured
+# on two live takes to roughly HALVE both the flag rate (-44% / -47%) and the S3
+# hold fraction (17->9%, 21->10%) while IMPROVING the share of discards that are
+# genuine outliers -- i.e. it halves how often the gate is intrusive at no cost.
+REJECT_Z = 4.0
 
 # --- the coherence test: WHICH QUESTION IS ASKED AT F+L ---
 #
@@ -279,7 +320,7 @@ class ConfirmationGate:
         debug       per channel: z, sigma, prediction, verdict, return_ratio
     """
 
-    def __init__(self, lag=LAG, window=BP.WINDOW, reject_z=BP.REJECT_Z,
+    def __init__(self, lag=LAG, window=BP.WINDOW, reject_z=REJECT_Z,
                  blend=BLEND_FRAMES, verdict_test=VERDICT_TEST,
                  ratio_returned=RETURN_RATIO_RETURNED,
                  ratio_coherent=RETURN_RATIO_COHERENT,
