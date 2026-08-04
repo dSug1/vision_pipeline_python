@@ -4654,6 +4654,143 @@ smoothing, which costs latency for everyone).
 cannot clean the outliers that dominate B4's jitter tails, so **it cannot
 reorder arms A/B/C**. §16.5's conclusions stand or fall on their own evidence.
 
+### 16.7 B7 — the confirmation gate, BUILT and MEASURED. It does not ship. (2026-08-04)
+
+`Resources/confirmation_gate.py` + `analysis/verify_confirmation_gate.py`
+(22 synthetic checks, all passing) + `analysis/b7_eval.py` (15 configurations
+over the 33-session corpus, 235,319 channel-frames).
+
+The design from `BUILD_PREDICTION_GATE.md` §1, built in full: flag at F but do
+**not decide**; buffer F…F+L; coast the *output* while the *measurement* waits;
+decide at F+L; discard only what later frames prove was an outlier. Per-channel,
+S3-compliant, hard-capped, and — unlike B3″ — a discarded frame genuinely never
+enters the fit.
+
+#### ⭐ What worked, and it is the part worth keeping
+
+**Deferring the decision does separate reversals from outliers.** With the flag
+rate divided out — *of the flags raised, what fraction was thrown away?* —
+
+| verdict test at F+L | at a reversal | elsewhere | ratio |
+|---|---|---|---|
+| `p_pre` — m4's inherited shape | 31.8% | 28.3% | **1.13×** (no discrimination at all) |
+| `self` — the owner's literal "are F…F+L coherent?" | 31.3% | 42.3% | 0.74× |
+| **`pred` — distance from the PREDICTED TRAJECTORY** | **9.3%** | **24.5%** | **⭐ 0.38×** |
+
+⚠ **And the inherited test had to be thrown away, which is a finding in itself.**
+`m4_rejection_audit.py`'s out-and-back shape — distance from the last accepted
+*value* — **does not discriminate on these channels (1.13×)**. It was measured on
+a **2D palm centroid**, where a hand rarely retraces its own path; the block
+channels are **signed scalars**, and *a direction reversal comes back through the
+value it started from*. "Returned to where it was" and "turned around" are the
+same event on one axis. The brief warned that the thresholds would not transfer;
+**the shape did not transfer either.** Asking instead whether the later frames
+return to the *predicted trajectory* scores 0.38× on identical data.
+
+#### ⚠ And the four acceptance criteria, decided in advance
+
+Best configuration: **L=2, `pred` verdict, `hold` coast, blend 3, B8's fit.**
+
+| # | criterion | result | |
+|---|---|---|---|
+| 1 | reversal-discard ratio ≤ 1.5× | **9.44×** best (B3″ 7.43×) | ❌ **FAIL** |
+| 2 | discards majority outlier, not real movement | **89.5% / 3.4%** (1.6 was 7.9% / 80.2%) | ✅ PASS |
+| 3 | jitter and edge-on improved, max not worse | jitter max 0.0695 → **0.4971**; edge-on max 3.4555 → **1.8617** | ❌ **FAIL on jitter** |
+| 4 | latency stated in ms and accepted | **83 ms** at L=2 @ 24.1 fps (124 / 166 / 248 at L=3/4/6) | owner's call |
+
+**VERDICT: B7 is BUILT, MEASURED and UNWIRED**, alongside 1.6, `block_tracker.py`
+and B3″. It is the third measured failure of causal outlier gating on this sensor.
+
+#### ⭐ But the diagnosis is now sharper than "gating fails", and that matters
+
+**The decision is fixable; the detection is not.** Split the ratio into its two
+factors and the residue is obvious:
+
+    reversal over-rejection  =  FLAG rate ratio  ×  verdict-test ratio
+    B3''                        7.43x               1.00x (no deferral)
+    B7 + B8                     3.84x               0.83x
+
+The deferred verdict is now *protective* (< 1.0), and the fit change halved the
+flag ratio — but **a reversal still trips the residual test 3.8× more often than
+an ordinary frame, and no amount of deferral removes that.** §16.6's
+generalisable result stands, narrowed: it is the *detector*, not the *decider*,
+that cannot see a reversal coming.
+
+⭐ **Two numbers that read the opposite way from the ratio, and both are true:**
+
+- **Absolute harm at reversals fell 2.8×.** Of channel-frames at a labelled
+  reversal, B3″ discarded **11.65%**; B7 discards **4.15%**. The *ratio* got
+  worse only because discards elsewhere fell even further (1.57% → 0.44%).
+  ⚠ A ratio is not harm. The criterion was set on the ratio and the criterion
+  fails; the owner should know both figures before treating that as settled.
+- ⚠ **The reversal labels themselves are contaminated.** `reversals()` fires on
+  a raw velocity sign change — and **a teleport produces two of those**. Every
+  ratio in §16.6 and here is therefore an *upper bound* on true reversal
+  over-rejection, and the contamination is worst inside the discarded subset,
+  which is precisely the population the gate selects. This weakens B3″'s 7.43×
+  as much as it weakens B7's numbers.
+
+#### ⚠ What B7 cannot do, confirmed by measurement rather than argued
+
+- **Back-of-hand: no effect**, exactly as predicted. The `known_*_back` takes are
+  byte-identical raw vs gated in every one of the 15 configurations — the gate
+  never fires there, because those errors are *sustained* and F…F+L agree
+  coherently in the wrong place (§0.18's sensor floor).
+- **Teleports: nothing left to catch.** After DR-1 the identity-teleport
+  population is ~3 events in 29,164 frames (§16.1). What the gate actually
+  removes is transient jitter spikes — and its own coast-and-rejoin then puts a
+  **7× larger** transient back into the still-hand tail. That is the whole
+  failure in one sentence.
+
+### 16.8 B8 — the quadratic optimised, and it LOSES TO DOING NOTHING (2026-08-04)
+
+`analysis/b8_fit_sweep.py`: 15 fit configurations, open loop, against the two
+baselines **S1** makes mandatory, **stratified by hand speed** — because a pooled
+median is decided by the still-hand majority, while the gate only ever coasts on
+a hand that was *moving*. Median |error| in units of each channel's noise floor:
+
+| | still, h=1 | still, h=6 | **fast, h=1** | **fast, h=2** | fast, h=6 |
+|---|---|---|---|---|---|
+| **BASELINE hold (v=0)** | **0.322** | **0.677** | 3.921 | 6.182 | **10.927** |
+| B3″ shipped (w7, order 2) | 0.457 | 2.680 | 4.175 | 8.216 | 34.211 |
+| best fit (w7, **order 1**, exp hl2) | 0.362 | 1.043 | **3.648** | **5.462** | 12.875 |
+
+orientation (deg): hold **3.07 / 4.57 / 10.94** vs the log-map fit 3.61 / 6.32 / **23.76**
+
+**⭐ THREE RESULTS:**
+
+1. **ORDER 2 IS WRONG.** The acceleration term differentiates noise twice and the
+   error explodes with horizon — 34.2 floors at h=6 against order 1's 12.9.
+   §16.3 saw a hint of this (order 2 rejected *worse* than order 1) and did not
+   follow it. Order 1 dominates at every horizon in every speed band.
+2. **Weighting helps**, as it should for a 7-frame window that counted a 290 ms-old
+   sample as heavily as the newest. Exponential, half-life 2 frames, is best.
+3. ⚠⚠ **NO CONFIGURATION BEATS "HOLD THE LAST VALUE" AT EVERY HORIZON — S1 FAILS
+   for all 15**, and the orientation motion model loses to holding the last
+   quaternion at every horizon too. The fit wins **only** in the regime the gate
+   actually coasts in (a moving hand, h = 1–2) and loses everywhere else.
+
+⭐ **AND B8 IS NOT THE SEPARATE LEVER THE BRIEF ASSUMED.** The brief stated that
+optimising the fit would leave B3″'s reversal ratio "roughly intact — that was
+measured". That measurement was of `ACCEL_UNCERTAINTY`, which only widens σ.
+Changing the *order and weighting* moves it a great deal:
+
+| with B8's fit | flag ratio | jitter max |
+|---|---|---|
+| B3″ fit (order 2, unweighted) | 7.03× | 1.3244 |
+| **B8 fit (order 1, exp hl2)** | **3.84×** | **0.5816** |
+
+**Consequences already applied**: `confirmation_gate.COAST_MODE` defaults to
+`"hold"`, not to the prediction the owner's design assumed — coasting on a model
+measured to be worse than nothing is not a defensible default. `fit_channel` now
+takes `order` / `weighting` / `half_life`, and ⚠ **its defaults are left exactly
+as B3″ shipped them** so every pre-B8 number stays reproducible; B8's
+configuration is passed in by the caller.
+
+⚠ **Do not read this as "prediction is useless here."** It says the *quadratic
+extrapolator* is, at horizons past ~2 frames, on this sensor. Item 3.1's
+dual-pathway work should treat "hold" as the baseline to beat, not as a straw man.
+
 ### ⚠ Binding architectural constraint (spec S3, Apple's shipped design)
 
 **Predicted state must NEVER reach a gesture state machine.** The split is:

@@ -1,5 +1,28 @@
 # Build brief — confirmation gate (B7) and quadratic optimisation (B8)
 
+> ## ✅ EXECUTED 2026-08-04. Read the OUTCOME before this brief.
+>
+> Both items are built and measured. **The results are in
+> `GESTURE_PIPELINE_SPEC.md` §16.7 (B7) and §16.8 (B8)** — this file is now the
+> *brief*, i.e. what was intended, not what was found. Where the two disagree,
+> the spec wins. Headlines:
+>
+> - **B7 fails 2 of the 4 acceptance criteria in §5 and is UNWIRED.** But the
+>   half that works is worth keeping: deferring the decision to F+L genuinely
+>   separates, at **0.38×**.
+> - ⚠ **§1.2's coherence test had to be replaced, not just re-thresholded.** The
+>   inherited m4 shape scores **1.13× — no discrimination at all** — because on a
+>   signed scalar a reversal returns *through* the value it started from. §1.2's
+>   warning was right and did not go far enough.
+> - ⚠ **§2's premise is wrong.** B8 is *not* a separate lever: changing order and
+>   weighting cut B7's reversal flag ratio 7.03× → 3.84×. The "leaves the ratio
+>   intact" measurement was of `ACCEL_UNCERTAINTY` alone.
+> - ⚠⚠ **B8's own S1 check fails for all 15 configurations** — nothing beats
+>   "hold the last value" at every horizon, orientation included.
+> - ⚠ §3.1's reversal labels are **contaminated**: a teleport also produces
+>   velocity sign changes, so every ratio here (and §16.6's 7.43×) is an upper
+>   bound.
+
 **Written 2026-08-04 for a fresh conversation.** Self-contained: you should not
 need to re-derive anything below. Read this, then build.
 

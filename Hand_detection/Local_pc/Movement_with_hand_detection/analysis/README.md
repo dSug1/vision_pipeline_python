@@ -182,6 +182,37 @@ Owner's acceptance bar, recorded because it is a product decision rather than a
 technical one: *"what I captured in the recordings are rapid movements but still
 acceptable expected inputs for my game."* **Rapid movement is input, not noise.**
 
+### B7 / B8 — the confirmation gate and the fit behind it (2026-08-04)
+
+| script | produces |
+|---|---|
+| `verify_confirmation_gate.py` | synthetic correctness for `Resources/confirmation_gate.py` on signals whose ground truth is known by construction: a teleport is DISCARDED, a reversal is CONFIRMED (accepted late, never thrown away), per-channel isolation, the S3 valid-bit, the hard cap, and the coast-mode overshoot ordering. ⚠ B3″ passed *its* synthetic test and then failed on the corpus — passing here proves the mechanism, never the usefulness |
+| `b7_eval.py` | the B7 sweep: verdict test × coast mode × lag × fit, judged on reversal safety first. Imports `b3_full_eval`'s stream builder and reversal labeller so every row is comparable to B3″'s line by line |
+| `b8_fit_sweep.py` | 15 fit configurations (weighting × window × order) against the two baselines **S1** makes mandatory, open loop, **stratified by hand speed**. ⚠⚠ **All 15 lose to "hold the last value"** at some horizon — including the orientation model. Order 2 is measurably worse than order 1 everywhere |
+
+**Verdicts**: B7 fails 2 of its 4 pre-agreed criteria and is unwired (§16.7);
+B8's S1 check fails for every configuration (§16.8).
+
+⚠⚠ **A TAUTOLOGY GOT INTO THE FIRST RUN OF `b7_eval.py`, and it printed a
+triumph.** Discards were classified with the out-and-back test at a 6-frame
+lookahead — while the gate's own verdict was the same expression over L frames.
+A minimum over 6 frames is never larger than a minimum over 2, so **every discard
+was labelled "teleport" by algebra**, and the harness duly reported
+*"discards: 100.0% teleport, 0.0% real movement"*.
+
+> **A classifier that shares an expression with the thing it judges is measuring
+> itself.** The load-bearing evidence in that harness is the reversal cross-tab
+> instead — reversal labels come from raw velocity sign changes and share nothing
+> with any verdict test. This is §0.18's lesson in a new costume, and the third
+> time this project has walked into it.
+
+⚠ **Do not re-derive the coherence test from `m4_rejection_audit.py` again.**
+Its shape (distance from the last accepted value) was measured to discriminate
+**not at all** on these channels — 1.13× — because m4 measured a 2D palm
+centroid while the block channels are signed scalars, and *a reversal comes back
+through the value it started from*. Distance from the PREDICTED TRAJECTORY
+scores 0.38× on the same data.
+
 ### N7 — measured frame rate (2026-08-04)
 
 | script | produces |

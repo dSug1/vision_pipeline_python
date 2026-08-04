@@ -115,6 +115,40 @@ measurements enter the history, the fit, and the residual dispersion.
 ⚠ S3, binding: predicted state must NEVER reach a gesture state machine.
 `valid` is the flag the grab/release logic must hold on.
 
+⚠⚠ 5. B8 MEASURED THIS PREDICTOR AGAINST THE MANDATORY BASELINES. IT LOSES.
+------------------------------------------------------------------------------
+`analysis/b8_fit_sweep.py`, 2026-08-04, open-loop over the whole corpus, 15 fit
+configurations against the two baselines S1 requires. Median |error| in units of
+each channel's own noise floor, all scalar channels pooled, stratified by speed
+because a pooled median is decided by the still-hand majority:
+
+                        still (n=46158)         fast >3 floors (n=11068)
+                        h=1    h=2    h=6       h=1    h=2    h=4    h=6
+  HOLD (v = 0)         0.322  0.414  0.677     3.921  6.182  9.008 10.927
+  this module (w7 o2)  0.457  0.766  2.680     4.175  8.216 19.112 34.211
+  best fit (w7 o1 e2)  0.362  0.494  1.043     3.648  5.462  9.124 12.875
+
+  orientation, deg:  HOLD 3.07 / 4.57 / 10.94  vs  log-map fit 3.61 / 6.32 / 23.76
+
+⭐ THREE RESULTS, and the third is the load-bearing one:
+
+  1. ORDER 2 IS WRONG. The acceleration term differentiates noise twice and the
+     error EXPLODES with horizon -- 34.2 floors at h=6 against order 1's 12.9.
+     B3'' saw a hint of this (order 2 rejected worse than order 1) and did not
+     follow it. Order 1 dominates order 2 at every horizon in every speed band.
+  2. WEIGHTING HELPS, as expected of a 7-frame window that counted a 290 ms-old
+     sample as heavily as the newest: exp half-life 2 frames is best.
+  3. ⚠ NO CONFIGURATION BEATS "HOLD THE LAST VALUE" AT EVERY HORIZON, so S1
+     FAILS for all 15. The fit wins only where the gate actually coasts -- a
+     MOVING hand at h=1..2 (3.648 vs 3.921, 5.462 vs 6.182) -- and loses
+     everywhere else. The same holds for orientation, where the log-map motion
+     model is beaten by holding the last quaternion at every horizon.
+
+Consequence: `confirmation_gate.COAST_MODE` defaults to "hold", not to the
+prediction the owner's design assumed. The defaults in THIS module are left
+exactly as B3'' shipped them so that every pre-B8 number stays reproducible;
+B8's configuration is passed in (`fit_channel(order=, weighting=, half_life=)`).
+
 Stdlib only, numpy-free, deterministic -- the port contract.
 """
 
@@ -196,6 +230,15 @@ def _solve(a):
     return [a[i][n] / a[i][i] for i in range(n)]
 
 
+def _inv2(m):
+    """Inverse of a symmetric 2x2 (B8's first-order fit). None if singular."""
+    (a, b), (c, d) = m[0], m[1]
+    det = a * d - b * c
+    if abs(det) < 1e-18:
+        return None
+    return [[d / det, -b / det], [-c / det, a / det]]
+
+
 def _inv3(m):
     """Inverse of a symmetric 3x3, by cofactors. Returns None if singular."""
     a, b, c = m[0]
@@ -255,7 +298,11 @@ def _qangle(a, b):
 
 # ---------------------------------------------------------------- scalar channel
 class ChannelState:
-    """Explicit p, v, a plus the fit's own residual variance and (X'X)^-1."""
+    """Explicit p, v, a plus the fit's own residual variance and (X'X)^-1.
+
+    `a` is 0.0 for a first-order fit, so `predict` and `variance` need no
+    special case -- B8's order knob changes the fit, not the arithmetic here.
+    """
 
     __slots__ = ("p", "v", "a", "s2", "xtx_inv", "n")
 
@@ -270,34 +317,71 @@ class ChannelState:
         """OLS prediction variance for a NEW observation at horizon h."""
         if self.xtx_inv is None:
             return None
-        x = (1.0, float(h), 0.5 * h * h)
+        k = len(self.xtx_inv)                    # 2 for order 1, 3 for order 2
+        x = (1.0, float(h), 0.5 * h * h)[:k]
         quad = sum(x[i] * self.xtx_inv[i][j] * x[j]
-                   for i in range(3) for j in range(3))
+                   for i in range(k) for j in range(k))
         return self.s2 * (1.0 + max(0.0, quad))
 
 
-def fit_channel(values):
-    """Weighted-equal least-squares quadratic over `values` (oldest -> newest).
+def _weights(n, weighting, half_life):
+    """B8: per-sample weights, oldest -> newest. `None`/'uniform' = all 1.0."""
+    if not weighting or weighting == "uniform":
+        return [1.0] * n
+    ages = [float(n - 1 - k) for k in range(n)]          # 0 = newest
+    if weighting == "exp":
+        lam = math.log(2.0) / max(1e-9, half_life)
+        return [math.exp(-lam * a) for a in ages]
+    if weighting == "linear":
+        return [max(1e-6, 1.0 - a / float(n)) for a in ages]
+    raise ValueError("unknown weighting: %r" % (weighting,))
+
+
+def fit_channel(values, order=2, weighting=None, half_life=3.0):
+    """Least-squares polynomial over `values` (oldest -> newest).
 
     t is measured in frames with t = 0 at the NEWEST accepted sample, so
     predicting h frames ahead is evaluating at t = +h and needs no separate
     extrapolation step that could disagree with the fit.
+
+    ⭐ B8's knobs. The defaults reproduce B3'' EXACTLY (order 2, unweighted), so
+    every number measured before B8 stays reproducible:
+
+      order      1 = p, v      2 = p, v, a
+      weighting  None/'uniform' | 'exp' (half_life in frames) | 'linear'
+
+    ⚠ `weighting` changes the DISTRIBUTION as well as the point estimate: with
+    weights, s^2 is the weighted residual variance over the effective degrees of
+    freedom, and the prediction variance uses (X'WX)^-1. Getting only the point
+    estimate weighted -- and leaving sigma on the unweighted covariance -- would
+    silently mis-scale every z the gate computes.
     """
     n = len(values)
-    if n < MIN_HISTORY:
+    k = 3 if order >= 2 else 2
+    if n < k + 1:                   # else the fit is exact and s^2 is meaningless
         return None
-    ts = [float(k - (n - 1)) for k in range(n)]          # ..., -2, -1, 0
-    basis = [(1.0, t, 0.5 * t * t) for t in ts]
-    xtx = [[sum(b[i] * b[j] for b in basis) for j in range(3)] for i in range(3)]
-    xty = [sum(b[i] * y for b, y in zip(basis, values)) for i in range(3)]
+    ts = [float(j - (n - 1)) for j in range(n)]          # ..., -2, -1, 0
+    basis = [((1.0, t, 0.5 * t * t) if k == 3 else (1.0, t)) for t in ts]
+    w = _weights(n, weighting, half_life)
+    xtx = [[sum(wi * b[i] * b[j] for wi, b in zip(w, basis)) for j in range(k)]
+           for i in range(k)]
+    xty = [sum(wi * b[i] * y for wi, b, y in zip(w, basis, values))
+           for i in range(k)]
     beta = _solve([row[:] + [xty[i]] for i, row in enumerate(xtx)])
     if beta is None:
         return None
-    p, v, a = beta
-    rss = sum((y - (p + v * t + 0.5 * a * t * t)) ** 2 for t, y in zip(ts, values))
-    dof = n - 3
-    s2 = rss / dof if dof > 0 else 0.0
-    return ChannelState(p, v, a, s2, _inv3(xtx), n)
+    p, v = beta[0], beta[1]
+    a = beta[2] if k == 3 else 0.0
+    rss = sum(wi * (y - (p + v * t + 0.5 * a * t * t)) ** 2
+              for wi, t, y in zip(w, ts, values))
+    # Effective sample size for weighted least squares (Kish): sum(w)^2/sum(w^2).
+    # Using raw n here would understate s^2 whenever the weights are unequal.
+    sw, sw2 = sum(w), sum(wi * wi for wi in w)
+    n_eff = (sw * sw / sw2) if sw2 > 0 else n
+    dof = n_eff - k
+    s2 = (rss / sw * n_eff / dof) if (dof > 0 and sw > 0) else 0.0
+    inv = _inv3(xtx) if k == 3 else _inv2(xtx)
+    return ChannelState(p, v, a, s2, inv, n)
 
 
 # ---------------------------------------------------------------- orientation
