@@ -190,6 +190,7 @@ acceptable expected inputs for my game."* **Rapid movement is input, not noise.*
 | `b7_eval.py` | the B7 sweep: verdict test × coast mode × lag × fit, judged on reversal safety first. Imports `b3_full_eval`'s stream builder and reversal labeller so every row is comparable to B3″'s line by line |
 | `b8_fit_sweep.py` | 15 fit configurations (weighting × window × order) against the two baselines **S1** makes mandatory, open loop, **stratified by hand speed**. ⚠⚠ **All 15 lose to "hold the last value"** at some horizon — including the orientation model. Order 2 is measurably worse than order 1 everywhere |
 
+| `verify_palm_anchor.py` | ⭐ **GOLDEN VECTORS for `palm_anchor.py` (B4)**, including §5, the **Z-retrofit reduction**: the 3D-native form must reproduce the flat 2D similarity form to 1e-6 px when the offset lies in the image plane. That test is what makes "the retrofit is one function" provable rather than hopeful. ⚠ Do not edit the expectations to match a port |
 | `b7_live_ab.py` | ⭐ **the LIVE A/B** on a take recorded by `debug_prediction.bat`: what the gate did to the **CUBE**, plus a replay sweep over every degree of freedom. Replays the full pipeline offline and deterministically, so a config sweep is an exact A/B rather than a second live session |
 
 **Verdicts**: ⛔ **B7 is PARKED** (owner, 2026-08-04, §16.9.1) — measured, cleared

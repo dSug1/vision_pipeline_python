@@ -293,6 +293,10 @@ class Cube:
     # exactly continuous (no pop) -- see _compute_grab_weights' docstring.
     grab_landmark_weights: Optional[Dict[int, float]] = None
     grab_residual_offset: Optional[Tuple[float, float]] = None
+    # B4 alternative anchor (Resources/palm_anchor.py): the frozen metric offset
+    # in the PALM's own frame. Used instead of the two fields above when
+    # update_hands is given an `anchor`; None for §14.1's incumbent path.
+    grab_anchor_state: Optional[object] = None
 
 
 @dataclass
@@ -377,6 +381,7 @@ class CubeState:
         cube.grab_cube_orientation = None
         cube.grab_landmark_weights = None
         cube.grab_residual_offset = None
+        cube.grab_anchor_state = None
 
     def set_target_position(self, name: str, top_left: Tuple[float, float]) -> None:
         cube = self.cubes[name]
@@ -691,7 +696,8 @@ def _try_snap(state: CubeState, handedness: str, hand_pos: Tuple[float, float], 
     return best_name
 
 
-def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset()) -> None:
+def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
+                 anchor=None) -> None:
     """hand_data_by_hand: {handedness: {"pixel_landmarks": [...],
     "world_landmarks": [...], "thumb_outward": bool} or None (not detected
     this frame)}.
@@ -704,6 +710,16 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset()) 
     already held keeps being translated and rotated, and a release on tracking
     loss is unaffected, because tracking loss is measured and never predicted.
     `LiveBlockPredictionDebug.py` is the caller that uses it.
+
+    `anchor`: an optional `Resources/palm_anchor.PalmAnchor` (queue item B4).
+    None -- the default -- keeps §14.1's incumbent 9-landmark distance-weighted
+    anchor exactly as it was, so nothing changes for existing callers. When
+    supplied, the held object rides the PALM BLOCK instead: a metric offset
+    frozen in the palm's own 3D frame, rotated by the palm frame each frame and
+    projected. ⚠ The two paths are kept strictly separate and never mixed -- a
+    degenerate palm REFUSES the grab rather than silently falling back to the
+    other anchor, because a fallback would contaminate the A/B this exists for
+    (§16.5's methodological lesson).
 
     Two passes, not one combined per-hand pass — bug found live
     (2026-08-01): releasing and re-snapping in the same per-hand pass let a
@@ -805,20 +821,41 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset()) 
                     # preserves it, same no-pop principle as the
                     # orientation baseline just above).
                     object_pos_at_grab = state.cube_center(owned)
-                    cube.grab_landmark_weights = _compute_grab_weights(object_pos_at_grab, data["pixel_landmarks"])
-                    weighted_at_grab = _weighted_position(cube.grab_landmark_weights, data["pixel_landmarks"])
-                    cube.grab_residual_offset = (
-                        object_pos_at_grab[0] - weighted_at_grab[0],
-                        object_pos_at_grab[1] - weighted_at_grab[1],
-                    )
+                    if anchor is not None:
+                        # B4: freeze a metric offset in the palm's own frame.
+                        # No residual-offset term is needed -- that existed only
+                        # because inverse-distance weighting does not
+                        # interpolate through the query point; this is exact.
+                        cube.grab_anchor_state = anchor.freeze(
+                            object_pos_at_grab, data["pixel_landmarks"],
+                            data["world_landmarks"])
+                        if cube.grab_anchor_state is None:
+                            # Degenerate palm this frame -- refuse the grab
+                            # rather than fall back to a different anchor, which
+                            # would silently contaminate an A/B.
+                            state.release_cube(owned)
+                            owned = None
+                    else:
+                        cube.grab_landmark_weights = _compute_grab_weights(object_pos_at_grab, data["pixel_landmarks"])
+                        weighted_at_grab = _weighted_position(cube.grab_landmark_weights, data["pixel_landmarks"])
+                        cube.grab_residual_offset = (
+                            object_pos_at_grab[0] - weighted_at_grab[0],
+                            object_pos_at_grab[1] - weighted_at_grab[1],
+                        )
         if owned is not None:
             cube = state.cubes[owned]
-            weighted_now = _weighted_position(cube.grab_landmark_weights, data["pixel_landmarks"])
-            new_center = (
-                weighted_now[0] + cube.grab_residual_offset[0],
-                weighted_now[1] + cube.grab_residual_offset[1],
-            )
-            state.set_target_position(owned, _top_left_for_center(new_center, cube.size))
+            if anchor is not None:
+                new_center = anchor.apply(cube.grab_anchor_state,
+                                          data["pixel_landmarks"],
+                                          data["world_landmarks"])
+            else:
+                weighted_now = _weighted_position(cube.grab_landmark_weights, data["pixel_landmarks"])
+                new_center = (
+                    weighted_now[0] + cube.grab_residual_offset[0],
+                    weighted_now[1] + cube.grab_residual_offset[1],
+                )
+            if new_center is not None:      # None = degenerate palm: HOLD, never jump
+                state.set_target_position(owned, _top_left_for_center(new_center, cube.size))
             delta = _quat_multiply(hand_quat_now, _quat_conjugate(cube.grab_hand_orientation))
             target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
             # Slerp was temporarily disabled 2026-08-01 to isolate and

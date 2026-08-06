@@ -5054,6 +5054,292 @@ computed every frame) deletes the fingertip path entirely. That is §16.5's
 independent of B7, it is a replacement rather than an addition, and it is aimed
 at the edge-on/pitch complaint the gate could not touch.
 
+### 16.11 B4 BUILT 3D-NATIVE (2026-08-04) — and the live evidence is MIXED, not a win
+
+`Resources/palm_anchor.py` + `analysis/verify_palm_anchor.py` (18 golden
+vectors, all passing). Owner decision: build it 3D-native now, render in 2D
+until real depth exists, so the Z retrofit is one function later.
+
+    at grab:   R3  = Rot_G⁻¹ · ( X_G − o_G )      metres, in the PALM's frame
+    every t:   P_t = o_t(px) + k_t · proj_xy( Rot_t · R3 )
+
+⭐ **Why 3D-native costs nothing today.** The rotation is *already* computed every
+frame (`hand_blocks.palm_frame`); only the offset representation changes, from a
+2-vector in pixel-frame units to a **metric 3-vector in the palm's own frame**.
+That single choice is what makes the retrofit free: `R3` and `Rot_t` survive
+untouched, `o_t` gains a z, and `proj_xy + k_t` are replaced by a real
+projection. ⛔ **What is missing for true 3D is not the formula — it is ABSOLUTE
+DEPTH**: MediaPipe's world landmarks are hand-RELATIVE (metric shape, origin at
+the hand, no world position), so `o_t.z` does not exist in the data at all. That
+is the Z-translation item's problem and it is identical for every anchor design,
+including §14.1's. `verify_palm_anchor.py` §5 asserts the 3D form reproduces the
+2D similarity form to **6.36e-14 px** at z=0, so the reduction is proven, not
+hoped.
+
+⭐ **Rotating in 3D then projecting gives anisotropic foreshortening for free** —
+an offset along the tilt axis shortens by cos(θ) while a perpendicular one does
+not (verified exactly). A scalar 2D scale term shrinks both equally, which is
+very likely why §16.5 measured arm B as 2.5× noisier under yaw.
+
+#### The scale term: measured, and palm width is ruled out
+
+| | p50 | CV | r(edge_on) | edge-on → open |
+|---|---|---|---|---|
+| palm width, PIXELS | 91.5 px | 25.8% | **+0.601** | **0.320** — 3× collapse |
+| palm width, WORLD | 0.064 m | 18.5% | **+0.002** | 0.993 |
+| weak-perspective `k` | 1403 | 28.9% | +0.091 | 0.809 |
+
+⭐ **The palm never actually collapses — only its projection does.** In metric
+space it is the same hand at every pose (r = +0.002), so a scale built from the
+projection alone inherits the projection's degeneracy while a least-squares fit
+of the known 3D shape to the observed 2D points does not.
+
+#### ⚠⚠ AND THEN THE LIVE MEASUREMENT DOES NOT SUPPORT IT
+
+Replayed over two live takes. Worst cube step while the PALM moved < 0.5 px —
+i.e. §16.10's own defect, the one this module exists to remove:
+
+| still-frame cube step | take 1 (450 s) p50 / p95 / max | take 3 (290 s) p50 / p95 / max |
+|---|---|---|
+| **§14.1 incumbent** | 0.749 / 29.40 / **73.16** | **0.610** / 2.96 / **18.58** |
+| palm anchor, `k` live | 1.544 / 35.70 / 81.01 | 0.542 / 5.87 / 39.84 |
+| palm anchor, `k` frozen | 1.186 / 31.43 / **59.54** | **0.372** / **2.93** / 24.45 |
+
+1. **The live weak-perspective scale is itself a major noise source.** Freezing
+   `k` improves max 81 → 59.5 and p95 5.87 → 2.93. Its 29% CV costs more than
+   the collapse it cures — "noise is smoothable, collapse is not" was right in
+   principle and wrong in magnitude.
+2. **Even at its best the result is MIXED**: better max on take 1, worse on take
+   3; better p50/p95 on take 3, worse p50 on take 1. **This is not the clear win
+   §16.5's replay predicted.**
+3. ⚠ **The likely mechanism, and it is structural**: this anchor makes cube
+   POSITION depend on the palm QUATERNION — the least reliable channel on the
+   hand (§0.18) — and on `k`, over a lever arm equal to the full grab offset
+   (~60 px). §14.1's inverse-distance weighting is not only about fingertips: by
+   putting weight NEAR the cube it also keeps the lever arm SHORT, so angular and
+   scale errors are not amplified. That advantage was not anticipated in §16.10.
+4. ⚠ **Confound, stated because it limits all of the above**: these are replays
+   over takes recorded while the operator watched the §14.1 arm. Once the arms'
+   cubes diverge they grab at different offsets and stop comparing like with
+   like — which penalises the anchor arms far more than the gate arms.
+5. ⚠ **`k` frozen is UNVALIDATED FOR DEPTH**: it stops the offset scaling as the
+   hand moves toward or away from the camera, and these takes may not exercise
+   that. Do not adopt it on the jitter numbers alone.
+
+#### ⚠⚠ AND THE FOUR-ARM LIVE SESSION SETTLES IT: THE ANCHOR IS DISQUALIFIED
+
+A live four-arm take (`four_arm_review`, 2763 frames, 143 s, 19.24 fps, **47%
+still frames**, cube held 95%) run through `debug_prediction.bat`:
+
+| live arm, held-only cube step | p50 | p95 | max | **still-hand max** |
+|---|---|---|---|---|
+| 1 §14.1 anchor, no gate | **1.59** | **9.18** | **36.94** | **11.32** |
+| 2 §14.1 anchor + B7 | 1.66 | 9.58 | 38.25 | 15.24 |
+| 3 PALM anchor, no gate | 8.38 | 97.57 | 393.03 | **307.46** |
+| 4 PALM anchor + B7 | 8.30 | 82.62 | 393.03 | 307.46 |
+
+**A 27× regression on the very defect it was built to remove.** Diagnosed, and
+it is the DESIGN, not a wiring bug — on the 399 frames where the palm CENTROID
+moved < 0.5 px, the palm QUATERNION still moved:
+
+    palm rotation step   p50 1.59 deg   p95 21.91 deg   MAX 144.19 deg
+    weak-persp k step    p50 0.75%      p95  5.99%      max   16.4%
+    >30 deg rotation on a still palm: 2.8% of frames;  >60 deg: 0.5%
+
+⭐ **The scale term was never the real problem — the ORIENTATION channel is.**
+A 144° swing on a 60 px lever arm throws the cube ~114 px. This is §0.18's
+documented defect (the 4-landmark palm frame jumping while the hand is still),
+and the palm anchor converts it directly into cube POSITION, amplified by the
+lever arm. **§14.1's anchor is structurally immune because it never reads
+orientation at all** — a property nobody had noticed was load-bearing.
+
+> ⭐ **THE DURABLE RESULT: an anchor's robustness is not about which landmarks
+> it reads, but about WHICH CHANNELS IT COUPLES TO.** §16.10 correctly showed
+> §14.1 couples cube position to the noisiest LANDMARKS; the fix coupled it to
+> the noisiest CHANNEL instead, which is worse. Removing a defect is not the
+> same as improving the system.
+
+**VERDICT: BUILT, VERIFIED, MEASURED, AND DISQUALIFIED AS DESIGNED.** §14.1
+stays (A7 holds). ⚠ The risk was named in `palm_anchor.py`'s docstring *before*
+the first measurement and then measured as fatal — the naming is what made the
+diagnosis take one run.
+
+**The one cheap variant still worth trying**, because it attacks the measured
+cause rather than the symptom: feed the anchor the **already-filtered**
+orientation (`_predictive_filter_step`'s output, which production ALREADY
+computes for cube rotation) instead of the raw palm quaternion. If the 144°
+excursions are what the filter exists to suppress, the anchor inherits that for
+free. Untested. ⚠ Do not assume it: §0.13.2 measured that most large orientation
+jumps occur in WELL-observed frames, so the filter may not catch these either.
+
+### 16.12 ⭐ WHY §14.1 WINS — the error decomposition, and the one change that beats it
+
+Owner question, 2026-08-04: *what exactly differs between the two formulas, which
+term carries the noise, and can the palm formula borrow §14.1's answer only for
+that term?* Measured on three live takes.
+
+#### The two error structures
+
+| | §14.1 | palm anchor |
+|---|---|---|
+| form | `P = Σ wᵢ·Lᵢ(t) + R`, `Σwᵢ = 1` | `P = o_t + k_t·proj(Rot_t·R3)` |
+| estimates | **nothing** — a linear functional of positions | rotation **and** scale |
+| error | **ADDITIVE**, averaged over 9 points | additive `o_t` **+ two MULTIPLICATIVE terms × lever arm** |
+
+Still-frame contributions, lever arm 60 px:
+
+| term | p50 | p95 | max |
+|---|---|---|---|
+| §14.1 total (mean of 9 landmarks) | 0.432 | 2.18 | **9.49** |
+| — worst single fingertip *input* | 1.769 | 10.65 | 47.08 |
+| palm (a) centroid — additive | **0.321** | 0.48 | 0.50 |
+| palm (b) rotation × lever | 1.667 | 22.95 | **151.00** |
+| palm (c) scale × lever | 0.448 | 3.59 | 9.86 |
+
+⭐ **§14.1 absorbs 47 px fingertip excursions and still outputs 9.49 px, because
+averaging suppresses them.** And ⭐ **the palm CENTROID is the better translation
+term** (0.321 vs 0.432) — that half of §16.10 was right. The whole regression is
+term (b).
+
+#### Borrowing §14.1's answer for the offending term
+
+§14.1 never estimates orientation: rotation-following falls out of averaged
+POSITIONS. Replacing the 3-point Gram-Schmidt with a least-squares **Procrustes**
+similarity fit of the palm constellation in pixel space — same points, averaged —
+repairs most of the damage:
+
+| four_arm_review | p50 | p95 | max | still-max |
+|---|---|---|---|---|
+| §14.1 | **1.59** | **9.18** | **36.94** | **11.32** |
+| palm anchor, Gram-Schmidt | 8.38 | 97.56 | 393.04 | 307.50 |
+| palm anchor, **Procrustes** | 2.58 | 14.50 | 48.10 | 38.20 |
+| Procrustes + 4 tips | 2.30 | 13.14 | 51.40 | 26.58 |
+
+**An 8× repair from changing only how rotation is obtained — and it still loses.**
+
+> ⭐ **THE DURABLE RESULT: estimating a transform costs strictly more variance
+> than not estimating one.** Any estimator-based anchor pays a premium that a
+> linear functional of positions does not. §14.1's apparent crudeness *is* its
+> robustness, and that had not been recognised.
+
+#### ⚠ The arc-extension idea, measured in three forms — all worse
+
+Owner's proposal: weight the fingertips by the arc scalars (or their median),
+which are scale-free and noise-cancelling, rather than using raw knuckles.
+
+| four_arm_review | p50 | p95 | max | still-max |
+|---|---|---|---|---|
+| tips, no arc weighting | **2.30** | **13.14** | 51.40 | **26.58** |
+| binary arc gate 0.03 | 3.79 | 54.00 | 129.78 | 75.48 |
+| binary MEDIAN-arc gate | 2.92 | 35.84 | 107.65 | 61.95 |
+| continuous τ=0.10 / 0.05 / 0.02 | 3.12 / 3.90 / 5.09 | 15.49 / 19.29 / 27.82 | 58.61 / 66.21 / 75.39 | 30.15 / 32.57 / 52.14 |
+
+**Monotonically worse as the arc influence grows**, converging to the unweighted
+case as τ→∞. Binary gating is worse still, because switching the active point set
+manufactures a discontinuity at every switch.
+
+⭐ **Why: a least-squares fit ALREADY absorbs a moving fingertip as residual.**
+Down-weighting it removes a point from the averaging, raising the estimator's
+variance more than it lowers its bias. **Averaging beats selecting** — now the
+fourth independent measurement of that on this sensor (item 1.6, B3″, B7, here).
+
+#### ⭐ The one change that DOES beat §14.1 — and it changes nothing structural
+
+Keep §14.1 exactly: additive, no estimator, no lever arm. Scale only the
+**fingertip share of its own frozen weights**, then renormalise. One line.
+
+| | §14.1 (×1.00) | **×0.60** | **×0.35** | ×0.00 |
+|---|---|---|---|---|
+| four_arm p95 / max | 9.18 / 36.94 | **8.60 / 33.78** | **8.28 / 30.77** | 10.50 / 42.52 |
+| gate_live p50 / p95 | 7.55 / 41.11 | 7.27 / 39.20 | **7.12 / 37.96** | 7.33 / 35.96 |
+| z4 max / still-max | 41.08 / 18.58 | **34.41 / 10.42** | 40.04 / **6.22** | 62.22 / 19.48 |
+
+⭐ **×0.00 — deleting the fingertips — is WORSE on all three takes.** There is an
+interior optimum near **0.35–0.6**: the fingertips carry both signal (span, extra
+averaging) and noise (flex), and neither extreme is right. That also retires
+§16.10's implicit premise that the fingertips are simply a defect to remove.
+
+⚠ **Gains are modest (5–17%) and not uniform** — still-max improves hugely on one
+take and worsens slightly on another. **Not adopted on this evidence.**
+
+#### ⚠ What is still unmeasured, and it is the metric that matters
+
+All of the above is JITTER. §16.5 records that *"a systematic drift is the defect
+the operator actually reported; jitter is not."* The SINK was measured across
+these takes and is **inconclusive** (|r| 0.02–0.51, no consistent ordering) —
+because **none of these takes contains a sustained yaw hold or a pitch
+crossing**, which is precisely the error §16.4 made and §16.5 had to overturn.
+
+**Next step, and the only one that can settle B4: two purpose-built takes**
+(sustained yaw hold, pitch crossing, cube held throughout) measured per take and
+never pooled. If the sink favours a palm-based anchor, the variant to use is
+**Procrustes + tips**, never the Gram-Schmidt form and never an arc-weighted one.
+
+### 16.13 ⭐⭐ THE CUBE'S ROTATION IS THE REAL TARGET — and KABSCH beats Gram-Schmidt 7.5×
+
+⚠ **First, a conflation to kill: §14.1 HAS NO ROTATION COMPONENT.** The two paths
+have always been fully separate, and the cube's rotation has always been
+palm-based:
+
+    POSITION  9 landmarks (5 tips + 4 MCPs), PIXELS -> weighted mean + frozen offset   [14.1]
+    ROTATION  4 palm landmarks (0,5,9,17), WORLD    -> Gram-Schmidt frame -> quaternion
+                                                    -> _predictive_filter_step
+                                                    -> delta = q_now . conj(q_grab)
+                                                    -> target = delta . q_cube_at_grab
+                                                    -> slerp(cube.orientation, target, 0.35)
+
+So "improve §14.1's rotation" is not a thing to do, and a hybrid of "palm for
+translation, §14.1 for rotation" is already half-shipped: **rotation IS the palm
+block**, via the same four landmarks and the same Gram-Schmidt construction
+`palm_anchor` used.
+
+#### The measurement: frame-to-frame rotation on a STILL palm
+
+| four_arm_review, n=399 | p50 | p95 | max |
+|---|---|---|---|
+| RAW Gram-Schmidt quaternion | 1.59 | 21.91 | **144.19** |
+| after `_predictive_filter_step` (**SHIPPED**) | 1.59 | 17.54 | **101.61** |
+| **KABSCH delta, 5 palm pts** | 1.35 | 11.71 | **25.07** |
+| **KABSCH delta, 5 palm + 4 tips** | **0.85** | **2.91** | **19.32** |
+
+⭐⭐ **A least-squares (Kabsch) rotation fit over the palm constellation cuts p95
+from 21.91° to 2.91° and max from 144° to 19° — 7.5× on both.** The shipped
+predictive filter removes only ~30% of the excursion; the estimator, not the
+filter, is where the error lives.
+
+⭐ **AND THE FINGERTIPS HELP HERE — the opposite of the translation case.** Adding
+the 4 tips improves p95 11.71 -> 2.91. Rotation is estimated by least squares
+over a constellation, so points FAR from the centroid give a long baseline for
+angle; their positional noise matters far less for an angle than their span
+helps. **The same landmarks that are a liability for translation are an asset for
+rotation.** That is why §16.12's "averaging beats selecting" and this result do
+not contradict each other — the estimand is different.
+
+⚠ Smaller effect on `gate_live_ab` (p95 7.29 -> 5.65, max slightly worse). Not
+yet a settled result: needs purpose-built takes.
+
+#### ⚠ Two design questions this opens, neither yet answered
+
+1. **Frame-to-frame vs grab-referenced.** The cube needs the delta from GRAB.
+   A grab-referenced Kabsch gives it with no drift, but is corrupted by finger
+   flex during the hold (the constellation changes shape). A frame-to-frame
+   Kabsch is immune to slow shape change but ACCUMULATES drift when integrated.
+   Palm-only grab-referenced is immune to both and still beats Gram-Schmidt
+   (p95 11.71 vs 21.91).
+2. ⚠ **The M6b precedent does NOT transfer, but its warning does.** §0.12
+   measured "SVD frame 2.1x worse" — but that was an ABSOLUTE frame derived from
+   the current point cloud (PCA-style), not a RELATIVE fit between two
+   corresponding constellations. Different estimator, different failure mode.
+   ⚠ What DOES transfer is M6b's Q1: **an SVD-based rotation can silently invert
+   chirality**, a bug this project has shipped once (§13.6.1). Any Kabsch
+   implementation must carry the `det` sign correction, and the chirality guard
+   must be run against it before it goes anywhere near production.
+
+**This is now the most promising open lead in Phase B**, ahead of the anchor
+question — it targets a channel that is measurably broken (144° excursions on a
+still hand), it uses information already available every frame, and it changes an
+estimator rather than adding a layer.
+
 ### ⚠ Binding architectural constraint (spec S3, Apple's shipped design)
 
 **Predicted state must NEVER reach a gesture state machine.** The split is:

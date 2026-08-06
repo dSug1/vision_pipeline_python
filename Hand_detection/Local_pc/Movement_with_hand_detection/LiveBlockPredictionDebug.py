@@ -1,8 +1,12 @@
-"""Side-by-side A/B of the confirmation gate (B7), with the hand drawn as BLOCKS.
+"""Four-arm live A/B of ANCHOR x GATE, with the hand drawn as BLOCKS.
 
-    LEFT   "RAW"    the normal pipeline -- exactly what debug_snap.bat shows
-    RIGHT  "GATED"  the same frame, same detections, with B7's confirmation
-                    gate (Resources/confirmation_gate.py) wired in
+    1 top-left      14.1 anchor (9 landmarks)   no gate   <- production today
+    2 top-right     14.1 anchor                 + B7 gate
+    3 bottom-left   PALM anchor (B4)            no gate
+    4 bottom-right  PALM anchor                 + B7 gate
+
+  READ DOWN A COLUMN for "what does the GATE change", ACROSS A ROW for "what
+  does the ANCHOR change". `--arms 2` drops the bottom row.
 
 ⛔ THE GATE THIS TOOL DEMONSTRATES IS PARKED (owner, 2026-08-04, spec 16.9.1):
    measured, cleared of its blockers, and then declined because the improvement
@@ -20,10 +24,11 @@ exclusive access), so a two-process version would need two cameras -- and then
 the two windows would be watching DIFFERENT hand motions, which makes the
 comparison worthless. Here the camera is read ONCE, MediaPipe runs ONCE, DR-1
 identity and DR-2 palm-facing run ONCE, and only then does the stream fork into
-two independent `CubeState`s. **Every difference you see between the windows is
-caused by the gate and by nothing else.**
+FOUR independent `CubeState`s. **Every difference you see between the windows is
+caused by the anchor or the gate and by nothing else.**
 
-The two windows are placed side by side automatically (`--gap`, `--scale`).
+The windows are placed in a 2x2 grid automatically (`--gap`, `--vgap`,
+`--scale`; use `--scale 0.7` if four windows do not fit).
 
 
 HOW THE GATE IS WIRED (16.2 rule 5 -- the consumers split)
@@ -118,6 +123,7 @@ sys.path.insert(0, BASE)
 import LiveSnapDebug as LSD                                    # noqa: E402
 from Resources import hand_blocks as HB                        # noqa: E402
 from Resources import confirmation_gate as CG                  # noqa: E402
+from Resources import palm_anchor as PAnc                      # noqa: E402
 
 sys.path.insert(0, os.path.join(
     BASE, "..", "Python_Server_MediaPipe_vision_pipeline", "Resources"))
@@ -135,6 +141,7 @@ AXIS_COLORS = ((60, 60, 255), (60, 220, 60), (255, 180, 60))   # e1, e2, e3
 PENDING_COLOR = (0, 190, 255)        # amber: the gate is withholding judgement
 DISCARD_COLOR = (60, 60, 255)        # red: frames were just thrown away
 PALM_ALPHA = 0.30
+ANCHOR_COLOR = (140, 255, 140)       # green: the B4 palm-anchor row
 
 ARC_SEGMENTS = 18
 DISCARD_FLASH_FRAMES = 6             # how long a discard stays visible on screen
@@ -388,7 +395,27 @@ def channel_status(res, flash):
 
 
 # ---------------------------------------------------------------- HUD
-def draw_hud(frame, title, subtitle, counters=None, holds=(), color=(255, 255, 255)):
+def draw_countdown(frame, remaining):
+    """Big centred countdown. Nothing is recorded until it reaches zero, so the
+    trackers (DR-1, DR-2, the fit windows) are warm before capture starts and
+    the operator has time to get into position."""
+    h, w = frame.shape[:2]
+    n = int(math.ceil(remaining))
+    txt = str(max(1, n))
+    (tw, th), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_DUPLEX, 6.0, 12)
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (0, 0), (w, h), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.45, frame, 0.55, 0, frame)
+    cv2.putText(frame, txt, ((w - tw) // 2, (h + th) // 2),
+                cv2.FONT_HERSHEY_DUPLEX, 6.0, (80, 255, 255), 12, cv2.LINE_AA)
+    msg = "get into position -- recording starts at 0"
+    (mw, _), _ = cv2.getTextSize(msg, cv2.FONT_HERSHEY_DUPLEX, 0.6, 1)
+    cv2.putText(frame, msg, ((w - mw) // 2, (h + th) // 2 + 44),
+                cv2.FONT_HERSHEY_DUPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
+
+
+def draw_hud(frame, title, subtitle, counters=None, holds=(), color=(255, 255, 255),
+             timer=None):
     """Title/subtitle in a top strip, live counters in a BOTTOM strip.
 
     Separate strips on purpose: the title is long enough that right-aligning the
@@ -400,6 +427,12 @@ def draw_hud(frame, title, subtitle, counters=None, holds=(), color=(255, 255, 2
     cv2.putText(frame, title, (10, 22), cv2.FONT_HERSHEY_DUPLEX, 0.6, color, 1, cv2.LINE_AA)
     cv2.putText(frame, subtitle, (10, 41), cv2.FONT_HERSHEY_SIMPLEX, 0.40,
                 (185, 185, 185), 1, cv2.LINE_AA)
+    if timer is not None:
+        txt = f"REC {timer:5.1f}s"
+        (tw, _), _ = cv2.getTextSize(txt, cv2.FONT_HERSHEY_DUPLEX, 0.62, 2)
+        cv2.circle(frame, (w - tw - 26, 22), 7, (60, 60, 255), -1)
+        cv2.putText(frame, txt, (w - tw - 12, 28), cv2.FONT_HERSHEY_DUPLEX, 0.62,
+                    (60, 60, 255), 2, cv2.LINE_AA)
     if counters or holds:
         cv2.rectangle(frame, (0, h - 26), (w, h), (0, 0, 0), -1)
         if counters:
@@ -441,6 +474,12 @@ def save_recording(records, args, width, height, counters):
     meta = {
         "sequence": args.sequence,
         "note": args.note,
+        "prompt": args.prompt,
+        "countdown_s": args.countdown,
+        "analysis_trim": {"head_s": args.trim_head, "tail_s": args.trim_tail,
+                          "why": "grab approach at the start, wind-down at the end -- "
+                                 "real hand motion, but not the condition under test"},
+        "warmup_excluded": True,   # frames before the countdown ended are NOT in this file
         "frames": len(records),
         "actual_span_s": round(span, 3),
         "measured_fps": round(len(records) / span, 2) if span > 0 else None,
@@ -455,6 +494,10 @@ def save_recording(records, args, width, height, counters):
                  "coast_mode": CG.COAST_MODE, "blend": CG.BLEND_FRAMES,
                  "fit_kwargs": CG.FIT_KWARGS, "reject_z": BPCFG["reject_z"],
                  "window": BPCFG["window"], "floors": "derived, block_predictor.FLOOR"},
+        "arms": args.arms,
+        "palm_anchor": {"scale": "weak-perspective LS fit over the 5 palm points",
+                        "scale_alpha": args.scale_alpha,
+                        "offset": "metric 3-vector in the palm frame (3D-native)"},
         "counters": counters,
         "contains": ("per-frame raw pixel+world landmarks, the resolved DR-1 label, "
                      "the gate's per-channel decision, and BOTH cube states -- so the "
@@ -483,9 +526,26 @@ def main():
     p.add_argument("--record-root", default=CAPTURE_ROOT)
     p.add_argument("--sequence", default="gate_live_ab")
     p.add_argument("--note", default="")
+    p.add_argument("--prompt", default="",
+                   help="operator instruction drawn on screen for the whole take")
+    p.add_argument("--countdown", type=float, default=3.0,
+                   help="seconds of un-recorded warm-up before capture starts")
+    # The operator always spends the opening seconds moving to grab the cube and
+    # the closing seconds winding down. Recorded, but excluded from analysis by
+    # every harness via meta.json -- the take stays raw, the window is documented.
+    p.add_argument("--trim-head", type=float, default=10.0,
+                   help="seconds to EXCLUDE FROM ANALYSIS at the start (grab approach)")
+    p.add_argument("--trim-tail", type=float, default=5.0,
+                   help="seconds to EXCLUDE FROM ANALYSIS at the end (wind-down)")
     p.add_argument("--scale", type=float, default=1.0,
                    help="display scale for BOTH windows (use <1 if they do not fit)")
     p.add_argument("--gap", type=int, default=12, help="pixels between the windows")
+    p.add_argument("--vgap", type=int, default=46,
+                   help="vertical pitch allowance for the OS title bar")
+    p.add_argument("--scale-alpha", type=float, default=PAnc.SCALE_ALPHA,
+                   help="EMA on the palm anchor's metres->pixels scale (1.0 = off)")
+    p.add_argument("--arms", type=int, default=4, choices=(2, 4),
+                   help="2 = the original RAW/GATED pair only; 4 = add the palm-anchor row")
     p.add_argument("--lag", type=int, default=CG.LAG,
                    help="B7's confirmation lag L, in frames (2 = ~83 ms at 24 fps)")
     # ⭐ The best single tune found by the live sweep (analysis/b7_live_ab.py):
@@ -525,20 +585,40 @@ def main():
 
     state_raw = LSD.CubeState(window_size=(width, height))
     state_gated = LSD.CubeState(window_size=(width, height))
+    # Bottom row: the SAME two arms again, but with the cube riding the PALM
+    # BLOCK instead of §14.1's 9 landmarks (B4). Separate CubeStates and
+    # separate gates -- they must not share a frame of state with the top row.
+    state_anch = LSD.CubeState(window_size=(width, height))
+    state_anch_gated = LSD.CubeState(window_size=(width, height))
+    palm_anchor = PAnc.PalmAnchor(scale_alpha=args.scale_alpha)
     gates = {h: CG.ConfirmationGate(lag=args.lag, reject_z=args.reject_z)
              for h in TRACKED_HANDS}
+    gates_anch = {h: CG.ConfirmationGate(lag=args.lag, reject_z=args.reject_z)
+                  for h in TRACKED_HANDS}
     flash = {h: {} for h in TRACKED_HANDS}
+    flash_a = {h: {} for h in TRACKED_HANDS}
     seen_last = {h: False for h in TRACKED_HANDS}
     n_flag = n_disc = n_conf = 0
 
-    win_raw = "RAW -- no gate (production behaviour)"
-    win_gated = f"GATED -- B7 confirmation gate, L={args.lag}, z={args.reject_z}"
+    win_raw = "1 RAW -- 14.1 anchor, no gate (production behaviour)"
+    win_gated = f"2 GATED -- 14.1 anchor + B7 gate (L={args.lag}, z={args.reject_z})"
+    win_anch = "3 PALM ANCHOR -- B4, cube rides the palm block"
+    win_anch_gated = "4 PALM ANCHOR + B7 gate"
     disp_w = int(width * args.scale)
     disp_h = int(height * args.scale)
-    for name, x in ((win_raw, 0), (win_gated, disp_w + args.gap)):
+    # 2x2: anchor arms UNDER the arms they are the alternative to, so each
+    # column is one gate setting and each ROW is one anchor -- read down a
+    # column for "what does the gate change", across a row for "what does the
+    # anchor change".
+    layout = [(win_raw, 0, 0), (win_gated, disp_w + args.gap, 0)]
+    if args.arms == 4:
+        y2 = disp_h + args.vgap
+        layout += [(win_anch, 0, y2), (win_anch_gated, disp_w + args.gap, y2)]
+    for name, x, y in layout:
         cv2.namedWindow(name, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(name, disp_w, disp_h)
-        cv2.moveWindow(name, x, 0)
+        cv2.moveWindow(name, x, y)
+    windows = [n for n, _x, _y in layout]
 
     fps_hint = 1000.0 / 24.0
     lat_ms = args.lag * fps_hint
@@ -548,6 +628,8 @@ def main():
 
     records = []
     frame_idx = -1
+    t_first = None          # perf_counter ms of the first frame
+    rec_start = None        # perf_counter ms when the countdown ended
     try:
         while True:
             ok, frame = cap.read()
@@ -589,6 +671,10 @@ def main():
             data_gated = {h: None for h in TRACKED_HANDS}
             draw_raw, draw_gated, normalized_by_label = {}, {}, {}
             holds = set()
+            holds_a = set()
+            data_anch = {h: None for h in TRACKED_HANDS}
+            data_anch_gated = {h: None for h in TRACKED_HANDS}
+            draw_anch, draw_anch_gated = {}, {}
             seen = {h: False for h in TRACKED_HANDS}
             rec_hands = []
 
@@ -631,6 +717,26 @@ def main():
                 draw_raw[label] = (px, raw_state, {})
                 draw_gated[label] = (gpx, out_state, st)
 
+                # --- the palm-anchor arms (B4) -------------------------------
+                # Arm 3 consumes the SAME raw landmarks as arm 1; only the
+                # anchor differs. Arm 4 consumes the SAME gated landmarks as
+                # arm 2. So column = gate, row = anchor, and no arm shares
+                # state with another.
+                if args.arms == 4:
+                    data_anch[label] = data_raw[label]
+                    res_a = gates_anch[label].update(raw_state)
+                    gpx_a, gw_a = apply_gate_to_landmarks(px, world, raw_state,
+                                                          res_a["output"])
+                    data_anch_gated[label] = {
+                        "pixel_landmarks": gpx_a, "world_landmarks": gw_a,
+                        "thumb_outward": outward}
+                    if any(not res_a["valid"][c]
+                           for c in ("pos_x", "pos_y", "scale", "quat")):
+                        holds_a.add(label)
+                    draw_anch[label] = (px, raw_state, {})
+                    draw_anch_gated[label] = (gpx_a, res_a["output"],
+                                              channel_status(res_a, flash_a[label]))
+
                 if args.record:
                     rec_hands.append({
                         "label": label,
@@ -657,8 +763,21 @@ def main():
 
             LSD.update_hands(state_raw, data_raw)
             LSD.update_hands(state_gated, data_gated, snap_blocked=holds)
+            if args.arms == 4:
+                LSD.update_hands(state_anch, data_anch, anchor=palm_anchor)
+                LSD.update_hands(state_anch_gated, data_anch_gated,
+                                 snap_blocked=holds_a, anchor=palm_anchor)
 
-            if args.record:
+            if t_first is None:
+                t_first = t_capture
+            counting = (rec_start is None
+                        and (t_capture - t_first) / 1000.0 < args.countdown)
+            if rec_start is None and not counting:
+                rec_start = t_capture
+                print(f"[record] countdown finished -- capturing '{args.sequence}'")
+            elapsed = None if rec_start is None else (t_capture - rec_start) / 1000.0
+
+            if args.record and rec_start is not None:
                 records.append({
                     "frame": frame_idx,
                     "tCapture": round(t_capture, 3),
@@ -667,6 +786,10 @@ def main():
                     "cubes_raw": cube_snapshot(state_raw),
                     "cubes_gated": cube_snapshot(state_gated),
                 })
+                if args.arms == 4:
+                    records[-1]["cubes_anchor"] = cube_snapshot(state_anch)
+                    records[-1]["cubes_anchor_gated"] = cube_snapshot(state_anch_gated)
+                    records[-1]["s3_hold_anchor"] = sorted(holds_a)
 
             frame_raw = frame.copy()
             frame_gated = frame.copy()
@@ -685,20 +808,54 @@ def main():
             LSD._draw_cubes(frame_raw, state_raw)
             LSD._draw_cubes(frame_gated, state_gated)
 
-            draw_hud(frame_raw, "RAW  (no gate)",
-                     "what debug_snap.bat shows -- the production behaviour")
+            draw_hud(frame_raw, "1  RAW  (14.1 anchor, no gate)",
+                     args.prompt or "what debug_snap.bat shows -- the production behaviour",
+                     timer=elapsed)
+            if args.prompt:
+                h0, w0 = frame_raw.shape[:2]
+                (tw, _), _ = cv2.getTextSize(args.prompt, cv2.FONT_HERSHEY_DUPLEX, 0.62, 2)
+                cv2.rectangle(frame_raw, (0, h0 - 62), (w0, h0 - 26), (0, 0, 0), -1)
+                cv2.putText(frame_raw, args.prompt, (max(8, (w0 - tw) // 2), h0 - 38),
+                            cv2.FONT_HERSHEY_DUPLEX, 0.62, (80, 255, 255), 2, cv2.LINE_AA)
             draw_hud(frame_gated,
-                     f"GATED  (B7, L={args.lag}, z={args.reject_z}, ~{lat_ms:.0f} ms hold)",
+                     f"2  GATED  (14.1 anchor + B7, L={args.lag}, z={args.reject_z}, ~{lat_ms:.0f} ms)",
                      "amber = channel PENDING (deciding)   red = frames DISCARDED",
                      counters=f"flag {n_flag}  discard {n_disc}  keep {n_conf}",
                      holds=holds, color=PENDING_COLOR)
 
+            if counting:
+                remaining = args.countdown - (t_capture - t_first) / 1000.0
+                draw_countdown(frame_raw, remaining)
+                draw_countdown(frame_gated, remaining)
             cv2.imshow(win_raw, frame_raw)
             cv2.imshow(win_gated, frame_gated)
+
+            if args.arms == 4:
+                frame_anch = frame.copy()
+                frame_anch_gated = frame.copy()
+                for label, (pxa, sta, _st) in draw_anch.items():
+                    draw_blocks(frame_anch, pxa, sta, label)
+                for label, (pxa, sta, status) in draw_anch_gated.items():
+                    draw_blocks(frame_anch_gated, pxa, sta, label, status)
+                LSD._draw_cubes(frame_anch, state_anch)
+                LSD._draw_cubes(frame_anch_gated, state_anch_gated)
+                draw_hud(frame_anch, "3  PALM ANCHOR  (B4, no gate)",
+                         "cube rides the palm block -- no fingertip can move it",
+                         color=ANCHOR_COLOR)
+                draw_hud(frame_anch_gated,
+                         f"4  PALM ANCHOR + B7  (L={args.lag}, z={args.reject_z})",
+                         "both changes at once",
+                         holds=holds_a, color=ANCHOR_COLOR)
+                if counting:
+                    draw_countdown(frame_anch, args.countdown - (t_capture - t_first) / 1000.0)
+                    draw_countdown(frame_anch_gated, args.countdown - (t_capture - t_first) / 1000.0)
+                cv2.imshow(win_anch, frame_anch)
+                cv2.imshow(win_anch_gated, frame_anch_gated)
+
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
-            if (cv2.getWindowProperty(win_raw, cv2.WND_PROP_VISIBLE) < 1
-                    or cv2.getWindowProperty(win_gated, cv2.WND_PROP_VISIBLE) < 1):
+            if any(cv2.getWindowProperty(w, cv2.WND_PROP_VISIBLE) < 1
+                   for w in windows):
                 break
     finally:
         cap.release()

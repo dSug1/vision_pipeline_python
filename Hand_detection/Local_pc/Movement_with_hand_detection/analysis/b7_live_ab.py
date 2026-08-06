@@ -68,12 +68,33 @@ def ratio(a, b):
 
 
 # --------------------------------------------------------------------------
-def load(session):
+def load(session, trim=True):
+    """Load a take, applying its DOCUMENTED trim.
+
+    ⚠ The trim lives in meta.json (`analysis_trim`), never in the JSONL: the
+    recording stays raw and intact, and every harness applies the identical
+    window. An operator always spends the first seconds moving to grab the cube
+    and the last seconds winding down; both are real hand motion that is not the
+    condition under test, and leaving them in silently contaminates whichever
+    metric happens to be sensitive to them.
+    """
     with open(os.path.join(session, "meta.json"), encoding="utf-8-sig") as f:
         meta = json.load(f)
     recs = [json.loads(l) for l in
             open(os.path.join(session, "raw_landmarks.jsonl"), encoding="utf-8")
             if l.strip()]
+    tr = meta.get("analysis_trim") or {}
+    head, tail = float(tr.get("head_s", 0.0)), float(tr.get("tail_s", 0.0))
+    if trim and recs and (head > 0 or tail > 0):
+        t0, t1 = recs[0]["tCapture"], recs[-1]["tCapture"]
+        lo, hi = t0 + head * 1000.0, t1 - tail * 1000.0
+        kept = [r for r in recs if lo <= r["tCapture"] <= hi]
+        if kept:
+            meta = dict(meta)
+            meta["_trimmed_from"] = len(recs)
+            meta["frames"] = len(kept)
+            meta["actual_span_s"] = round((kept[-1]["tCapture"] - kept[0]["tCapture"]) / 1000.0, 3)
+            recs = kept
     return meta, recs
 
 

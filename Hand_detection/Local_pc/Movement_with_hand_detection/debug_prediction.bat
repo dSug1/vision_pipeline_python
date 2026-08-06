@@ -4,10 +4,14 @@ REM  Side-by-side A/B of the B7 confirmation gate, with the hand drawn as
 REM  the SIX BLOCKS (Hand_detection/Claude/GESTURE_PIPELINE_SPEC.md
 REM  section 16) instead of the 21-point landmark skeleton.
 REM
-REM      LEFT window   "RAW"    the normal pipeline - what debug_snap.bat shows
-REM      RIGHT window  "GATED"  the same frames with Resources/confirmation_gate.py
-REM                             wired in (block state -> gate -> corrected
-REM                             landmarks -> the unchanged cube logic)
+REM  FOUR windows in a 2x2 grid - ANCHOR (rows) x GATE (columns):
+REM      1 top-left      14.1 anchor, 9 landmarks   no gate   <- production today
+REM      2 top-right     14.1 anchor                + B7 gate
+REM      3 bottom-left   PALM anchor (B4)           no gate
+REM      4 bottom-right  PALM anchor                + B7 gate
+REM  Read DOWN a column for what the gate changes, ACROSS a row for what the
+REM  anchor changes. Use --arms 2 for the original pair, --scale 0.7 if the
+REM  four windows do not fit your screen.
 REM
 REM  ONE PROCESS, TWO WINDOWS, and deliberately so: two processes cannot
 REM  share one webcam on Windows, and two cameras would mean the windows
