@@ -339,6 +339,9 @@ class CubeState:
     # fully trusting the raw reading, 0.0 means fully coasting on the
     # predicted/extrapolated orientation.
     last_hand_reliability_alpha: Dict[str, float] = field(default_factory=lambda: {h: 1.0 for h in TRACKED_HANDS})
+    # §16.15: per-hand state for an optional least-squares rotation estimator.
+    # Reset on tracking loss, same contract as hand_orientation_filters.
+    hand_rotation_states: Dict[str, object] = field(default_factory=lambda: {h: None for h in TRACKED_HANDS})
 
     def __post_init__(self):
         if not self.cubes:
@@ -697,7 +700,7 @@ def _try_snap(state: CubeState, handedness: str, hand_pos: Tuple[float, float], 
 
 
 def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
-                 anchor=None) -> None:
+                 anchor=None, rotation=None) -> None:
     """hand_data_by_hand: {handedness: {"pixel_landmarks": [...],
     "world_landmarks": [...], "thumb_outward": bool} or None (not detected
     this frame)}.
@@ -789,6 +792,7 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
         data = hand_data_by_hand[handedness]
         if data is None:
             state.hand_orientation_filters[handedness] = HandOrientationFilter()  # avoid predicting from a stale reference on reacquire
+            state.hand_rotation_states[handedness] = None                         # §16.15: never fit against a dead track
             continue
         thumb_outward = data["thumb_outward"]
         state.last_known_thumb_outward[handedness] = thumb_outward
@@ -801,6 +805,18 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
         hand_quat_now = _predictive_filter_step(
             state.hand_orientation_filters[handedness], raw_quat, conditioning_norm
         )
+        if rotation is not None:
+            # §16.15: the orientation DELTA comes from a least-squares fit over
+            # the palm constellation. Its own frozen reference is per hand, so a
+            # cube grabbed later still measures from the same track.
+            rs = state.hand_rotation_states[handedness]
+            if rs is None:
+                rs = rotation.freeze(data["pixel_landmarks"], data["world_landmarks"])
+                state.hand_rotation_states[handedness] = rs
+            if rs is not None:
+                _d = rotation.delta(rs, data["pixel_landmarks"], data["world_landmarks"])
+                if _d is not None:
+                    hand_quat_now = _d
 
         owned = state.cube_owned_by(handedness)
         if owned is None:

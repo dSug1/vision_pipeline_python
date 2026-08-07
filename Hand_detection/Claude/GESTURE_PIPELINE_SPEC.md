@@ -5340,6 +5340,147 @@ question — it targets a channel that is measurably broken (144° excursions on
 still hand), it uses information already available every frame, and it changes an
 estimator rather than adding a layer.
 
+### 16.14 ⭐⭐ ARM B WINS — the sink is KILLED on every axis (2026-08-07)
+
+Seven purpose-built takes (2026-08-06/07) — the **first** in this project that
+contain the conditions §16.4/§16.5 argued about. §16.4 measured the sink on takes
+with no sustained yaw and no pitch crossing and produced a confident wrong answer.
+
+⭐ **Validation first**: this harness measures §14.1's pitch sink at **−0.807**;
+§16.5 independently measured **0.822**. The harness reproduces the known number
+before being trusted for a new one.
+
+| take | §14.1 p95 / max / stillMax | **ARM B** p95 / max / stillMax | SINK §14.1 → **arm B** |
+|---|---|---|---|
+| 3 yaw | 2.74 / 8.88 / 1.88 | 4.64 / 14.49 / 3.43 | −0.656 → **0.000** |
+| **4b pitch** | 5.09 / 13.57 / **4.81** | 8.11 / 25.07 / **4.64** | **−0.807 → −0.000** |
+| 5 depth | 1.83 / 5.56 / 1.28 | 1.83 / **4.67** / 1.39 | −0.589 → **−0.001** |
+| 6 back-of-hand | 4.91 / 25.61 / 3.56 | 6.35 / 30.52 / **3.44** | −0.083 → **0.000** |
+
+**Arm B eliminates the systematic sink on every axis**, reproducing §16.5's
+0.005/0.001 on data that actually contains the conditions. Cost: p95 jitter
++30–70% on yaw/pitch/back-of-hand, **unchanged on depth**. ⭐ **The worst
+STILL-HAND step does not degrade** (pitch 4.81→4.64, back 3.56→3.44).
+
+#### ⚠⚠ AND THE 3D-NATIVE DESIGN OF §16.11 IS OVERTURNED
+
+Same palm centroid, same idea, radically different result — pitch axis:
+
+    §14.1 incumbent            p95  5.09   max 13.57   stillMax  4.81
+    ARM B (2D)                      8.11       25.07             4.64
+    3D-native (palm + Horn)        27.80       72.22            36.43
+
+⭐ **§16.11 argued the 3D palm quaternion was "free, because it is computed every
+frame anyway". IT IS NOT FREE — it costs the DEGENERACY of that frame**, which
+collapses at edge-on, exactly where the anchor is needed and exactly where pitch
+drives the hand. Arm B's axis is a pixel direction and its scale a pixel width,
+so both foreshorten with the projection and neither can degenerate.
+
+> ⭐ **FOR THE ANCHOR, STAYING IN 2D IS NOT A LIMITATION — IT IS A SHIELD.**
+> The general lesson: prefer the representation that cannot degenerate over the
+> one that is more "correct" but shares a failure mode with the sensor.
+
+⚠ Arm C (no scale term) is measurably wrong: yaw −0.745, depth −0.873. **The
+scale term is what decouples the sink** — §16.5 said this and it replicates.
+
+### 16.15 ⭐⭐ HORN ROTATION — 10× on the cube's ORIENTATION where it matters most
+
+⚠ §16.13's estimator-level result had no cube-level price attached, because the
+harness measured cube POSITION only. Measured properly — the shipped rotation
+path (delta from grab, slerp 0.35), with the quaternion supplied by each
+estimator — **cube orientation step, deg/frame, held cube**:
+
+| take | Gram-Schmidt (SHIPPED) p95 / max / stillMax | **Horn palm+tips (ref)** |
+|---|---|---|
+| 3 yaw | 2.74 / 5.64 / 5.64 | 2.72 / 6.89 / **3.84** |
+| **4b pitch** | 7.42 / **39.94** / **22.89** | 3.82 / **9.64** / **4.21** |
+| 5 depth | 0.61 / 1.63 / 1.63 | **0.41 / 0.79 / 0.79** |
+| **6 back-of-hand** | 5.36 / **58.86** / **36.54** | 2.18 / **8.40** / **3.48** |
+
+**Pitch: worst step 39.94° → 9.64°, worst still-hand step 22.89° → 4.21°.
+Back-of-hand: 58.86° → 8.40° and 36.54° → 3.48° — a 10× reduction** in the two
+bands §0.18 calls a sensor floor. Better on every take.
+
+⚠ `ff` (frame-to-frame) edges out `ref` everywhere but **ACCUMULATES DRIFT,
+unmeasured**. **`ref` is the ship candidate** — drift-free by construction, and
+still 4× on pitch max and 7× at back-of-hand.
+
+⭐ **Horn, not SVD-Kabsch, and that is a safety property**: Horn's answer IS a
+quaternion, so a reflection is unrepresentable and handedness cannot silently
+invert. §13.6.1 shipped that bug once; M6b's Q1 exists to catch it. Here it is
+designed out. `verify_palm_rotation.py` proves it, including on the mirrored
+input MediaPipe delivers (§0.9).
+
+⚠ **Power iteration was tried first and was WRONG** — any shift large enough to
+guarantee positivity drives λ₂/λ₁ → 1, leaving up to 2.0 of element error, i.e. a
+completely wrong rotation at large angles. Caught by the golden vectors before it
+reached a measurement. Replaced with a Jacobi eigen-decomposition.
+
+#### Status: BUILT, NOT PORTED
+
+`Resources/palm_rotation.py` (25 golden vectors) and `palm_anchor.Arm2D`
+(27 golden vectors). Both are selectable in `debug_prediction.bat`:
+
+    debug_prediction.bat            SIX windows, 3 rows x 2 columns:
+        1 §14.1 | 2 §14.1+B7        <- production today
+        3 ARM B | 4 ARM B+B7        <- anchor changed
+        5 +HORN | 6 +HORN+B7        <- rotation changed
+
+⭐ **Each row is a ONE-VARIABLE change on the row above, verified rather than
+assumed** (replayed on the pitch take): the anchor moves ONLY cube position, the
+rotation estimator moves ONLY cube orientation.
+
+| row | cube POSITION p95 / max | cube ORIENTATION p95 / max |
+|---|---|---|
+| 1 §14.1 | 5.09 / 13.57 | 6.22 / 37.57 |
+| 3 arm B | **8.11 / 25.07** | 6.22 / 37.57 *(unchanged)* |
+| 5 arm B + Horn | 8.11 / 25.07 *(unchanged)* | **3.82 / 9.64** |
+
+Nothing leaks between rows, so a difference seen on screen has exactly one cause.
+
+⚠ **Nothing is in production. A7 holds: §14.1 does not change until the owner
+accepts a live look.** ⚠ Both results are REPLAY evidence on seven takes from one
+operator, one camera, one session.
+
+### 16.16 ⭐ NEXT SESSION: the six-arm live decision — `HANDOFF_ANCHOR_ROTATION.md`
+
+The owner runs a six-arm live session; the analysis picks the winner and it gets
+wired into both the debug tool and production. **The plan, the takes, and the
+decision criteria are fixed IN ADVANCE** in `Claude/HANDOFF_ANCHOR_ROTATION.md`
+— written before the data exists, so the criteria cannot be chosen to fit it.
+
+Decision rule, binding: **ship the row that minimises the SINK on the pitch
+take**, provided its still-hand step is not materially worse than §14.1's, its
+cube-orientation max is not worse, and the owner accepts how it looks in free
+play. ⭐ **Sink first, jitter second** — §16.5: *"a systematic drift is the defect
+the operator actually reported; jitter is not."* ⚠ And the owner's eye outranks
+the table: B7 passed every measured criterion and was still, correctly, parked.
+
+Score with `analysis/b4_six_arm_verdict.py` — it reads all six cube tracks
+**recorded live**, so no replay confound applies (the offline harness had two).
+
+#### ⚠⚠ What the 2D anchor will cost later, recorded now while it is cheap
+
+**Z-axis.** Arm B's frozen `R` is a 2-vector, so a cube cannot be held in front
+of or behind the palm. ⭐ The one decision that makes the retrofit cheap is
+already taken — **`R` is stored in PALM WIDTHS, not pixels**, so it is scale-free
+and a third component is purely additive. ⚠ But the third axis `ez` can only come
+from the 3D palm reconstruction — the channel that degenerates at edge-on and the
+measured reason the 3D-native variant loses. So the retrofit adds *a component
+whose axis is unreliable in exactly the band arm B was built to survive*; plan a
+DR-2-style freeze for it. ⛔ And the real blocker is unchanged: **absolute depth
+does not exist in the data at all** (world landmarks are hand-relative), which is
+true of every anchor design including §14.1's.
+
+**Web/mobile port.** Both modules are already port-clean (stdlib, numpy-free,
+deterministic). Their golden vectors — 27 + 25 — are the executable
+specification, written *before* a port exists (U3). ⚠ `palm_rotation` contains a
+**Jacobi eigen-decomposition**; a port that "simplifies" it back to power
+iteration silently returns wrong rotations at large angles, and
+`verify_palm_rotation.py` §1 is the test that catches that. ⚠ A port that swaps
+Horn for SVD-Kabsch **must** add the `det` sign correction — §13.6.1 shipped a
+silent handedness inversion once, and Horn's quaternion makes it unrepresentable.
+
 ### ⚠ Binding architectural constraint (spec S3, Apple's shipped design)
 
 **Predicted state must NEVER reach a gesture state machine.** The split is:

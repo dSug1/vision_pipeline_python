@@ -4,11 +4,22 @@ REM  Side-by-side A/B of the B7 confirmation gate, with the hand drawn as
 REM  the SIX BLOCKS (Hand_detection/Claude/GESTURE_PIPELINE_SPEC.md
 REM  section 16) instead of the 21-point landmark skeleton.
 REM
-REM  FOUR windows in a 2x2 grid - ANCHOR (rows) x GATE (columns):
-REM      1 top-left      14.1 anchor, 9 landmarks   no gate   <- production today
-REM      2 top-right     14.1 anchor                + B7 gate
-REM      3 bottom-left   PALM anchor (B4)           no gate
-REM      4 bottom-right  PALM anchor                + B7 gate
+REM  SIX windows, 3 rows x 2 columns. Each ROW changes exactly ONE thing:
+REM      1  14.1 anchor, shipped rotation     2  + B7 gate  <- production today
+REM      3  ARM B anchor, shipped rotation    4  + B7 gate  <- anchor changed
+REM      5  ARM B + HORN rotation             6  + B7 gate  <- rotation changed
+REM
+REM  Verified one-variable: the anchor moves ONLY cube position, the rotation
+REM  estimator moves ONLY cube orientation. Nothing leaks between rows.
+REM  HORN cuts the cube's worst orientation step 39.9 -> 9.6 deg on pitch and
+REM  58.9 -> 8.4 deg at back-of-hand (section 16.15).
+REM  Use --arms 4 for two rows, --arms 2 for one. Scale auto-fits the rows.
+REM
+REM  ARM B is the measured winner (section 16.14): it kills the systematic
+REM  SINK on every axis (yaw 0.000, pitch -0.000, depth -0.001, back 0.000)
+REM  where 14.1 scores -0.656 / -0.807 / -0.589 / -0.083, at a cost of roughly
+REM  30-70 percent more jitter in p95. Pitch or yaw the hand while holding a
+REM  cube and watch whether the cube slides away from the palm.
 REM  Read DOWN a column for what the gate changes, ACROSS a row for what the
 REM  anchor changes. Use --arms 2 for the original pair, --scale 0.7 if the
 REM  four windows do not fit your screen.

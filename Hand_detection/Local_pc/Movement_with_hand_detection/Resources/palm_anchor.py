@@ -1,8 +1,27 @@
 """B4 -- the PALM ANCHOR: a held object rides the palm block, not the fingers.
 
-3D-NATIVE BY CONSTRUCTION, rendered in 2D until real depth exists (owner
-decision, 2026-08-04). See "THE Z RETROFIT" at the bottom: when depth arrives,
-one function changes and the frozen state does not.
+⭐⭐ READ THIS FIRST -- THE MEASURED WINNER IS `Arm2D` (arm B), AT THE BOTTOM
+    OF THIS FILE, AND IT IS THE 2D FORMULATION, NOT THE 3D-NATIVE ONE ABOVE IT.
+
+    Both are implemented. On the 2026-08-06/07 purpose-built takes, pitch axis:
+
+                                    p95     max   stillMax    SINK
+        §14.1 incumbent            5.09   13.57      4.81    -0.807
+        Arm2D  (arm B, 2D)         8.11   25.07      4.64    -0.000   <- WINNER
+        PalmAnchor (3D-native)    27.80   72.22     36.43    -0.420
+
+    ⭐ The 3D-native design below was built on the argument that using the palm
+    quaternion is "free, because it is computed every frame anyway". IT IS NOT
+    FREE: it costs the DEGENERACY of that 3D frame, which collapses at edge-on --
+    exactly where the anchor is needed, and exactly where pitch drives the hand.
+    Arm B never touches the 3D reconstruction at all.
+
+    **For the ANCHOR, staying in 2D pixel space is not a limitation but a
+    shield.** The 3D-native class is kept because its Z-retrofit reduction is
+    proven (`verify_palm_anchor.py` §5) and because the null result is worth
+    preserving -- not because it is the recommendation.
+
+The rest of this docstring describes the 3D-native `PalmAnchor` class.
 
 
 THE DEFECT THIS REPLACES (§16.10, measured on a 450 s live take)
@@ -257,3 +276,131 @@ class PalmAnchor:
         vx = a * e[0][0] + b * e[1][0] + c * e[2][0]
         vy = a * e[0][1] + b * e[1][1] + c * e[2][1]
         return (o[0] + k * vx, o[1] + k * vy)
+
+
+# ==========================================================================
+# ⭐⭐ ARM B -- §16.5's original 2D formulation, and the MEASURED WINNER.
+# ==========================================================================
+class Arm2D:
+    """A held object rides the palm's own 2D frame, in PIXELS.
+
+        at grab:   o, ex, ey, s  from the palm landmarks (all pixel-space)
+                   d = X_G - o
+                   R = ( d.ex / s , d.ey / s )        <- frozen, scale-free
+        every t:   P = o_t + s_t * ( R.x * ex_t + R.y * ey_t )
+
+      o   palm centroid (landmarks 0, 5, 9, 13, 17)
+      ex  unit vector along the knuckle row, index-MCP -> pinky-MCP
+      ey  perpendicular to ex, in the image plane
+      s   palm width in pixels          (`use_scale=False` freezes it = arm C)
+
+    ⭐⭐ WHY THIS BEATS THE 3D-NATIVE VERSION, and it is the opposite of what
+    was predicted (§16.11 argued 3D-native was "free" because the palm
+    quaternion is computed every frame anyway). Measured on the purpose-built
+    takes, pitch axis:
+
+                                    p95     max   stillMax    SINK
+        §14.1 incumbent            5.09   13.57      4.81    -0.807
+        ARM B                      8.11   25.07      4.64    -0.000
+        3D-native (palm + Horn)   27.80   72.22     36.43    -0.420
+
+    Arm B NEVER TOUCHES THE 3D RECONSTRUCTION. Its axis is a pixel direction and
+    its scale is a pixel width, so both foreshorten with the projection for free
+    -- while the 3D palm frame DEGENERATES at edge-on, which is exactly where the
+    anchor is needed and exactly where pitch drives the hand. **For the anchor,
+    staying in 2D is not a limitation, it is a shield.**
+
+    ⭐ AND IT KILLS THE SINK ON EVERY AXIS -- yaw 0.000, pitch -0.000, depth
+    -0.001, back-of-hand 0.000, against §14.1's -0.656 / -0.807 / -0.589 /
+    -0.083. That reproduces §16.5's arm-B result (0.005 / 0.001) on takes that
+    actually contain the conditions, which §16.4's takes did not.
+
+    ⚠ THE COST, stated plainly: jitter p95 rises ~30-70% on yaw, pitch and
+    back-of-hand (unchanged on depth) and max rises similarly. The worst
+    STILL-HAND step does NOT degrade (pitch 4.81 -> 4.64, back 3.56 -> 3.44).
+    A systematic drift is the defect the operator reported; jitter is not (§16.5).
+
+    ⚠ `use_scale=False` (arm C) is kept because the A/B is the reason this exists
+    -- and it is measurably WRONG: it fixes neither axis (yaw -0.745, depth
+    -0.873). The scale term is what decouples the sink.
+
+    ⚠⚠ WHAT THIS WILL COST WHEN THE Z-AXIS ARRIVES — read before extending it.
+    (Full version: `Claude/HANDOFF_ANCHOR_ROTATION.md` §3.)
+
+    `R` is a 2-VECTOR in palm-frame units, so a cube CANNOT be held in front of
+    or behind the palm. When Z-axis translation lands:
+
+        R      (a, b)          ->  (a, b, c)      c = out-of-plane offset
+        frame  ex, ey (pixels) ->  needs ez = ex x ey, i.e. a 3D palm frame
+        scale  palm width px   ->  a real projection
+
+    ⭐ THE ONE DECISION THAT MAKES THIS CHEAP IS ALREADY TAKEN: `R` IS
+    SCALE-FREE — stored in palm widths, not pixels. That is what survives the
+    transition; a pixel offset would not. Adding a third component is additive.
+
+    ⚠ BUT THE THIRD AXIS REINTRODUCES EXACTLY WHAT THIS CLASS AVOIDS. `ez` can
+    only come from the palm's 3D reconstruction — the channel that degenerates
+    at edge-on, which is why the 3D-native `PalmAnchor` above loses (pitch
+    still-max 36.43 vs this class's 4.64). So the retrofit is NOT "add a
+    component"; it is "add a component whose axis is unreliable in precisely
+    the band this class was built to survive". Plan for `c` to need its own
+    reliability treatment — a DR-2-style freeze in the edge-on band — not just
+    a slot in a tuple.
+
+    ⛔ And the real blocker is not the formula: it is ABSOLUTE DEPTH. MediaPipe's
+    world landmarks are hand-RELATIVE (metric shape, origin at the hand, no world
+    position), so the cube's depth does not exist anywhere in the data. That is
+    identical for every anchor design, §14.1's included.
+
+    ⭐ WEB/MOBILE PORT: this class is already port-clean (stdlib, numpy-free,
+    deterministic, no side effects). `analysis/verify_palm_anchor.py` §8 is its
+    executable specification — a reimplementation is correct when it reproduces
+    those vectors and UNTRUSTED until it does (queue U3). ⚠ Do not edit the
+    expectations to match a port. Neither this class nor `palm_rotation` rounds
+    today; if a port adds rounding, use `hand_identity._round_half_up`'s
+    convention — JS `Math.round` is half-up, Python's `round()` is banker's.
+    """
+
+    def __init__(self, use_scale=True):
+        self.use_scale = use_scale
+        self.name = "arm_B" if use_scale else "arm_C"
+
+    @staticmethod
+    def frame(pixel_landmarks):
+        """(origin, ex, ey, palm width) in pixels, or None if degenerate."""
+        o = HB.palm_position(pixel_landmarks)
+        s = HB.palm_scale(pixel_landmarks)
+        if o is None or not s or s < 1e-6:
+            return None
+        try:
+            dx = pixel_landmarks[HB.PINKY_MCP][0] - pixel_landmarks[HB.INDEX_MCP][0]
+            dy = pixel_landmarks[HB.PINKY_MCP][1] - pixel_landmarks[HB.INDEX_MCP][1]
+        except (IndexError, TypeError):
+            return None
+        n = math.hypot(dx, dy)
+        if n < 1e-6:
+            return None
+        ex = (dx / n, dy / n)
+        return o, ex, (-ex[1], ex[0]), s
+
+    def freeze(self, object_pos_px, pixel_landmarks, world_landmarks=None):
+        f = self.frame(pixel_landmarks)
+        if f is None:
+            return None
+        o, ex, ey, s = f
+        d = (object_pos_px[0] - o[0], object_pos_px[1] - o[1])
+        return {"a": (d[0] * ex[0] + d[1] * ex[1]) / s,
+                "b": (d[0] * ey[0] + d[1] * ey[1]) / s,
+                "s0": s}
+
+    def apply(self, state, pixel_landmarks, world_landmarks=None):
+        if state is None:
+            return None
+        f = self.frame(pixel_landmarks)
+        if f is None:
+            return None
+        o, ex, ey, s = f
+        k = s if self.use_scale else state["s0"]
+        a, b = state["a"], state["b"]
+        return (o[0] + k * (a * ex[0] + b * ey[0]),
+                o[1] + k * (a * ex[1] + b * ey[1]))

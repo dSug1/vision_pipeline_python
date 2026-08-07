@@ -1,12 +1,31 @@
-"""Four-arm live A/B of ANCHOR x GATE, with the hand drawn as BLOCKS.
+"""Six-arm live A/B, with the hand drawn as BLOCKS. 3 rows x 2 columns.
 
-    1 top-left      14.1 anchor (9 landmarks)   no gate   <- production today
-    2 top-right     14.1 anchor                 + B7 gate
-    3 bottom-left   PALM anchor (B4)            no gate
-    4 bottom-right  PALM anchor                 + B7 gate
+    1  §14.1 anchor, shipped rotation      2  + B7 gate    <- production today
+    3  ARM B anchor, shipped rotation      4  + B7 gate    <- change ONE thing
+    5  ARM B + HORN rotation               6  + B7 gate    <- change ONE more
 
-  READ DOWN A COLUMN for "what does the GATE change", ACROSS A ROW for "what
-  does the ANCHOR change". `--arms 2` drops the bottom row.
+  ⭐ EACH ROW IS A ONE-VARIABLE CHANGE ON THE ROW ABOVE, and this is verified,
+  not assumed -- replayed on a pitch take:
+
+                            cube POSITION p95/max   cube ORIENTATION p95/max
+      1  §14.1                   5.09 / 13.57              6.22 / 37.57
+      3  arm B                   8.11 / 25.07              6.22 / 37.57   <- same
+      5  arm B + Horn            8.11 / 25.07              3.82 /  9.64   <- same
+
+  The anchor moves ONLY position; the rotation estimator moves ONLY orientation.
+  Nothing leaks between rows, so a difference you see has exactly one cause.
+
+  READ DOWN A COLUMN for what each change does, ACROSS A ROW for the gate's cost.
+  `--arms 4` drops row 3, `--arms 2` drops rows 2 and 3.
+
+⭐ WHAT TO WATCH FOR IN THE BOTTOM ROW -- the defect it exists to remove is a
+  SYSTEMATIC DRIFT, not noise. Pitch the hand through the horizontal, or yaw it
+  edge-on, while holding a cube: in the TOP row the cube slides away from the
+  palm as the hand turns (sink |r| = -0.807 on pitch, -0.656 on yaw); in the
+  BOTTOM row it should stay put relative to the hand (-0.000 / 0.000, §16.14).
+  ⚠ The bottom row is ~30-70% jitterier in p95. That is the trade, and it is the
+  owner's call -- §16.5: "a systematic drift is the defect the operator actually
+  reported; jitter is not."
 
 ⛔ THE GATE THIS TOOL DEMONSTRATES IS PARKED (owner, 2026-08-04, spec 16.9.1):
    measured, cleared of its blockers, and then declined because the improvement
@@ -124,6 +143,7 @@ import LiveSnapDebug as LSD                                    # noqa: E402
 from Resources import hand_blocks as HB                        # noqa: E402
 from Resources import confirmation_gate as CG                  # noqa: E402
 from Resources import palm_anchor as PAnc                      # noqa: E402
+from Resources import palm_rotation as PRot                    # noqa: E402
 
 sys.path.insert(0, os.path.join(
     BASE, "..", "Python_Server_MediaPipe_vision_pipeline", "Resources"))
@@ -142,12 +162,20 @@ PENDING_COLOR = (0, 190, 255)        # amber: the gate is withholding judgement
 DISCARD_COLOR = (60, 60, 255)        # red: frames were just thrown away
 PALM_ALPHA = 0.30
 ANCHOR_COLOR = (140, 255, 140)       # green: the B4 palm-anchor row
+HORN_COLOR = (255, 200, 120)         # blue: the Horn-rotation row
 
 ARC_SEGMENTS = 18
 DISCARD_FLASH_FRAMES = 6             # how long a discard stays visible on screen
 
 # Recordings live on the external drive, never beside the code (owner rule).
-CAPTURE_ROOT = r"E:\Python\Recordings for vision_pipeline\Recordings_prediction_gate"
+# ⚠ Moved off `Recordings_prediction_gate` on 2026-08-07: that DIRECTORY ENTRY
+# went corrupt on the exFAT volume ("the file or directory is corrupted and
+# unreadable" on any write, and one take vanished from its listing) while the
+# rest of E: stayed perfectly writable. The files inside remained READABLE, so
+# every take was copied out intact. If a capture root ever starts refusing
+# writes, test the parent directories before blaming the drive -- it was one
+# bad directory, not the volume.
+CAPTURE_ROOT = r"E:\Python\Recordings for vision_pipeline\Recordings_anchor_study"
 
 
 # ---------------------------------------------------------------- arc geometry
@@ -452,34 +480,46 @@ def cube_snapshot(state):
             for n, c in state.cubes.items()}
 
 
+# Local staging. ⚠⚠ THE OPERATOR'S EFFORT IS WRITTEN HERE FIRST, ALWAYS.
+# N4: E: drops out several times per session. A preflight cannot prevent it --
+# the drive can pass the check at launch and be gone 90 seconds later, which is
+# exactly what happened on 2026-08-07 and cost a completed take. Staging locally
+# and migrating afterwards makes a mid-session dropout survivable: the worst
+# case becomes "the take is on C: and needs moving", never "the take is gone".
+STAGING_ROOT = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")),
+                            "vision_pipeline_staging")
+
+
 def save_recording(records, args, width, height, counters):
-    """⚠ LANDMARKS FIRST, then meta -- the same rule RecordPerceptionSequence
-    enforces: the JSONL is the irreplaceable part and E: drops out (N4).
+    """Write the take LOCALLY first, then migrate to the capture root.
+
+    ⚠ LANDMARKS FIRST, then meta -- the same rule RecordPerceptionSequence
+    enforces: the JSONL is the irreplaceable part.
 
     ⚠ REAL wall-clock timestamps, never a synthesised 33 ms step. N17: takes
     that faked the step reported ~30.4 fps when the true rate was ~24, which
-    made every real-time derivative wrong by ~25%. `tCapture` here is
-    perf_counter at grab time.
+    made every real-time derivative wrong by ~25%. `tCapture` is perf_counter
+    at grab time.
+
+    ⚠ Files are COPIED to E:, never written in place. An in-place write to a
+    drive that disappears mid-write TRUNCATES the destination -- that is how a
+    meta.json was destroyed on 2026-08-06.
     """
     if not records:
         print("[record] No frames captured, nothing saved.")
         return None
     stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    session = os.path.join(args.record_root, f"{stamp}_{args.sequence}")
-    os.makedirs(session, exist_ok=True)
-    with open(os.path.join(session, "raw_landmarks.jsonl"), "w", encoding="utf-8") as f:
-        for r in records:
-            f.write(json.dumps(r) + "\n")
+    name = f"{stamp}_{args.sequence}"
     span = (records[-1]["tCapture"] - records[0]["tCapture"]) / 1000.0
     meta = {
         "sequence": args.sequence,
         "note": args.note,
         "prompt": args.prompt,
         "countdown_s": args.countdown,
+        "warmup_excluded": True,
         "analysis_trim": {"head_s": args.trim_head, "tail_s": args.trim_tail,
                           "why": "grab approach at the start, wind-down at the end -- "
                                  "real hand motion, but not the condition under test"},
-        "warmup_excluded": True,   # frames before the countdown ended are NOT in this file
         "frames": len(records),
         "actual_span_s": round(span, 3),
         "measured_fps": round(len(records) / span, 2) if span > 0 else None,
@@ -495,18 +535,52 @@ def save_recording(records, args, width, height, counters):
                  "fit_kwargs": CG.FIT_KWARGS, "reject_z": BPCFG["reject_z"],
                  "window": BPCFG["window"], "floors": "derived, block_predictor.FLOOR"},
         "arms": args.arms,
-        "palm_anchor": {"scale": "weak-perspective LS fit over the 5 palm points",
-                        "scale_alpha": args.scale_alpha,
-                        "offset": "metric 3-vector in the palm frame (3D-native)"},
+        "rotation_row3": args.rotation,
+        "rows": {"1": "14.1", "2": "14.1 + B7", "3": "armB", "4": "armB + B7",
+                 "5": f"armB + {args.rotation}", "6": f"armB + {args.rotation} + B7"},
+        "bottom_row_anchor": ("arm_C" if args.arm_c else
+                              ("palm_3d_native" if args.anchor_3d else "arm_B")),
+        "palm_anchor": {"arm_B": "2D palm frame (origin=centroid, x=knuckle row), "
+                                 "offset frozen in palm widths, scale=palm width px",
+                        "scale_alpha": args.scale_alpha},
         "counters": counters,
         "contains": ("per-frame raw pixel+world landmarks, the resolved DR-1 label, "
                      "the gate's per-channel decision, and BOTH cube states -- so the "
                      "A/B can be replayed offline under any gate configuration"),
     }
-    with open(os.path.join(session, "meta.json"), "w", encoding="utf-8") as f:
+
+    # --- 1. LOCAL, and this must not fail ---
+    stage = os.path.join(STAGING_ROOT, name)
+    os.makedirs(stage, exist_ok=True)
+    with open(os.path.join(stage, "raw_landmarks.jsonl"), "w", encoding="utf-8") as f:
+        for r in records:
+            f.write(json.dumps(r) + chr(10))
+    with open(os.path.join(stage, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
-    print(f"[record] {len(records)} frames ({meta['measured_fps']} fps measured) -> {session}")
-    return session
+    print(f"[record] {len(records)} frames ({meta['measured_fps']} fps) staged -> {stage}")
+
+    # --- 2. migrate to the capture root, with retries ---
+    import shutil
+    dest = os.path.join(args.record_root, name)
+    for attempt in range(6):
+        try:
+            os.makedirs(dest, exist_ok=True)
+            for fn in ("raw_landmarks.jsonl", "meta.json"):
+                shutil.copyfile(os.path.join(stage, fn), os.path.join(dest, fn))
+            ok = all(os.path.getsize(os.path.join(dest, fn))
+                     == os.path.getsize(os.path.join(stage, fn))
+                     for fn in ("raw_landmarks.jsonl", "meta.json"))
+            if ok:
+                shutil.rmtree(stage, ignore_errors=True)
+                print(f"[record] migrated -> {dest}")
+                return dest
+        except OSError as e:
+            last = e
+        time.sleep(2.0)
+    print(f"[record] ⚠ COULD NOT REACH {args.record_root}")
+    print(f"[record]   the take is SAFE at: {stage}")
+    print("[record]   move it when the drive is back; nothing was lost.")
+    return stage
 
 
 BPCFG = {"reject_z": None, "window": None}
@@ -537,15 +611,30 @@ def main():
                    help="seconds to EXCLUDE FROM ANALYSIS at the start (grab approach)")
     p.add_argument("--trim-tail", type=float, default=5.0,
                    help="seconds to EXCLUDE FROM ANALYSIS at the end (wind-down)")
-    p.add_argument("--scale", type=float, default=1.0,
-                   help="display scale for BOTH windows (use <1 if they do not fit)")
+    p.add_argument("--scale", type=float, default=None,
+                   help="display scale (default fits the row count on a 1080p screen)")
     p.add_argument("--gap", type=int, default=12, help="pixels between the windows")
     p.add_argument("--vgap", type=int, default=46,
                    help="vertical pitch allowance for the OS title bar")
     p.add_argument("--scale-alpha", type=float, default=PAnc.SCALE_ALPHA,
-                   help="EMA on the palm anchor's metres->pixels scale (1.0 = off)")
-    p.add_argument("--arms", type=int, default=4, choices=(2, 4),
-                   help="2 = the original RAW/GATED pair only; 4 = add the palm-anchor row")
+                   help="EMA on the 3D-native anchor's scale (only with --anchor-3d)")
+    p.add_argument("--arm-c", action="store_true",
+                   help="bottom row uses arm C (no scale term) -- measurably worse")
+    # ⭐ §16.15: the rotation estimator, applied to ALL FOUR windows (it is
+    # orthogonal to the anchor). "horn" cuts the held cube's worst orientation
+    # step 39.94 -> 9.64 deg on pitch and 58.86 -> 8.40 at back-of-hand.
+    # ⭐ §16.15. Rows 1-2 ALWAYS use the shipped Gram-Schmidt rotation; this
+    # selects which least-squares variant ROW 3 uses, so the third row is a
+    # clean one-variable change against row 2.
+    p.add_argument("--rotation", choices=("horn", "horn-palm", "horn-ff"),
+                   default="horn",
+                   help="which rotation estimator row 3 uses "
+                        "(horn = palm+tips grab-referenced, drift-free)")
+    p.add_argument("--anchor-3d", action="store_true",
+                   help="bottom row uses the 3D-native PalmAnchor instead of arm B "
+                        "(kept for reproducing the null result; arm B is better)")
+    p.add_argument("--arms", type=int, default=6, choices=(2, 4, 6),
+                   help="2 = §14.1 pair; 4 = + the arm B row; 6 = + the Horn row")
     p.add_argument("--lag", type=int, default=CG.LAG,
                    help="B7's confirmation lag L, in frames (2 = ~83 ms at 24 fps)")
     # ⭐ The best single tune found by the live sweep (analysis/b7_live_ab.py):
@@ -556,6 +645,9 @@ def main():
     p.add_argument("--landmarks", action="store_true",
                    help="draw the raw 21-point skeleton instead of the six blocks")
     args = p.parse_args()
+    if args.scale is None:
+        # 3 rows of 480 px plus title bars will not fit 1080p at 1.0.
+        args.scale = {2: 1.0, 4: 0.7, 6: 0.52}[args.arms]
 
     gate_probe = CG.ConfirmationGate(lag=args.lag, reject_z=args.reject_z)
     BPCFG["reject_z"], BPCFG["window"] = gate_probe.reject_z, gate_probe.window
@@ -590,7 +682,22 @@ def main():
     # separate gates -- they must not share a frame of state with the top row.
     state_anch = LSD.CubeState(window_size=(width, height))
     state_anch_gated = LSD.CubeState(window_size=(width, height))
-    palm_anchor = PAnc.PalmAnchor(scale_alpha=args.scale_alpha)
+    # Row 3: identical inputs to row 2, different rotation estimator only.
+    state_horn = LSD.CubeState(window_size=(width, height))
+    state_horn_gated = LSD.CubeState(window_size=(width, height))
+    # ⭐ ARM B -- §16.5's 2D formulation, the MEASURED WINNER (§16.14): it kills
+    # the sink on every axis (yaw 0.000, pitch -0.000, depth -0.001, back 0.000)
+    # against §14.1's -0.656 / -0.807 / -0.589 / -0.083. The 3D-native
+    # `PalmAnchor` is NOT used here -- it scored pitch p95 27.80 / max 72.22
+    # against arm B's 8.11 / 25.07, because it rides the 3D palm frame, which
+    # degenerates exactly at edge-on.
+    palm_anchor = (PAnc.Arm2D(use_scale=not args.arm_c) if not args.anchor_3d
+                   else PAnc.PalmAnchor(scale_alpha=args.scale_alpha))
+    # Row 3 only. Rows 1-2 keep the shipped Gram-Schmidt path untouched, so
+    # row 3 vs row 2 is a ONE-VARIABLE change: the rotation estimator.
+    horn = {"horn": PRot.Horn(PRot.PALM_AND_TIPS, "ref"),
+            "horn-palm": PRot.Horn(PRot.PALM_LANDMARKS, "ref"),
+            "horn-ff": PRot.Horn(PRot.PALM_AND_TIPS, "ff")}[args.rotation]
     gates = {h: CG.ConfirmationGate(lag=args.lag, reject_z=args.reject_z)
              for h in TRACKED_HANDS}
     gates_anch = {h: CG.ConfirmationGate(lag=args.lag, reject_z=args.reject_z)
@@ -600,20 +707,27 @@ def main():
     seen_last = {h: False for h in TRACKED_HANDS}
     n_flag = n_disc = n_conf = 0
 
-    win_raw = "1 RAW -- 14.1 anchor, no gate (production behaviour)"
-    win_gated = f"2 GATED -- 14.1 anchor + B7 gate (L={args.lag}, z={args.reject_z})"
-    win_anch = "3 PALM ANCHOR -- B4, cube rides the palm block"
-    win_anch_gated = "4 PALM ANCHOR + B7 gate"
+    _abn = "ARM C" if args.arm_c else ("PALM 3D" if args.anchor_3d else "ARM B")
+    win_raw = "1 14.1 -- the incumbent anchor, no gate (production behaviour)"
+    win_gated = f"2 14.1 + B7 gate (L={args.lag}, z={args.reject_z})"
+    win_anch = f"3 {_abn} -- cube rides the palm's 2D frame, no gate"
+    win_anch_gated = f"4 {_abn} + B7 gate"
+    win_horn = f"5 {_abn} + {args.rotation.upper()} rotation, no gate"
+    win_horn_gated = f"6 {_abn} + {args.rotation.upper()} + B7 gate"
     disp_w = int(width * args.scale)
     disp_h = int(height * args.scale)
-    # 2x2: anchor arms UNDER the arms they are the alternative to, so each
-    # column is one gate setting and each ROW is one anchor -- read down a
-    # column for "what does the gate change", across a row for "what does the
-    # anchor change".
+    # ROWS = the change under test, COLUMNS = the gate. Reading down a column
+    # shows what each change does; reading across a row shows the gate's cost.
+    #   row 1  §14.1                      (production today)
+    #   row 2  + ARM B anchor             (one variable vs row 1)
+    #   row 3  + HORN rotation            (one variable vs row 2)
     layout = [(win_raw, 0, 0), (win_gated, disp_w + args.gap, 0)]
-    if args.arms == 4:
+    if args.arms >= 4:
         y2 = disp_h + args.vgap
         layout += [(win_anch, 0, y2), (win_anch_gated, disp_w + args.gap, y2)]
+    if args.arms >= 6:
+        y3 = 2 * (disp_h + args.vgap)
+        layout += [(win_horn, 0, y3), (win_horn_gated, disp_w + args.gap, y3)]
     for name, x, y in layout:
         cv2.namedWindow(name, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(name, disp_w, disp_h)
@@ -763,10 +877,19 @@ def main():
 
             LSD.update_hands(state_raw, data_raw)
             LSD.update_hands(state_gated, data_gated, snap_blocked=holds)
-            if args.arms == 4:
+            if args.arms >= 4:
                 LSD.update_hands(state_anch, data_anch, anchor=palm_anchor)
                 LSD.update_hands(state_anch_gated, data_anch_gated,
                                  snap_blocked=holds_a, anchor=palm_anchor)
+            if args.arms >= 6:
+                # ⭐ Identical inputs to row 2 -- same landmarks, same gate
+                # decisions, same anchor. ONLY the rotation estimator differs,
+                # so any visible difference is Horn and nothing else.
+                LSD.update_hands(state_horn, data_anch, anchor=palm_anchor,
+                                 rotation=horn)
+                LSD.update_hands(state_horn_gated, data_anch_gated,
+                                 snap_blocked=holds_a, anchor=palm_anchor,
+                                 rotation=horn)
 
             if t_first is None:
                 t_first = t_capture
@@ -786,10 +909,13 @@ def main():
                     "cubes_raw": cube_snapshot(state_raw),
                     "cubes_gated": cube_snapshot(state_gated),
                 })
-                if args.arms == 4:
+                if args.arms >= 4:
                     records[-1]["cubes_anchor"] = cube_snapshot(state_anch)
                     records[-1]["cubes_anchor_gated"] = cube_snapshot(state_anch_gated)
                     records[-1]["s3_hold_anchor"] = sorted(holds_a)
+                if args.arms >= 6:
+                    records[-1]["cubes_horn"] = cube_snapshot(state_horn)
+                    records[-1]["cubes_horn_gated"] = cube_snapshot(state_horn_gated)
 
             frame_raw = frame.copy()
             frame_gated = frame.copy()
@@ -830,7 +956,7 @@ def main():
             cv2.imshow(win_raw, frame_raw)
             cv2.imshow(win_gated, frame_gated)
 
-            if args.arms == 4:
+            if args.arms >= 4:
                 frame_anch = frame.copy()
                 frame_anch_gated = frame.copy()
                 for label, (pxa, sta, _st) in draw_anch.items():
@@ -839,11 +965,11 @@ def main():
                     draw_blocks(frame_anch_gated, pxa, sta, label, status)
                 LSD._draw_cubes(frame_anch, state_anch)
                 LSD._draw_cubes(frame_anch_gated, state_anch_gated)
-                draw_hud(frame_anch, "3  PALM ANCHOR  (B4, no gate)",
-                         "cube rides the palm block -- no fingertip can move it",
+                draw_hud(frame_anch, f"3  {_abn}  (no gate)",
+                         "sink killed on every axis; no fingertip can move the cube",
                          color=ANCHOR_COLOR)
                 draw_hud(frame_anch_gated,
-                         f"4  PALM ANCHOR + B7  (L={args.lag}, z={args.reject_z})",
+                         f"4  {_abn} + B7  (L={args.lag}, z={args.reject_z})",
                          "both changes at once",
                          holds=holds_a, color=ANCHOR_COLOR)
                 if counting:
@@ -851,6 +977,29 @@ def main():
                     draw_countdown(frame_anch_gated, args.countdown - (t_capture - t_first) / 1000.0)
                 cv2.imshow(win_anch, frame_anch)
                 cv2.imshow(win_anch_gated, frame_anch_gated)
+
+            if args.arms >= 6:
+                frame_horn = frame.copy()
+                frame_horn_gated = frame.copy()
+                for label, (pxa, sta, _st) in draw_anch.items():
+                    draw_blocks(frame_horn, pxa, sta, label)
+                for label, (pxa, sta, status) in draw_anch_gated.items():
+                    draw_blocks(frame_horn_gated, pxa, sta, label, status)
+                LSD._draw_cubes(frame_horn, state_horn)
+                LSD._draw_cubes(frame_horn_gated, state_horn_gated)
+                _rn = args.rotation.upper()
+                draw_hud(frame_horn, f"5  {_abn} + {_rn} rotation  (no gate)",
+                         "least-squares orientation: pitch 39.9->9.6 deg, back 58.9->8.4",
+                         color=HORN_COLOR)
+                draw_hud(frame_horn_gated, f"6  {_abn} + {_rn} + B7",
+                         "all three changes at once",
+                         holds=holds_a, color=HORN_COLOR)
+                if counting:
+                    _rem = args.countdown - (t_capture - t_first) / 1000.0
+                    draw_countdown(frame_horn, _rem)
+                    draw_countdown(frame_horn_gated, _rem)
+                cv2.imshow(win_horn, frame_horn)
+                cv2.imshow(win_horn_gated, frame_horn_gated)
 
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break

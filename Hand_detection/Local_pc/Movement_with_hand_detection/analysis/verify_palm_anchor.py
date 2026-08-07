@@ -199,6 +199,58 @@ check("collapsed palm -> apply returns None",
       anchor.apply(st6, flat, flatw) is None)
 check("apply(None) returns None", anchor.apply(None, px, world) is None)
 
+# ------------------------------------------------- 8. ⭐ ARM B (the winner)
+print("\n8. ⭐ ARM B -- the 2D formulation that MEASURED BEST (§16.14)")
+armB = PA.Arm2D(use_scale=True)
+armC = PA.Arm2D(use_scale=False)
+px8, w8 = make_hand()
+for target in ((320.0, 240.0), (400.0, 300.0), (150.0, 120.0)):
+    st8 = armB.freeze(target, px8, w8)
+    got8 = armB.apply(st8, px8, w8)
+    check(f"arm B no-pop at {target}", math.dist(got8, target) < 1e-9,
+          f"err {math.dist(got8, target):.2e} px")
+
+st8 = armB.freeze((320.0 + 70.0, 240.0), px8, w8)
+px9, w9 = make_hand(tx=360.0, ty=215.0)
+check("arm B translates with the palm",
+      math.dist(armB.apply(st8, px9, w9), (430.0, 215.0)) < 1e-6,
+      f"got {tuple(round(v, 3) for v in armB.apply(st8, px9, w9))}")
+
+px10, w10 = make_hand(rot=rot_axis((0, 0, 1), 90.0))
+got10 = armB.apply(st8, px10, w10)
+check("arm B: 90 deg in-plane rotation orbits the offset",
+      math.dist(got10, (320.0, 310.0)) < 1e-4,
+      f"got {tuple(round(v, 3) for v in got10)} want (320.0, 310.0)")
+
+# ⭐ THE SCALE TERM IS WHAT DECOUPLES THE SINK -- arm C must NOT track it.
+# §16.14: arm B scores -0.000 on pitch where arm C scores -0.057 and, on the
+# depth take, -0.873. This is the difference, made explicit.
+# ⚠ Derive the reference offset rather than hardcoding it: this synthetic
+# palm's centroid is NOT at (320, 240) -- BASE_WORLD has a non-zero mean -- so
+# the grab offset is 71.44 px, not the 70 the target coordinates suggest.
+d_grab = math.dist((320.0 + 70.0, 240.0), PA.palm_origin_px(px8))
+px11, w11 = make_hand(k=2800.0)                 # hand twice as close
+o11 = PA.palm_origin_px(px11)
+dB = math.dist(armB.apply(st8, px11, w11), o11)
+dC = math.dist(armC.apply(st8, px11, w11), o11)
+check("arm B SCALES the offset with apparent palm width",
+      abs(dB - 2.0 * d_grab) < 1e-6,
+      f"offset {dB:.2f} px = {dB/d_grab:.3f}x the grab offset, want 2.000x")
+check("arm C does NOT -- the measured reason it loses (§16.14)",
+      abs(dC - d_grab) < 1e-6,
+      f"offset {dC:.2f} px = {dC/d_grab:.3f}x, stays 1.000x")
+
+px12, w12 = make_hand()
+st12 = armB.freeze((400.0, 300.0), px12, w12)
+before12 = armB.apply(st12, px12, w12)
+for i8 in (4, 8, 12, 16, 20):
+    px12[i8] = (px12[i8][0] + 250.0, px12[i8][1] - 180.0)
+check("arm B: moving all 5 fingertips moves the cube by 0.000 px",
+      math.dist(before12, armB.apply(st12, px12, w12)) < 1e-12)
+
+check("arm B reports degeneracy rather than guessing",
+      armB.freeze((1.0, 1.0), flat, flatw) is None)
+
 print("\n" + "=" * 78)
 print(f"{len(FAILS)} failure(s)" + ("" if not FAILS else ": " + ", ".join(FAILS)))
 print("=" * 78)
