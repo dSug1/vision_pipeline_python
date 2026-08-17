@@ -4,6 +4,7 @@ from .CubeWindow import CubeWindow
 # Palm chirality geometry, SHARED with LiveSnapDebug.py so the sign convention
 # cannot drift between them again (§13.6.1). Pure stdlib, no side effects.
 from . import palm_geometry
+from . import palm_rotation
 
 # Gesture design: Hand_detection/Claude/GESTURE_PIPELINE_SPEC.md §13
 # (proximity snap, open-palm rotate, closed-fist release) — replaces the
@@ -401,6 +402,28 @@ _hand_orientation_filters: Dict[str, HandOrientationFilter] = {h: HandOrientatio
 _last_hand_reliability_alpha: Dict[str, float] = {h: 1.0 for h in TRACKED_HANDS}
 _latest_world_landmarks: Dict[str, Optional[List[Vec3]]] = {h: None for h in TRACKED_HANDS}
 
+# ⭐ B4 / §16.15, ported to production 2026-08-17 (owner decision). Horn
+# least-squares orientation over the FIVE PALM LANDMARKS ONLY.
+#
+# ⚠⚠ SHIPPED ON DESIGN GROUNDS, NOT ON MEASURED BENEFIT -- state that honestly
+# to anyone who reads this later. The balanced blind A/B (6 rounds, takes
+# `hvg_r1..r6`) scored horn-palm 4 / shipped 2, p = 0.34, and p95 was 3-3. It is
+# NOT measurably better than the Gram-Schmidt frame it replaces; it is not worse
+# either, and a least-squares fit over 5 points cannot degenerate the way a
+# 3-vector frame can. An EARLIER unbalanced series suggested 5-1 in its favour;
+# that was an artifact of a free random draw and is withdrawn.
+#
+# ⚠ PALM_LANDMARKS, never PALM_AND_TIPS. The fingertip variant fits finger
+# motion as hand rotation and scored orientation p95 9.85 -> 27.79 in free play.
+# The takes that "validated" it forbade finger movement, which is what hid it.
+#
+# ⭐ And what it does NOT fix: the ~60 deg orientation jumps are reproduced by
+# BOTH estimators to within 1 deg on the same frames, so they live in the
+# landmarks, not here. No rotation estimator will remove them -- that is the
+# landmark layer's problem (queue T1/T2, items 1.5/1.6/1.7, 5.4).
+_hand_rotation = palm_rotation.Horn(palm_rotation.PALM_LANDMARKS, "ref")
+_hand_rotation_states: Dict[str, Optional[dict]] = {h: None for h in TRACKED_HANDS}
+
 
 def on_hands_world_frame(left_world: List[Tuple[float, float, float]], right_world: List[Tuple[float, float, float]]) -> None:
     """Called once per received "hands_world" packet, storing each hand's
@@ -466,6 +489,7 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     for handedness, landmarks in hands:
         if not _is_detected(landmarks):
             _hand_orientation_filters[handedness] = HandOrientationFilter()  # avoid predicting from a stale reference on reacquire
+            _hand_rotation_states[handedness] = None                         # §16.15: never fit against a dead track
             # Same reasoning for DR-2's frozen sign: a value held from before the
             # hand vanished is stale, and the hand may reappear in a different
             # orientation. `_last_known_thumb_outward` deliberately survives this
@@ -493,6 +517,24 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             hand_quat_now = _predictive_filter_step(
                 _hand_orientation_filters[handedness], raw_quat, conditioning_norm
             )
+            # §16.15. The filter step above still RUNS -- it keeps its own
+            # angular-velocity state warm -- but Horn's fit replaces its output
+            # when it succeeds. That is exactly what LiveBlockPredictionDebug
+            # measured; do not "simplify" it into an either/or.
+            #
+            # The reference constellation is frozen ONCE PER HAND TRACK, not per
+            # grab, so a cube grabbed later still measures against the same
+            # reference. `grab_hand_orientation` below captures whatever this
+            # returns at the grab instant, so the cube's delta still starts at
+            # identity and there is no pop.
+            rs = _hand_rotation_states[handedness]
+            if rs is None:
+                rs = _hand_rotation.freeze(landmarks, world_landmarks)
+                _hand_rotation_states[handedness] = rs
+            if rs is not None:
+                _d = _hand_rotation.delta(rs, landmarks, world_landmarks)
+                if _d is not None:          # None = degenerate fit: keep the filtered value
+                    hand_quat_now = _d
 
         owned_cube = cube_window.cube_owned_by(handedness)
         if owned_cube is None:

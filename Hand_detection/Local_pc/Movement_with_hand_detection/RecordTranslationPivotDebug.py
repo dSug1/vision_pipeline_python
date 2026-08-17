@@ -221,7 +221,11 @@ def main() -> None:
                 # snap/translate/rotate happens here, exactly as it would
                 # live. This is what makes the recorded cube centers real
                 # ground truth rather than a simulation.
-                debug_tool.update_hands(state, hand_data_by_hand)
+                # ⚠ Rotation passed EXPLICITLY (2026-08-17): production moved to
+                # Horn palm-only. Translation is unaffected by the estimator,
+                # but a recorder that claims to reproduce production must.
+                debug_tool.update_hands(state, hand_data_by_hand,
+                                        rotation=debug_tool.PRODUCTION_ROTATION)
 
                 hands_record = {}
                 for handedness in debug_tool.TRACKED_HANDS:

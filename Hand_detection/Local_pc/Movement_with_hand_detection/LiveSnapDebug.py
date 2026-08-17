@@ -47,6 +47,20 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..", "Python_Server_MediaPipe_vision_pipeline", "Resources"))
 import hand_identity  # noqa: E402  (path set immediately above)
+from Resources import palm_rotation as _PRot  # noqa: E402
+
+# ⭐⭐ WHAT PRODUCTION ACTUALLY RUNS, since 2026-08-17.
+# `Resources/HandsTriggeredActions.py` now drives cube orientation with Horn
+# least-squares over the FIVE PALM LANDMARKS. Any tool here that claims to show
+# "production behaviour" must pass this explicitly.
+#
+# ⚠⚠ AND `rotation=None` DELIBERATELY STILL MEANS GRAM-SCHMIDT. Do NOT make this
+# the default of `update_hands`: `LiveBlockPredictionDebug` rows 1-2,
+# `analysis/b4_anchor_rotation_ab.py` and `analysis/b7_live_ab.py` all rely on
+# the no-argument call being the OLD estimator to hold rotation constant. Change
+# the default and every one of those A/Bs silently starts comparing a thing
+# against itself -- the §16.14 failure mode, from the other direction.
+PRODUCTION_ROTATION = _PRot.Horn(_PRot.PALM_LANDMARKS, "ref")
 
 # Palm chirality geometry -- SHARED with production's HandsTriggeredActions.py
 # (queue item 1.2). Same reasoning as hand_identity above: imported, never copied.
@@ -1085,7 +1099,8 @@ def main():
                 }
                 normalized_by_hand[label] = d["normalized"]
 
-            update_hands(state, hand_data_by_hand)
+            # Mirrors production, which is the entire point of this tool.
+            update_hands(state, hand_data_by_hand, rotation=PRODUCTION_ROTATION)
 
             for handedness, normalized in normalized_by_hand.items():
                 data = hand_data_by_hand[handedness]

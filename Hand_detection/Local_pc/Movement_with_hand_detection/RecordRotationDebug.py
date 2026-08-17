@@ -155,7 +155,12 @@ def main() -> None:
 
                 # Drives the SAME state/logic as LiveSnapDebug.py -- this is
                 # what actually decides snap/rotate/glitch-flag for this frame.
-                debug_tool.update_hands(state, hand_data_by_hand)
+                # ⚠ Rotation estimator passed EXPLICITLY (2026-08-17): production
+                # moved to Horn palm-only, and a recorder that silently kept the
+                # old Gram-Schmidt frame would write "ground truth" that no
+                # longer matches the thing being debugged.
+                debug_tool.update_hands(state, hand_data_by_hand,
+                                        rotation=debug_tool.PRODUCTION_ROTATION)
 
                 hands_record = {}
                 for handedness in debug_tool.TRACKED_HANDS:

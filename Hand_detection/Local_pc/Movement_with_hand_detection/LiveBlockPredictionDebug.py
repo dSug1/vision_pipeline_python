@@ -1,8 +1,25 @@
 """Six-arm live A/B, with the hand drawn as BLOCKS. 3 rows x 2 columns.
 
-    1  §14.1 anchor, shipped rotation      2  + B7 gate    <- production today
-    3  ARM B anchor, shipped rotation      4  + B7 gate    <- change ONE thing
+    1  §14.1 anchor, OLD rotation          2  + B7 gate    <- the BASELINE
+    3  ARM B anchor, OLD rotation          4  + B7 gate    <- change ONE thing
     5  ARM B + HORN rotation               6  + B7 gate    <- change ONE more
+       (with --horn-on-141, row 3 is §14.1 + HORN = PRODUCTION since 2026-08-17)
+
+  ⚠⚠ ROW 1 IS NO LONGER PRODUCTION. On 2026-08-17 production moved to §14.1
+  anchor + Horn palm-only rotation, no gate (`HandsTriggeredActions.py`). Row 1
+  keeps the OLD Gram-Schmidt frame DELIBERATELY, because every row below is
+  measured against it and changing it would make each row compare against a
+  moving reference. To see production, run `--horn-on-141` and read WINDOW 5.
+
+  ⚠ The three headline results below are REPLAY numbers and TWO OF THEM DID NOT
+  SURVIVE LIVE (2026-08-17, `Claude/HANDOFF_ANCHOR_ROTATION.md` + the B4 queue
+  row). Arm B was REJECTED: its still-hand step is worse on all four takes, and
+  its "sink 0.000" is an algebraic identity, not a measurement -- see
+  `analysis/b4_orbit_and_sink_audit.py`. Horn's 3.82/9.64 did not reproduce
+  either: live, both estimators emit the SAME ~60 deg jumps to within 1 deg,
+  because those jumps are in the landmarks and no rotation estimator can remove
+  them. Horn palm-only shipped on design grounds (no worse, cannot degenerate),
+  NOT on measured benefit -- the balanced blind A/B scored 4-2, p = 0.34.
 
   ⭐ EACH ROW IS A ONE-VARIABLE CHANGE ON THE ROW ABOVE, and this is verified,
   not assumed -- replayed on a pitch take:
@@ -124,6 +141,7 @@ import datetime
 import json
 import math
 import os
+import random
 import sys
 import time
 from typing import List, Tuple
@@ -536,8 +554,17 @@ def save_recording(records, args, width, height, counters):
                  "window": BPCFG["window"], "floors": "derived, block_predictor.FLOOR"},
         "arms": args.arms,
         "rotation_row3": args.rotation,
+        "horn_on_141": bool(args.horn_on_141),
+        # ⚠ THE BLIND KEY. Written here and NOWHERE else -- never printed to the
+        # console -- so the operator can be asked which window they preferred
+        # before anyone looks up which arm it was.
+        "blind": (None if not getattr(args, "blind_map", None) else
+                  {"A": args.blind_map["A"][0], "B": args.blind_map["B"][0],
+                   "A_key": args.blind_map["A"][1],
+                   "B_key": args.blind_map["B"][1]}),
         "rows": {"1": "14.1", "2": "14.1 + B7", "3": "armB", "4": "armB + B7",
-                 "5": f"armB + {args.rotation}", "6": f"armB + {args.rotation} + B7"},
+                 "5": f"{'14.1' if args.horn_on_141 else 'armB'} + {args.rotation}",
+                 "6": f"{'14.1' if args.horn_on_141 else 'armB'} + {args.rotation} + B7"},
         "bottom_row_anchor": ("arm_C" if args.arm_c else
                               ("palm_3d_native" if args.anchor_3d else "arm_B")),
         "palm_anchor": {"arm_B": "2D palm frame (origin=centroid, x=knuckle row), "
@@ -630,6 +657,49 @@ def main():
                    default="horn",
                    help="which rotation estimator row 3 uses "
                         "(horn = palm+tips grab-referenced, drift-free)")
+    # ⭐⭐ 2026-08-17. BLIND A/B. Both of the owner's picks in the six-window
+    # session (window 2, then window 6) were made KNOWING the layout, which is
+    # exactly the confound B7's original park could not rule out either. This
+    # shows TWO unlabelled windows, "A" and "B", in an order drawn from
+    # `random.SystemRandom` per run. Both arms carry §14.1's anchor AND the B7
+    # gate, so the ONLY difference is the rotation estimator.
+    #
+    # ⚠ The assignment is written to the take's meta.json and is DELIBERATELY
+    # NOT PRINTED -- so the operator can be asked which they preferred before
+    # anyone, including the analyst, looks it up. Run it several times: each run
+    # re-randomises, and a preference is only worth believing across rounds.
+    #
+    # ⚠⚠ THE 2026-08-17 SERIES WAS CONFOUNDED AND THE FAULT WAS HERE, not in the
+    # operator. A free per-run `SystemRandom` draw put one arm on "A" in 4 of 6
+    # rounds; the operator answered A,B,A,B,A,B (the textbook guessing pattern),
+    # and that alone reproduces the 5-1 result. **A BALANCED ASSIGNMENT MAKES
+    # THAT IMPOSSIBLE**: with exactly half the rounds on each side, a perfectly
+    # alternating answer scores exactly 50%. `--blind-series` therefore draws ONE
+    # balanced permutation for the whole series and consumes it one round per
+    # run, storing it in the capture root. Never go back to a free draw.
+    p.add_argument("--blind", nargs="?", const="rotation", default=None,
+                   choices=("rotation", "rotation-nogate", "gate"),
+                   help="two unlabelled windows A/B. 'rotation' = §14.1+B7 vs "
+                        "§14.1+<rotation>+B7 (isolates the estimator, gate in "
+                        "BOTH arms); 'rotation-nogate' = §14.1 vs "
+                        "§14.1+<rotation>, no gate anywhere -- ⭐ the pair that "
+                        "matches what would actually ship now B7 is parked; "
+                        "'gate' = §14.1+<rotation> vs §14.1+<rotation>+B7 "
+                        "(isolates B7). Implies --arms 6 --horn-on-141")
+    p.add_argument("--blind-series", default=None,
+                   help="name of a balanced series; the permutation is drawn "
+                        "once and consumed one round per run")
+    p.add_argument("--blind-rounds", type=int, default=8,
+                   help="rounds in the series, split exactly half/half")
+    # ⭐ 2026-08-17. Arm B was rejected (owner's eye on the six-window session,
+    # plus a still-hand regression on all four takes and a SINK metric it cannot
+    # lose by construction -- analysis/b4_orbit_and_sink_audit.py). That left the
+    # rotation candidate stranded on an anchor nobody will ship. This puts row 3
+    # back on §14.1's anchor so row 1 -> row 3 is a one-variable ROTATION change
+    # on the anchor that is actually staying.
+    p.add_argument("--horn-on-141", action="store_true",
+                   help="row 3 uses §14.1's anchor instead of arm B, so rows 1 "
+                        "and 3 differ ONLY in the rotation estimator")
     p.add_argument("--anchor-3d", action="store_true",
                    help="bottom row uses the 3D-native PalmAnchor instead of arm B "
                         "(kept for reproducing the null result; arm B is better)")
@@ -645,9 +715,14 @@ def main():
     p.add_argument("--landmarks", action="store_true",
                    help="draw the raw 21-point skeleton instead of the six blocks")
     args = p.parse_args()
+    if args.blind:
+        # All six arms are still COMPUTED (the take stays fully analysable and
+        # the two shown arms are ordinary members of it); only the DISPLAY is
+        # reduced to two anonymous windows.
+        args.arms, args.horn_on_141 = 6, True
     if args.scale is None:
         # 3 rows of 480 px plus title bars will not fit 1080p at 1.0.
-        args.scale = {2: 1.0, 4: 0.7, 6: 0.52}[args.arms]
+        args.scale = 1.0 if args.blind else {2: 1.0, 4: 0.7, 6: 0.52}[args.arms]
 
     gate_probe = CG.ConfirmationGate(lag=args.lag, reject_z=args.reject_z)
     BPCFG["reject_z"], BPCFG["window"] = gate_probe.reject_z, gate_probe.window
@@ -708,12 +783,17 @@ def main():
     n_flag = n_disc = n_conf = 0
 
     _abn = "ARM C" if args.arm_c else ("PALM 3D" if args.anchor_3d else "ARM B")
-    win_raw = "1 14.1 -- the incumbent anchor, no gate (production behaviour)"
+    # ⚠ NOT "production" any more. Production moved to horn-palm on 2026-08-17;
+    # row 1 keeps the OLD Gram-Schmidt rotation ON PURPOSE, because every row
+    # below is measured against it. With --horn-on-141 it is window 5 that
+    # matches production today.
+    win_raw = "1 14.1 anchor + OLD Gram-Schmidt rotation, no gate (the baseline)"
     win_gated = f"2 14.1 + B7 gate (L={args.lag}, z={args.reject_z})"
     win_anch = f"3 {_abn} -- cube rides the palm's 2D frame, no gate"
     win_anch_gated = f"4 {_abn} + B7 gate"
-    win_horn = f"5 {_abn} + {args.rotation.upper()} rotation, no gate"
-    win_horn_gated = f"6 {_abn} + {args.rotation.upper()} + B7 gate"
+    _hbn = "14.1" if args.horn_on_141 else _abn
+    win_horn = f"5 {_hbn} + {args.rotation.upper()} rotation, no gate"
+    win_horn_gated = f"6 {_hbn} + {args.rotation.upper()} + B7 gate"
     disp_w = int(width * args.scale)
     disp_h = int(height * args.scale)
     # ROWS = the change under test, COLUMNS = the gate. Reading down a column
@@ -721,11 +801,56 @@ def main():
     #   row 1  §14.1                      (production today)
     #   row 2  + ARM B anchor             (one variable vs row 1)
     #   row 3  + HORN rotation            (one variable vs row 2)
+    # ⭐⭐ BLIND: draw the A/B assignment, then say NOTHING about it. Both arms
+    # are §14.1 + B7; only the rotation estimator differs. The hand blocks come
+    # from the SAME gated stream in both windows, so the hand itself cannot leak
+    # which is which -- only the cube can.
+    blind_map = None
+    if args.blind:
+        if args.blind == "rotation":
+            _pair = [("shipped_gramschmidt", "cubes_gated"),
+                     (args.rotation, "cubes_horn_gated")]
+        elif args.blind == "rotation-nogate":
+            # ⭐ Production today vs production with the estimator swapped, with
+            # B7 in NEITHER arm -- the honest test now that B7 is parked.
+            _pair = [("shipped_gramschmidt_nogate", "cubes_raw"),
+                     (f"{args.rotation}_nogate", "cubes_horn")]
+        else:                                     # 'gate': B7 on top of horn
+            _pair = [(f"{args.rotation}_nogate", "cubes_horn"),
+                     (f"{args.rotation}_plus_B7", "cubes_horn_gated")]
+        # ⭐ Balanced series: draw the whole permutation once, consume one round
+        # per run. `swap` says whether this round shows _pair reversed.
+        if args.blind_series:
+            _sf = os.path.join(args.record_root,
+                               f"_blind_{args.blind_series}.json")
+            try:
+                _ser = json.load(open(_sf))
+            except (OSError, ValueError):
+                _n = max(2, args.blind_rounds)
+                _order = [False] * (_n // 2) + [True] * (_n - _n // 2)
+                random.SystemRandom().shuffle(_order)
+                _ser = {"order": _order, "next": 0, "pair": args.blind}
+            _i = _ser.get("next", 0)
+            _swap = _ser["order"][_i % len(_ser["order"])]
+            _ser["next"] = _i + 1
+            try:
+                os.makedirs(args.record_root, exist_ok=True)
+                json.dump(_ser, open(_sf, "w"), indent=1)
+            except OSError:
+                pass                              # series file is a convenience
+        else:
+            _swap = random.SystemRandom().random() < 0.5
+        if _swap:
+            _pair.reverse()
+        blind_map = {"A": _pair[0], "B": _pair[1]}
+        args.blind_map = blind_map        # save_recording writes it to meta.json
+        win_raw, win_gated = "A", "B"
+
     layout = [(win_raw, 0, 0), (win_gated, disp_w + args.gap, 0)]
-    if args.arms >= 4:
+    if args.arms >= 4 and not args.blind:
         y2 = disp_h + args.vgap
         layout += [(win_anch, 0, y2), (win_anch_gated, disp_w + args.gap, y2)]
-    if args.arms >= 6:
+    if args.arms >= 6 and not args.blind:
         y3 = 2 * (disp_h + args.vgap)
         layout += [(win_horn, 0, y3), (win_horn_gated, disp_w + args.gap, y3)]
     for name, x, y in layout:
@@ -836,7 +961,13 @@ def main():
                 # anchor differs. Arm 4 consumes the SAME gated landmarks as
                 # arm 2. So column = gate, row = anchor, and no arm shares
                 # state with another.
-                if args.arms == 4:
+                # ⚠ `>= 4`, NOT `== 4`: rows 2 AND 3 are fed from here. The
+                # Horn row (2c44634) added `arms 6` without widening this
+                # guard, so at the DEFAULT --arms 6 `data_anch` stayed all-None
+                # and all four lower windows never acquired a cube -- owner
+                # null on 4257 recorded frames, position frozen at spawn.
+                # Caught by eye on 2026-08-17, not by any metric.
+                if args.arms >= 4:
                     data_anch[label] = data_raw[label]
                     res_a = gates_anch[label].update(raw_state)
                     gpx_a, gw_a = apply_gate_to_landmarks(px, world, raw_state,
@@ -882,14 +1013,26 @@ def main():
                 LSD.update_hands(state_anch_gated, data_anch_gated,
                                  snap_blocked=holds_a, anchor=palm_anchor)
             if args.arms >= 6:
-                # ⭐ Identical inputs to row 2 -- same landmarks, same gate
-                # decisions, same anchor. ONLY the rotation estimator differs,
-                # so any visible difference is Horn and nothing else.
-                LSD.update_hands(state_horn, data_anch, anchor=palm_anchor,
-                                 rotation=horn)
-                LSD.update_hands(state_horn_gated, data_anch_gated,
-                                 snap_blocked=holds_a, anchor=palm_anchor,
-                                 rotation=horn)
+                if args.horn_on_141:
+                    # ⭐ Row 3 becomes a one-variable change on ROW 1, not row 2:
+                    # §14.1's anchor, §14.1's gate stream, ONLY the rotation
+                    # estimator differs. Added 2026-08-17 because arm B was
+                    # rejected (owner's eye + a still-hand regression on all
+                    # four takes), which left Horn stranded on an anchor nobody
+                    # will ship -- the orbit made it unjudgeable BY EYE even
+                    # though the orientation metrics stayed clean.
+                    LSD.update_hands(state_horn, data_raw, rotation=horn)
+                    LSD.update_hands(state_horn_gated, data_gated,
+                                     snap_blocked=holds, rotation=horn)
+                else:
+                    # ⭐ Identical inputs to row 2 -- same landmarks, same gate
+                    # decisions, same anchor. ONLY the rotation estimator differs,
+                    # so any visible difference is Horn and nothing else.
+                    LSD.update_hands(state_horn, data_anch, anchor=palm_anchor,
+                                     rotation=horn)
+                    LSD.update_hands(state_horn_gated, data_anch_gated,
+                                     snap_blocked=holds_a, anchor=palm_anchor,
+                                     rotation=horn)
 
             if t_first is None:
                 t_first = t_capture
@@ -919,35 +1062,54 @@ def main():
 
             frame_raw = frame.copy()
             frame_gated = frame.copy()
-            for label, (px, st, status) in draw_raw.items():
-                if args.landmarks and label in normalized_by_label:
-                    LSD._draw_hand(frame_raw, normalized_by_label[label], label,
-                                   data_raw[label]["thumb_outward"],
-                                   state_raw.thumb_outward_snap_allowed[label],
-                                   state_raw.last_hand_reliability_alpha[label],
-                                   width, height)
-                else:
-                    draw_blocks(frame_raw, px, st, label)
-            for label, (px, st, status) in draw_gated.items():
-                draw_blocks(frame_gated, px, st, label, status)
+            if args.blind:
+                # ⭐ Identical hand rendering in both windows, from the RAW
+                # stream and with NO channel status: only the cube may differ.
+                # ⚠⚠ The status colouring must NOT be drawn here. Amber/red mean
+                # "B7 is withholding / just discarded", so on a gate-vs-no-gate
+                # pair they would announce which window is the gated one and the
+                # blind test would measure nothing but that tell.
+                _by_key = {"cubes_raw": state_raw,
+                           "cubes_gated": state_gated,
+                           "cubes_horn": state_horn,
+                           "cubes_horn_gated": state_horn_gated}
+                for _fr, _letter in ((frame_raw, "A"), (frame_gated, "B")):
+                    for label, (px, st, _status) in draw_raw.items():
+                        draw_blocks(_fr, px, st, label)
+                    LSD._draw_cubes(_fr, _by_key[blind_map[_letter][1]])
+                    draw_hud(_fr, _letter, args.prompt or "", timer=elapsed)
+            else:
+                for label, (px, st, status) in draw_raw.items():
+                    if args.landmarks and label in normalized_by_label:
+                        LSD._draw_hand(frame_raw, normalized_by_label[label], label,
+                                       data_raw[label]["thumb_outward"],
+                                       state_raw.thumb_outward_snap_allowed[label],
+                                       state_raw.last_hand_reliability_alpha[label],
+                                       width, height)
+                    else:
+                        draw_blocks(frame_raw, px, st, label)
+                for label, (px, st, status) in draw_gated.items():
+                    draw_blocks(frame_gated, px, st, label, status)
 
-            LSD._draw_cubes(frame_raw, state_raw)
-            LSD._draw_cubes(frame_gated, state_gated)
+                LSD._draw_cubes(frame_raw, state_raw)
+                LSD._draw_cubes(frame_gated, state_gated)
 
-            draw_hud(frame_raw, "1  RAW  (14.1 anchor, no gate)",
-                     args.prompt or "what debug_snap.bat shows -- the production behaviour",
-                     timer=elapsed)
-            if args.prompt:
+                draw_hud(frame_raw, "1  BASELINE  (14.1 anchor, OLD rotation, no gate)",
+                         args.prompt or "the reference every row below is measured against "
+                                        "-- NOT production since 2026-08-17",
+                         timer=elapsed)
+            if args.prompt and not args.blind:
                 h0, w0 = frame_raw.shape[:2]
                 (tw, _), _ = cv2.getTextSize(args.prompt, cv2.FONT_HERSHEY_DUPLEX, 0.62, 2)
                 cv2.rectangle(frame_raw, (0, h0 - 62), (w0, h0 - 26), (0, 0, 0), -1)
                 cv2.putText(frame_raw, args.prompt, (max(8, (w0 - tw) // 2), h0 - 38),
                             cv2.FONT_HERSHEY_DUPLEX, 0.62, (80, 255, 255), 2, cv2.LINE_AA)
-            draw_hud(frame_gated,
-                     f"2  GATED  (14.1 anchor + B7, L={args.lag}, z={args.reject_z}, ~{lat_ms:.0f} ms)",
-                     "amber = channel PENDING (deciding)   red = frames DISCARDED",
-                     counters=f"flag {n_flag}  discard {n_disc}  keep {n_conf}",
-                     holds=holds, color=PENDING_COLOR)
+            if not args.blind:
+                draw_hud(frame_gated,
+                         f"2  GATED  (14.1 anchor + B7, L={args.lag}, z={args.reject_z}, ~{lat_ms:.0f} ms)",
+                         "amber = channel PENDING (deciding)   red = frames DISCARDED",
+                         counters=f"flag {n_flag}  discard {n_disc}  keep {n_conf}",
+                         holds=holds, color=PENDING_COLOR)
 
             if counting:
                 remaining = args.countdown - (t_capture - t_first) / 1000.0
@@ -956,7 +1118,7 @@ def main():
             cv2.imshow(win_raw, frame_raw)
             cv2.imshow(win_gated, frame_gated)
 
-            if args.arms >= 4:
+            if args.arms >= 4 and not args.blind:
                 frame_anch = frame.copy()
                 frame_anch_gated = frame.copy()
                 for label, (pxa, sta, _st) in draw_anch.items():
@@ -978,22 +1140,30 @@ def main():
                 cv2.imshow(win_anch, frame_anch)
                 cv2.imshow(win_anch_gated, frame_anch_gated)
 
-            if args.arms >= 6:
+            if args.arms >= 6 and not args.blind:
                 frame_horn = frame.copy()
                 frame_horn_gated = frame.copy()
-                for label, (pxa, sta, _st) in draw_anch.items():
+                # The blocks come from whichever stream row 3 is riding, so the
+                # hand drawn under the cube always matches the cube's anchor.
+                _src, _src_g = ((draw_raw, draw_gated) if args.horn_on_141
+                                else (draw_anch, draw_anch_gated))
+                for label, (pxa, sta, _st) in _src.items():
                     draw_blocks(frame_horn, pxa, sta, label)
-                for label, (pxa, sta, status) in draw_anch_gated.items():
+                for label, (pxa, sta, status) in _src_g.items():
                     draw_blocks(frame_horn_gated, pxa, sta, label, status)
                 LSD._draw_cubes(frame_horn, state_horn)
                 LSD._draw_cubes(frame_horn_gated, state_horn_gated)
                 _rn = args.rotation.upper()
-                draw_hud(frame_horn, f"5  {_abn} + {_rn} rotation  (no gate)",
-                         "least-squares orientation: pitch 39.9->9.6 deg, back 58.9->8.4",
+                _base = "§14.1" if args.horn_on_141 else _abn
+                _note = ("SAME anchor as row 1 -- ONLY the rotation differs"
+                         if args.horn_on_141
+                         else "least-squares orientation: pitch 39.9->9.6 deg, back 58.9->8.4")
+                draw_hud(frame_horn, f"5  {_base} + {_rn} rotation  (no gate)",
+                         _note, color=HORN_COLOR)
+                draw_hud(frame_horn_gated, f"6  {_base} + {_rn} + B7",
+                         "rotation + gate",
+                         holds=(holds if args.horn_on_141 else holds_a),
                          color=HORN_COLOR)
-                draw_hud(frame_horn_gated, f"6  {_abn} + {_rn} + B7",
-                         "all three changes at once",
-                         holds=holds_a, color=HORN_COLOR)
                 if counting:
                     _rem = args.countdown - (t_capture - t_first) / 1000.0
                     draw_countdown(frame_horn, _rem)
@@ -1011,6 +1181,30 @@ def main():
         cv2.destroyAllWindows()
         print(f"[BlockPredictionDebug] Stopped. flags {n_flag}, discarded {n_disc}, "
               f"confirmed {n_conf}.")
+        # ⚠ An arm that never acquires a cube produces a take that LOOKS
+        # recorded and scores as all-NaN downstream. The `arms == 4` guard
+        # above did exactly that to four arms across four takes before anyone
+        # noticed. A take is only comparable if EVERY arm held the cube, so
+        # say so here, at the moment it can still be re-recorded.
+        if records:
+            _arm_keys = [("1 raw", "cubes_raw"), ("2 gated", "cubes_gated")]
+            if args.arms >= 4:
+                _arm_keys += [("3 anchor", "cubes_anchor"),
+                              ("4 anchor+gate", "cubes_anchor_gated")]
+            if args.arms >= 6:
+                _arm_keys += [("5 horn", "cubes_horn"),
+                              ("6 horn+gate", "cubes_horn_gated")]
+            _dead = []
+            for _name, _key in _arm_keys:
+                _held = sum(1 for r in records
+                            if (r.get(_key) or {}).get("large", {}).get("owner"))
+                print(f"[arms] {_name:<14} held the cube on {_held:5d} / "
+                      f"{len(records)} frames")
+                if _held == 0:
+                    _dead.append(_name)
+            if _dead:
+                print(f"[arms] ⚠⚠ NEVER ACQUIRED: {', '.join(_dead)} -- this take "
+                      f"CANNOT compare those arms. Re-record after fixing.")
         if args.record:
             save_recording(records, args, width, height,
                            {"flagged": n_flag, "discarded": n_disc, "confirmed": n_conf})

@@ -1,5 +1,40 @@
 # HANDOFF — the six-arm anchor/rotation decision
 
+# ✅✅ EXECUTED AND CLOSED — 2026-08-17. DO NOT RUN THIS SESSION AGAIN.
+
+> **The session below was run on 2026-08-17. Results are in
+> `GESTURE_PIPELINE_SPEC.md` §16.17 and the `PART_ONE.md` §3.1 **B4** row.
+> This file is kept as the record of a plan written before its data — which is
+> exactly why the plan's own failure is worth reading.**
+>
+> | candidate | outcome |
+> |---|---|
+> | §14.1 anchor | **KEEPS** — A7 never broken |
+> | ARM B | ⛔ **REJECTED** |
+> | HORN `PALM_AND_TIPS` | ⛔ **REJECTED** |
+> | HORN `PALM_LANDMARKS` | ✅ **SHIPPED**, live-confirmed |
+> | B7 gate | ⛔ **PARK CONFIRMED**, blind |
+>
+> ⛔⛔ **§2's decision rule COULD NOT BE APPLIED, and that is the session's main
+> result.** "Ship the row that minimises the SINK on the pitch take" is
+> unusable, because SINK is `corr(|cube−o|/s, edge_on)` while `Arm2D` *defines*
+> position as `o + s·(Rx·ex+Ry·ey)` — so `|cube−o|/s ≡ |R| ≡` a constant frozen
+> at grab (measured sd **0.0000**). **Arm B could not have scored anything but
+> zero, for any hand motion whatsoever.** The rule pre-registered a criterion
+> that was incapable of rejecting the candidate it was written to judge. §5's
+> trap #4 — *"a classifier that shares an expression with the thing it judges
+> measures itself"* — is listed in this very file, four lines from the rule it
+> invalidates.
+>
+> ⭐⭐ **Second lesson, also new: an UNBALANCED blind test manufactures results.**
+> A free random draw + a naturally alternating answer produced a convincing
+> **5–1** that vanished to **4–2 (p = 0.34)** when the assignment was balanced.
+> Every future blind test must use `--blind-series`. See §16.17.
+>
+> ⚠ §3 below (what the 2D anchor costs later) is now **moot for arm B**, but its
+> Z-axis analysis still applies to any future palm-frame anchor — and §3.2's
+> port contract and golden-vector discipline are unchanged and still binding.
+
 **Written 2026-08-07 for a fresh conversation.** Self-contained: read this, run
 the session, decide, wire. You should not need to re-derive anything below.
 

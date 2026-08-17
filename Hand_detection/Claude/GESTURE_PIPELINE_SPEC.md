@@ -5340,7 +5340,54 @@ question — it targets a channel that is measurably broken (144° excursions on
 still hand), it uses information already available every frame, and it changes an
 estimator rather than adding a layer.
 
-### 16.14 ⭐⭐ ARM B WINS — the sink is KILLED on every axis (2026-08-07)
+### 16.14 ⛔⛔ RETRACTED (2026-08-17) — ARM B IS REJECTED, and this section's headline was an ALGEBRAIC IDENTITY
+
+> ⛔ **DO NOT BUILD ON THE TABLE BELOW. Arm B was rejected on the live six-arm
+> session of 2026-08-17 (§16.17). The "sink 0.000 on every axis" result is not a
+> measurement — it is arm B's own formula restated.**
+>
+> **The proof, in one line.** `SINK` is defined as
+> `corr( |cube − palm_centroid| / palm_width , edge_on_measure )`, and
+> `hand_blocks.palm_position` / `palm_scale` are **the same `o` and `s` that
+> `palm_anchor.Arm2D` builds its position out of**:
+>
+> ```
+> Arm2D:  P = o + s·(Rx·ex + Ry·ey)     ⇒   |P − o| / s  ≡  |R|  ≡  frozen at grab
+> ```
+>
+> The correlation's numerator is therefore a **constant for the entire grab**,
+> and its correlation with anything at all is 0 **for any hand motion
+> whatsoever**. Measured on the live takes: arm B's `|R|` has standard deviation
+> **0.0000** (range 0.0001) within an uninterrupted grab, against §14.1's
+> 0.4752–0.6056. The tiny non-zero residuals reported below (−0.001, −0.026 …)
+> come from the `+40 px` cube-centre approximation in the scoring function, not
+> from anchor behaviour.
+>
+> ⭐ **This is trap #4 of `HANDOFF_ANCHOR_ROTATION.md` §5 — *"a classifier that
+> shares an expression with the thing it judges measures itself"* — landing on
+> the PRIMARY decision criterion of an entire queue row.** It is the same class
+> of error as §16.4's, one level deeper: §16.4 measured the right quantity on the
+> wrong takes; §16.14 measured a quantity that could not have come out otherwise.
+>
+> **And the independent criterion goes the other way.** Live, arm B's
+> **still-hand** position step is WORSE on all four takes — pitch 6.64 → 8.81,
+> yaw 5.18 → **12.72**, back-of-hand 5.66 → **11.27**, free play 57.74 → 65.36 —
+> against this section's claim that still-hand "does NOT degrade". Position max
+> in free play blows out 49.60 → **261.68 px**. The mechanism is plain: §14.1
+> averages **nine** landmarks so noise cancels, while arm B's `s` and `ex` each
+> ride **two** (index-MCP, pinky-MCP), amplifying the noisiest quantity on the
+> hand.
+>
+> ⚠ **What survives**: arm B's *rotational* behaviour is the physically honest
+> one — its cube keeps a fixed bearing in the palm frame (range **0.0°**) while
+> §14.1's sweeps a full **358.8°**, i.e. §14.1's cube does not rotate with the
+> hand at all. The owner saw this directly and described it as *"the cube
+> rotating around the hand instead of around itself."* If an anchor is ever
+> revisited, that is the property worth keeping — with a noise-robust scale
+> (`hand_skeleton.palm_width_world()`), not two raw landmarks.
+>
+> Re-runnable: `analysis/b4_orbit_and_sink_audit.py`. **Any future anchor metric
+> must compare against a quantity the anchor does not define.**
 
 Seven purpose-built takes (2026-08-06/07) — the **first** in this project that
 contain the conditions §16.4/§16.5 argued about. §16.4 measured the sink on takes
@@ -5383,7 +5430,36 @@ so both foreshorten with the projection and neither can degenerate.
 ⚠ Arm C (no scale term) is measurably wrong: yaw −0.745, depth −0.873. **The
 scale term is what decouples the sink** — §16.5 said this and it replicates.
 
-### 16.15 ⭐⭐ HORN ROTATION — 10× on the cube's ORIENTATION where it matters most
+### 16.15 ⚠ AMENDED (2026-08-17) — HORN SHIPPED, but the 10× DID NOT REPRODUCE LIVE
+
+> ⚠ **The table below is replay evidence and its headline did not survive.**
+> Live (§16.17), the shipped Gram-Schmidt frame and Horn emit **the same ~60°
+> jumps to within 1°** on the same frames — 62.38 vs 61.83, 57.73 vs 57.58,
+> 49.71 vs 48.53. Nothing like 39.94° → 9.64° occurs.
+>
+> ⭐⭐ **And that near-identity is itself the most useful finding of the session.
+> If two structurally unrelated estimators — a 3-vector Gram-Schmidt frame and a
+> least-squares fit over 5 points — reproduce the same 60° jump on the same
+> frame, the jump is ALREADY IN THE LANDMARKS. No rotation estimator can remove
+> it.** That re-points the residual orientation failure (queue **T1/T2**) at the
+> landmark layer — items 1.5 / 1.6 / 1.7 and the SmoothNet-class item 5.4 — and
+> closes off further estimator work as a route to it.
+>
+> ⛔ **`PALM_AND_TIPS` is REJECTED — and this section's protocol is what hid it.**
+> The fingertip constellation with `mode="ref"` assumes *"the hand does not change
+> shape during the hold"*. In ordinary play the fingers move, so the fit reads
+> **finger motion as hand rotation**: orientation p95 **9.85 → 27.79**, ~3× worse
+> than the incumbent. The takes that validated it required fingers *"relaxed and
+> still"*, which is precisely the condition under which this failure cannot
+> appear. ⚠ **A protocol that forbids the motion an estimator is sensitive to has
+> not tested it.**
+>
+> ✅ **What shipped: `Horn(PALM_LANDMARKS, "ref")` — palm-only, no fingertips**,
+> ported to `Resources/HandsTriggeredActions.py` on 2026-08-17 and live-confirmed
+> by the owner. ⚠ **It shipped on DESIGN grounds, not measured benefit** — the
+> balanced blind A/B scored **4–2, p = 0.34**, and p95 was **3–3**. It is not
+> better; it is not worse, and a least-squares fit over 5 points cannot degenerate
+> the way a 3-vector frame can. State it that way to anyone who asks.
 
 ⚠ §16.13's estimator-level result had no cube-level price attached, because the
 harness measured cube POSITION only. Measured properly — the shipped rotation
@@ -5442,7 +5518,15 @@ Nothing leaks between rows, so a difference seen on screen has exactly one cause
 accepts a live look.** ⚠ Both results are REPLAY evidence on seven takes from one
 operator, one camera, one session.
 
-### 16.16 ⭐ NEXT SESSION: the six-arm live decision — `HANDOFF_ANCHOR_ROTATION.md`
+### 16.16 ✅ EXECUTED 2026-08-17 — the six-arm live decision (results in §16.17)
+
+> ✅ **This session RAN on 2026-08-17.** Outcome: **§14.1's anchor keeps** (A7
+> never broken), **arm B rejected** (§16.14), **`Horn(PALM_LANDMARKS)` shipped**
+> (§16.15), **B7's park confirmed under a blind test** (§16.17). The
+> pre-registered decision rule below could **not** be applied as written, because
+> its primary criterion — SINK — turned out to be degenerate for the candidate it
+> was meant to judge. That is recorded in §16.14 and is the session's main
+> methodological result.
 
 The owner runs a six-arm live session; the analysis picks the winner and it gets
 wired into both the debug tool and production. **The plan, the takes, and the
@@ -5480,6 +5564,81 @@ iteration silently returns wrong rotations at large angles, and
 `verify_palm_rotation.py` §1 is the test that catches that. ⚠ A port that swaps
 Horn for SVD-Kabsch **must** add the `det` sign correction — §13.6.1 shipped a
 silent handedness inversion once, and Horn's quaternion makes it unrepresentable.
+
+### 16.17 ⭐⭐ THE LIVE SESSION — what shipped, what died, and the two method lessons (2026-08-17)
+
+Eleven live six-arm takes plus twelve blind rounds, one operator, one camera.
+Everything below is **live**, not replay. Takes:
+`E:\…\Recordings_anchor_study\2026-08-17_18*`.
+
+#### ⛔ First: four takes were lost to a one-character bug, and no metric caught it
+
+`LiveBlockPredictionDebug.py` guarded the block that feeds rows 2 **and** 3 with
+`if args.arms == 4:`. Commit `2c44634` added the Horn row (`--arms 6`) and made 6
+the **default** without widening it, so at the default setting `data_anch` stayed
+`None` on every frame: **rows 2–6 never acquired a cube on 4257 recorded frames**,
+`owner` null throughout, cube frozen at spawn. `--arms 4` worked; `--arms 6` had
+never been run live. **The operator caught it by eye** — *"in the 4 windows
+starting from second row, none of the cubes are grabbed nor move"* — after the
+takes were recorded and while the verdict script was happily scoring them.
+
+⭐ **Fix + guard**: the end-of-run `[arms]` summary now prints how many frames
+each arm held the cube and shouts `NEVER ACQUIRED` on zero, while the take can
+still be re-recorded. ⚠ **A take is only comparable while the cube is
+CONTINUOUSLY HELD** — after a drop each arm's cube sits somewhere different, so
+re-acquisition diverges and the one-variable guarantee dies. That is a recording
+requirement, not a nicety.
+
+#### The verdicts
+
+| candidate | verdict | why |
+|---|---|---|
+| **§14.1 anchor** | **KEEPS** — A7 never broken | arm B lost on the one criterion that could still discriminate |
+| **ARM B** | ⛔ **REJECTED** | still-hand worse on all 4 takes; its winning metric is an identity (§16.14) |
+| **HORN `PALM_AND_TIPS`** | ⛔ **REJECTED** | p95 9.85 → 27.79 in play; finger motion read as rotation (§16.15) |
+| **HORN `PALM_LANDMARKS`** | ✅ **SHIPPED** | not better (4–2, p = 0.34), not worse, structurally safer |
+| **B7 confirmation gate** | ⛔ **PARK CONFIRMED** | 4–2 blind, p = 0.34 — real but imperceptible |
+
+#### ⭐⭐ Method lesson 1: a metric that shares an expression with its subject
+
+§16.14 in full. The short form: **SINK could not have said anything other than
+"arm B wins."** Any future anchor metric must compare against a quantity the
+anchor does not define.
+
+#### ⭐⭐ Method lesson 2: an unbalanced blind test MANUFACTURES results
+
+Two blind series were run on the same operator, same task, same day.
+
+| series | design | result |
+|---|---|---|
+| horn-palm vs Gram-Schmidt | 6 rounds, **free** random draw | **5–1 for horn-palm** — looked convincing |
+| B7 vs no B7 | 6 rounds, **balanced** 3/3 | 4–2, p = 0.34 — nothing |
+| horn-palm vs Gram-Schmidt, **redone** | 6 rounds, **balanced** 3/3 | **4–2, p = 0.34 — the 5–1 did NOT replicate** |
+
+The operator answered in a perfectly alternating pattern (A,B,A,B,A,B) in both
+early series — the textbook signature of guessing. A free draw put one arm on "A"
+in 4 of 6 rounds, and **the alternation alone reproduces 5–1**. Enumerated:
+P(alternating guess scores ≥ n−1) is **10.9%** for 6 free rounds, **5.0%**
+balanced, **1.4%** for 8 balanced. The 10.9% *is* the 5–1 that was nearly
+believed — and it was nearly used to justify shipping.
+
+✅ **Binding for every future blind test: use `--blind-series`**, which draws one
+balanced permutation for the whole series and consumes one round per run. Never a
+free per-run draw. ⚠ **And no channel may leak the condition** — the hand blocks
+had to stop carrying B7's amber/red channel colouring, which would have announced
+the gated window outright.
+
+#### What is now in production
+
+`Resources/HandsTriggeredActions.py` drives cube orientation with
+`Horn(PALM_LANDMARKS, "ref")`; 25/25 golden vectors pass, live-confirmed by the
+owner. `LiveSnapDebug.PRODUCTION_ROTATION` is the single shared definition, and
+`debug_snap.bat`, `RecordRotationDebug.py` and `RecordTranslationPivotDebug.py`
+all pass it explicitly. ⚠ `update_hands(rotation=None)` **still means
+Gram-Schmidt on purpose** — `LiveBlockPredictionDebug` rows 1–2,
+`b4_anchor_rotation_ab.py` and `b7_live_ab.py` all rely on it to hold rotation
+constant. Change that default and three A/Bs silently start comparing a thing
+against itself.
 
 ### ⚠ Binding architectural constraint (spec S3, Apple's shipped design)
 
