@@ -65,7 +65,14 @@ def _closest_past(history, target_t):
     return best
 
 
-class HandState:
+class GestureHistory:
+    """Rolling landmark history + pinch tracker for THIS debug tool.
+
+    (Renamed 2026-08-21.) It was never the `HandState` contract of
+    `PERCEPTION_LAYER_SPEC.md` section 2 -- it is a local history buffer --
+    and the shared name would have collided with the real contract the
+    moment queue D1 implements it.
+    """
     def __init__(self):
         self.history = deque()  # (t_seconds, landmarks)
         self.tracker = event_layer.PinchEventTracker()
@@ -127,7 +134,7 @@ def main():
     if not cap.isOpened():
         raise RuntimeError(f"Could not open webcam (index {args.camera_index}). Is another program using the camera?")
 
-    hand_states = {handedness: HandState() for handedness in TRACKED_HANDS}
+    hand_states = {handedness: GestureHistory() for handedness in TRACKED_HANDS}
     window_name = "Live gesture debug (Stage 4)"
     start_time = time.time()
 

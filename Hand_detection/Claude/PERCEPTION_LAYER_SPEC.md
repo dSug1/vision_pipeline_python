@@ -2316,9 +2316,60 @@ HandState = {
     occlusionLevel,      // 0..1
     motionBlur,          // 0..1
     framesSinceMeasurement, // >0 means we are coasting on the model
+                         // ⭐ THIS IS THE MISS-COUNTER. `DROPOUT_MITIGATION.md`
+                         //    proposed `framesSinceGoodDetection`; same field,
+                         //    same semantics -- do not add a second one.
+    trackingState,       // 'TRACKING' | 'BRIDGING' | 'SUSTAINED_LOST'
+                         // ⭐ ADDED 2026-08-21 (queue D1). The ONE field
+                         //    `DROPOUT_MITIGATION.md` contributed that this
+                         //    contract did not already have. TRACKING = fresh
+                         //    detection; BRIDGING = no detection but still
+                         //    inside the coast window; SUSTAINED_LOST = coast
+                         //    window exhausted. Consumers branch on this the
+                         //    same way they branch on the other quality gates.
   },
 }
 ```
+
+### 2.1 ⚠ THIS IS THE SINGLE SCHEMA OF RECORD (2026-08-21)
+
+`DROPOUT_MITIGATION.md` §2 proposed a **second** `HandState` schema for the same
+object. It is **superseded by this one** — do not implement both, and do not keep
+both documents' field lists alive. The mapping, so nothing is lost:
+
+| `DROPOUT_MITIGATION.md` §2 | here | note |
+|---|---|---|
+| `position`, `velocity` | `palm.position`, `palm.linearVelocity` | same |
+| `orientation`, `angularVelocity` | `palm.orientation`, `palm.angularVelocity` | same |
+| `positionConfidence` | `palm.covTrace` | ⭐ **this contract is better** — real uncertainty, not a fixed time-decay ramp |
+| `orientationConfidence` | `palm.orientationSigma` + `quality.orientationValid` | ⭐ **better** — **per-axis anisotropic**. Collapsing it to one scalar would discard exactly the asymmetry §16.17 measured (orientation fragile, position calm) |
+| `framesSinceGoodDetection` | `quality.framesSinceMeasurement` | already present |
+| `lastGoodTimestampMs` | derive from `tCapture` + the miss-counter | dropped |
+| `trackingState` | `quality.trackingState` | ⭐ the one real addition, now above |
+
+⚠ **A third `HandState` existed in code and was NOT this contract**:
+`LiveGestureDebug.py` defined an unrelated gesture-history buffer under the same
+name. Renamed to `GestureHistory` on 2026-08-21 so the identifier is free for the
+real implementation.
+
+### 2.2 ⚠ Scope of the FIRST implementation — a subset, deliberately, and NOT the wire
+
+⭐ **Owner decision, 2026-08-21.** The migration note below requires replacing the
+wire protocol and forbids running two protocols in parallel — correctly, since
+that divergence caused §13.6.1. **Read literally it would put a socket migration
+in front of a measured defect** (queue D0: 98 spurious cube releases).
+
+It does not have to. **Dropouts surface CLIENT-side**: the server already sends 21
+zero landmarks on a miss (`remap_keypoints`'s `expected_count` fallback) and
+`HandsTriggeredActions._is_detected` reads them. So `trackingState` and the
+miss-counter can be produced **on the client, from the existing wire data**.
+
+So queue **D1 implements a SUBSET of this contract, client-side, using these field
+names and semantics — and does NOT touch the wire protocol.** No second protocol
+exists, so the rule below is not engaged. ⚠ **The full migration remains required
+and is a separate decision, naturally paired with 4.1/M9** — which is what makes
+this contract's metric fields (`palm.position` in metres, `depth`) meaningful at
+all. Until then, do not serialise this struct.
 
 **Rule:** the gesture layer must never read `quality` and silently proceed. Every gesture
 definition declares its minimum quality requirements, and the dispatcher suppresses gestures
