@@ -159,14 +159,19 @@ check("a clock that steps BACKWARDS clamps to 0, never negative",
       f"{t.ms_since_measurement}")
 
 print("\n8. PORT CONTRACT -- stdlib only, no side effects")
-src = open(os.path.join(BASE, "Resources", "hand_state.py"), encoding="utf-8").read()
-# Strip the module docstring AND comments before scanning: both legitimately
-# discuss `time.perf_counter()` and numpy in prose (they say the module must not
-# use them). What must be clean is the executable code.
-body = src.split('"""', 2)[2] if src.count('"""') >= 2 else src
-code = "\n".join(l for l in body.splitlines() if not l.lstrip().startswith("#"))
-check("imports nothing (no numpy, no clock read)",
-      "\nimport " not in "\n" + code and "\nfrom " not in "\n" + code)
+# Strip EVERY string literal and comment before scanning, not just the leading
+# docstring: the prose legitimately discusses `time.perf_counter()` and numpy
+# (it says the module must not use them). `verify_hand_ownership.py` shipped the
+# slice-off-the-docstring version first and it false-positived on a class
+# docstring; tokenize is the version that does not.
+import io  # noqa: E402
+import tokenize  # noqa: E402
+
+with open(os.path.join(BASE, "Resources", "hand_state.py"), encoding="utf-8") as _fh:
+    _toks = list(tokenize.generate_tokens(_fh.readline))
+code = " ".join(t.string for t in _toks
+                if t.type not in (tokenize.STRING, tokenize.COMMENT))
+check("imports nothing (no numpy, no clock read)", "import " not in code)
 for banned in ("time.", "perf_counter", "random", "numpy"):
     check(f"no `{banned}` anywhere in the module", banned not in code)
 

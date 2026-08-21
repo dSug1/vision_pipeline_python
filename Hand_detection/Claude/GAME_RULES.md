@@ -37,6 +37,15 @@ plain language, not implementation detail (link to the code instead).
      correctly, on the argument that *"losing tracking is not the same as
      letting go"*, and it comes with a UI signal. **M10.7 remains deferred
      and undecided** — see the next bullet, which is unchanged.
+   - ⭐ **A held object also FOLLOWS ITS HAND across a handedness relabel**
+     (queue T3, 2026-08-21, `Resources/hand_ownership.py`). MediaPipe's
+     Left/Right label is not stable; ownership used to be keyed to it, so a
+     relabel orphaned the object — measured as **the single largest cause of
+     objects dropping for no visible reason, 113 of 205**. Now, if the hand
+     reappears in the other slot within **0.5 palm widths** of where it
+     vanished, the object goes with it. ⚠ **Never when a second hand was
+     already tracked there** — that is two real hands and moving an object
+     between them would be theft. ⚠ A two-hand *swap* is still not handled.
    - ⭐ **Side effect on N8 (cube-stealing, below): partially closed for
      free.** An occlusion shorter than 150 ms no longer releases the cube,
      so there is nothing for the occluding hand to steal. Occlusions longer

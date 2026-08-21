@@ -7,6 +7,8 @@ from .CubeWindow import CubeWindow
 from . import palm_geometry
 from . import palm_rotation
 from . import hand_state
+from . import hand_ownership
+from . import hand_blocks
 
 # Gesture design: Hand_detection/Claude/GESTURE_PIPELINE_SPEC.md §13
 # (proximity snap, open-palm rotate, closed-fist release) — replaces the
@@ -115,6 +117,12 @@ _hand_state_trackers: Dict[str, hand_state.HandStateTracker] = {
 # blend must justify itself in front of the owner's eye like everything else.
 RESYNC_BLEND_FRAMES = 3
 _resync_blend_left: Dict[str, int] = {h: 0 for h in TRACKED_HANDS}
+
+# ⭐ T3 (2026-08-21): keep a held cube with the HAND, not the LABEL.
+# `Resources/hand_ownership.py` has the measurement and the reasoning. 113 of 205
+# spurious cube releases were the owner's own hand coming back under the other
+# handedness label; ownership is keyed by that label, so it orphaned the cube.
+_last_seen: Dict[str, hand_ownership.LastSeen] = {h: hand_ownership.LastSeen() for h in TRACKED_HANDS}
 
 
 def _is_detected(landmarks: List[Tuple[float, float]]) -> bool:
@@ -470,6 +478,55 @@ def on_hands_world_frame(left_world: List[Tuple[float, float, float]], right_wor
     _latest_world_landmarks["Right"] = right_world
 
 
+def _transfer_relabelled_owners(hands) -> None:
+    """T3: hand a held cube over when its hand reappears under the other label.
+
+    ⚠ WHAT IS MIGRATED WITH IT, AND WHAT IS DELIBERATELY NOT -- the distinction
+    is whether a piece of state means the same thing under a different label:
+
+      MOVED   the orientation filter and the Horn reference constellation. Both
+              are computed from world landmarks alone (`_hand_orientation_quaternion`
+              takes no handedness), so they describe the PHYSICAL hand and stay
+              valid. Moving them is also what prevents an orientation pop: the
+              cube's `grab_hand_orientation` baseline was captured against that
+              same stream, so the delta stays continuous.
+      NOT     DR-2's `PalmFacingTracker`. `update(landmarks, handedness)` is
+              chirality-SENSITIVE -- §0.9, a physical right hand is labelled
+              "Left" -- so its frozen palm/back sign is expressed in the old
+              label's convention and is simply wrong under the new one. It gets
+              re-measured this frame instead. Carrying it across would be a
+              §13.6.1-class sign inversion.
+    """
+    for handedness, _landmarks in hands:
+        owned = cube_window.cube_owned_by(handedness)
+        if owned is None:
+            continue
+        if _hand_state_trackers[handedness].tracking_state == hand_state.TRACKING:
+            continue                                   # still here under its own label
+        other = hand_ownership.OTHER_HAND[handedness]
+        if _hand_state_trackers[other].tracking_state != hand_state.TRACKING:
+            continue                                   # nothing in the other slot
+        if cube_window.cube_owned_by(other) is not None:
+            continue                                   # that hand is already holding
+        seen = _last_seen[handedness]
+        if not hand_ownership.should_transfer(
+                seen.centre, seen.palm_width, _last_seen[other].centre, seen.other_busy):
+            continue
+
+        cube_window.cubes[owned].owner = other
+        _hand_orientation_filters[other] = _hand_orientation_filters[handedness]
+        _hand_rotation_states[other] = _hand_rotation_states[handedness]
+        _hand_orientation_filters[handedness] = HandOrientationFilter()
+        _hand_rotation_states[handedness] = None
+        # The vacated label's track is genuinely over; the new one is mid-resync.
+        _hand_state_trackers[handedness].reset()
+        _last_seen[handedness].clear()
+        _resync_blend_left[handedness] = 0
+        _resync_blend_left[other] = RESYNC_BLEND_FRAMES
+        print(f"[cubes] T3: '{owned}' followed its hand '{handedness}' -> '{other}' "
+              f"(relabelled, not dropped)")
+
+
 def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: List[Tuple[float, float]],
                    now_ms: Optional[float] = None) -> None:
     """Called once per received "hands" packet with both hands' full
@@ -521,8 +578,29 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     # golden-vector testable (`analysis/verify_hand_state.py`).
     if now_ms is None:
         now_ms = time.perf_counter() * 1000.0
+    detected = {h: _is_detected(lm) for h, lm in hands}
     for handedness, landmarks in hands:
-        _hand_state_trackers[handedness].update(_is_detected(landmarks), now_ms)
+        _hand_state_trackers[handedness].update(detected[handedness], now_ms)
+        if detected[handedness]:
+            # T3: remember where this hand was, at what scale, and -- crucially --
+            # whether the OTHER slot was busy at the time. That last bit is the
+            # transfer guard, and it can only be captured now: by the time a
+            # transfer is considered the other slot is occupied by definition.
+            # ⚠ Same two functions `analysis/t3_relabel_threshold.py` measured the
+            # 0.5-palm-width threshold with. A different centre or scale here
+            # would silently invalidate that number.
+            _last_seen[handedness].record(
+                hand_blocks.palm_position(landmarks),
+                hand_blocks.palm_scale(landmarks),
+                detected[hand_ownership.OTHER_HAND[handedness]],
+            )
+
+    # ⭐ T3: BEFORE anything decides to release, ask whether the hand simply
+    # changed labels. If it did, move the cube with it. Running here -- after the
+    # tracking states are known, before the release pass -- means the rest of
+    # this function needs no knowledge of relabels at all: by the time it looks,
+    # the cube is owned by a hand that is present.
+    _transfer_relabelled_owners(hands)
 
     released_this_frame = set()
     for handedness, landmarks in hands:

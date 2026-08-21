@@ -175,6 +175,75 @@ check("  (the far hand really is holding nothing)",
 check("⭐ an EMPTY hand's resume does not arm the blend for a later grab",
       HTA._resync_blend_left["Right"] == 0, str(HTA._resync_blend_left["Right"]))
 
+print("\n5. ⭐ T3 -- a held cube FOLLOWS its hand across a relabel")
+
+
+def fresh():
+    """A clean production state with the Right hand holding the large cube."""
+    for h in HTA.TRACKED_HANDS:
+        HTA._hand_state_trackers[h] = HS.HandStateTracker()
+        HTA._resync_blend_left[h] = 0
+        HTA._last_seen[h].clear()
+        HTA._palm_facing_trackers[h].reset()
+        HTA._hand_orientation_filters[h] = HTA.HandOrientationFilter()
+        HTA._hand_rotation_states[h] = None
+    for name in list(HTA.cube_window.cubes):
+        HTA.cube_window.release_cube(name)
+
+
+fresh()
+for i in range(4):
+    HTA.on_hands_frame(MISS, HAND, now_ms=i * 42.0)
+HTA.cube_window.snap_cube("large", "Right")
+cube = HTA.cube_window.cubes["large"]
+at_grab = HTA.cube_window.cube_center("large")
+cube.grab_landmark_weights = HTA._compute_grab_weights(at_grab, HAND)
+w = HTA._weighted_position(cube.grab_landmark_weights, HAND)
+cube.grab_residual_offset = (at_grab[0] - w[0], at_grab[1] - w[1])
+filt_before = HTA._hand_orientation_filters["Right"]
+# The relabel: the SAME landmarks arrive in the Left slot instead.
+HTA.on_hands_frame(HAND, MISS, now_ms=4 * 42.0)
+check("⭐ the cube is now owned by 'Left', not dropped",
+      HTA.cube_window.cubes["large"].owner == "Left",
+      str(HTA.cube_window.cubes["large"].owner))
+check("  the orientation filter moved with it (no orientation pop)",
+      HTA._hand_orientation_filters["Left"] is filt_before)
+check("  the vacated label got a fresh filter",
+      HTA._hand_orientation_filters["Right"] is not filt_before)
+check("  and the resync blend is armed on the new label",
+      HTA._resync_blend_left["Left"] > 0)
+
+# ⚠ THE GUARD. Both hands tracked, then the owner vanishes: the cube must NOT
+# move to the hand that was already there, however close it is.
+fresh()
+for i in range(4):
+    HTA.on_hands_frame(HAND, HAND, now_ms=i * 42.0)      # BOTH hands present
+HTA.cube_window.snap_cube("large", "Right")
+cube = HTA.cube_window.cubes["large"]
+cube.grab_landmark_weights = HTA._compute_grab_weights(
+    HTA.cube_window.cube_center("large"), HAND)
+cube.grab_residual_offset = (0.0, 0.0)
+HTA.on_hands_frame(HAND, MISS, now_ms=4 * 42.0)          # Right vanishes
+check("⭐ with a hand ALREADY in the other slot, the cube does NOT change hands",
+      HTA.cube_window.cubes["large"].owner in ("Right", None),
+      str(HTA.cube_window.cubes["large"].owner))
+print("     ⚠ Two real hands: transferring here would be cube-stealing (N8)")
+print("       arriving through a new door, not a repair.")
+
+# And a hand appearing far away is not the same hand.
+fresh()
+for i in range(4):
+    HTA.on_hands_frame(MISS, HAND, now_ms=i * 42.0)
+HTA.cube_window.snap_cube("large", "Right")
+cube = HTA.cube_window.cubes["large"]
+cube.grab_landmark_weights = HTA._compute_grab_weights(
+    HTA.cube_window.cube_center("large"), HAND)
+cube.grab_residual_offset = (0.0, 0.0)
+HTA.on_hands_frame(FAR_HAND, MISS, now_ms=4 * 42.0)
+check("a hand appearing FAR away does not take the cube",
+      HTA.cube_window.cubes["large"].owner in ("Right", None),
+      str(HTA.cube_window.cubes["large"].owner))
+
 print("\n" + "=" * 78)
 print(f"{len(FAILS)} failure(s)" + ("" if not FAILS else ": " + ", ".join(FAILS)))
 print("=" * 78)
