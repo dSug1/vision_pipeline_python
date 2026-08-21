@@ -67,6 +67,7 @@ PRODUCTION_ROTATION = _PRot.Horn(_PRot.PALM_LANDMARKS, "ref")
 # `Resources` is a package alongside this file; importing this ONE module does not
 # pull in HandsTriggeredActions/CubeWindow, so no pygame window is opened.
 from Resources import palm_geometry  # noqa: E402
+from Resources import hand_state  # noqa: E402  (queue D1 -- see `_hand_state_trackers`)
 
 HAND_LANDMARKER_MODEL_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
@@ -94,6 +95,73 @@ _hand_identity_tracker = hand_identity.HandIdentityTracker()
 # in HandsTriggeredActions.py (queue item 2.2). Same shared class, so the debug tool
 # and the game apply an identical edge-on policy.
 _palm_facing_trackers = {h: palm_geometry.PalmFacingTracker() for h in ("Left", "Right")}
+
+# D1/D2/D3 tracking state (queue Phase D, spec §2.1/§2.2) lives on CubeState, NOT
+# here -- see the `bridge_window_ms` block there. It has to be per-arm so the
+# three-arm comparison below can run three configurations off one camera.
+# ⚠ Production keeps its copies at module level in `HandsTriggeredActions`; it
+# runs one arm and needs no split. The VALUES must stay in step (§13.6.1) even
+# though the storage does not: `hand_state.BRIDGE_WINDOW_MS` is the shared
+# constant both read, which is what keeps them honest.
+#
+# ⚠ One field is deliberately NOT mirrored: production records DR-2's
+# `orientation_valid` on the quality block, this tool does not, because it
+# computes DR-2 in the capture loop BEFORE `update_hands` runs and nothing here
+# consumes the bit. That is a gap in a field no rule reads, not in behaviour.
+
+# D3 resync blend, mirroring production's `_resync_blend_left` /
+# `RESYNC_BLEND_FRAMES`. Same value, same meaning; 0 disables it, which is the
+# live A/B's no-blend arm.
+RESYNC_BLEND_FRAMES = 3
+
+# ⭐⭐ THE D2/D3 COMPARISON RIG, THREE ARMS SIDE BY SIDE (`--arms 3`).
+#
+#   off    window 0, no blend   = production before D2. THE CONTROL.
+#   on     window 150, no blend = D2 alone: the drop is gone, the pop is not
+#   blend  window 150, blend 3  = D2 + D3
+#
+# ✅ DECIDED LIVE 2026-08-21: the owner ran the three arms, chose BLEND -- "3 -
+# BLEND is definitely better" -- and WAIVED the blind test. So `blend` is what
+# production runs and what this tool now runs by DEFAULT (`--arms 1`), because a
+# debug tool that does not mirror production is the divergence N6/§13.6.1 exists
+# to prevent. The rig stays behind `--arms 3` for the next time an arm needs
+# comparing; it is no longer the default view.
+#
+# ⭐ Each arm keeps its OWN cubes and its own Phase D state, but all three are
+# driven by ONE camera frame, ONE detection and ONE identity resolution -- so the
+# ONLY thing that differs between the panels is the bridging. That one-variable
+# property is what made B4's six-arm session readable and is not negotiable here:
+# if a second difference ever creeps in, a visible difference stops having one
+# cause. (`_palm_facing_trackers` is deliberately shared -- DR-2 is UPSTREAM of
+# these arms, so giving each arm its own would introduce exactly such a second
+# difference.)
+#
+# ⚠ This is a SIGHTED test and it can only answer "does this feel right / did
+# anything regress". A PREFERENCE between arms needs the balanced
+# `--blind-series` machinery -- §16.17 measured an unbalanced sighted comparison
+# manufacturing a convincing 5-1 that collapsed to 4-2 (p = 0.34) once balanced.
+# Do not report a winner from this screen.
+BRIDGE_MODES = ("off", "on", "blend")
+BRIDGE_ARM_COLOURS = {"off": (128, 128, 128), "on": (0, 200, 255), "blend": (0, 255, 128)}
+
+
+def _make_arm(mode, width, height):
+    """One arm of the comparison: its own cubes, trackers, window and counters."""
+    return CubeState(
+        window_size=(width, height),
+        bridge_window_ms=0.0 if mode == "off" else hand_state.BRIDGE_WINDOW_MS,
+        resync_blend_frames=RESYNC_BLEND_FRAMES if mode == "blend" else 0,
+        arm_label=mode,
+    )
+
+
+def _arm_title(state):
+    return {
+        "off": "1. OFF -- pre-D2 control (release on frame 1)",
+        "on": f"2. ON -- D2 bridge {state.bridge_window_ms:.0f} ms, NO blend",
+        "blend": f"3. BLEND -- D2 {state.bridge_window_ms:.0f} ms + D3 "
+                 f"{state.resync_blend_frames}-frame resync  [SHIPPED]",
+    }[state.arm_label]
 
 WRIST = 0
 INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP = 5, 9, 13, 17
@@ -356,8 +424,30 @@ class CubeState:
     # §16.15: per-hand state for an optional least-squares rotation estimator.
     # Reset on tracking loss, same contract as hand_orientation_filters.
     hand_rotation_states: Dict[str, object] = field(default_factory=lambda: {h: None for h in TRACKED_HANDS})
+    # ⭐ D1/D2/D3 (queue Phase D). These live on CubeState rather than at module
+    # level SO THAT SEVERAL ARMS CAN RUN AT ONCE off one camera: `--arms 3` gives
+    # each arm its own trackers, its own coast window and its own blend, driven
+    # by ONE detection and ONE identity resolution. That is what makes the
+    # three-way comparison one-variable -- the same discipline as B4's six-arm
+    # session, where each row was a single change on the row above.
+    # ⚠ Production keeps ITS copies at module level in `HandsTriggeredActions`;
+    # it runs exactly one arm, so it needs no such split. The VALUES must stay in
+    # step (§13.6.1) even though the storage differs.
+    bridge_window_ms: float = hand_state.BRIDGE_WINDOW_MS
+    resync_blend_frames: int = 3
+    arm_label: str = "blend"
+    hand_state_trackers: Dict[str, object] = field(default_factory=dict)
+    resync_blend_left: Dict[str, int] = field(default_factory=lambda: {h: 0 for h in TRACKED_HANDS})
+    # Per-arm live counters for the on-screen comparison.
+    stats: Dict[str, int] = field(
+        default_factory=lambda: {"bridged_frames": 0, "saves": 0, "releases": 0})
 
     def __post_init__(self):
+        if not self.hand_state_trackers:
+            self.hand_state_trackers = {
+                h: hand_state.HandStateTracker(bridge_window_ms=self.bridge_window_ms)
+                for h in TRACKED_HANDS
+            }
         if not self.cubes:
             self.cubes = {
                 "large": Cube(
@@ -713,8 +803,45 @@ def _try_snap(state: CubeState, handedness: str, hand_pos: Tuple[float, float], 
     return best_name
 
 
+def update_hands_all(arms, hand_data_by_hand, now_ms=None, **kw):
+    """Advance every arm by one frame from ONE observation.
+
+    ⭐ The single timestamp read lives here, not in the loop over arms: three
+    separate clock reads would give the arms slightly different gap lengths, and
+    a comparison whose arms disagree about how long the gap was is not a
+    comparison. `analysis/verify_three_arm_bridge.py` drives this same function,
+    so the test and the tool cannot diverge."""
+    if now_ms is None:
+        now_ms = time.perf_counter() * 1000.0
+    for arm in arms:
+        update_hands(arm, hand_data_by_hand, now_ms=now_ms, **kw)
+
+
+def _draw_bridge_hud(frame, state, height):
+    """Per-arm overlay: which arm this panel is, and what it has done so far.
+
+    ⚠ `rel` (releases) is the number being judged: in the OFF panel it is the
+    familiar rate of cubes dropping for no visible reason, and it should be lower
+    in the other two. `brid` is how often the coast was used at all -- ⭐ IF IT
+    STAYS NEAR ZERO THE SESSION NEVER PROVOKED A DROPOUT and nothing has been
+    tested, whatever the panels look like.
+
+    ⚠ The counters are NOT the verdict. Three cubes released at different moments
+    is a thing you WATCH; the numbers are there so the session leaves a trace
+    behind, not so the biggest number wins."""
+    colour = BRIDGE_ARM_COLOURS[state.arm_label]
+    cv2.rectangle(frame, (0, 0), (frame.shape[1] - 1, frame.shape[0] - 1), colour, 2)
+    cv2.putText(frame, _arm_title(state), (10, 22),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, 1, cv2.LINE_AA)
+    held = sum(1 for c in state.cubes.values() if c.owner is not None)
+    cv2.putText(frame,
+                f"rel {state.stats['releases']}   saves {state.stats['saves']}"
+                f"   brid {state.stats['bridged_frames']}   held {held}",
+                (10, height - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (220, 220, 220), 1, cv2.LINE_AA)
+
+
 def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
-                 anchor=None, rotation=None) -> None:
+                 anchor=None, rotation=None, now_ms=None) -> None:
     """hand_data_by_hand: {handedness: {"pixel_landmarks": [...],
     "world_landmarks": [...], "thumb_outward": bool} or None (not detected
     this frame)}.
@@ -791,23 +918,51 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
     against recorded data to eliminate the large (>30/>60 degree)
     per-frame jumps at the pitch crossing without changing already-healthy
     frames at all (alpha=1 there, zero added lag)."""
+    # D1, mirroring production's identical pass: resolve tracking state for both
+    # hands before either pass acts on it. `now_ms` is injected so `hand_state`
+    # stays clock-free (`analysis/verify_hand_state.py`).
+    if now_ms is None:
+        now_ms = time.perf_counter() * 1000.0
+    for handedness in TRACKED_HANDS:
+        t = state.hand_state_trackers[handedness]
+        t.update(hand_data_by_hand[handedness] is not None, now_ms)
+        if t.tracking_state == hand_state.BRIDGING:
+            state.stats["bridged_frames"] += 1
+        if t.reacquired_after_ms > 0.0 and state.cube_owned_by(handedness) is not None:
+            state.stats["saves"] += 1
+
     released_this_frame = set()
     for handedness in TRACKED_HANDS:
         data = hand_data_by_hand[handedness]
         owned = state.cube_owned_by(handedness)
         if owned is None:
             continue
-        if data is None:  # tracking lost
+        if not state.hand_state_trackers[handedness].holds_track:  # tracking lost
+            state.stats["releases"] += 1
             state.release_cube(owned)
             released_this_frame.add(owned)
             state.thumb_outward_snap_allowed[handedness] = state.last_known_thumb_outward[handedness]
 
     for handedness in TRACKED_HANDS:
         data = hand_data_by_hand[handedness]
-        if data is None:
-            state.hand_orientation_filters[handedness] = HandOrientationFilter()  # avoid predicting from a stale reference on reacquire
-            state.hand_rotation_states[handedness] = None                         # §16.15: never fit against a dead track
+        if state.hand_state_trackers[handedness].tracking_state != hand_state.TRACKING:
+            # ⚠ Resets gated on the track being properly gone, not on one missed
+            # frame -- see the long note on production's copy of this branch.
+            # Under D2's open window these no longer coincide, and clearing here
+            # would discard exactly what the bridge coasts on.
+            if state.hand_state_trackers[handedness].tracking_state == hand_state.SUSTAINED_LOST:
+                state.hand_orientation_filters[handedness] = HandOrientationFilter()  # avoid predicting from a stale reference on reacquire
+                state.hand_rotation_states[handedness] = None                         # §16.15: never fit against a dead track
+                state.resync_blend_left[handedness] = 0                               # D3: a dead track carries no pending blend
             continue
+        if state.hand_state_trackers[handedness].reacquired_after_ms > 0.0:
+            # D2/D3, mirroring production exactly: never extrapolate across a gap
+            # the filter did not observe (B8), and arm the resync blend -- only
+            # for a hand that is actually holding, or it would stay armed until
+            # the next grab and blend one that never bridged.
+            state.hand_orientation_filters[handedness].omega = IDENTITY_QUATERNION
+            if state.cube_owned_by(handedness) is not None:
+                state.resync_blend_left[handedness] = state.resync_blend_frames
         thumb_outward = data["thumb_outward"]
         state.last_known_thumb_outward[handedness] = thumb_outward
         if not thumb_outward:
@@ -884,6 +1039,14 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                     weighted_now[0] + cube.grab_residual_offset[0],
                     weighted_now[1] + cube.grab_residual_offset[1],
                 )
+            if new_center is not None and state.resync_blend_left[handedness] > 0:
+                # D3, mirroring production: walk back to the hand over a few
+                # frames instead of teleporting on the first frame after a bridge.
+                t = 1.0 / state.resync_blend_left[handedness]
+                have = state.cube_center(owned)
+                new_center = (have[0] + (new_center[0] - have[0]) * t,
+                              have[1] + (new_center[1] - have[1]) * t)
+                state.resync_blend_left[handedness] -= 1
             if new_center is not None:      # None = degenerate palm: HOLD, never jump
                 state.set_target_position(owned, _top_left_for_center(new_center, cube.size))
             delta = _quat_multiply(hand_quat_now, _quat_conjugate(cube.grab_hand_orientation))
@@ -1001,6 +1164,16 @@ def build_detector():
 def main():
     parser = argparse.ArgumentParser(description="Combined snap/translate debug view (video + landmarks + cube overlay).")
     parser.add_argument("--camera-index", type=int, default=0)
+    parser.add_argument("--bridge", choices=BRIDGE_MODES, default="blend",
+                        help="which D2/D3 arm to run. Default 'blend' = what "
+                             "production runs. Ignored when --arms 3.")
+    parser.add_argument("--arms", type=int, default=1, choices=(1, 3),
+                        help="1 (default) = mirror production, one window. "
+                             "3 = the D2/D3 comparison rig, all three arms "
+                             "side by side off one camera.")
+    parser.add_argument("--scale", type=float, default=0.62,
+                        help="per-panel display scale for --arms 3")
+    parser.add_argument("--gap", type=int, default=8, help="pixels between panels")
     args = parser.parse_args()
 
     detector = build_detector()
@@ -1012,11 +1185,39 @@ def main():
     if not ret:
         raise RuntimeError("Could not read an initial frame from the webcam.")
     height, width = frame.shape[:2]
-    state = CubeState(window_size=(width, height))
+    modes = list(BRIDGE_MODES) if args.arms == 3 else [args.bridge]
+    arms = [_make_arm(m, width, height) for m in modes]
+    state = arms[0]        # the single-arm path's state, and arm 1 of three
 
-    window_name = "Snap/translate debug (video + landmarks + cube overlay)"
+    # One window per arm, laid out left-to-right, same approach as the six-arm
+    # tool (`LiveBlockPredictionDebug`). Separate windows rather than one wide
+    # canvas so the owner can move, resize or hide a panel mid-session.
+    disp_w, disp_h = int(width * args.scale), int(height * args.scale)
+    windows = []
+    for i, arm in enumerate(arms):
+        name = f"D2/D3 arm {i + 1}: {arm.arm_label.upper()}" if args.arms == 3 else \
+               "Snap/translate debug (video + landmarks + cube overlay)"
+        windows.append(name)
+        cv2.namedWindow(name, cv2.WINDOW_NORMAL)
+        if args.arms == 3:
+            cv2.resizeWindow(name, disp_w, disp_h)
+            cv2.moveWindow(name, i * (disp_w + args.gap), 0)
+    window_name = windows[0]
+
     timestamp_ms = 0
-    print("[LiveSnapDebug] Running -- press 'q' or close the window to stop.")
+    print("[LiveSnapDebug] Running -- press 'q' or close a window to stop.")
+    if args.arms == 3:
+        for i, arm in enumerate(arms):
+            print(f"[LiveSnapDebug]   window {i + 1}: {_arm_title(arm)}")
+        print("[LiveSnapDebug] ⚠ All three arms run off ONE detection and ONE")
+        print("[LiveSnapDebug]   identity resolution, so the ONLY difference")
+        print("[LiveSnapDebug]   between panels is the bridging.")
+        print("[LiveSnapDebug] ⚠ To test anything you must PROVOKE dropouts:")
+        print("[LiveSnapDebug]   grab a cube, then move fast, sweep out past the")
+        print("[LiveSnapDebug]   frame edge and back. If 'brid' stays 0, nothing")
+        print("[LiveSnapDebug]   was tested.")
+    else:
+        print(f"[LiveSnapDebug] single arm: {_arm_title(state)}")
 
     try:
         while True:
@@ -1099,23 +1300,36 @@ def main():
                 }
                 normalized_by_hand[label] = d["normalized"]
 
-            # Mirrors production, which is the entire point of this tool.
-            update_hands(state, hand_data_by_hand, rotation=PRODUCTION_ROTATION)
+            # ⭐ ONE update per arm, all fed the SAME `hand_data_by_hand`. The
+            # arms differ only in their own Phase D configuration, so a
+            # divergence between panels has exactly one cause.
+            update_hands_all(arms, hand_data_by_hand, rotation=PRODUCTION_ROTATION)
 
-            for handedness, normalized in normalized_by_hand.items():
-                data = hand_data_by_hand[handedness]
-                _draw_hand(
-                    frame, normalized, handedness, data["thumb_outward"],
-                    state.thumb_outward_snap_allowed[handedness],
-                    state.last_hand_reliability_alpha[handedness], width, height,
-                )
+            for i, arm in enumerate(arms):
+                panel = frame if len(arms) == 1 else frame.copy()
+                for handedness, normalized in normalized_by_hand.items():
+                    data = hand_data_by_hand[handedness]
+                    _draw_hand(
+                        panel, normalized, handedness, data["thumb_outward"],
+                        arm.thumb_outward_snap_allowed[handedness],
+                        arm.last_hand_reliability_alpha[handedness], width, height,
+                    )
+                _draw_cubes(panel, arm)
+                _draw_bridge_hud(panel, arm, height)
+                cv2.imshow(windows[i], panel)
 
-            _draw_cubes(frame, state)
-
-            cv2.imshow(window_name, frame)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
                 break
-            if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+            if key == ord("r"):
+                # Reset every arm's counters together, so a fresh comparison can
+                # start without restarting the session. ⚠ Resets counters ONLY --
+                # the cubes stay where they are.
+                for arm in arms:
+                    for k in arm.stats:
+                        arm.stats[k] = 0
+                print("[LiveSnapDebug] counters reset on all arms")
+            if any(cv2.getWindowProperty(n, cv2.WND_PROP_VISIBLE) < 1 for n in windows):
                 break
     finally:
         cap.release()

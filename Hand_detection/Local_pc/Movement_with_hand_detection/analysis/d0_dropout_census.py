@@ -1,7 +1,15 @@
 """⭐ THE DROPOUT CENSUS — does MediaPipe actually drop out, when, and what does it cost?
 
-Written 2026-08-21 to test the premise of `Claude/DROPOUT_MITIGATION.md` BEFORE
-building against it. That document asserts:
+Written 2026-08-21 to test the premise of an owner-supplied document,
+`DROPOUT_MITIGATION.md`, BEFORE building against it.
+
+⚠ THAT DOCUMENT IS NOT IN THIS REPOSITORY AND IS NOT MEANT TO BE (owner decision,
+2026-08-21: distil it, do not file it). Its content lives in the places that own
+each part -- its schema in `PERCEPTION_LAYER_SPEC.md` §2.1, its build tiers in
+`PART_ONE.md` §3.1's Phase D rows, and its PREMISE right here, quoted below so
+this script remains readable without it. Naming it is provenance, not a pointer.
+
+It asserts:
 
     "MediaPipe's hand tracking is weak at detecting the hand when it crosses the
      horizontal plane during pitch rotation ... the palm detector itself can fail

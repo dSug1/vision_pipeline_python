@@ -17,10 +17,31 @@ plain language, not implementation detail (link to the code instead).
      production) — `LiveSnapDebug.py` (`_try_snap`/`update_hands`, debug
      tool).
 
-2. **Un-snap on tracking loss.** If a hand holding an object goes out of
-   the camera's view (tracking lost), the object un-snaps and freezes in
-   place at its last position.
-   - Same files as rule 1, tracking-loss release branch.
+2. **Un-snap on tracking loss — after a 150 ms coast.** If a hand holding an
+   object goes out of the camera's view (tracking lost), the object un-snaps
+   and freezes in place at its last position. **Since 2026-08-21 the release
+   waits out a 150 ms coast first**: while the hand is missing but the coast
+   has not expired the object stays held and frozen where it is, and if the
+   hand comes back the object walks back to it over 3 frames instead of
+   jumping. Only when the coast expires does the object un-snap.
+   - Same files as rule 1, tracking-loss release branch, plus
+     `Resources/hand_state.py` (`BRIDGE_WINDOW_MS`, `RESYNC_BLEND_FRAMES`).
+     Queue **D1/D2/D3**; owner accepted it live 2026-08-21.
+   - **⚠⚠ THIS IS NOT M10.7's GRACE PERIOD, and the difference is worth
+     stating precisely because the two are easy to confuse — they have the
+     same shape at different scales.** The coast is a **sensor** rule: for
+     150 ms there was no measurement, so there was no evidence to act on,
+     and the number is the measured median detection gap (128 ms) rather
+     than a judgement about the player. M10.7's grace period below is a
+     **game** rule: it holds the object through a loss the sensor reported
+     correctly, on the argument that *"losing tracking is not the same as
+     letting go"*, and it comes with a UI signal. **M10.7 remains deferred
+     and undecided** — see the next bullet, which is unchanged.
+   - ⭐ **Side effect on N8 (cube-stealing, below): partially closed for
+     free.** An occlusion shorter than 150 ms no longer releases the cube,
+     so there is nothing for the occluding hand to steal. Occlusions longer
+     than that still steal. Not measured live — recorded as an expected
+     consequence of the mechanism, not as a fix.
    - **Proposed change — DEFERRED BY THE OWNER, 2026-08-04. Do not build it,
      and do not re-propose it as a side effect of some other item.** The
      perception spec's M10.7 argues for a **~400 ms grace period** before
@@ -36,7 +57,14 @@ plain language, not implementation detail (link to the code instead).
        rule.
      - Revisit only if the immediate-drop behaviour becomes a felt problem
        in live play, and raise it as an explicit question rather than
-       bundling it into a module. Note it also interacts with the same-frame release/re-snap
+       bundling it into a module. ⭐ **THAT CONDITION IS NOW MET AND THE
+       QUESTION IS OPEN (2026-08-21, queue D4).** Immediate-drop was
+       measured, not merely felt: **205 spurious releases across the
+       corpus.** The 150 ms coast above removes a share of the 83 that were
+       true detection dropouts. **What it does NOT address is a hand that is
+       genuinely lost for longer than the sensor gap** — which is what M10.7
+       is actually about. So the owner's question is now answerable with
+       numbers rather than impressions, and it is still the owner's. Note it also interacts with the same-frame release/re-snap
      ordering fix (a cube held in limbo must be excluded from other
      hands' snap passes meanwhile). `PERCEPTION_LAYER_SPEC.md` M10.
    - **KNOWN ISSUE (observed 2026-08-02, recorded only — not being fixed

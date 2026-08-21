@@ -2337,6 +2337,18 @@ HandState = {
 object. It is **superseded by this one** — do not implement both, and do not keep
 both documents' field lists alive. The mapping, so nothing is lost:
 
+⭐⭐ **`DROPOUT_MITIGATION.md` IS NOT A FILE IN THIS REPOSITORY, AND THE TABLE
+BELOW IS WHY IT DOES NOT NEED TO BE.** It was owner-supplied, and the owner's
+decision (2026-08-21) was to **distil it rather than file it**: its schema is this
+table, its build tiers are `PART_ONE.md` §3.1's Phase D rows (each one either
+adopted with the correction that this project's own measurements force, or struck
+and named as already-rejected work), and its premise is queue **D0** and
+`analysis/d0_dropout_census.py` — the measurement that refuted it. ⚠ It is still
+NAMED here and in those rows, because a claim's provenance is worth recording;
+**those are citations of a document that was read, not links to one that can be
+opened.** Do not read an unresolvable reference to it as a missing file, and do
+not try to reconstruct it — everything that survived review is already below.
+
 | `DROPOUT_MITIGATION.md` §2 | here | note |
 |---|---|---|
 | `position`, `velocity` | `palm.position`, `palm.linearVelocity` | same |
@@ -2370,6 +2382,75 @@ exists, so the rule below is not engaged. ⚠ **The full migration remains requi
 and is a separate decision, naturally paired with 4.1/M9** — which is what makes
 this contract's metric fields (`palm.position` in metres, `depth`) meaningful at
 all. Until then, do not serialise this struct.
+
+### 2.3 ✅ D1 AS BUILT (2026-08-21) — `Resources/hand_state.py`
+
+| | |
+|---|---|
+| module | `Resources/hand_state.py` — stdlib only, numpy-free, **clock-free** (`now_ms` is injected, so it stays deterministic and golden-vector testable), same port contract as `palm_geometry.py` / `hand_blocks.py` |
+| shipped fields | `tracking_state` → `quality.trackingState`; `frames_since_measurement` → `quality.framesSinceMeasurement`; `orientation_valid` → `quality.orientationValid`; plus two derived: `ms_since_measurement` (**the quantity D2 thresholds**) and `reacquired_after_ms` (**D3 needs the gap length after the counter has reset and cannot recover it otherwise**) |
+| deliberately absent | `occlusionLevel`, `motionBlur` (nothing client-side measures them — a fabricated field is worse than an absent one) and every `palm.*` metric field (those need the wire migration, which is 4.1/M9's) |
+| wired into | `Resources/HandsTriggeredActions.py` **and** `LiveSnapDebug.py`, in the same change, per §13.6.1 |
+| verification | `analysis/verify_hand_state.py` (37 vectors, dependency-free — this is the artifact a port must reproduce) and `analysis/verify_d1_wiring.py` (production behaviour, needs pygame, kept separate so the golden vectors stay portable) |
+
+⭐⭐ **`BRIDGE_WINDOW_MS` SHIPS AT 0.0 AND THAT IS THE DESIGN, NOT AN OVERSIGHT.**
+With a zero window `BRIDGING` is unreachable, so `holds_track` is False on exactly
+the frames `_is_detected` was False on, and **D1 changes no behaviour at all**.
+What it buys is that the release decision and the filter resets now read a
+tracking *state*; **D2 is then one constant plus the coasting pose.** Anyone who
+raises this constant has shipped D2's behaviour change without D2's A/B —
+`verify_hand_state.py` §2 fails if the default stops being 0.
+
+⚠ **The reset gating is the subtle half.** The orientation filter, the Horn
+reference constellation and DR-2's frozen sign are cleared on `SUSTAINED_LOST`,
+**not** on "this frame missed". Those two coincide exactly today. The moment the
+window opens they do not, and clearing them on the first missed frame would throw
+away precisely the state a bridge coasts on — the bridge would resume from a cold
+start, i.e. a visible pop replacing the drop it was built to remove.
+
+✅ **`orientationValid` has landed.** DR-2 has computed it since 2.2 shipped and
+`HandsTriggeredActions` discarded it every frame, with a comment naming this
+contract as where it belonged. It is now recorded on the quality block. ⚠ It is
+still read by **no rule** — that stays a separate, deliberate decision (see the
+Rule below), and this is the field that would carry it.
+
+### 2.4 ✅ D2 + D3 AS BUILT (2026-08-21) — and what the measurement found instead
+
+**Shipped**: `BRIDGE_WINDOW_MS = 150.0`; `omega` zeroed on the resume frame;
+`RESYNC_BLEND_FRAMES = 3` position lerp. Harness: `analysis/d2_bridge_ab.py`.
+
+⭐ **The window is 150 ms because the measured median true-dropout gap is 128 ms**
+— 2–3 frames at this pipeline's 14–24 fps. 300 ms buys 9 more saves for 2 more
+pops and triples the worst added hang; **the hang is the ceiling, not the ratio**,
+because a long enough window stops being sensor bridging and becomes D4/M10.7's
+grace period, which the owner gated.
+
+| of 83 true dropouts, at 150 ms | |
+|---|---|
+| SAVED (hand returns in time, cube barely moves) | **39** |
+| POP (returns in time, cube jumps > 1 palm width) | **19** |
+| LATE_RELEASE (released anyway, ≤ 150 ms later) | **25** |
+
+⚠⚠ **THE POP CLASS IS WHY D3 SHIPS WITH D2 AND NOT AFTER IT.** Bridging alone does
+not remove a defect — it **trades a drop for a jump**, and the jump is §14.1.4's
+teleport. Replayed over the hand's real post-gap trajectory (not modelled — the
+hand keeps moving during the blend), the 3-frame blend takes the **worst
+single-frame cube step from median 0.62 → 0.38, p90 1.95 → 0.87, max 2.47 → 1.49
+palm widths, making 3 of 47 resumes worse.** Those 3 are reported, not hidden.
+
+⛔ **"Confidence-scaled follow" (the source document's §3.7) needed nothing built.**
+Position has no follow to scale — `set_target_position` assigns exactly, so a
+skipped frame IS a frozen cube, which is also why "hold the last value" cost zero
+lines. Orientation's follow is `_reliability_alpha`, shipped since §13.7.
+
+⭐⭐ **AND THE HARNESS FOUND SOMETHING BIGGER THAN THE ROW IT WAS WRITTEN FOR.**
+Classifying all 205 spurious cube releases by cause: **83 are dropouts, 113 are
+the owner's hand reappearing under the other handedness label, 9 are a different
+hand.** Ownership is keyed by label, so any relabel orphans a held cube — **that
+is queue T3, it is the LARGEST cause, and DR-1 was running in every one of these
+recordings.** T3 is re-opened; the proposed fix is to key ownership on the DR-1
+track rather than the label. ⚠ **Bridging hides relabels cleanly (pop/save 0.00)
+and that is precisely why it must not be used to "fix" them.**
 
 **Rule:** the gesture layer must never read `quality` and silently proceed. Every gesture
 definition declares its minimum quality requirements, and the dispatcher suppresses gestures

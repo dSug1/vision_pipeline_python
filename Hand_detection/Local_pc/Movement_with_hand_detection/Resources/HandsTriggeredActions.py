@@ -1,10 +1,12 @@
 import math
+import time
 from typing import Dict, List, Optional, Tuple
 from .CubeWindow import CubeWindow
 # Palm chirality geometry, SHARED with LiveSnapDebug.py so the sign convention
 # cannot drift between them again (§13.6.1). Pure stdlib, no side effects.
 from . import palm_geometry
 from . import palm_rotation
+from . import hand_state
 
 # Gesture design: Hand_detection/Claude/GESTURE_PIPELINE_SPEC.md §13
 # (proximity snap, open-palm rotate, closed-fist release) — replaces the
@@ -79,6 +81,40 @@ _thumb_outward_snap_allowed: Dict[str, bool] = {h: False for h in TRACKED_HANDS}
 _palm_facing_trackers: Dict[str, palm_geometry.PalmFacingTracker] = {
     h: palm_geometry.PalmFacingTracker() for h in TRACKED_HANDS
 }
+
+# ⭐ D1 (2026-08-21): the client-side `HandState.quality` subset --
+# `Resources/hand_state.py`, spec §2.1/§2.2. Per hand, and SHARED with
+# LiveSnapDebug.py for the same reason DR-2 is (§13.6.1: this module carries a
+# deliberate duplicate of the snap/translate logic, and the two diverging has
+# already shipped one bug).
+#
+# ⚠⚠ THIS CHANGES NO BEHAVIOUR TODAY, BY CONSTRUCTION. `BRIDGE_WINDOW_MS` is
+# 0.0, so `BRIDGING` is unreachable and `holds_track` is False on exactly the
+# frames `_is_detected` was False on before. What it buys is that the release
+# decision and the filter resets below now read a tracking STATE rather than a
+# raw detection bit, so queue D2 -- hold-and-decay bridging, the row that
+# removes D0's measured 98 spurious cube drops -- is a change to one constant
+# plus the coasting pose, not a re-plumbing of this function.
+_hand_state_trackers: Dict[str, hand_state.HandStateTracker] = {
+    h: hand_state.HandStateTracker() for h in TRACKED_HANDS
+}
+
+# ⭐ D3 (2026-08-21): RESYNC BLEND. Brought forward to ship WITH D2 rather than
+# after it, on D2's own evidence -- `analysis/d2_bridge_ab.py` measured the cube's
+# resume displacement at a median 0.59 palm widths, p90 1.95, max 4.99, and
+# classified 19 of 58 bridged dropouts as POPs (a resume that moves the cube more
+# than a palm width). A bridge with no blend does not remove a defect; it TRADES a
+# drop for a jump, and the jump is the §14.1.4 teleport this project has spent
+# real effort on. Blending is what makes the trade a win.
+#
+# Position only. Orientation already converges through `ROTATION_SLERP_FACTOR`'s
+# slerp and needs no second mechanism -- adding one would be the rule-stacking the
+# owner has asked against.
+#
+# ⚠ SET TO 0 TO DISABLE, which is what the live A/B's no-blend arm does. The
+# blend must justify itself in front of the owner's eye like everything else.
+RESYNC_BLEND_FRAMES = 3
+_resync_blend_left: Dict[str, int] = {h: 0 for h in TRACKED_HANDS}
 
 
 def _is_detected(landmarks: List[Tuple[float, float]]) -> bool:
@@ -434,9 +470,14 @@ def on_hands_world_frame(left_world: List[Tuple[float, float, float]], right_wor
     _latest_world_landmarks["Right"] = right_world
 
 
-def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: List[Tuple[float, float]]) -> None:
+def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: List[Tuple[float, float]],
+                   now_ms: Optional[float] = None) -> None:
     """Called once per received "hands" packet with both hands' full
     21-point landmark lists (mirrored webcam-frame pixel coordinates).
+
+    `now_ms` is optional and exists so a replay harness can drive the D1
+    tracking state from a recording's own `tCapture` instead of wall-clock
+    time; production leaves it None and gets `time.perf_counter()`.
 
     Two passes, not one combined per-hand pass — bug found live
     (2026-08-01): releasing and re-snapping in the same per-hand pass let a
@@ -472,42 +513,100 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     connecting, since "hands_world" is sent every frame)."""
     hands = (("Left", left_landmarks), ("Right", right_landmarks))
 
+    # D1: resolve every hand's tracking state FIRST, before any pass acts on it,
+    # so the release pass and the per-hand pass below cannot disagree about
+    # whether a hand is present this frame. `time.perf_counter() * 1000.0` is
+    # the same clock DR-1's identity tracker is already driven from (N7);
+    # `hand_state` never reads a clock itself, so it stays deterministic and
+    # golden-vector testable (`analysis/verify_hand_state.py`).
+    if now_ms is None:
+        now_ms = time.perf_counter() * 1000.0
+    for handedness, landmarks in hands:
+        _hand_state_trackers[handedness].update(_is_detected(landmarks), now_ms)
+
     released_this_frame = set()
     for handedness, landmarks in hands:
         owned_cube = cube_window.cube_owned_by(handedness)
         if owned_cube is None:
             continue
-        if not _is_detected(landmarks):
+        if not _hand_state_trackers[handedness].holds_track:
             # Tracking lost: release (freeze in place), matching
             # PART_ONE.md §2's existing release-conditions semantics ("or
             # loss of hand tracking... cube frozen in place, ownership
             # cleared").
+            #
+            # ⭐ D1: `holds_track` is False exactly when `_is_detected` was
+            # False, because the bridge window ships at 0. D2 opens that window
+            # and this line becomes "release only once the coast is exhausted"
+            # with no edit -- which is the whole point of landing the contract
+            # first. ⚠ D4 (a GRACE PERIOD before release) is a SEPARATE and
+            # currently GATED decision -- it is queue 4.3's M10.7 under another
+            # name, deferred by the owner. Do not smuggle it in here.
             cube_window.release_cube(owned_cube)
             released_this_frame.add(owned_cube)
             _thumb_outward_snap_allowed[handedness] = _last_known_thumb_outward[handedness]
 
     for handedness, landmarks in hands:
-        if not _is_detected(landmarks):
-            _hand_orientation_filters[handedness] = HandOrientationFilter()  # avoid predicting from a stale reference on reacquire
-            _hand_rotation_states[handedness] = None                         # §16.15: never fit against a dead track
-            # Same reasoning for DR-2's frozen sign: a value held from before the
-            # hand vanished is stale, and the hand may reappear in a different
-            # orientation. `_last_known_thumb_outward` deliberately survives this
-            # (rule 3 needs an orientation to record at a tracking-loss release);
-            # the FROZEN value must not.
-            _palm_facing_trackers[handedness].reset()
+        tracking = _hand_state_trackers[handedness]
+        if tracking.tracking_state != hand_state.TRACKING:
+            # No landmarks this frame, so nothing below can be computed either
+            # way. But the STATE RESETS are gated on the track being properly
+            # gone, not merely on this frame being a miss:
+            #
+            # ⚠⚠ D2 DEPENDS ON THIS DISTINCTION AND IT IS THE EASY THING TO GET
+            # WRONG. Bridging means "hold the last good pose across a short
+            # gap"; wiping the orientation filter, the Horn reference
+            # constellation and DR-2's frozen sign on the first missed frame
+            # would throw away precisely the state a bridge has to coast on, and
+            # the bridge would then resume from a cold start -- a visible pop
+            # instead of the drop it replaced. With today's 0 ms window these
+            # two conditions coincide exactly, so this is a no-op now and
+            # load-bearing the moment the window opens.
+            if tracking.tracking_state == hand_state.SUSTAINED_LOST:
+                _hand_orientation_filters[handedness] = HandOrientationFilter()  # avoid predicting from a stale reference on reacquire
+                _hand_rotation_states[handedness] = None                         # §16.15: never fit against a dead track
+                # Same reasoning for DR-2's frozen sign: a value held from before the
+                # hand vanished is stale, and the hand may reappear in a different
+                # orientation. `_last_known_thumb_outward` deliberately survives this
+                # (rule 3 needs an orientation to record at a tracking-loss release);
+                # the FROZEN value must not.
+                _palm_facing_trackers[handedness].reset()
+                _resync_blend_left[handedness] = 0   # D3: a dead track carries no pending blend
             continue
-        # DR-2: measured when well-conditioned, frozen while edge-on. `orientation_valid`
-        # is False while frozen -- currently unused by any rule, and the natural hook
-        # for HandState.quality.orientationValid when that contract lands.
+        # DR-2: measured when well-conditioned, frozen while edge-on.
+        # `orientation_valid` is False while frozen. ⭐ D1: that contract HAS now
+        # landed, so the bit is no longer discarded -- it is recorded on this
+        # frame's quality block as `HandState.quality.orientationValid`. Still
+        # read by no RULE (that stays a separate, deliberate decision), but it is
+        # now available to one rather than being recomputed later from scratch.
         thumb_outward, _orientation_valid = _palm_facing_trackers[handedness].update(
             landmarks, handedness
         )
+        tracking.set_orientation_valid(_orientation_valid)
         _last_known_thumb_outward[handedness] = thumb_outward
         if not thumb_outward:
             _thumb_outward_snap_allowed[handedness] = False
 
         hand_pos = _hand_position(landmarks)
+
+        if tracking.reacquired_after_ms > 0.0:
+            # ⭐ D2: this frame ends a bridge. Two things happen exactly here.
+            #
+            # (a) DO NOT EXTRAPOLATE ACROSS A GAP THE FILTER DID NOT OBSERVE.
+            #     `omega` is one frame's rotation delta measured BEFORE the hand
+            #     vanished, and the predictive step would apply it as though it
+            #     were still current. B8 measured every velocity fit losing to
+            #     "hold the last value" at every horizon, orientation included,
+            #     so the honest resume is a pure hold: zero omega, let the
+            #     reliability blend walk back to the measurement.
+            # (b) D3's resync blend is armed (see RESYNC_BLEND_FRAMES) -- but
+            #     ONLY if this hand is actually holding something. The blend is
+            #     consumed by the translation update below, which runs only for a
+            #     held cube, so arming it on an empty hand would leave it armed
+            #     until the NEXT grab and then blend a grab that never bridged.
+            _hand_orientation_filters[handedness].omega = IDENTITY_QUATERNION
+            if cube_window.cube_owned_by(handedness) is not None:
+                _resync_blend_left[handedness] = RESYNC_BLEND_FRAMES
 
         hand_quat_now = None
         world_landmarks = _latest_world_landmarks[handedness]
@@ -567,6 +666,17 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                 weighted_now[0] + cube.grab_residual_offset[0],
                 weighted_now[1] + cube.grab_residual_offset[1],
             )
+            if _resync_blend_left[handedness] > 0:
+                # D3: walk the cube back to the hand over a few frames instead of
+                # teleporting it there on the first frame after a bridge. `t`
+                # rises as the blend runs down (1/3, 1/2, 1 for a 3-frame blend),
+                # so the last step lands exactly on the measurement -- no residual
+                # offset, and no dependence on how long the blend was.
+                t = 1.0 / _resync_blend_left[handedness]
+                have = cube_window.cube_center(owned_cube)
+                new_center = (have[0] + (new_center[0] - have[0]) * t,
+                              have[1] + (new_center[1] - have[1]) * t)
+                _resync_blend_left[handedness] -= 1
             cube_window.set_target_position(owned_cube, _top_left_for_center(new_center, cube.size))
             if hand_quat_now is not None:
                 cube = cube_window.cubes[owned_cube]
