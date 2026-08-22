@@ -11,6 +11,7 @@ from .CubeWindow import CubeWindow
 from . import palm_geometry
 from . import palm_rotation
 from . import hand_state
+from . import hand_tracks
 
 # Gesture design: Hand_detection/Claude/GESTURE_PIPELINE_SPEC.md §13
 # (proximity snap, open-palm rotate, closed-fist release) — replaces the
@@ -241,6 +242,36 @@ def _top_left_for_center(center: Tuple[float, float], size: int) -> Tuple[float,
 # server, or a frame where DR-1 could not resolve identity) ownership degrades
 # to the old label key rather than breaking. A cube must never become
 # unreleasable because an id went missing.
+# ⛔⛔ REVERTED 2026-08-22 BY OWNER INSTRUCTION ("it is still full of bugs. Revert.")
+#
+# `TRACK_OWNERSHIP` switches the WHOLE 4.1 identity migration -- cube ownership
+# keyed on the DR-1 track id, and per-hand state following the track -- on or off
+# in one place. It is OFF: ownership and per-hand state key on the handedness
+# SLOT, exactly as they did before 4.1.
+#
+# WHY, stated straight: the migration was live-tested five times and the owner hit
+# a defect every time -- a stranded cube, a recurrence at 300/450 ms, a forbidden
+# back-of-hand grab, a crash, then a returning hand inheriting permission and
+# every cube freezing. Each fix was correct about the cause it named and each left
+# another hole. ⚠ At the end my instruments reported the session CLEAN (0 rule-3
+# violations across 21 relabels, no frozen cube) while the owner was still seeing
+# bugs -- so the measurements were not capturing what actually breaks. **A green
+# instrument I cannot trust is a reason to stop, not to continue.**
+#
+# WHAT COMES BACK WITH IT: T3's defect, measured at 113 of 205 spurious releases
+# -- a held cube is orphaned when the handedness label flips. ⭐ That is a DROP,
+# which the operator can simply re-grab. The migration traded it for FREEZES and
+# rule violations, which are worse. Reverting is the better failure.
+#
+# WHAT IS KEPT, because it is independent and good: `palm_depth.py` (4.1's
+# estimator, drives nothing), the DR-1 frame-edge fix, production recording, the
+# wire's `hand_tracks` packet (sent, simply unused here), and every harness.
+#
+# ⭐ TO RE-ENABLE FOR A FUTURE ATTEMPT: set this True. Nothing was deleted. Read
+# `PERCEPTION_LAYER_SPEC.md` §2.2.x first -- every defect above is written up
+# there with its measurement.
+TRACK_OWNERSHIP = False
+
 _hand_track_ids: Dict[str, int] = {h: -1 for h in TRACKED_HANDS}
 
 
@@ -306,7 +337,30 @@ _owner_hand_of_cube: Dict[str, str] = {}
 #
 # ⚠ The threshold is deliberately LONGER than D2's 150 ms coast, so this cannot
 # fight Phase D: it only fires well after the bridge has already given up.
-OWNER_ABSENT_RELEASE_MS = 700.0
+# ⭐⭐ OPTION A (owner decision 2026-08-22): ownership DEGRADES, it never breaks.
+#
+# The defect this replaces: a cube owned by an int track id became UNDRIVEABLE on
+# any frame where that id was not published -- frozen, still showing the snap
+# border, and excluded from `unowned_cube_names()`. The owner hit it repeatedly:
+# "the cubes get ungrabbed but is still marked as grab and no hand can grab it."
+# Three layers were added on top of that design (governing hand, absent timer,
+# safety net) and EACH had a hole. The fault was the design, not the patches.
+#
+# Now: while the owning track is missing, the cube keeps being driven by the hand
+# in its remembered slot, so it never freezes. Past the window it is RELEASED, so
+# it never sticks either. There is no owned-but-frozen state left to fall into.
+#
+# ⭐ THE WINDOW IS MEASURED, NOT CHOSEN. Pooled over the recordings taken AFTER
+# the DR-1 frame-edge fix, every id-gap that occurred while a hand was still in
+# view was <= 130 ms (n=32). 250 ms covers 100% with ~2x margin while capping a
+# wrong-hand follow at ~6 frames. ⚠ The pre-fix sessions show p90 642 / max 1604
+# ms -- do NOT size this off those, they are the out-of-frame None bug that is
+# now fixed, and sizing off them would license a half-second of wrong-hand drag.
+OWNER_DEGRADE_MS = 250.0
+# Kept equal on purpose: the moment we stop driving a cube is the moment we let
+# it go. A gap between the two is exactly the frozen-but-owned window this fix
+# exists to delete.
+OWNER_ABSENT_RELEASE_MS = OWNER_DEGRADE_MS
 _owner_absent_since: Dict[str, float] = {}
 
 
@@ -323,7 +377,7 @@ def _release_stranded_cubes(now_ms: float) -> set:
             _owner_absent_since.pop(name, None)
             continue
         first = _owner_absent_since.setdefault(name, now_ms)
-        if now_ms - first >= OWNER_ABSENT_RELEASE_MS:
+        if now_ms - first >= OWNER_ABSENT_RELEASE_MS:   # == OWNER_DEGRADE_MS
             cube_window.release_cube(name)
             _owner_absent_since.pop(name, None)
             _owner_hand_of_cube.pop(name, None)
@@ -350,7 +404,36 @@ def _refresh_cube_owner_hands() -> None:
             _owner_hand_of_cube[name] = cube.owner      # label-fallback owner
 
 
+def _cube_for_hand(handedness: str, now_ms: float):
+    """The cube this hand should drive THIS FRAME, degraded path included.
+
+    1. Normally: the cube whose owner key matches this hand.
+    2. DEGRADED: a cube whose owning TRACK is missing this frame, whose remembered
+       governing slot is this hand, and whose absence is still inside
+       `OWNER_DEGRADE_MS`. It keeps moving with the hand instead of freezing.
+
+    ⚠ Returns None past the window -- the release pass then lets the cube go. A
+    cube must never be both owned and undriveable.
+    """
+    direct = cube_window.cube_owned_by(_owner_key(handedness))
+    if direct is not None or not TRACK_OWNERSHIP:
+        return direct               # pre-4.1: no degraded path, keys never vanish
+    live = {tid for tid in _hand_track_ids.values() if tid >= 0}
+    for name, cube in cube_window.cubes.items():
+        if not isinstance(cube.owner, int) or cube.owner in live:
+            continue
+        if _owner_hand_of_cube.get(name) != handedness:
+            continue
+        first = _owner_absent_since.get(name)
+        if first is not None and now_ms - first < OWNER_DEGRADE_MS:
+            return name
+    return None
+
+
 def _owner_key(handedness: str):
+    if not TRACK_OWNERSHIP:
+        return handedness           # pre-4.1: ownership keys on the label
+
     """The value cube ownership is keyed on for this hand THIS FRAME.
 
     Returns the stable track id when one is available, else the handedness
@@ -623,6 +706,137 @@ _hand_rotation = palm_rotation.Horn(palm_rotation.PALM_LANDMARKS, "ref")
 _hand_rotation_states: Dict[str, Optional[dict]] = {h: None for h in TRACKED_HANDS}
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# FINISHING 4.1's MIGRATION: per-hand state follows the TRACK, not the slot
+# ══════════════════════════════════════════════════════════════════════════════
+# 4.1 moved cube OWNERSHIP onto the track id and left everything above keyed by
+# the handedness SLOT. So when two hands cross and the labels swap, a hand
+# INHERITS the other's history -- palm/back reading, D2 coast, orientation
+# filter, and snap permission. Measured on
+# `2026-08-22_163014_optionA_frozen_cube_check`: **4 snaps by a thumb-outward
+# hand that GAME_RULES rule 3 forbids**, because the back-of-hand hand landed in
+# a slot the palm hand had armed.
+#
+# ⭐ HOW THIS IS DONE, AND WHY NOT A FULL RE-KEY. The gesture logic below reads
+# `[handedness]` in ~40 places. Rewriting all of it would be the largest edit of
+# the session, on the day several smaller ones shipped bugs. Instead the dicts
+# are RE-BOUND each frame to the state of whichever track is in that slot now,
+# and mutated scalars are written back at the end. The logic is untouched; the
+# state travels with the hand. Same property, far smaller blast radius.
+#
+# ⚠ Objects (trackers, filters) are shared BY REFERENCE, so their internal
+# mutation lands automatically. Only SCALARS -- and any object the logic
+# REPLACES rather than mutates, notably the orientation filter on reset -- need
+# writing back. Missing one would silently lose that hand's state each frame.
+class _HandBundle:
+    """Everything the gesture layer knows about ONE physical hand."""
+
+    __slots__ = ("palm_facing", "tracking", "orientation_filter", "rotation_state",
+                 "last_known_thumb_outward", "thumb_outward_snap_allowed",
+                 "resync_blend_left", "reliability_alpha")
+
+    def __init__(self):
+        self.palm_facing = palm_geometry.PalmFacingTracker()
+        self.tracking = hand_state.HandStateTracker()
+        self.orientation_filter = HandOrientationFilter()
+        self.rotation_state = None
+        self.last_known_thumb_outward = False
+        self.thumb_outward_snap_allowed = False
+        self.resync_blend_left = 0
+        self.reliability_alpha = 1.0
+
+
+_track_registry = hand_tracks.TrackRegistry(_HandBundle)
+_bound_bundles: Dict[str, _HandBundle] = {}
+
+
+def _new_bundle_for(slot: str) -> "_HandBundle":
+    """A FRESH bundle for a newly-seen track, carrying CONFIG but never STATE.
+
+    ⛔⛔ THIS DISTINCTION IS THE WHOLE BUG, AND I GOT IT WRONG ONCE ALREADY.
+    An earlier version seeded a new track from the slot's CURRENT dict entries.
+    That was written to let a harness's injected tracker be adopted, and it
+    passed `verify_d1_wiring` -- while re-creating the exact inheritance defect
+    this migration exists to remove. Reported live by the owner:
+
+      "the hand exited as palm and came back as back and still could grab the
+       cube. Then all the cubes frozed."
+
+    Two failures, one cause:
+      1. A hand that leaves and returns is a NEW track. Seeding from the slot
+         handed it the previous hand's `thumb_outward_snap_allowed`, so a
+         back-of-hand hand could snap -- GAME_RULES rule 3 forbids that.
+      2. Worse, the seed copied the tracker OBJECT BY REFERENCE, so two distinct
+         tracks mutated ONE `HandStateTracker`. `holds_track` then answered for
+         the wrong hand, release never fired, and every cube froze.
+
+    ⭐ So: fresh objects always; copy only CONFIGURATION (the bridge window a
+    harness or arm may have set). Never copy a flag, a filter, or a tracker.
+    """
+    b = _HandBundle()
+    b.palm_facing = palm_geometry.PalmFacingTracker()
+    template = _hand_state_trackers.get(slot)
+    window = getattr(template, "bridge_window_ms", hand_state.BRIDGE_WINDOW_MS)
+    b.tracking = hand_state.HandStateTracker(bridge_window_ms=window)
+    b.orientation_filter = HandOrientationFilter()
+    b.rotation_state = None
+    b.last_known_thumb_outward = False
+    b.thumb_outward_snap_allowed = False
+    b.resync_blend_left = 0
+    b.reliability_alpha = 1.0
+    return b
+
+
+def _bind_track_state(now_ms: float) -> None:
+    """Point the per-hand dicts at the state of the track now in each slot."""
+    if not TRACK_OWNERSHIP:
+        return                      # pre-4.1: per-hand state stays slot-keyed
+
+    slots = _track_registry.resolve(dict(_hand_track_ids), now_ms)
+    for slot, tid in slots.items():
+        # ⚠ A NEW track ADOPTS whatever is currently in its slot rather than
+        # getting a default bundle. Harnesses (and D2's own verification) inject
+        # configured trackers into these dicts before the first frame; a default
+        # bundle silently discarded that and reverted the coast to 0 ms.
+        bundle = _track_registry.state(tid, seed=lambda s=slot: _new_bundle_for(s))
+        if bundle is None:
+            # ⭐ NO TRACK -> LEAVE THE DICTS EXACTLY AS THEY ARE. With no identity
+            # there is nothing better to bind, and the per-slot values are the
+            # legacy behaviour, which is correct in that case.
+            # ⚠ This also keeps the change strictly ADDITIVE: a caller that never
+            # publishes track ids (every pre-4.1 harness, and `verify_d1_wiring`,
+            # which injects configured trackers into these dicts) behaves exactly
+            # as before. An earlier version substituted a default "orphan" bundle
+            # here and silently discarded that injection -- D2's coast reverted to
+            # 0 ms and cubes released on the first missed frame.
+            _bound_bundles.pop(slot, None)
+            continue
+        _bound_bundles[slot] = bundle
+        _palm_facing_trackers[slot] = bundle.palm_facing
+        _hand_state_trackers[slot] = bundle.tracking
+        _hand_orientation_filters[slot] = bundle.orientation_filter
+        _hand_rotation_states[slot] = bundle.rotation_state
+        _last_known_thumb_outward[slot] = bundle.last_known_thumb_outward
+        _thumb_outward_snap_allowed[slot] = bundle.thumb_outward_snap_allowed
+        _resync_blend_left[slot] = bundle.resync_blend_left
+        _last_hand_reliability_alpha[slot] = bundle.reliability_alpha
+
+
+def _writeback_track_state(now_ms: float) -> None:
+    """Persist this frame's mutations onto the track they belong to."""
+    if not TRACK_OWNERSHIP:
+        return
+
+    for slot, bundle in _bound_bundles.items():
+        bundle.orientation_filter = _hand_orientation_filters[slot]
+        bundle.rotation_state = _hand_rotation_states[slot]
+        bundle.last_known_thumb_outward = _last_known_thumb_outward[slot]
+        bundle.thumb_outward_snap_allowed = _thumb_outward_snap_allowed[slot]
+        bundle.resync_blend_left = _resync_blend_left[slot]
+        bundle.reliability_alpha = _last_hand_reliability_alpha[slot]
+    _track_registry.evict(now_ms)
+
+
 # ---------------------------------------------------------------------------
 # OPTIONAL SESSION RECORDING (2026-08-22) — production had none, and that was a
 # real gap: every debug session could be measured afterwards while production
@@ -785,6 +999,13 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     # golden-vector testable (`analysis/verify_hand_state.py`).
     if now_ms is None:
         now_ms = time.perf_counter() * 1000.0
+
+    # ⭐ BIND FIRST, before anything reads per-hand state. Each slot is pointed at
+    # the state of the track currently in it, so a relabel carries the hand's own
+    # palm/back reading, coast, filter and snap permission with it instead of
+    # handing them to the other hand.
+    _bind_track_state(now_ms)
+
     for handedness, landmarks in hands:
         _hand_state_trackers[handedness].update(_is_detected(landmarks), now_ms)
 
@@ -879,7 +1100,7 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             #     held cube, so arming it on an empty hand would leave it armed
             #     until the NEXT grab and then blend a grab that never bridged.
             _hand_orientation_filters[handedness].omega = IDENTITY_QUATERNION
-            if cube_window.cube_owned_by(_owner_key(handedness)) is not None:
+            if _cube_for_hand(handedness, now_ms) is not None:
                 _resync_blend_left[handedness] = RESYNC_BLEND_FRAMES
 
         hand_quat_now = None
@@ -909,7 +1130,7 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                 if _d is not None:          # None = degenerate fit: keep the filtered value
                     hand_quat_now = _d
 
-        owned_cube = cube_window.cube_owned_by(_owner_key(handedness))
+        owned_cube = _cube_for_hand(handedness, now_ms)
         if owned_cube is None:
             can_snap = (not thumb_outward) or _thumb_outward_snap_allowed[handedness]
             if can_snap:
@@ -963,6 +1184,10 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                 delta = _quat_multiply(hand_quat_now, _quat_conjugate(cube.grab_hand_orientation))
                 target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
                 cube.orientation = _quat_slerp(cube.orientation, target_quat, ROTATION_SLERP_FACTOR)
+
+    # ⚠ WRITE BACK LAST, after every mutation this frame. Skipping it would make
+    # the whole rebinding a no-op that silently reset each hand every frame.
+    _writeback_track_state(now_ms)
 
     cube_window.pump_and_draw()
 

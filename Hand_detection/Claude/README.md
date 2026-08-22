@@ -11,6 +11,12 @@ start a second list, do not "helpfully" reorder it. This file points at it.
 
 ---
 
+> ⛔⛔ **2026-08-22 — TWO DEFECT DOCUMENTS TAKE PRECEDENCE OVER EVERYTHING BELOW:**
+> - `HANDEDNESS_LABEL_DEFECT.md` — the handedness label is **wrong 10.8% of the
+>   time** and every chirality-sensitive rule inverts on it (queue **U7**).
+> - `POSTMORTEM_4_1_IDENTITY_MIGRATION.md` — 4.1's identity migration: built,
+>   patched five times, **reverted** (`TRACK_OWNERSHIP = False`, nothing deleted).
+
 ## 1. Read order
 
 | you want to… | read |

@@ -274,7 +274,65 @@ to follow — no S-item lives outside it.**
 
 ---
 
-### ⭐⭐ YOU ARE HERE (2026-08-22, end of day) — **4.1 IS BUILT. NEXT BUILD IS 4.2 (Z-axis translation).**
+### ⛔⛔ YOU ARE HERE (2026-08-22, END OF SESSION) — read this, then U7, then the two post-mortems.
+
+**Two documents carry the whole story. Read them before touching ownership,
+per-hand state, or anything chirality-sensitive:**
+- `Claude/HANDEDNESS_LABEL_DEFECT.md` — ⛔ **the root cause of the defect that
+  survived seven patches**: the handedness label is wrong **10.8%** of the time
+  and every chirality-sensitive rule inverts on it. Queue item **U7**.
+- `Claude/POSTMORTEM_4_1_IDENTITY_MIGRATION.md` — why 4.1's identity migration
+  was built, patched five times, and reverted.
+
+| | |
+|---|---|
+| **state of the pipeline** | ✅ **Both tools behave**, on the reverted baseline. Production and debug were live-checked and measure clean (production 18 snaps / 18 releases, freeze signature 3 frames) |
+| **reverted** | 4.1's identity migration — one flag, `TRACK_OWNERSHIP = False` (mirrored in `LiveSnapDebug.py`). **Nothing deleted**; set it True to restore |
+| ⭐ **KEPT from 4.1, all independently good** | `palm_depth.py` (depth estimator, A10-passed, **now with the owner's edge-on fallback** — 100% availability, false depth unchanged); the **DR-1 frame-edge fix**; **production recording** (`VISION_RECORD=1`); the `hand_tracks` wire packet (sent, unused) |
+| **next build** | **4.2 (Z-axis translation)** — it does not depend on any of the above. ⚠ But **U7 is the deepest open defect**, and it makes rule 3 unreliable today |
+| ⚠ **still open** | **U7** (label 10.8% wrong), **U5** (occlusion coast), **U6** (one pipeline), **N8** (cube stealing), and **T3 is back** with the revert (a held cube drops on a label flip — a DROP, re-grabbable) |
+
+**⚠⚠ THE METHOD LESSON, which cost most of this session:**
+
+1. ⛔ **Reach for GROUND TRUTH the first time a chirality-sensitive claim is
+   questioned, not the seventh.** Seven analyses reported "zero violations"
+   because each compared the pipeline's belief against a formula fed **the same
+   wrong label**. `LiveSnapDebug --known-hand left|right` now stores the operator's
+   declaration in `meta.json`; the corpus's `known_left_*`/`known_right_*`
+   sequences existed for exactly this.
+2. ⚠ **Check session COVERAGE before reading any result.** Three sessions produced
+   green numbers from ~0 cubes held or 0 two-hand frames.
+3. ⚠ **Instrumentation reported success while behaviour regressed, twice** (a
+   recorder key collision; a harness that skipped the session recorded to test the
+   fix). **A green instrument you cannot trust is a reason to stop, not continue.**
+4. ⭐ **When the owner says "it does not happen in production", build the
+   comparator** (`analysis/parity_replay.py`) rather than hunting divergences by
+   eye. It found three real ones this session — and then proved the fourth claim
+   was sampling, not a divergence.
+
+---
+
+### Superseded: YOU ARE HERE (2026-08-22, end of day) — **4.1's IDENTITY MIGRATION IS REVERTED.**
+
+**Read `Claude/POSTMORTEM_4_1_IDENTITY_MIGRATION.md` before touching ownership or
+per-hand state. It is the whole story with measurements.**
+
+| | |
+|---|---|
+| **reverted** | cube ownership keyed on the DR-1 track id, AND per-hand state following the track. Owner instruction after 5 live sessions: *"it is still full of bugs. Revert."* |
+| **how** | one flag — `HandsTriggeredActions.TRACK_OWNERSHIP = False`, mirrored in `LiveSnapDebug.py`. **Nothing was deleted.** Ownership and per-hand state key on the handedness SLOT again, exactly as before 4.1 |
+| **cost** | **T3 returns**: a held cube is orphaned when the label flips, 113 of 205 spurious releases. ⭐ That is a DROP the operator re-grabs; the migration traded it for FREEZES and rule violations, which are worse |
+| ⭐ **KEPT, independent and good** | `palm_depth.py` (4.1's depth estimator — A10-passed, drives nothing), the **DR-1 frame-edge fix**, **production recording** (`VISION_RECORD=1`), the `hand_tracks` wire packet (sent, unused), and every harness |
+| ⚠ **the decisive fact** | the final session measured **CLEAN** — 0 rule-3 violations across 21 relabels, 43 snaps, 1255 two-hand frames, no frozen cube — **and the owner still saw bugs.** The instruments were not capturing what breaks, so further patching could not be trusted |
+| ⚠ **before retrying** | fix **U6** first (one pipeline) — 3 of the 5 defects were production/debug divergences. Then migrate ALL per-hand state at once, never seed a new track from a slot, and write the system-level property test BEFORE the first live session |
+
+**Next build is still 4.2 (Z-axis translation)** — it does not depend on the
+migration. ⚠ But **U5** (occlusion coast) and **N8** (cube stealing) are still
+open, and T3 is back.
+
+---
+
+### Superseded: YOU ARE HERE (2026-08-22, end of day) — **4.1 IS BUILT. NEXT BUILD IS 4.2 (Z-axis translation).**
 
 **Read this block, then 4.2's row, then `GESTURE_PIPELINE_SPEC.md` §14.3 and
 §14.3.2. You should not need anything else to start.**
@@ -631,7 +689,9 @@ Optional and parallelisable at any time: **0.4** (predictor eval harness, S1) an
 | U1 | Open-palm / closed-fist detection (row 2) | feature | **PARKED** | — | Priority decision, not only technical. 5.1 would help; still requires owner sign-off |
 | U2 | Real 3D-file import (OBJ/glTF) | feature | **POSTPONED 2026-08-04 (owner) — blocked on a PLATFORM decision, not on effort** | — | §13.8; not blocking anything. ⚠ **Do not build this against the pygame renderer.** Owner reasoning: the import path depends on the eventual rendering platform (native WebGL, Three.js, or something else), so building it now would mean writing a loader for a renderer the product will not ship on. The current `_draw_object_3d` is a deliberate placeholder and is already **mesh-generic** (verified live by swapping in a non-cube mesh with zero code changes), so nothing is lost by waiting — the remaining work is a file parser, and which parser depends entirely on the target. **Revisit once the platform is chosen** (see U3), not before. Current focus is hand-detection quality, not rendering |
 | U3 | Web/mobile port | platform | deferred | — | `HandState` v2 is the contract it reimplements against. ⭐ **Port-readiness discipline established 2026-08-04**: a module designated for the port gets **golden vectors BEFORE the port exists**, not after — see `analysis/verify_frame_rate_estimator.py` (and `verify_observability.py`, the precedent). **This is not ceremony: the very first run caught a real bug.** Python's `round()` is banker's rounding (half-to-even), JavaScript's `Math.round` is half-up, and the DR-1 dwells land exactly on `.5` at odd frame rates (500 ms × 13 fps = 6.5 frames) — Python gave 6, a JS port would have given 7, and nothing in normal testing would have surfaced it. Fixed in shared code via `hand_identity._round_half_up()`. **Reasoning about cross-language equivalence is not evidence.** Port units so far: `palm_observability`, `FrameRateEstimator` (47 dependency-free lines) |
+| **U7** | ⛔⛔ **The handedness LABEL is wrong 10.8% of the time, and every chirality-sensitive rule inverts on it** | perception | ⭐ **ROOT-CAUSED AND MEASURED 2026-08-22 against DECLARED ground truth. NOT fixed — the remedy is a design decision.** Full write-up: `Claude/HANDEDNESS_LABEL_DEFECT.md` | — | **MEASUREMENT** (`2026-08-22_173948_known_right_reentry`, operator declared RIGHT hand only, `meta.json.known_hand`): **32 of 295 hand-frames labelled WRONG (10.8%)**. At the snap on frame 122 the label was `Right` when it should have been `Left`; the pipeline believed `thumb_outward=False` ("palm") and allowed the grab, while the correct label gives `True` ("back") and forbids it. ⚠ **MediaPipe scored the wrong label 0.94** — high confidence — so score-gating will NOT catch it; `edge_on` was 0.56, so DR-2's freeze was not involved. ⭐ **`is_thumb_outward` applies a handedness-dependent chirality correction, so its answer INVERTS under a wrong label.** This is the owner's *"exits palm, returns back, still grabs — but not systematic"*, and *"not systematic"* is exactly the 10.8%. ⚠⚠ **IT SURVIVED SEVEN PATCHES BECAUSE EVERY CHECK COMPARED THE BELIEF AGAINST `is_thumb_outward(px, label)` USING THE SAME WRONG LABEL** — self-consistent by construction, reporting zero violations every time. **That is the B4 rule re-broken: an anchor metric must not share an expression with the anchor.** Only a declared physical hand breaks the circularity. **ELIMINATED as causes, each by measurement**: rule 3's logic (correct); the two tools' gesture logic (`analysis/parity_replay.py`, 5909 frames, ZERO divergence); detector config and MediaPipe timestamps (identical); DR-2's freeze; low confidence; and the 4.1 migration (this reproduces on the reverted baseline). ⚠ *"Not in production"* was **sampling** — one camera means the tools never run together, so that always compares separate sessions of an intermittent defect. **TWO WAYS OUT**: **(1) recommended** — make the palm/back cue **label-independent** (3D palm normal from `world_landmarks`), removing the dependency rather than improving an input MediaPipe gets confidently wrong; ⚠ touches DR-2 and §13.6.1's convention. **(2)** make DR-1 carry identity across a short absence — weaker, leaves the inversion in place. ⚠ **Acceptance test MUST be a known-hand take** (`LiveSnapDebug --known-hand left|right`), never a replay that trusts the recorded label. ⭐ **Rotation is NOT affected** — `Horn` never reads handedness, which is why there is no visible 180° cube flip (the owner's own observation, which correctly killed a hypothesis of mine) |
 | U4 | `PART_ONE.md` §7.4 dangling reference | docs | open | — | §3 cites §7.4 for `gesture_config.json`; that section does not exist |
+| **U6** | **Collapse the production/debug split — every divergence bug has come from the INPUT PATH** | architecture | ⭐ **PROPOSED 2026-08-22 (owner question), NOT decided. Owner's framing: *"couldn't I build the whole pipeline on the debug, and then remove the camera and hand overlays at the last moment to ship it as production?"*** | — | **THE EVIDENCE. Four bugs, one root — production RE-IMPLEMENTS the input path while the debug tool does not**: (1) **§13.6.1** thumb-outward shipped INVERTED, production only; (2) the **`invert_x` mirror** is not equivalent to flipping the frame (**7.7–10 mm, 12–20° of rotation**), production only; (3) **out-of-frame landmarks became `None`**, which skipped DR-1 entirely and **stranded held cubes**, production only; (4) the same `None` became **(0, 0)** on the wire, teleporting a landmark to the top-left corner and corrupting translation weighting, production only. ⭐ **N6 ("shared, never copied") was applied to the ESTIMATOR modules and never to the input path — which is exactly where all the damage has been.** **WHAT THE SPLIT BUYS TODAY: nothing functional.** The server also runs FACE detection, and the client's face handler is `pass` (a TODO); exactly ONE consumer connects; no second tool or third client exists. Its only stated value is the **port contract (U3)** — ⚠ **but a contract is a defined `HandState` struct, not a socket**, so that value survives collapsing the processes. **TWO OPTIONS**: **(A)** collapse to one process, keeping `HandState` v2 as an in-process function-call contract — kills the whole divergence class, loses nothing used today; **(B)** keep the split but extract the input path (frame → landmarks → identity) into a module both import — N6 applied where it never was, less disruptive, keeps the socket for a future second consumer. ⭐ **Assistant recommends (A) on the evidence**, ⚠ **with the caveat that "ship the debug tool" is not quite right either**: the debug tool's single-process shape is not what ships to web/mobile, so that framing optimises for the PC target and re-faces the same seam later — keep the v2 boundary explicitly. ⚠ **This is a real refactor of a WORKING pipeline: do it deliberately, with `VerifyChiralityFixture.py` and all golden-vector suites green before AND after, and NOT folded into a build step.** |
 | **U5** | **Extend D2's coast so a cube survives hand-crossing occlusion** | feature/perception | ⭐ **PARKED FOR LATER RE-OPENING — owner decision 2026-08-22.** Everything needed to resume is in this row | D2/D3 (shipped) | **OBSERVATION (owner, live, production, 2026-08-22)**: *"when the hands quickly pass in front of each other and one occludes the other, there is no mechanism to continue the cube movement based on extrapolation. The cube grabbed by the occluded hand is ungrabbed and then grabbed again when the occluded hand reappears, which causes a jump in the cube location."* ⭐ **RECORDING**: `2026-08-22_154426_production_4_1` (5114 frames, 205 s, 24.88 fps, 3226 with a hand) — the first PRODUCTION recording; replay it with `VISION_RECORD=1` takes or measure directly. **MEASUREMENT** (gaps where one hand vanishes *while the other is present*, i.e. crossing/occlusion): **60 events, median 402 ms, p90 2130 ms, max 3778 ms — and 42 of 60 (70%) exceed D2's 150 ms coast**, so the cube is released and re-snaps on reappearance, which IS the jump. **EXPLANATION**: D2's coast was sized for sensor dropout, not for one hand hiding behind another; at 402 ms median it is **2.7x too short** for crossing. ⭐⭐ **THE PROPOSED FIX IS A LONGER HOLD, NOT EXTRAPOLATION** — the owner's own framing said "extrapolation", but **B8 already measured every fit LOSING to "hold the last value"**, so a predictor is the known-worse answer here; extend D2's window and reuse D3's existing resync blend. ⭐ **HOW TO PICK THE WINDOW (owner's instruction)**: a **recording test** — sweep the window over recorded takes and choose by measurement, not by feel. ⚠ **PRICE THE COST BEFORE SHIPPING**: a longer hold widens the window for **N8** (cube stolen by an occluding hand) and for holding a cube the operator genuinely released; and it partially overlaps **D4**, which was DECLINED 2026-08-21 (*"I do not see the need"*) with the recorded reopening condition *"only a hand lost LONGER than the sensor gap"* — **that condition is now measured, so this is a legitimate reopening, not a re-proposal**. See also **B5** (grab/release from arcs) and **3.1** (M7 forward prediction), which touch the same failure |
 
 ## 4. Known wire-protocol gap (live pipeline, not recording)

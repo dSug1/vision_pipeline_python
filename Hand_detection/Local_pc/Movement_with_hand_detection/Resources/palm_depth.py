@@ -90,6 +90,34 @@ RATE_LIMIT_PER_FRAME = 0.12
 MIN_RATIO = 0.40
 MAX_RATIO = 2.50
 
+# ⭐⭐ SECOND-ORDER FALLBACK (owner instruction 2026-08-22): "a depth measure
+# cannot be frozen because the hand is on the edge and a second-order fallback
+# shall be available to bridge".
+#
+# A span normalised below this fraction of its own grab baseline is treated as
+# COLLAPSED and dropped from the max. If at least one span survives, depth is
+# still MEASURED from it; only when ALL four have collapsed does the ratio hold.
+#
+# ⭐ MEASURED, not chosen. Over 206 genuinely edge-on frames (edge_on < 0.15)
+# pooled across the 2026-08-22 recordings, the rigid spans do NOT all collapse
+# together -- median retained, relative to the same span while measuring:
+#     diagonal 0-5   1.01x      palm length 0-9  0.94x
+#     diagonal 0-17  0.70x      palm width 5-17  0.63x
+# So the old gate threw away two spans that still carried signal. 0.5 sits below
+# the two survivors and above the collapsed width.
+#
+# ⚠ RIGID PALM SPANS ONLY. `wrist->fingertip` also survived edge-on (1.00x) and
+# is deliberately NOT used: any MCP->TIP length changes with GRIP, so it would
+# read "the hand closed" as "the hand moved away" at exactly the moment of a
+# grab. That trade is not worth a bridge (spec 14.3.1 point 2).
+#
+# ⚠ This RELAXES S10, which the spec calls a prerequisite on the grounds that
+# edge-on collapses all four palm landmarks together (0.18). Note that claim was
+# made about WORLD landmarks; this is measured on PIXEL spans, so it is not a
+# direct refutation -- but on pixels the premise does not hold, and holding a
+# stale depth is itself a wrong answer.
+MIN_SPAN_FRACTION = 0.50
+
 
 def palm_spans(landmarks):
     """The four rigid palm-quad spans, in pixels. None if landmarks are unusable."""
@@ -169,32 +197,36 @@ class DepthRatioTracker:
 
         eo = PG.edge_on_measure(landmarks)
 
-        # --- S10: the band. Enter immediately, leave only on a sustained run.
-        if not self.in_band:
-            if eo < self.threshold:
+        # --- band bookkeeping, now DIAGNOSTIC rather than the gate itself.
+        if eo < self.threshold:
+            if not self.in_band:
                 self.in_band = True
-                self.exit_run = 0
                 self.band_entries += 1
-                self.frames_frozen += 1
-                return self.ratio, False
-        else:
+            self.exit_run = 0
+        elif self.in_band:
             if eo > self.exit_threshold:
                 self.exit_run += 1
                 if self.exit_run >= EXIT_DWELL_FRAMES:
                     self.in_band = False
                     self.exit_run = 0
-                else:
-                    self.frames_frozen += 1
-                    return self.ratio, False
             else:
                 self.exit_run = 0
-                self.frames_frozen += 1
-                return self.ratio, False
 
-        # --- the multi-anchor ratio: max over the four normalised spans.
-        # Foreshortening only shrinks, so the LARGEST normalised span is the one
-        # this pose has left least corrupted.
-        raw = max(s / b for s, b in zip(spans, self.baseline) if b > 1e-6)
+        # --- ⭐ THE GATE IS NOW PER-SPAN, NOT THE QUAD'S CONDITIONING.
+        # Keep every span still above MIN_SPAN_FRACTION of its own baseline and
+        # take the max of those. Being edge-on no longer freezes depth on its own
+        # -- it only removes the spans edge-on actually destroyed. Measured: the
+        # 0-5 diagonal and the palm length survive edge-on (1.01x / 0.94x) while
+        # the width does not (0.63x), so a survivor is normally available.
+        norm = [s / b for s, b in zip(spans, self.baseline) if b > 1e-6]
+        usable = [r for r in norm if r >= MIN_SPAN_FRACTION]
+        if not usable:
+            # Every anchor collapsed at once -- there is genuinely nothing to
+            # measure, so hold. This is S10's freeze, now the LAST resort rather
+            # than the first response.
+            self.frames_frozen += 1
+            return self.ratio, False
+        raw = max(usable)
         raw = max(MIN_RATIO, min(MAX_RATIO, raw))
 
         # --- rate limit: ~9% false depth survives even the best anchor.

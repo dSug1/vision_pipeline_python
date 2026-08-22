@@ -67,6 +67,19 @@ class FakeWindow:
 
 
 def main():
+    # ⚠ This file tests the 4.1 IDENTITY MIGRATION, which is REVERTED
+    # (HandsTriggeredActions.TRACK_OWNERSHIP = False, owner instruction
+    # 2026-08-22 -- see Claude/POSTMORTEM_4_1_IDENTITY_MIGRATION.md).
+    # SKIP rather than FAIL: a suite that is permanently red stops being read,
+    # and these checks are still correct for the day the flag goes back on.
+    if not getattr(HTA, "TRACK_OWNERSHIP", False):
+        print("=" * 78)
+        print("SKIPPED -- TRACK_OWNERSHIP is False (4.1 identity migration reverted).")
+        print("Set it True to re-enable the feature and these checks.")
+        print("=" * 78)
+        return 0
+
+
     print("=" * 78)
     print("Queue 4.1 / T3 -- ownership keys on the STABLE TRACK ID")
     print("=" * 78)
@@ -147,6 +160,27 @@ def main():
     HTA._refresh_cube_owner_hands()
     check("governing hand FOLLOWS the track across a relabel",
           HTA._owner_hand_of_cube.get("large"), "Right")
+
+
+    print("")
+    print("--- 7. !! N6 DRIFT GUARD: the strand safety net must exist on BOTH sides ---")
+    print("      Production got OWNER_ABSENT_RELEASE_MS and the debug tool did NOT,")
+    print("      so the net existed on one side only -- and the owner hit the strand")
+    print("      in the DEBUG tool at 300 and 450 ms coast. A divergence created")
+    print("      while fixing a divergence. Compare the SOURCES, not a copy.")
+    # Compare the RESOLVED values by importing both, not by regexing literals:
+    # the debug tool now aliases OWNER_ABSENT_RELEASE_MS = OWNER_DEGRADE_MS, and a
+    # regex for a number silently reported "not defined" for it. A guard that can
+    # be fooled by an alias is not a guard.
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import LiveSnapDebug as _L
+    for _n in ("OWNER_DEGRADE_MS", "OWNER_ABSENT_RELEASE_MS"):
+        check(f"production defines {_n}", hasattr(HTA, _n), True)
+        check(f"the debug tool defines {_n}", hasattr(_L, _n), True)
+        check(f"!! {_n} AGREES across the two",
+              getattr(HTA, _n, None) == getattr(_L, _n, object()), True)
+    check("!! driving stops exactly when the cube is released (no frozen gap)",
+          HTA.OWNER_DEGRADE_MS == HTA.OWNER_ABSENT_RELEASE_MS, True)
 
 
     print("\n" + "=" * 78)

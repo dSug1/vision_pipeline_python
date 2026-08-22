@@ -77,25 +77,36 @@ def main():
     check("valid while well-conditioned", ok, True)
     r, ok = t3.update(hand(scale=0.5))
     check("hand 0.5x -> ratio 0.5 (further)", r, 0.5, 1e-9)
-
-    print("\n--- 4. !! S10: the ratio FREEZES inside the edge-on band ---")
+    print("")
+    print("--- 4. !! THE FALLBACK: edge-on alone no longer freezes depth ---")
+    print("      Owner: a depth measure cannot be frozen because the hand is on the")
+    print("      edge; a second-order fallback must bridge. Measured over 206")
+    print("      edge-on frames: the 0-5 diagonal (1.01x) and palm length (0.94x)")
+    print("      SURVIVE while the width collapses (0.63x). The gate is PER-SPAN now.")
     t4 = PD.DepthRatioTracker(rate_limit=10.0)
     t4.freeze(hand(scale=1.0))
-    t4.update(hand(scale=1.2))
-    held = t4.ratio
-    r, ok = t4.update(hand(scale=3.0, half_width=0.4))   # huge scale BUT edge-on
-    check("edge-on frame does NOT move the ratio", r, held, 0.0)
-    check("valid is False while held", ok, False)
-    check("depth_valid False inside the band", t4.depth_valid, False)
-    check("band entry counted", t4.band_entries, 1)
+    r, ok = t4.update(hand(scale=1.0, half_width=0.4))   # knuckle row edge-on
+    check("edge-on with a surviving span still MEASURES", ok, True)
+    check("and reports ~1.0 from that span", round(r, 2), 1.0)
+    check("the band was still recorded as entered", t4.band_entries, 1)
 
-    print("\n--- 5. leaving the band needs a SUSTAINED run, not one good frame ---")
-    r, ok = t4.update(hand(scale=1.0))       # 1st good frame
-    check("one good frame does not release the freeze", ok, False)
-    r, ok = t4.update(hand(scale=1.0))       # 2nd
-    check("two good frames still held", ok, False)
-    r, ok = t4.update(hand(scale=1.0))       # 3rd == EXIT_DWELL_FRAMES
-    check("third consecutive good frame resumes measuring", ok, True)
+    print("")
+    print("--- 5. it holds ONLY when every span has collapsed ---")
+    print("      MIN_SPAN_FRACTION 0.50 sits just BELOW the measured reach envelope")
+    print("      minimum (0.53), so real arm movement stays measurable and only")
+    print("      sub-envelope collapse holds.")
+    t5 = PD.DepthRatioTracker(rate_limit=10.0)
+    t5.freeze(hand(scale=1.0))
+    t5.update(hand(scale=0.9))
+    held = t5.ratio
+    r, ok = t5.update(hand(scale=0.2))
+    check("all spans collapsed -> holds", ok, False)
+    check("and the ratio does not move", r, held, 0.0)
+    t5b = PD.DepthRatioTracker(rate_limit=10.0)
+    t5b.freeze(hand(scale=1.0))
+    r, ok = t5b.update(hand(scale=0.6))
+    check("a genuine 0.6x retreat is still measured", ok, True)
+
 
     print("\n--- 6. rate limit caps a per-frame excursion ---")
     t6 = PD.DepthRatioTracker(rate_limit=0.10)
