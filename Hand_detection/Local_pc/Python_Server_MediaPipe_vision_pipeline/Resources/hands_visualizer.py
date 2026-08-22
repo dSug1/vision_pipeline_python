@@ -5,7 +5,10 @@ import cv2
 from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
 import numpy as np
-from .facevisualizer import _normalized_to_pixel_coordinates as _normalized_to_px_coords
+# NOTE: `_normalized_to_pixel_coordinates` is deliberately NOT imported any more.
+# It returns None for out-of-frame landmarks, which caused the stranded-cube
+# defect and an origin-teleport on the wire -- see the long comment in the
+# landmark loop below. Faces still use it, in facevisualizer.py.
 from . import hand_identity
 
 MARGIN = 10  # pixels
@@ -106,16 +109,40 @@ def draw_landmarks_on_image(frame_image_shape, rgb_image, detection_result):
             landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z)
         )
 
-        # Extract coordinates into a dictionary
-        # Convert normalized coordinates to pixel coordinates
-        pixel_coords = _normalized_to_px_coords(
-            landmark.x, landmark.y, width, height
-        )
-
-        # Extract coordinates into a dictionary
+        # ⭐⭐ PLAIN MULTIPLICATION, matching LiveSnapDebug.py exactly (2026-08-22).
+        # This replaced `_normalized_to_px_coords`, which returns None for ANY
+        # landmark outside [0,1] -- i.e. a hand PARTIALLY OUT OF FRAME -- and that
+        # None caused TWO defects, both measured on the first recorded production
+        # run (`2026-08-22_154426_production_4_1`):
+        #
+        # 1. ⛔ THE STRANDED CUBE. One None makes `palm_centroid` None, which fails
+        #    the `all(o[0] is not None ...)` guard below, which SKIPS DR-1 ENTIRELY
+        #    for that frame -- so NEITHER hand gets a trackId and the wire carries
+        #    -1 for both slots while landmarks keep flowing. A cube held by a track
+        #    id then matched no live key, while its slot still held a DETECTED
+        #    hand, so release never fired: "indicated as grabbed but did not move,
+        #    and the free hand could not grab it again". Measured at 40-frame
+        #    (~1.6 s) runs. Moving a hand near the frame EDGE was enough.
+        #
+        # 2. ⛔ A LANDMARK TELEPORTING TO THE ORIGIN. `remap_keypoints` turns a
+        #    None into (0, 0) via its TypeError fallback, so an out-of-frame
+        #    landmark arrived at the client at the TOP-LEFT CORNER -- corrupting
+        #    `_weighted_position`'s translation average, not merely identity.
+        #
+        # ⚠ Out-of-frame coordinates are now NEGATIVE or beyond width/height
+        # instead of absent. That is deliberate and correct: MediaPipe still
+        # estimates those landmarks, and a continuous extrapolated position is
+        # strictly better than None-then-zero for every consumer here (centroid,
+        # palm width, distance weighting). Nothing downstream requires in-bounds
+        # pixels -- `remap_point` only offsets/negates, and drawing uses the
+        # separate normalized proto above.
+        #
+        # ⭐ It also removes a production/debug DIVERGENCE of exactly the class
+        # that produced §13.6.1 and the mirror bug: the debug tool has always used
+        # plain multiplication and never had either defect.
         handslandmarks_coords.append({
-            "x_px": pixel_coords[0] if pixel_coords else None,
-            "y_px": pixel_coords[1] if pixel_coords else None
+            "x_px": landmark.x * width,
+            "y_px": landmark.y * height,
         })
 
     solutions.drawing_utils.draw_landmarks(

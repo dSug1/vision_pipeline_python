@@ -309,11 +309,20 @@ both slots. **Moving a hand near the frame edge is enough.** The cube is then ow
 by an int matching no live key, while its governing slot still holds a DETECTED
 hand — so `holds_track` is True and release never fires.
 
-⚠ A **client-side SAFETY NET** is in (`OWNER_ABSENT_RELEASE_MS = 700`, deliberately
-longer than D2's coast so it cannot fight Phase D) — it bounds the damage but is
-**NOT the root fix**. ⛔ **The root fix is server-side and is the owner's call**:
-DR-1 should survive a partially-out-of-frame hand (e.g. centroid over the VALID
-landmarks) instead of abandoning identity for both hands.
+✅⭐ **ROOT-FIXED 2026-08-22 (owner: "fix it")**: `hands_visualizer.py` now builds
+pixel landmarks by **plain multiplication** (`lm.x * width`), exactly as
+`LiveSnapDebug.py` always has — so out-of-frame coordinates go negative instead of
+becoming None, `palm_centroid` survives, DR-1 keeps running and `trackId` keeps
+being published. ⭐ **This was a production/debug DIVERGENCE of the same class as
+§13.6.1 and the mirror bug** — the debug tool never had either defect because it
+never used the None-ing converter. ⭐ It also fixes a **second, separate** defect:
+`remap_keypoints` turned a None into **(0, 0)**, so an out-of-frame landmark
+reached the client at the TOP-LEFT CORNER, corrupting `_weighted_position`'s
+translation average as well as identity. Guard:
+`analysis/verify_offscreen_identity.py` (every palm landmark x all four edges,
+plus "DR-1 really publishes an id in that state" and "garbage is still rejected").
+⚠ The client-side safety net (`OWNER_ABSENT_RELEASE_MS = 700`) is KEPT as
+defence-in-depth — a cube must never strand for any future reason.
 
 **(2) ⭐⭐ D4 IS REOPENED BY MEASUREMENT — the recorded condition is now met.**
 Owner: *"when the hands quickly pass in front of each other and one occludes the
@@ -334,12 +343,14 @@ vanishes **while the other is present** (i.e. crossing/occlusion):
 reopening condition was **"only a hand lost LONGER than the sensor gap"**. That
 condition is now measured. **This is a legitimate reopening, not a re-proposal.**
 
-⚠⚠ **AND THE OWNER'S SUGGESTED REMEDY IS THE ONE THE CORPUS ALREADY REJECTED.**
-They proposed *"extrapolation"*; **B8 measured every fit LOSING to "hold the last
-value"**. So the answer is almost certainly a **LONGER HOLD** (extend D2's window,
-reusing D3's existing resync blend), **not a new predictor**. ⚠ Its cost is real
-and must be priced: a longer hold widens the window for **N8** (cube stealing by
-occlusion) and for holding a cube the operator actually released.
+⭐ **PARKED AS QUEUE ITEM U5 (owner decision 2026-08-22)** — *"mark the issue as an
+improvement for later re-opening"*. **U5's row carries the observation, the
+recording reference, the measurement and the explanation**, so the topic can be
+reopened cold. ⚠⚠ **The remedy is a LONGER HOLD, not extrapolation**: the owner's
+framing said "extrapolation", but **B8 already measured every fit LOSING to "hold
+the last value"**. Owner's stated approach: extend D2's window and **pick it by a
+RECORDING TEST**, not by feel. ⚠ Cost to price: a longer hold widens the window for
+**N8** and for holding a cube the operator really released.
 
 **⭐ WHAT 4.1 SHIPPED (2026-08-22)**
 
@@ -621,6 +632,7 @@ Optional and parallelisable at any time: **0.4** (predictor eval harness, S1) an
 | U2 | Real 3D-file import (OBJ/glTF) | feature | **POSTPONED 2026-08-04 (owner) — blocked on a PLATFORM decision, not on effort** | — | §13.8; not blocking anything. ⚠ **Do not build this against the pygame renderer.** Owner reasoning: the import path depends on the eventual rendering platform (native WebGL, Three.js, or something else), so building it now would mean writing a loader for a renderer the product will not ship on. The current `_draw_object_3d` is a deliberate placeholder and is already **mesh-generic** (verified live by swapping in a non-cube mesh with zero code changes), so nothing is lost by waiting — the remaining work is a file parser, and which parser depends entirely on the target. **Revisit once the platform is chosen** (see U3), not before. Current focus is hand-detection quality, not rendering |
 | U3 | Web/mobile port | platform | deferred | — | `HandState` v2 is the contract it reimplements against. ⭐ **Port-readiness discipline established 2026-08-04**: a module designated for the port gets **golden vectors BEFORE the port exists**, not after — see `analysis/verify_frame_rate_estimator.py` (and `verify_observability.py`, the precedent). **This is not ceremony: the very first run caught a real bug.** Python's `round()` is banker's rounding (half-to-even), JavaScript's `Math.round` is half-up, and the DR-1 dwells land exactly on `.5` at odd frame rates (500 ms × 13 fps = 6.5 frames) — Python gave 6, a JS port would have given 7, and nothing in normal testing would have surfaced it. Fixed in shared code via `hand_identity._round_half_up()`. **Reasoning about cross-language equivalence is not evidence.** Port units so far: `palm_observability`, `FrameRateEstimator` (47 dependency-free lines) |
 | U4 | `PART_ONE.md` §7.4 dangling reference | docs | open | — | §3 cites §7.4 for `gesture_config.json`; that section does not exist |
+| **U5** | **Extend D2's coast so a cube survives hand-crossing occlusion** | feature/perception | ⭐ **PARKED FOR LATER RE-OPENING — owner decision 2026-08-22.** Everything needed to resume is in this row | D2/D3 (shipped) | **OBSERVATION (owner, live, production, 2026-08-22)**: *"when the hands quickly pass in front of each other and one occludes the other, there is no mechanism to continue the cube movement based on extrapolation. The cube grabbed by the occluded hand is ungrabbed and then grabbed again when the occluded hand reappears, which causes a jump in the cube location."* ⭐ **RECORDING**: `2026-08-22_154426_production_4_1` (5114 frames, 205 s, 24.88 fps, 3226 with a hand) — the first PRODUCTION recording; replay it with `VISION_RECORD=1` takes or measure directly. **MEASUREMENT** (gaps where one hand vanishes *while the other is present*, i.e. crossing/occlusion): **60 events, median 402 ms, p90 2130 ms, max 3778 ms — and 42 of 60 (70%) exceed D2's 150 ms coast**, so the cube is released and re-snaps on reappearance, which IS the jump. **EXPLANATION**: D2's coast was sized for sensor dropout, not for one hand hiding behind another; at 402 ms median it is **2.7x too short** for crossing. ⭐⭐ **THE PROPOSED FIX IS A LONGER HOLD, NOT EXTRAPOLATION** — the owner's own framing said "extrapolation", but **B8 already measured every fit LOSING to "hold the last value"**, so a predictor is the known-worse answer here; extend D2's window and reuse D3's existing resync blend. ⭐ **HOW TO PICK THE WINDOW (owner's instruction)**: a **recording test** — sweep the window over recorded takes and choose by measurement, not by feel. ⚠ **PRICE THE COST BEFORE SHIPPING**: a longer hold widens the window for **N8** (cube stolen by an occluding hand) and for holding a cube the operator genuinely released; and it partially overlaps **D4**, which was DECLINED 2026-08-21 (*"I do not see the need"*) with the recorded reopening condition *"only a hand lost LONGER than the sensor gap"* — **that condition is now measured, so this is a legitimate reopening, not a re-proposal**. See also **B5** (grab/release from arcs) and **3.1** (M7 forward prediction), which touch the same failure |
 
 ## 4. Known wire-protocol gap (live pipeline, not recording)
 
