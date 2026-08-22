@@ -49,7 +49,8 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..", "Python_Server_MediaPipe_vision_pipeline", "Resources"))
 import hand_identity  # noqa: E402  (path set immediately above)
-from Resources import palm_rotation as _PRot  # noqa: E402
+from Resources import palm_rotation as _PRot
+from Resources import palm_depth as _PDepth  # noqa: E402  (4.1/M9, read-only)
 
 # ⭐⭐ WHAT PRODUCTION ACTUALLY RUNS, since 2026-08-17.
 # `Resources/HandsTriggeredActions.py` now drives cube orientation with Horn
@@ -63,6 +64,7 @@ from Resources import palm_rotation as _PRot  # noqa: E402
 # the default and every one of those A/Bs silently starts comparing a thing
 # against itself -- the §16.14 failure mode, from the other direction.
 PRODUCTION_ROTATION = _PRot.Horn(_PRot.PALM_LANDMARKS, "ref")
+
 
 # Palm chirality geometry -- SHARED with production's HandsTriggeredActions.py
 # (queue item 1.2). Same reasoning as hand_identity above: imported, never copied.
@@ -95,6 +97,67 @@ HAND_LANDMARKER_MODEL_PATH = os.path.join(
 RECORD_ROOT = r"E:\Python\Recordings for vision_pipeline\Recordings_perception_layer"
 
 TRACKED_HANDS = ("Left", "Right")
+
+# ⭐ N6 PARITY with production's `HandsTriggeredActions._owner_key` (4.1 / T3).
+# Ownership keys on the STABLE DR-1 track id, not the handedness label, because
+# the label flips and 113 of 205 measured spurious releases were that flip
+# orphaning a held cube. ⚠ Falls back to the label when no id backs the hand,
+# exactly as production does -- a cube must never become unreleasable.
+# ⚠ Production reads the id off the wire; here DR-1 runs in-process, so it is
+# read straight off the shared tracker. Same value, same semantics.
+_hand_track_ids = {h: -1 for h in TRACKED_HANDS}
+# ⚠ THE SESSION-VALIDITY COUNTER. The 4.1/T3 rig tests nothing unless a RELABEL
+# actually happens -- the same trap as the D2 rig's `brid` staying at 0. This
+# counts frames where a track id appeared under a DIFFERENT handedness slot than
+# it did last frame, which is precisely the event that used to orphan a cube.
+_prev_slot_of_track = {}
+arms_first_panel = [None]
+_relabel_events = [0]
+
+
+# ⭐ 4.1 M9: a READ-ONLY live view of the depth estimator. It drives nothing --
+# wiring the ratio into cube Z is 4.2 and needs 3D snap gating with it. This
+# exists so the estimator can be SEEN responding before anything depends on it.
+# ⚠ Deliberately NOT reset on release: the baseline follows the hand track, so a
+# reading persists across a drop, which is what makes drift visible.
+_depth_trackers = {h: _PDepth.DepthRatioTracker() for h in TRACKED_HANDS}
+_depth_readout = {h: None for h in TRACKED_HANDS}
+
+
+def _update_depth(hand_data_by_hand):
+    for hand in TRACKED_HANDS:
+        d = hand_data_by_hand.get(hand)
+        trk = _depth_trackers[hand]
+        if d is None:
+            trk.reset()
+            _depth_readout[hand] = None
+            continue
+        ratio, valid = trk.update(d["pixel_landmarks"])
+        _depth_readout[hand] = (ratio, valid)
+
+
+def _count_relabels():
+    for hand, tid in _hand_track_ids.items():
+        if tid < 0:
+            continue
+        prev = _prev_slot_of_track.get(tid)
+        if prev is not None and prev != hand:
+            _relabel_events[0] += 1
+        _prev_slot_of_track[tid] = hand
+
+
+def _owner_key(handedness, state=None):
+    """The ownership key for this hand THIS FRAME.
+
+    `state` selects the arm's mode; None means the shipped behaviour. An arm in
+    "label" mode reproduces the PRE-4.1 keying exactly, which is what makes the
+    A/B honest -- the control is the old code path, not an approximation.
+    """
+    if state is not None and getattr(state, "ownership", "track") == "label":
+        return handedness
+    tid = _hand_track_ids.get(handedness, -1)
+    return tid if tid >= 0 else handedness
+
 
 # One tracker for the whole session, mirroring production's module-level one.
 _hand_identity_tracker = hand_identity.HandIdentityTracker()
@@ -153,13 +216,14 @@ BRIDGE_MODES = ("off", "on", "blend")
 BRIDGE_ARM_COLOURS = {"off": (128, 128, 128), "on": (0, 200, 255), "blend": (0, 255, 128)}
 
 
-def _make_arm(mode, width, height):
+def _make_arm(mode, width, height, ownership="track"):
     """One arm of a comparison: its own cubes, trackers, window and counters."""
     return CubeState(
         window_size=(width, height),
         bridge_window_ms=0.0 if mode == "off" else hand_state.BRIDGE_WINDOW_MS,
         resync_blend_frames=RESYNC_BLEND_FRAMES if mode == "blend" else 0,
         arm_label=mode,
+        ownership=ownership,
     )
 
 
@@ -169,11 +233,20 @@ def _arm_title(state):
         "on": f"2. ON -- D2 bridge {state.bridge_window_ms:.0f} ms, NO blend",
         "blend": f"3. BLEND -- D2 {state.bridge_window_ms:.0f} ms + D3 "
                  f"{state.resync_blend_frames}-frame resync  [SHIPPED]",
-    }.get(state.arm_label, state.arm_label)
+    }.get(state.arm_label, state.arm_label) + (
+        "   [OWNERSHIP: LABEL -- pre-4.1 control]" if state.ownership == "label"
+        else "   [OWNERSHIP: TRACK ID]" if state.ownership == "track" else "")
 
 
-def _arm_layout(n, width, height):
+def _arm_layout(n, width, height, ownership_ab=False):
     """The comparison rig, or None for the ordinary single-arm view."""
+    if ownership_ab:
+        # ⭐ 4.1/T3 rig: SAME bridge config on both panels, ownership the ONLY
+        # difference. Left = the old label keying, right = the shipped track id.
+        # ⚠ Judge it on `rel`: a relabel while holding a cube drops it on the
+        # LABEL panel and must NOT drop it on the TRACK panel.
+        return [_make_arm("blend", width, height, "label"),
+                _make_arm("blend", width, height, "track")]
     if n == 3:
         return [_make_arm(m, width, height) for m in BRIDGE_MODES]
     return None
@@ -451,6 +524,16 @@ class CubeState:
     bridge_window_ms: float = hand_state.BRIDGE_WINDOW_MS
     resync_blend_frames: int = 3
     arm_label: str = "blend"
+    # ⭐ 4.1/T3 A/B: "track" keys ownership on the stable DR-1 id (what shipped),
+    # "label" reproduces the OLD handedness keying so the two can be compared
+    # live on ONE camera and ONE detection -- the only difference between the
+    # panels is this field. Same one-variable discipline as the D2/D3 arms.
+    ownership: str = "track"
+    # Cube name -> the handedness slot whose tracker governs it. See production's
+    # `_owner_hand_of_cube`: release must follow the owning TRACK across a
+    # relabel, and must keep the last known hand while the track is absent so
+    # D2's coast still applies. Per-arm, so the arms cannot contaminate.
+    owner_hand_of_cube: Dict[str, str] = field(default_factory=dict)
     hand_state_trackers: Dict[str, object] = field(default_factory=dict)
     resync_blend_left: Dict[str, int] = field(default_factory=lambda: {h: 0 for h in TRACKED_HANDS})
     # Per-arm live counters for the on-screen comparison.
@@ -487,14 +570,14 @@ class CubeState:
     def unowned_cube_names(self):
         return [name for name, cube in self.cubes.items() if cube.owner is None]
 
-    def cube_owned_by(self, handedness: str) -> Optional[str]:
+    def cube_owned_by(self, owner_key) -> Optional[str]:
         for name, cube in self.cubes.items():
-            if cube.owner == handedness:
+            if cube.owner == owner_key:
                 return name
         return None
 
-    def snap_cube(self, name: str, handedness: str) -> None:
-        self.cubes[name].owner = handedness
+    def snap_cube(self, name: str, owner_key) -> None:
+        self.cubes[name].owner = owner_key
 
     def release_cube(self, name: str) -> None:
         cube = self.cubes[name]
@@ -814,7 +897,7 @@ def _try_snap(state: CubeState, handedness: str, hand_pos: Tuple[float, float], 
         if dist <= grab_radius and (best_dist is None or dist <= best_dist):
             best_name, best_dist = name, dist
     if best_name is not None:
-        state.snap_cube(best_name, handedness)
+        state.snap_cube(best_name, _owner_key(handedness, state))
     return best_name
 
 
@@ -849,9 +932,26 @@ def _draw_bridge_hud(frame, state, height):
     cv2.putText(frame, _arm_title(state), (10, 22),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, 1, cv2.LINE_AA)
     held = sum(1 for c in state.cubes.values() if c.owner is not None)
+    # 4.1/M9 read-only depth readout, on the first panel only (one estimator).
+    if state is arms_first_panel[0]:
+        parts = []
+        for h in TRACKED_HANDS:
+            rd = _depth_readout.get(h)
+            if rd is not None:
+                parts.append(f"{h[0]} {rd[0]:.2f}{'' if rd[1] else '*'}")
+        if parts:
+            # ⚠ y = height-36, NOT height-12: the counters line below draws at
+            # height-14 AFTER this one, in a larger brighter font, and painted
+            # straight over it -- the readout was rendered every frame and
+            # invisible in every one. Reported by the owner as "there was no such
+            # depth line". Keep these two rows apart.
+            cv2.putText(frame, "depth " + "  ".join(parts) + "   (*=held)",
+                        (10, height - 36), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                        (0, 220, 255), 1, cv2.LINE_AA)
     cv2.putText(frame,
                 f"rel {state.stats['releases']}   saves {state.stats['saves']}"
-                f"   brid {state.stats['bridged_frames']}   held {held}",
+                f"   brid {state.stats['bridged_frames']}   held {held}"
+                f"   relabels {_relabel_events[0]}",
                 (10, height - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (220, 220, 220), 1, cv2.LINE_AA)
 
 
@@ -944,14 +1044,34 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
         t.update(data is not None, now_ms)
         if t.tracking_state == hand_state.BRIDGING:
             state.stats["bridged_frames"] += 1
-        if t.reacquired_after_ms > 0.0 and state.cube_owned_by(handedness) is not None:
+        if t.reacquired_after_ms > 0.0 and state.cube_owned_by(_owner_key(handedness, state)) is not None:
             state.stats["saves"] += 1
 
     released_this_frame = set()
-    for handedness in TRACKED_HANDS:
-        data = hand_data_by_hand[handedness]
-        owned = state.cube_owned_by(handedness)
-        if owned is None:
+    # ⛔ Mirrors production's stranded-cube fix (2026-08-22). Driving release from
+    # `cube_owned_by(_owner_key(...))` strands a cube forever once its track
+    # ends: the key degrades to the label, the int-keyed cube is never found, and
+    # it stays owned-but-dead -- drawn as grabbed, moving with nothing, and
+    # un-regrabbable. Drive it from the CUBES instead.
+    _id_to_hand = {t: h for h, t in _hand_track_ids.items() if t >= 0}
+    for _n, _c in state.cubes.items():
+        if _c.owner is None:
+            state.owner_hand_of_cube.pop(_n, None)
+        elif isinstance(_c.owner, int):
+            _h = _id_to_hand.get(_c.owner)
+            if _h is not None:
+                state.owner_hand_of_cube[_n] = _h
+        else:
+            state.owner_hand_of_cube[_n] = _c.owner
+
+    for owned, cube in list(state.cubes.items()):
+        if cube.owner is None:
+            continue
+        handedness = state.owner_hand_of_cube.get(owned)
+        if handedness is None:
+            state.stats["releases"] += 1
+            state.release_cube(owned)
+            released_this_frame.add(owned)
             continue
         if not state.hand_state_trackers[handedness].holds_track:  # tracking lost
             state.stats["releases"] += 1
@@ -977,7 +1097,7 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
             # for a hand that is actually holding, or it would stay armed until
             # the next grab and blend one that never bridged.
             state.hand_orientation_filters[handedness].omega = IDENTITY_QUATERNION
-            if state.cube_owned_by(handedness) is not None:
+            if state.cube_owned_by(_owner_key(handedness, state)) is not None:
                 state.resync_blend_left[handedness] = state.resync_blend_frames
         thumb_outward = data["thumb_outward"]
         state.last_known_thumb_outward[handedness] = thumb_outward
@@ -1003,7 +1123,7 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                 if _d is not None:
                     hand_quat_now = _d
 
-        owned = state.cube_owned_by(handedness)
+        owned = state.cube_owned_by(_owner_key(handedness, state))
         if owned is None:
             can_snap = ((not thumb_outward) or state.thumb_outward_snap_allowed[handedness])
             can_snap = can_snap and handedness not in snap_blocked   # S3, see docstring
@@ -1200,6 +1320,9 @@ def main():
     # OFF by default, so the live view and the capture are the same run.
     # N17's lesson is applied: tCapture is a REAL monotonic clock, never a
     # synthesised cadence, and --note exists so the operator's intent is stored.
+    parser.add_argument("--ownership-ab", action="store_true",
+                        help="4.1/T3 rig: two panels, LABEL keying vs TRACK-ID "
+                             "keying, identical in every other respect")
     parser.add_argument("--record", action="store_true",
                         help="also write raw_landmarks.jsonl + per-frame cube state")
     parser.add_argument("--note", type=str, default="",
@@ -1219,7 +1342,9 @@ def main():
     if not ret:
         raise RuntimeError("Could not read an initial frame from the webcam.")
     height, width = frame.shape[:2]
-    arms = _arm_layout(args.arms, width, height) or [_make_arm(args.bridge, width, height)]
+    arms = (_arm_layout(args.arms, width, height, args.ownership_ab)
+            or [_make_arm(args.bridge, width, height)])
+    arms_first_panel[0] = arms[0]
     state = arms[0]        # the single-arm path's state, and arm 1 of a rig
 
     # One window per arm, laid out left-to-right, same approach as the six-arm
@@ -1230,8 +1355,17 @@ def main():
     multi = len(arms) > 1
     rig = "D2/D3" if len(arms) == 3 else ""
     for i, arm in enumerate(arms):
-        name = f"{rig} arm {i + 1}: {arm.arm_label.upper()}" if multi else \
-               "Snap/translate debug (video + landmarks + cube overlay)"
+        if multi and args.ownership_ab:
+            # Name the panels by the VARIABLE under test, not "arm 1 / arm 2":
+            # both arms share a bridge config here, so the arm label alone left
+            # the two windows indistinguishable on the taskbar.
+            name = ("%d. OWNERSHIP = HANDEDNESS LABEL  (OLD -- cube should DROP)" % (i + 1)
+                    if arm.ownership == "label" else
+                    "%d. OWNERSHIP = TRACK ID  (NEW -- cube should HOLD)" % (i + 1))
+        elif multi:
+            name = f"{rig} arm {i + 1}: {arm.arm_label.upper()}"
+        else:
+            name = "Snap/translate debug (video + landmarks + cube overlay)"
         windows.append(name)
         cv2.namedWindow(name, cv2.WINDOW_NORMAL)
         if multi:
@@ -1244,10 +1378,10 @@ def main():
     if multi:
         for i, arm in enumerate(arms):
             print(f"[LiveSnapDebug]   window {i + 1}: {_arm_title(arm)}")
-        print("[LiveSnapDebug] ⚠ Every arm runs off ONE detection and ONE identity")
+        print("[LiveSnapDebug] !! Every arm runs off ONE detection and ONE identity")
         print("[LiveSnapDebug]   resolution, so a difference between panels has")
         print("[LiveSnapDebug]   exactly one cause.")
-        print("[LiveSnapDebug] ⚠ To test anything you must PROVOKE dropouts:")
+        print("[LiveSnapDebug] !! To test anything you must PROVOKE dropouts:")
         print("[LiveSnapDebug]   grab a cube, then move fast, sweep out past the")
         print("[LiveSnapDebug]   frame edge and back. If 'brid' stays 0, nothing")
         print("[LiveSnapDebug]   was tested.")
@@ -1344,6 +1478,18 @@ def main():
             else:
                 labels = [d["raw_handedness"] for d in detections]
 
+            # ⭐ 4.1/T3: publish this frame's stable ids before anything resolves
+            # ownership. Mirrors the server sending "hand_tracks" BEFORE "hands".
+            for h in TRACKED_HANDS:
+                _hand_track_ids[h] = -1
+            _ids = getattr(_hand_identity_tracker, "last_track_ids", [])
+            for _i, _lab in enumerate(labels):
+                if _lab in _hand_track_ids and _i < len(_ids):
+                    _hand_track_ids[_lab] = _ids[_i]
+
+            _count_relabels()
+            _update_depth(hand_data_by_hand)
+
             for d, label in zip(detections, labels):
                 # thumb_outward is chirality-sensitive, so it must be computed
                 # from the RESOLVED label, not MediaPipe's raw one.
@@ -1383,14 +1529,28 @@ def main():
                         "world_landmarks": [[round(x, 5), round(y, 5), round(z, 5)]
                                             for x, y, z in d["world_landmarks"]],
                         "thumb_outward": bool(d["thumb_outward"]),
+                        # 4.1/T3: store the STABLE id so a replay can read it
+                        # instead of reconstructing it. The first A/B session had
+                        # to re-derive ids by re-running DR-1 -- sound, since it
+                        # is deterministic, but stored is strictly better evidence.
+                        "trackId": int(_hand_track_ids.get(handedness, -1)),
                     })
                 records.append({
                     "tCapture": round(t_capture_ms, 2),
                     "hands": rec_hands,
+                    # ⚠ PER ARM, not arms[0]. Storing only the first arm made a
+                    # multi-arm recording unable to answer questions about the
+                    # other panels -- and in the ownership rig arms[0] is the
+                    # LABEL control, so the SHIPPED arm's cubes were the ones
+                    # missing. Found while trying to verify the stranded-cube fix
+                    # from a recording and discovering the data was not there.
                     "cubes": {
-                        name: {"owner": c.owner,
-                               "orientation": [round(v, 6) for v in c.orientation]}
-                        for name, c in arms[0].cubes.items()
+                        arm.arm_label + ":" + getattr(arm, "ownership", "?"): {
+                            name: {"owner": c.owner,
+                                   "orientation": [round(v, 6) for v in c.orientation]}
+                            for name, c in arm.cubes.items()
+                        }
+                        for arm in arms
                     },
                 })
 

@@ -1,4 +1,11 @@
-# Hand-Tracking Object Manipulation Game — Build Handoff
+# Hand-Tracking Object Manipulation Game — the ORIGINAL build handoff (historical)
+
+> ⚠ **NOT the entry point — read `README.md` first.** This is the founding
+> document: the goal, the hard constraints, the prior-art scan and the original
+> architecture sketch. Those parts are still authoritative.
+> ⛔ **§11's suggested build order is HISTORICAL** — `PART_ONE.md` §3.1 is the
+> single build queue and supersedes it. §3's repo layout is a target shape that
+> the real tree only partly follows; trust the tree and `README.md` §2.
 
 ## 0. Goal & constraints (read first)
 

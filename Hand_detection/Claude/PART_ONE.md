@@ -1,5 +1,10 @@
 # Part One — gesture/pattern recognition design & matrix
 
+> ⭐ **§3.1 IS THE SINGLE BUILD QUEUE FOR THE WHOLE PROJECT.** If you are here to
+> find out what to build next, go to §3.1's "YOU ARE HERE" block. For the map of
+> everything else — architecture, what was rejected, which file answers what —
+> read `README.md` first.
+
 > **⚠ Gesture set changed again (2026-08-01): read `GESTURE_PIPELINE_SPEC.md`
 > §13 first.** After §6-§8's rule-based pinch attempt was abandoned
 > (2026-07-30, see the original banner text preserved below) and a
@@ -269,7 +274,109 @@ to follow — no S-item lives outside it.**
 
 ---
 
-### ⭐⭐ YOU ARE HERE (2026-08-22) — PHASE D IS CLOSED. **NEXT BUILD IS 4.1 (M9 metric depth).**
+### ⭐⭐ YOU ARE HERE (2026-08-22, end of day) — **4.1 IS BUILT. NEXT BUILD IS 4.2 (Z-axis translation).**
+
+**Read this block, then 4.2's row, then `GESTURE_PIPELINE_SPEC.md` §14.3 and
+§14.3.2. You should not need anything else to start.**
+
+| | |
+|---|---|
+| **next build** | **4.2 — Z-axis translation (§14.3)**, driving cube Z from 4.1's depth ratio |
+| ⭐ **4.1 is DONE, both halves** | the depth **estimator** (`Resources/palm_depth.py`, A10-passed) **and** the `HandState` v2 **wire migration** carrying `trackId` (ownership now keys on identity, not the handedness label) |
+| ⚠ what 4.2 must add | §14.3's **3D snap gating** — `_try_snap`'s grab radius becomes a 3D check. That is a real change to existing snap logic, not an additive axis |
+| ⚠ undecided, deliberately | what happens to snap gating when `depthValid` is False (the S10 freeze). §14.3.2 leaves this to whoever builds it |
+| ⭐ no calibration step needed | measured: an ordinary push/pull spans **3.59x**, and `d0` is captured **per grab**, so every grab self-normalises. See spec §14.3.4.6 / `analysis/m9_depth_envelope.py` |
+
+⛔⛔ **TWO DEFECTS FOUND ON THE FIRST RECORDED PRODUCTION RUN (2026-08-22) — READ
+BEFORE 4.2.** Session `2026-08-22_154426_production_4_1` (5114 frames, 205 s).
+
+**(1) THE STRAND IS STILL PRESENT IN PRODUCTION, WITH A SECOND ROOT CAUSE.**
+Owner: *"the small cube was dropped but my free hand could not catch it again."*
+Measured: cubes owned by an absent track for runs of **40 frames (~1.6 s)**,
+repeatedly. ⚠ **NOT "the track ended"** — the hands were still DETECTED, their
+**track ids went to -1** while landmarks kept arriving:
+
+```
+f1997  hands=[('Left', 3), ('Right', 2)]  owner=3
+f1999  hands=[('Left',-1), ('Right',-1)]  owner=3   <- stranded
+```
+
+⭐ **Root cause, server-side**: `_normalized_to_pixel_coordinates` returns None for
+any landmark outside [0,1] — a hand **partially out of frame**. One None makes
+`palm_centroid` None, which fails `all(o[0] is not None ...)`, which **skips DR-1
+entirely for that frame**, so NO hand gets a `trackId` and the wire carries -1 for
+both slots. **Moving a hand near the frame edge is enough.** The cube is then owned
+by an int matching no live key, while its governing slot still holds a DETECTED
+hand — so `holds_track` is True and release never fires.
+
+⚠ A **client-side SAFETY NET** is in (`OWNER_ABSENT_RELEASE_MS = 700`, deliberately
+longer than D2's coast so it cannot fight Phase D) — it bounds the damage but is
+**NOT the root fix**. ⛔ **The root fix is server-side and is the owner's call**:
+DR-1 should survive a partially-out-of-frame hand (e.g. centroid over the VALID
+landmarks) instead of abandoning identity for both hands.
+
+**(2) ⭐⭐ D4 IS REOPENED BY MEASUREMENT — the recorded condition is now met.**
+Owner: *"when the hands quickly pass in front of each other and one occludes the
+other ... the cube grabbed by the occluded hand is ungrabbed and then grabbed
+again ... which causes a jump."* Measured on the same take — gaps where one hand
+vanishes **while the other is present** (i.e. crossing/occlusion):
+
+| | |
+|---|---|
+| events | 60 |
+| median gap | **402 ms** |
+| p90 / max | 2130 ms / 3778 ms |
+| **longer than D2's 150 ms coast** | **42 of 60 = 70%** |
+
+⭐ D2's coast is **2.7x too short** for hand crossing, so the cube is released on
+70% of them and re-snaps on reappearance — the jump the owner describes.
+⚠ **D4 was DECLINED 2026-08-21** (*"I do not see the need"*), and the recorded
+reopening condition was **"only a hand lost LONGER than the sensor gap"**. That
+condition is now measured. **This is a legitimate reopening, not a re-proposal.**
+
+⚠⚠ **AND THE OWNER'S SUGGESTED REMEDY IS THE ONE THE CORPUS ALREADY REJECTED.**
+They proposed *"extrapolation"*; **B8 measured every fit LOSING to "hold the last
+value"**. So the answer is almost certainly a **LONGER HOLD** (extend D2's window,
+reusing D3's existing resync blend), **not a new predictor**. ⚠ Its cost is real
+and must be priced: a longer hold widens the window for **N8** (cube stealing by
+occlusion) and for holding a cube the operator actually released.
+
+**⭐ WHAT 4.1 SHIPPED (2026-08-22)**
+
+- **`Resources/palm_depth.py`** — `DepthRatioTracker`: `max4` over the rigid palm
+  quad vs a grab-time baseline, S10 freeze inside the edge-on band, rate limit,
+  clamp. **A10 PASSED**: responsive **3.68x** on `depth_sweep`; on rotation-in-place
+  its OWN error is **1.30x worst case** vs a naive width-only **8.04x**.
+  ⚠ **Quote the drift-floor-corrected number** — 1.40x of the clean yaw take's
+  1.82x is the operator's arm genuinely moving. 24 golden vectors.
+  ⛔ **It is wired to NOTHING yet — that is 4.2.**
+- **The `trackId` wire migration** — `hand_tracks` packet, `_owner_key()`,
+  ownership keyed on the stable DR-1 id. Live A/B over three sessions: label
+  keying orphaned a held cube **794 / 377 / 15** frames, track keying **0** every
+  time (session 2 had **24** relabels). `PERCEPTION_LAYER_SPEC.md` §2.2.1–§2.2.3.
+- **Production and the debug tool are now the SAME pipeline** — the mirror fix
+  (spec §14.3.4.3/§14.3.4.4), owner-confirmed live.
+- **Production can now RECORD** (`VISION_RECORD=1`), same JSONL schema as the
+  debug tool, so every `analysis/` harness reads a production take unchanged.
+
+⚠⚠ **TWO BUGS I INTRODUCED AND THE OWNER FOUND LIVE — read before touching
+ownership.** (1) **The stranded cube**: release read
+`cube_owned_by(_owner_key(hand))`, which degrades to the LABEL once a track ends,
+so an int-keyed cube was never found and stayed owned by a dead id — drawn as
+grabbed, driven by nothing, un-regrabbable. **The fallback fired exactly when the
+id was missing, which is exactly when release needed it.** Fixed by driving
+release from the CUBES, governed by whichever slot the owning TRACK is in now.
+(2) The hand **LABEL displayed inverted** — pre-existing, fixed DISPLAY-ONLY;
+⛔ **never flip the internal label**, four things are calibrated to it.
+
+⚠ **Still open on 4.1**: the **~13° yaw axis tilt** is real and unattributed
+(spec §14.3.4.2) — the mirror, the frame convention, degeneracy, hand anatomy and
+the Horn fit are all eliminated; MediaPipe's world-z error and residual operator
+wobble remain. **ROLL has never been recorded.**
+
+---
+
+### Superseded: YOU ARE HERE (2026-08-22, morning) — PHASE D IS CLOSED. **NEXT BUILD IS 4.1 (M9 metric depth).**
 
 **Read this section, then 4.1's row, then `GESTURE_PIPELINE_SPEC.md` §14.3.1. You should not need anything else to start.**
 
@@ -480,7 +587,7 @@ Optional and parallelisable at any time: **0.4** (predictor eval harness, S1) an
 | D3 | **Resync blend on reacquisition** | perception | ✅✅ **SHIPPED 2026-08-21 — brought forward to ship WITH D2, and it is the arm the owner chose** | D2 | ⭐ **The live comparison separated D2 from D2+D3 and the blend is what won**: the owner picked BLEND over ON, i.e. the difference the blend makes was visible, not just measurable. That is the strongest evidence this row has and it is worth more than the replay numbers below. Prior status follows. **BUILT 2026-08-21 — BROUGHT FORWARD to ship WITH D2, on D2's own evidence** | ⭐ **Why it moved**: D2 measured that bridging without a blend does not remove a defect, it **trades a drop for a jump** — 19 of 58 bridged dropouts move the cube more than a palm width on the resume frame, and that jump is the §14.1.4 teleport this project has spent real effort on. Shipping D2 alone would have been a regression dressed as a fix. ⭐ **Result, REPLAYED over the hand's real post-gap trajectory, not modelled** (the tempting shortcut — "a 3-frame blend divides the step by 3" — is false, because the hand keeps moving during the blend): worst single-frame cube step over the resume, **median 0.62 → 0.38, p90 1.95 → 0.87, max 2.47 → 1.49 palm widths**, with **3 of 47 resumes made worse**. Those 3 are reported and not hidden — a smoother that helps on average and hurts on some cases is exactly how 1.6 passed. **Position only**: orientation already converges through `ROTATION_SLERP_FACTOR`'s slerp and needs no second mechanism. `RESYNC_BLEND_FRAMES = 3`, `t = 1/frames_left` so the last step lands exactly on the measurement with no residual offset. ⚠ **A bug worth remembering, caught by its own test**: the blend was armed on every resume but is only consumed while a cube is held, so an empty hand kept it armed and blended the NEXT grab — one that never bridged. Now armed only for a hand that is actually holding. ⚠ Confidence ramp-up is NOT built (nothing consumes confidence yet); that lands with the v2 wire migration. Design follows. The source document's §3.5, and **the one mechanism in it that is genuinely absent today** — nothing blends when a track is reacquired, so recovery is a hard cut. Blend position (lerp) and orientation (slerp) over 2–3 frames and ramp both confidences back up. ⚠ Measure it against the A10 rule like everything else: it must show a measured improvement on the M0 metrics or be reverted |
 | D4 | **Grace period before release — ⚠ THIS IS M10.7 UNDER A NEW NAME** | decision | ⛔⛔ **DECLINED BY THE OWNER 2026-08-21, AFTER seeing D2/D3 live. NOT deferred again — answered.** Recorded for a later potential improvement only | D2, D3 | ⭐ **The owner's words, after running the three-arm rig: _"I do not see the need: the behaviour and results are already good at this stage, and in line with what I want to ship. Just record it for later potential improvement."_** ⚠⚠ **DO NOT RE-PROPOSE THIS.** The reopening condition (*"revisit only if immediate-drop becomes a felt problem in live play"*) was met, measured at **205 spurious releases**, put in front of the owner with a working comparison, and the answer was still no — because D2/D3's 150 ms sensor coast made the residual stop being felt. That is a **stronger** close than the 2026-08-04 deferral was: it is a decision taken with the numbers and the live behaviour both available, not a postponement. The standing preference (*"I don't want to overbuild with layers of rules"*) is therefore reaffirmed, not merely still pending. ⭐ **What would legitimately reopen it**: a hand genuinely lost for LONGER than the sensor gap becoming a felt problem in real play — the case the coast structurally cannot cover. Nothing short of that. Prior gating note follows | The source document's §3.8 (auto-release timeout + UI signal). ⚠⚠ **It is queue item 4.3's M10.7, which the owner DEFERRED on 2026-08-04** with a standing preference — *"I don't want to overbuild with layers of rules"* — and an explicit instruction: **do not re-propose it as a side effect of another item.** Adopting the source document wholesale would do exactly that. ⭐ **Its stated reopening condition — *"revisit only if immediate-drop becomes a felt problem in live play"* — IS now met, with a number for the first time: 98 spurious drops (D0).** Owner's call: **measure D2/D3 first**, see how many of the 98 bridging alone removes, and decide whether the remainder justifies changing `GAME_RULES.md` rule 2. ⛔ **Tier 2 (Kalman) and Tier 3 (past+future smoothing) are STRUCK from the source document, not deferred**: Tier 2 is queue **2.3** (5 null attempts, audited and re-confirmed), Tier 3 is **B7** (parked twice, blind-confirmed at chance 2026-08-17, §16.17). ⭐ **The source document is NOT filed in `Claude/` and will not be — owner decision 2026-08-21: its content is DISTILLED into the documents that own each part of it**, and those are the versions of record. Its schema → `PERCEPTION_LAYER_SPEC.md` §2.1 (with a field-by-field mapping table, so nothing is lost); its build tiers → this Phase D block, tier by tier, with the four that are already-rejected work struck and named; its premise → the **D0** row and `analysis/d0_dropout_census.py`, which is the measurement that refuted it. ⚠ It is still NAMED in those places, as provenance for a claim recorded here — that is a citation, not a pointer to a file anyone can open. **Do not treat an unresolvable reference to it as a missing dependency, and do not reconstruct it.** |
 | **PHASE 4 — unlock the features** ||||||
-| 4.1 | M9 metric depth | perception | **UNBLOCKED 2026-08-04 — the scale reference exists. ⚠ Read `GESTURE_PIPELINE_SPEC.md` §14.3.1 BEFORE building: the anchor must be MULTI-anchor, and a yaw take must be recorded first** | ~~1.7~~ — **satisfied**: `hand_skeleton.palm_width_world()` supplies the per-session scale reference without needing 1.7's fit (spec §0.18) | ⚠ **NO LONGER NEXT — PHASE D (dropout mitigation) RUNS FIRST, owner direction 2026-08-21.** Reason is measured, not stylistic: a single missing frame releases a held cube today, which cost **98 spurious drops** across the corpus (D0), and 4.1 leads to 4.2 (Z-axis) whose own grab handling would be built on top of that defect. ⭐ Still the recommended build AFTER Phase D. The one Phase 1 deliverable that survived, on the one quantity this sensor measures well (palm width, near pose-invariant, §10.1). Leads directly to 4.2. Prior note follows. Refines §14.3's ratio design: never a single bone; foreshortening-corrected. ⚠ **Dependency moved to 1.7** — 1.4 cannot supply the scale reference; the imposed skeleton can. ⭐ **Literature confirms the ratio form is the right call**: absolute camera-space hand position from monocular RGB is only ~3.5 cm at SOTA (ScaleHP 2026), while a scale *ratio* needs only temporal consistency of one anchor; **palm width is the documented anchor of choice** (near pose-invariant, unlike finger spans). ⚠ **S10, missing from both M9 and §14.3: the palm-width anchor COLLAPSES edge-on, so the depth ratio must FREEZE inside the DR-2 band** (reuse `PalmFacingTracker`'s pattern) or Z-control inherits the pitch-crossing failure |
+| 4.1 | M9 metric depth | perception | ⭐ **ESTIMATOR HALF BUILT + A10 PASSED 2026-08-22** — `Resources/palm_depth.py` (`DepthRatioTracker`): max4 over the rigid palm quad vs a grab-time baseline, S10 freeze in the edge-on band, rate limit + clamp. Measured (`analysis/m9_depth_envelope.py`): responsive **3.68x** on `depth_sweep`; on rotation-in-place the estimator's own error is **1.30x worst case** against a naive width-only **8.04x** — a **4.4x** reduction in false depth. ⚠ **Quote the drift-floor-corrected number, not the raw span**: 1.40x of the clean yaw take's 1.82x is the operator's arm really moving. 24 golden vectors in `analysis/verify_palm_depth.py`. ⭐ **No calibration step is needed** — the envelope is 3.59x and `d0` is per-grab (see the row's note and spec §14.3.4.6). ⛔ **STILL TO DO for 4.1: the `HandState` v2 WIRE MIGRATION carrying `trackId`**, and wiring the ratio into the cube (that is 4.2). Prior note follows. **UNBLOCKED 2026-08-04 — the scale reference exists. ⚠ Read `GESTURE_PIPELINE_SPEC.md` §14.3.1 BEFORE building: the anchor must be MULTI-anchor, and a yaw take must be recorded first** | ~~1.7~~ — **satisfied**: `hand_skeleton.palm_width_world()` supplies the per-session scale reference without needing 1.7's fit (spec §0.18) | ⚠ **NO LONGER NEXT — PHASE D (dropout mitigation) RUNS FIRST, owner direction 2026-08-21.** Reason is measured, not stylistic: a single missing frame releases a held cube today, which cost **98 spurious drops** across the corpus (D0), and 4.1 leads to 4.2 (Z-axis) whose own grab handling would be built on top of that defect. ⭐ Still the recommended build AFTER Phase D. The one Phase 1 deliverable that survived, on the one quantity this sensor measures well (palm width, near pose-invariant, §10.1). Leads directly to 4.2. Prior note follows. Refines §14.3's ratio design: never a single bone; foreshortening-corrected. ⚠ **Dependency moved to 1.7** — 1.4 cannot supply the scale reference; the imposed skeleton can. ⭐ **Literature confirms the ratio form is the right call**: absolute camera-space hand position from monocular RGB is only ~3.5 cm at SOTA (ScaleHP 2026), while a scale *ratio* needs only temporal consistency of one anchor; **palm width is the documented anchor of choice** (near pose-invariant, unlike finger spans). ⚠ **S10, missing from both M9 and §14.3: the palm-width anchor COLLAPSES edge-on, so the depth ratio must FREEZE inside the DR-2 band** (reuse `PalmFacingTracker`'s pattern) or Z-control inherits the pitch-crossing failure |
 | 4.2 | **Z-axis translation (§14.3)** | feature | designed, not built | 4.1 | Open: what happens to 3D snap gating when `depthValid` is false — undecided |
 | 4.3 | M10 commitment dynamics | perception | **M10.7 DEFERRED BY OWNER 2026-08-04 — do not build** | ~~1.6~~ (parked) | **M10.7 changes `GAME_RULES.md` rule 2** (immediate drop → 400 ms grace) and would close N8. **Owner decision taken: leave it undecided for now** — *"I don't want to overbuild with layers of rules for the moment."* ⚠ Treat that as a **standing preference on RULES**, the counterpart of the no-heuristic-pile-up rule on filters: the rule set stays small and legible, and a rule whose job is to patch another rule's consequences is what is being avoided. **Do not re-propose it as a side effect of another item**; revisit only if immediate-drop becomes a felt problem in live play, and then ask explicitly. The rest of M10 also loses its 1.6 dependency (parked) and would need re-deriving before it could start |
 | 4.4 | **Hand-open release trigger (§14.2)** | feature | designed, not built | 4.3 | The sole active release plan since closed-fist was parked |

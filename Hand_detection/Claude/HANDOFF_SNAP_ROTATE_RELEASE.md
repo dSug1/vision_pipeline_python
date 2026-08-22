@@ -1,4 +1,15 @@
-# Handoff — read this first when starting a new conversation
+# Handoff — snap / rotate / release (SESSION BRIEF, superseded as an entry point)
+
+> ⛔⛔ **THIS IS NO LONGER THE ENTRY POINT. READ `README.md` INSTEAD.**
+> Its title used to say "read this first"; that is now wrong and was actively
+> misleading. ⚠ **§1's "START HERE" block is STALE** — it names the BLOCK
+> REPRESENTATION / Phase B as "the current direction (owner, 2026-08-04)". Phase
+> B has since closed (B4 shipped, B7 parked, B8 lost to doing nothing), Phase D
+> shipped after it, and the next build is **4.1**. **Take the current direction
+> from `PART_ONE.md` §3.1's "YOU ARE HERE" block, never from this file.**
+>
+> ⭐ Kept because §3–§5 (what happened and why, environment notes, standing
+> discipline) are still accurate and still useful. Read it as HISTORY.
 
 Rewritten **2026-08-03** (previous rewrite 2026-08-01). This file is an
 **orientation pointer and a prioritised starting point only** — it does not hold

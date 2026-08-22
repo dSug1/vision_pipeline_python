@@ -4377,6 +4377,63 @@ is insensitive near 0°, foreshortening is sign-ambiguous (needs DR-2's palm sig
 disambiguate), and width also shrinks with DISTANCE — which is precisely the
 confound 4.1/M9 exists to resolve. **This is an A10 A/B, not a refactor.**
 
+### ⭐⭐ 14.3.4.2 THE CLEAN YAW TAKE IS RECORDED, AND IT SPLITS THE DEFECT IN TWO (2026-08-22)
+
+`2026-08-22_134553_yaw_sweep_constant_depth` — RIGHT hand, 508 frames, 24.79 fps,
+a hand in **508/508** frames. ⚠ Ended at 20.5 s of a requested 30 s (preview window
+closed early), which still gives ~6 sweeps and is ample. **The recorder's prompt was
+corrected FIRST** — "doorknob" (which is ROLL about depth, not yaw) removed, and
+"fingers STRAIGHT UP" / "no sideways tilt" added, plus a new `YAW_AXIS_NOTE`.
+
+**✅ IT PASSES THE CLEANLINESS GATE** (`analysis/t5c_operator_or_estimator.py`):
+
+| take | WIDTH collapse | LENGTH collapse | verdict |
+|---|---|---|---|
+| **2026-08-22 (new)** | **0.219** | 0.751 | ✅ textbook single-axis yaw |
+| 2026-08-04 (old) | 0.629 | 0.670 | ❌ mixed axis |
+
+**⭐ RESULT — the owner's requirement is TWO claims and they fail differently**
+(`analysis/t5f_equal_rotation.py`; ground truth is z-free, from palm-width
+foreshortening, unwrapped past edge-on with the palm-facing sign):
+
+| | old (contaminated) | **new (clean)** |
+|---|---|---|
+| axis, in-screen tilt from vertical | +21.6° | **+12.3°** |
+| axis, 3D off-vertical | 31.2° | **13.0°** |
+| angle gain (median) | not interpretable | **1.11** |
+
+1. ⭐ **"EQUAL rotation" is broadly SATISFIED.** Gain by true-yaw band: 0.93 / 0.68 /
+   0.86 / 1.11 / 1.13 / 1.10 / 1.11 / 1.11 — **median 1.11**. The cube turns about as
+   far as the hand does. ⚠ This **retires the worry raised in §14.3.4.1** that depth
+   error would badly under-report the angle: the synthetic used z×0.6, and the real
+   z is evidently not that compressed. The residual pattern is a mild *under*-rotation
+   between 20–60° and a ~11% *over*-rotation past 60°.
+2. ⛔ **THE AXIS IS THE REAL DEFECT, AND IT IS NOW CLEANLY QUANTIFIED AT ~13°.**
+   That is what shows on screen as the owner's "mix of x and y".
+3. ⭐⭐ **ROUGHLY HALF THE PREVIOUSLY REPORTED FIGURE WAS OPERATOR CONTAMINATION**
+   (31.2° → 13.0°). ⚠ **Quote 13.0°, never the old 25.6/27.3/33.1° numbers** — those
+   came from the mixed-axis take and §14.3.3 explains why.
+
+⚠ **What is still NOT established**: whether the residual ~13° is entirely estimator
+bias or partly residual operator wobble — a freehand "pure" yaw can plausibly carry
+~10°. The controls in §14.3.4/§14.3.4.1 rule out the mirror, the frame convention,
+constellation degeneracy, the hand's own anatomy, and the Horn fit itself, so the
+remaining candidates are **MediaPipe's world-z error** and **residual hand wobble**.
+
+⭐ **A NOTE ON THE Z-FREE MEASUREMENT, learned the hard way here**: `acos(width)`
+**FOLDS at edge-on** — past 90° the width comes back up, so 150° reads as 30°. A
+first pass produced a nonsense "gain 3.57" from exactly this, and a second produced
+"gain 21.5" by freezing the estimator's reference on an already-rotated frame rather
+than the most face-on one. **Both traps are inherent to any foreshortening-based
+angle design, not to the harness** — so if a z-free yaw estimate is ever built, it
+MUST carry a sign cue (DR-2's palm sign works) and a face-on reference.
+
+⚠ **The small-angle noise floor, binding on any future axis measurement**: below
+~30° of rotation the axis is barely determined — a *clean* pitch take reads
+**44–63° off its own axis** there. Never quote an axis deviation without the
+rotation magnitude it was measured at. This is also why `t5d`'s harvested roll
+segments (12–20° sweeps) prove nothing.
+
 ### ⛔⛔ 14.3.4.3 PRODUCTION AND THE DEBUG TOOL ARE NOT THE SAME PIPELINE (2026-08-22)
 
 **Owner, 2026-08-22**: *"in this debug configuration the vertical axis rotation
@@ -4437,55 +4494,6 @@ handedness inversion.** All four together:
 4. `hands_visualizer._mirror_handedness` — **remove**; MediaPipe now reports the
    mirrored label natively, so mirroring it again would re-invert chirality
 
-### ✅ 14.3.4.5 OWNER CONFIRMED THE MIRROR FIX LIVE — and found the label inversion (2026-08-22)
-
-⭐⭐ **§14.3.4.3's fix is LIVE-CONFIRMED.** Owner, after running both apps
-back-to-back: *"both sessions are OK now. fix is positive."* **The production
-pipeline and the debug tool now behave the same**, which is what §14.3.4.3
-predicted and what the recording-based fixtures could not prove.
-
-**Separate defect reported in the same breath**: *"on both the sessions, the label
-'left' or 'right' hands are inverted (probably because the camera is taking the
-view from the opposite of the hand). It shall be rectified."* **Correct, and
-measured against the ground-truth clips:**
-
-| ground truth | internal label |
-|---|---|
-| physical **RIGHT** hand | `Left` (751/751 frames) |
-| physical **LEFT** hand | `Right` (200/200 frames) |
-
-⚠⚠ **THIS IS PRE-EXISTING, NOT A SIDE EFFECT OF THE MIRROR FIX.** Before it,
-detection ran on the raw frame and `_mirror_handedness()` flipped the label;
-after it, detection runs on the mirrored frame and MediaPipe reports that same
-value directly. **Both routes display the same thing** — which is exactly why
-`VerifyChiralityFixture.py`, whose ground truth literally reads *"PHYSICAL Right
-hand -> expected label 'Left' (mirrored convention)"*, passed unchanged before AND
-after.
-
-⛔⛔ **THE INTERNAL LABEL WAS NOT FLIPPED, AND MUST NOT BE.** It is load-bearing in
-four places, all calibrated to the current convention:
-1. `palm_geometry.is_thumb_outward()`'s handedness-dependent chirality correction
-   (`if handedness == "Left": cross = -cross`). **Flipping the label inverts that
-   sign — that IS §13.6.1**, the bug that shipped inverted in production and
-   survived an "end-to-end confirmed" claim.
-2. All **415 recorded sessions** store labels in this convention — flipping live
-   would desynchronise every replay harness from the live pipeline.
-3. `VerifyChiralityFixture.py` encodes it as ground truth.
-4. Cube ownership and DR-1's track slots key on it (queue **T3**).
-
-⭐ **FIXED AS DISPLAY-ONLY**, at the two places a human reads it:
-`hands_visualizer.py`'s preview text and `LiveSnapDebug.py`'s per-hand overlay.
-The helper is `hand_identity.anatomical_name()`, defined in the module **both**
-already import so the two cannot drift (rule N6: imported, never copied). ⚠ Its
-docstring forbids feeding the result back into any rule, filter or ownership key.
-
-**Re-verified after the display change**: `VerifyChiralityFixture.py` ALL PASS,
-10/10 golden-vector suites PASS — the fixture passing is itself the proof the
-internal convention did not move.
-
-⚠ **Not yet eyeballed live** — the label change is cosmetic and low-risk, but it
-has not been seen on screen yet.
-
 ### ✅ 14.3.4.4 THE FIX IS BUILT (2026-08-22) — ⚠ automated checks green, LIVE CONFIRMATION STILL OPEN
 
 **FIVE sites, not four.** §14.3.4.3's plan listed four; a fifth was found while
@@ -4542,62 +4550,138 @@ exactly this class, and §0.12's Q1 was written to catch it. **Run them before a
 after.** ⚠ And note this decides the same question for the **web/mobile port**
 (U3), which faces the identical choice.
 
-### ⭐⭐ 14.3.4.2 THE CLEAN YAW TAKE IS RECORDED, AND IT SPLITS THE DEFECT IN TWO (2026-08-22)
+### ✅ 14.3.4.5 OWNER CONFIRMED THE MIRROR FIX LIVE — and found the label inversion (2026-08-22)
 
-`2026-08-22_134553_yaw_sweep_constant_depth` — RIGHT hand, 508 frames, 24.79 fps,
-a hand in **508/508** frames. ⚠ Ended at 20.5 s of a requested 30 s (preview window
-closed early), which still gives ~6 sweeps and is ample. **The recorder's prompt was
-corrected FIRST** — "doorknob" (which is ROLL about depth, not yaw) removed, and
-"fingers STRAIGHT UP" / "no sideways tilt" added, plus a new `YAW_AXIS_NOTE`.
+⭐⭐ **§14.3.4.3's fix is LIVE-CONFIRMED.** Owner, after running both apps
+back-to-back: *"both sessions are OK now. fix is positive."* **The production
+pipeline and the debug tool now behave the same**, which is what §14.3.4.3
+predicted and what the recording-based fixtures could not prove.
 
-**✅ IT PASSES THE CLEANLINESS GATE** (`analysis/t5c_operator_or_estimator.py`):
+**Separate defect reported in the same breath**: *"on both the sessions, the label
+'left' or 'right' hands are inverted (probably because the camera is taking the
+view from the opposite of the hand). It shall be rectified."* **Correct, and
+measured against the ground-truth clips:**
 
-| take | WIDTH collapse | LENGTH collapse | verdict |
-|---|---|---|---|
-| **2026-08-22 (new)** | **0.219** | 0.751 | ✅ textbook single-axis yaw |
-| 2026-08-04 (old) | 0.629 | 0.670 | ❌ mixed axis |
+| ground truth | internal label |
+|---|---|
+| physical **RIGHT** hand | `Left` (751/751 frames) |
+| physical **LEFT** hand | `Right` (200/200 frames) |
 
-**⭐ RESULT — the owner's requirement is TWO claims and they fail differently**
-(`analysis/t5f_equal_rotation.py`; ground truth is z-free, from palm-width
-foreshortening, unwrapped past edge-on with the palm-facing sign):
+⚠⚠ **THIS IS PRE-EXISTING, NOT A SIDE EFFECT OF THE MIRROR FIX.** Before it,
+detection ran on the raw frame and `_mirror_handedness()` flipped the label;
+after it, detection runs on the mirrored frame and MediaPipe reports that same
+value directly. **Both routes display the same thing** — which is exactly why
+`VerifyChiralityFixture.py`, whose ground truth literally reads *"PHYSICAL Right
+hand -> expected label 'Left' (mirrored convention)"*, passed unchanged before AND
+after.
 
-| | old (contaminated) | **new (clean)** |
-|---|---|---|
-| axis, in-screen tilt from vertical | +21.6° | **+12.3°** |
-| axis, 3D off-vertical | 31.2° | **13.0°** |
-| angle gain (median) | not interpretable | **1.11** |
+⛔⛔ **THE INTERNAL LABEL WAS NOT FLIPPED, AND MUST NOT BE.** It is load-bearing in
+four places, all calibrated to the current convention:
+1. `palm_geometry.is_thumb_outward()`'s handedness-dependent chirality correction
+   (`if handedness == "Left": cross = -cross`). **Flipping the label inverts that
+   sign — that IS §13.6.1**, the bug that shipped inverted in production and
+   survived an "end-to-end confirmed" claim.
+2. All **415 recorded sessions** store labels in this convention — flipping live
+   would desynchronise every replay harness from the live pipeline.
+3. `VerifyChiralityFixture.py` encodes it as ground truth.
+4. Cube ownership and DR-1's track slots key on it (queue **T3**).
 
-1. ⭐ **"EQUAL rotation" is broadly SATISFIED.** Gain by true-yaw band: 0.93 / 0.68 /
-   0.86 / 1.11 / 1.13 / 1.10 / 1.11 / 1.11 — **median 1.11**. The cube turns about as
-   far as the hand does. ⚠ This **retires the worry raised in §14.3.4.1** that depth
-   error would badly under-report the angle: the synthetic used z×0.6, and the real
-   z is evidently not that compressed. The residual pattern is a mild *under*-rotation
-   between 20–60° and a ~11% *over*-rotation past 60°.
-2. ⛔ **THE AXIS IS THE REAL DEFECT, AND IT IS NOW CLEANLY QUANTIFIED AT ~13°.**
-   That is what shows on screen as the owner's "mix of x and y".
-3. ⭐⭐ **ROUGHLY HALF THE PREVIOUSLY REPORTED FIGURE WAS OPERATOR CONTAMINATION**
-   (31.2° → 13.0°). ⚠ **Quote 13.0°, never the old 25.6/27.3/33.1° numbers** — those
-   came from the mixed-axis take and §14.3.3 explains why.
+⭐ **FIXED AS DISPLAY-ONLY**, at the two places a human reads it:
+`hands_visualizer.py`'s preview text and `LiveSnapDebug.py`'s per-hand overlay.
+The helper is `hand_identity.anatomical_name()`, defined in the module **both**
+already import so the two cannot drift (rule N6: imported, never copied). ⚠ Its
+docstring forbids feeding the result back into any rule, filter or ownership key.
 
-⚠ **What is still NOT established**: whether the residual ~13° is entirely estimator
-bias or partly residual operator wobble — a freehand "pure" yaw can plausibly carry
-~10°. The controls in §14.3.4/§14.3.4.1 rule out the mirror, the frame convention,
-constellation degeneracy, the hand's own anatomy, and the Horn fit itself, so the
-remaining candidates are **MediaPipe's world-z error** and **residual hand wobble**.
+**Re-verified after the display change**: `VerifyChiralityFixture.py` ALL PASS,
+10/10 golden-vector suites PASS — the fixture passing is itself the proof the
+internal convention did not move.
 
-⭐ **A NOTE ON THE Z-FREE MEASUREMENT, learned the hard way here**: `acos(width)`
-**FOLDS at edge-on** — past 90° the width comes back up, so 150° reads as 30°. A
-first pass produced a nonsense "gain 3.57" from exactly this, and a second produced
-"gain 21.5" by freezing the estimator's reference on an already-rotated frame rather
-than the most face-on one. **Both traps are inherent to any foreshortening-based
-angle design, not to the harness** — so if a z-free yaw estimate is ever built, it
-MUST carry a sign cue (DR-2's palm sign works) and a face-on reference.
+⚠ **Not yet eyeballed live** — the label change is cosmetic and low-risk, but it
+has not been seen on screen yet.
 
-⚠ **The small-angle noise floor, binding on any future axis measurement**: below
-~30° of rotation the axis is barely determined — a *clean* pitch take reads
-**44–63° off its own axis** there. Never quote an axis deviation without the
-rotation magnitude it was measured at. This is also why `t5d`'s harvested roll
-segments (12–20° sweeps) prove nothing.
+## 15. Perception-layer spec integrated (2026-08-02) — the current direction
+
+A design spec for the **hand-perception stack below the gesture layer** was
+written by the owner and integrated into the pipeline on 2026-08-02:
+**`Claude/PERCEPTION_LAYER_SPEC.md`**. Read it alongside this document —
+this file remains the authoritative record of *what failed and why*; that
+one is the *forward* design intended to fix it.
+
+**Why this is a direction change worth flagging.** Everything in §13-§14
+treated MediaPipe's output as the signal and built gesture logic directly
+on it, fixing failures one at a time as they were found live. The
+perception spec reframes MediaPipe as a **noisy sensor** and inserts an
+estimator layer (L0-L6) between it and the gesture logic, with a versioned
+`HandState` contract at the boundary. Several open TODOs in this document
+are consequences of that missing layer rather than independent bugs.
+
+**The merged build queue is `PART_ONE.md` §3.1** — the single ordered TODO
+list covering both this document's TODOs and the spec's modules. It
+supersedes §14's build order and the handoff's own queue.
+
+**Amendments made on integration** (full log in the spec's §0.1 — the
+short version, because these correct claims a reader of the spec alone
+would get wrong):
+
+- **A1 — retargeted from JavaScript to Python.** The spec was written
+  against `gestureConfig.js`/Three.js. That does not exist: `Web/` holds
+  only Part Zero-bis, and every Part One gesture is Python. Perception is
+  built in `Local_pc/`; `HandState` v2 becomes the versioned **socket wire
+  contract**, which doubles as the cross-platform contract a mobile
+  rebuild reimplements against.
+- **A2 — M5a/M5b are already built.** `_is_thumb_outward()`'s signed cross
+  product is byte-identical to the spec's signed-palm-area cue, and its
+  per-handedness negation is exactly the chirality factoring. New work is
+  DR-1, the `K` fixture test, `edgeOnMeasure`, and DR-2.
+- **A4 — M6a is already satisfied.** No Euler angles have ever been in the
+  estimation path (`PART_ONE.md` §2 forbids it). Verify and tick.
+- **A5 — M4 is scoped to occlusion/outliers, not the pitch crossing.**
+  §13.7 recorded that per-landmark selection and averaging schemes are
+  statistically indistinguishable at the degenerate frames, because the
+  residual is a *correlated* whole-knuckle-row distortion. M6c's
+  anisotropic covariance is the mechanism for that failure; M4 is not.
+  Do not read a null M4 result there as an implementation failure.
+- **A6 — M6 subsumes `HandOrientationFilter`; deleting it is a
+  deliverable.** This closes §13.7.1's open "re-test the filter for
+  redundancy after a more fundamental fix lands" TODO with a concrete
+  trigger.
+- **A7 — M8a (palm anchoring) is NOT adopted.** It contradicts §14.1's
+  shipped, verified, live-confirmed mechanism, and the pipeline docs
+  govern. It is logged as an **A/B candidate** to be measured once M6/M9
+  land — because the stated reason for rejecting a palm-anchored design
+  (a 2D/3D coordinate mismatch) will no longer hold then. **Do not modify
+  §14.1 before that A/B runs.** The spec's anti-pattern #6 ("never anchor
+  to fingertips") is downgraded accordingly.
+- **A8 — M9 is the concrete fix for §14.1.1's yaw/palm-sinking
+  limitation**, whose recorded remedy was an unspecified "startup Z-axis
+  calibration." M9's foreshortening correction, using M5a's
+  `edgeOnMeasure` as the `|cos θ|` term, is that idea made specific.
+- **A9 — §14.1.4 Object Jump Correction now has a fix path.** It was
+  absent from the spec's own mapping. DR-1 removes the per-frame identity
+  decision that is its structural cause; M4's χ² innovation gate would
+  reject the recorded 509 px excursion. Re-test after Phase 2 rather than
+  treating it as independent work.
+- **A10 — kill-criterion (binding).** Every module must show measured
+  improvement on the M0 metrics via replay A/B, or be **reverted**. This
+  is the spec's own §7.1 rule elevated to a removal rule, and it is what
+  reconciles the spec's substantial machinery with the owner's standing
+  preference against accumulating filters that do not earn their keep. The
+  precedent is already set: the first Object Jump Correction fix attempt
+  was built, measured, found to make no difference, and discarded rather
+  than shipped (§14.1.4).
+
+**Two items the spec surfaces that are game-design decisions, not
+perception work** — both need the owner, and neither should be introduced
+as a side effect of building a module:
+
+1. **M10.7 proposes a ~400 ms grace period on tracking loss.**
+   `GAME_RULES.md` rule 2 currently drops the object immediately, and that
+   behaviour is built and live-verified. Changing it is a rule change.
+2. **§14.3's 3D snap gating is underspecified**: what happens when
+   `depthValid` is false at the moment of snap — fall back to 2D
+   proximity, or refuse to snap? Not decided.
+
+
 
 ## 16. THE BLOCK REPRESENTATION (owner design, 2026-08-04) — the current direction
 
@@ -6007,86 +6091,3 @@ release decisions*. Prediction artifacts must not latch into a gesture. Build th
 split even if prediction is later skipped entirely.
 
 ---
-
-## 15. Perception-layer spec integrated (2026-08-02) — the current direction
-
-A design spec for the **hand-perception stack below the gesture layer** was
-written by the owner and integrated into the pipeline on 2026-08-02:
-**`Claude/PERCEPTION_LAYER_SPEC.md`**. Read it alongside this document —
-this file remains the authoritative record of *what failed and why*; that
-one is the *forward* design intended to fix it.
-
-**Why this is a direction change worth flagging.** Everything in §13-§14
-treated MediaPipe's output as the signal and built gesture logic directly
-on it, fixing failures one at a time as they were found live. The
-perception spec reframes MediaPipe as a **noisy sensor** and inserts an
-estimator layer (L0-L6) between it and the gesture logic, with a versioned
-`HandState` contract at the boundary. Several open TODOs in this document
-are consequences of that missing layer rather than independent bugs.
-
-**The merged build queue is `PART_ONE.md` §3.1** — the single ordered TODO
-list covering both this document's TODOs and the spec's modules. It
-supersedes §14's build order and the handoff's own queue.
-
-**Amendments made on integration** (full log in the spec's §0.1 — the
-short version, because these correct claims a reader of the spec alone
-would get wrong):
-
-- **A1 — retargeted from JavaScript to Python.** The spec was written
-  against `gestureConfig.js`/Three.js. That does not exist: `Web/` holds
-  only Part Zero-bis, and every Part One gesture is Python. Perception is
-  built in `Local_pc/`; `HandState` v2 becomes the versioned **socket wire
-  contract**, which doubles as the cross-platform contract a mobile
-  rebuild reimplements against.
-- **A2 — M5a/M5b are already built.** `_is_thumb_outward()`'s signed cross
-  product is byte-identical to the spec's signed-palm-area cue, and its
-  per-handedness negation is exactly the chirality factoring. New work is
-  DR-1, the `K` fixture test, `edgeOnMeasure`, and DR-2.
-- **A4 — M6a is already satisfied.** No Euler angles have ever been in the
-  estimation path (`PART_ONE.md` §2 forbids it). Verify and tick.
-- **A5 — M4 is scoped to occlusion/outliers, not the pitch crossing.**
-  §13.7 recorded that per-landmark selection and averaging schemes are
-  statistically indistinguishable at the degenerate frames, because the
-  residual is a *correlated* whole-knuckle-row distortion. M6c's
-  anisotropic covariance is the mechanism for that failure; M4 is not.
-  Do not read a null M4 result there as an implementation failure.
-- **A6 — M6 subsumes `HandOrientationFilter`; deleting it is a
-  deliverable.** This closes §13.7.1's open "re-test the filter for
-  redundancy after a more fundamental fix lands" TODO with a concrete
-  trigger.
-- **A7 — M8a (palm anchoring) is NOT adopted.** It contradicts §14.1's
-  shipped, verified, live-confirmed mechanism, and the pipeline docs
-  govern. It is logged as an **A/B candidate** to be measured once M6/M9
-  land — because the stated reason for rejecting a palm-anchored design
-  (a 2D/3D coordinate mismatch) will no longer hold then. **Do not modify
-  §14.1 before that A/B runs.** The spec's anti-pattern #6 ("never anchor
-  to fingertips") is downgraded accordingly.
-- **A8 — M9 is the concrete fix for §14.1.1's yaw/palm-sinking
-  limitation**, whose recorded remedy was an unspecified "startup Z-axis
-  calibration." M9's foreshortening correction, using M5a's
-  `edgeOnMeasure` as the `|cos θ|` term, is that idea made specific.
-- **A9 — §14.1.4 Object Jump Correction now has a fix path.** It was
-  absent from the spec's own mapping. DR-1 removes the per-frame identity
-  decision that is its structural cause; M4's χ² innovation gate would
-  reject the recorded 509 px excursion. Re-test after Phase 2 rather than
-  treating it as independent work.
-- **A10 — kill-criterion (binding).** Every module must show measured
-  improvement on the M0 metrics via replay A/B, or be **reverted**. This
-  is the spec's own §7.1 rule elevated to a removal rule, and it is what
-  reconciles the spec's substantial machinery with the owner's standing
-  preference against accumulating filters that do not earn their keep. The
-  precedent is already set: the first Object Jump Correction fix attempt
-  was built, measured, found to make no difference, and discarded rather
-  than shipped (§14.1.4).
-
-**Two items the spec surfaces that are game-design decisions, not
-perception work** — both need the owner, and neither should be introduced
-as a side effect of building a module:
-
-1. **M10.7 proposes a ~400 ms grace period on tracking loss.**
-   `GAME_RULES.md` rule 2 currently drops the object immediately, and that
-   behaviour is built and live-verified. Changing it is a rule change.
-2. **§14.3's 3D snap gating is underspecified**: what happens when
-   `depthValid` is false at the moment of snap — fall back to 2D
-   proximity, or refuse to snap? Not decided.
-

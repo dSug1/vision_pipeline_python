@@ -171,8 +171,14 @@ def draw_landmarks_on_image(frame_image_shape, rgb_image, detection_result):
       # SWITCH_MS to ~761 ms against an intended 500.
       resolved = _hand_identity_tracker.update(
           observations, now_ms=time.perf_counter() * 1000.0)
-      for hand, label in zip(all_hands_coords, resolved):
+      ids = _hand_identity_tracker.last_track_ids
+      for i, (hand, label) in enumerate(zip(all_hands_coords, resolved)):
           hand["raw_handedness"] = hand["handedness"]   # kept for diagnostics
           hand["handedness"] = label
+          # ⭐ 4.1 / T3: the STABLE track id, carried to the client so cube
+          # ownership can key on identity instead of on the label. The label
+          # flips; 113 of 205 spurious releases were exactly that flip
+          # orphaning a held cube. -1 means "no track backs this detection".
+          hand["trackId"] = ids[i] if i < len(ids) else -1
 
   return annotated_image, all_hands_coords

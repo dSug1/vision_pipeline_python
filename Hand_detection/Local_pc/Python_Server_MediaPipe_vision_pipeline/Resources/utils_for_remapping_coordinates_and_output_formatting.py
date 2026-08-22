@@ -60,6 +60,19 @@ def extract_hand_world_by_type(hands_array, handedness):
     return hand.get("world_landmarks", []) if hand else []
 
 
+def extract_hand_track_id(hands_array, handedness):
+    """The stable DR-1 track id backing the hand currently in `handedness`'s
+    slot, or -1 if that slot is empty this frame.
+
+    ⭐ Added 2026-08-22 for queue 4.1 / T3. Same lookup key as
+    `extract_hand_by_type`/`extract_hand_world_by_type`, deliberately -- all
+    three must agree about which detection occupies which slot, or pixel, world
+    and identity data would describe different hands.
+    """
+    hand = next((h for h in hands_array if h.get("handedness") == handedness), None)
+    return int(hand.get("trackId", -1)) if hand else -1
+
+
 def remap_world_keypoints(points, expected_count=None, invert_x=False):
     """Flattens a list of world-landmark dicts (x/y/z, metric hand-relative
     coordinates, NOT pixel coordinates) into [x1, y1, z1, x2, y2, z2, ...].

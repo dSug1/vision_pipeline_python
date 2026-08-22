@@ -343,6 +343,34 @@ unaffected — `max4` won under both readings and the freeze is the conservative
 | `t5f_equal_rotation.py` | the owner's requirement split in two on the CLEAN take: **angle gain 1.11 (satisfied)**, **axis 13.0° off vertical (the real defect)** |
 | `t6_mirror_route_ab.py` | ⛔ **production vs debug**: MediaPipe is **NOT mirror-equivariant**. Same frames, two routes → **7.66 mm / 11.83°** apart in VIDEO mode, **10.07 mm / 20.14°** in the stateless IMAGE control. **Not tracking drift** — the control makes it larger |
 
+### M9 / item 4.1 — relative depth (2026-08-22)
+
+| script | purpose |
+|---|---|
+| `m9_depth_envelope.py` | the **A10 test** for `Resources/palm_depth.py`, two-sided: RESPONSIVE on `depth_sweep` **3.68x**, and STABLE on rotation-in-place. ⭐ Reports the **DRIFT FLOOR** — a span parallel to the rotation axis cannot foreshorten, so its variation is the operator genuinely moving. On the clean yaw take the floor is **1.40x**, so the estimator's OWN error is **1.30x**, not the raw 1.82x. ⚠ **Never quote the raw stable span alone.** Naive width-only scores **8.04x** there |
+| `verify_palm_depth.py` | 24 golden vectors, dependency-free — the artifact a port must reproduce (U3 discipline) |
+
+⭐ **The envelope answered the calibration question**: an ordinary push/pull moves
+the anchor over a **3.59x range** (ratio 0.53–1.89) with observability holding at
+0.85. Ample dynamic range, and because `d0` is captured AT GRAB every grab
+re-normalises — so **no min/max calibration screen is needed** to make Z work.
+
+### 4.1 / T3 — ownership on the stable track id (2026-08-22)
+
+| script | purpose |
+|---|---|
+| `verify_track_ownership.py` | unit guard: a relabel must NOT orphan a held cube, a DIFFERENT track must not inherit it, **id 0 is a valid track**, and §6 — the **stranded-cube regression** the owner found live |
+| `t3_ownership_live_ab.py` | replays a live A/B session and counts orphaned frames per scheme. ⚠ Counts ONLY frames where the holding PHYSICAL hand is still on screen — **an earlier version counted the operator putting a hand down and reported a meaningless 779 vs 3** |
+| `t3_stranded_cube_check.py` | longest run of frames a cube is owned by a track present in NO slot. A short run is D2's coast working; a long run is the bug. ⚠ Needs a recording with **per-arm** cubes |
+
+**Live A/B across three sessions** (orphaned frames, LABEL vs TRACK):
+**794/0** (1 relabel), **377/0** (24 relabels), **15/0** (9 relabels).
+**Strand check after the fix**: longest run 4–5 frames = within D2's ~4-frame
+coast, then released. Pre-fix it would have run to the end of the session.
+
+⭐ **Production can now record too** — `VISION_RECORD=1` on `PythonApp_Main.py`,
+same JSONL schema, so every script here reads a production take unchanged.
+
 ### Recording-corpus utilities
 
 | script | purpose |

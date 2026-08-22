@@ -2396,6 +2396,191 @@ migration is done alongside 4.1/M9, **`trackId` is a required field, not an
 optional nicety**, and `HandsTriggeredActions`'s `cube_owned_by(handedness)` moves
 to it. Evidence: `analysis/t3_relabel_threshold.py`, `analysis/d2_bridge_ab.py`.
 
+### 2.2.1 ✅ THE `trackId` WIRE MIGRATION IS BUILT (2026-08-22) — queue 4.1 / T3
+
+§2.2's addendum required that when the migration happens with 4.1, **`trackId` is
+a required field, not an optional nicety**, and that `cube_owned_by(handedness)`
+moves to it. **Done.**
+
+**⚠ DR-1 had no stable id to send — that had to be built first.** `HandTrack`
+identified tracks only by LIST POSITION, and `HandIdentityTracker.update()`
+rebuilds that list every frame as tracks age out. A monotonic `track_id` was
+added, never reused, plus `tracker.last_track_ids` parallel to the observations.
+⭐ Exposed as an ATTRIBUTE rather than folded into `update()`'s return, so the
+existing callers (both tools and the analysis harnesses) keep working unchanged.
+
+⚠⚠ **A real bug was caught while writing it, and it is the kind that would have
+been silent**: the ids were first published AFTER the age-out filter, but
+`obs_to_track` holds INDICES into `self.tracks` — and the filter rebuilds that
+list, so every index after a removed track shifts by one. It would have attached
+the wrong track's id to a hand, intermittently, only when a track ended.
+Publication now happens BEFORE the age-out, with a comment saying why.
+
+**The path, end to end:**
+
+| step | where |
+|---|---|
+| stable id assigned | `hand_identity.HandTrack.track_id` (monotonic, never reused) |
+| published per frame | `HandIdentityTracker.last_track_ids` |
+| attached to each hand | `hands_visualizer.py` → `hand["trackId"]` |
+| pulled per slot | `extract_hand_track_id()` — ⚠ **same lookup key** as the pixel and world extractors, so all three describe the same hand |
+| sent | `Server.SendHandTracksPacket` → `{"type": "hand_tracks", "data": [left, right]}`, **before** the frame's `"hands"` packet |
+| decoded | `PythonApp_Main` → `on_hand_tracks_frame()` |
+| used | `HandsTriggeredActions._owner_key()` → `snap_cube` / `cube_owned_by` |
+
+⭐ **`_owner_key()` returns the track id when there is one and the handedness
+string otherwise.** ⚠ **The fallback is not optional**: with an older server, or
+on a frame where DR-1 cannot resolve identity, ownership degrades to the old
+behaviour instead of breaking. **A cube must never become unreleasable because an
+id went missing.**
+
+⚠ **`Cube.owner` is now an OWNER KEY, not a hand name** — compare it, never parse
+it. Typed loosely on purpose.
+
+⭐ **N6 parity kept**: `LiveSnapDebug.py` has the same `_owner_key`, reading the
+ids straight off the in-process tracker instead of the wire. Same value, same
+semantics.
+
+**Verification**: `analysis/verify_track_ownership.py` (10 checks, exercising
+production's own `_owner_key` and `CubeWindow`'s own ownership primitives — not a
+reimplementation, per `VerifyChiralityFixture.py`'s reasoning). It proves the
+headline case directly: **a relabel no longer orphans a held cube**, while a
+genuinely different track still does not inherit it — the exact distinction the
+reverted position-based fix got wrong. ⚠ It also pins that **id 0 is a valid
+track**, not "absent"; a truthiness test instead of `>= 0` would break the first
+hand of every session. Full suite 13/13 + chirality fixture PASS.
+
+⛔ **NOT yet live-tested.** The T3 defect is measured at 113/205 spurious releases;
+whether that number actually falls needs a live session, and `d2_bridge_ab.py` is
+the harness that would show it.
+
+### 2.2.2 ⭐ THE `trackId` MIGRATION IS MEASURED ON A LIVE SESSION (2026-08-22)
+
+Session `2026-08-22_151348_t3_ownership_ab` — 1187 frames, 816 with a hand, ~48 s.
+Rig: `LiveSnapDebug --ownership-ab`, two panels, **identical bridge config, one
+camera, one detection, one identity resolution — ownership keying is the only
+variable**. Harness: `analysis/t3_ownership_live_ab.py`.
+
+| scheme | frames the held cube was orphaned **while the holding hand was still on screen** |
+|---|---|
+| LABEL (pre-4.1) | **794** |
+| TRACK id (shipped) | **0** |
+
+⭐⭐ **READ THE SHAPE, NOT THE SIZE.** There was exactly **ONE** relabel event in
+the session. A relabel is a one-off with a **LASTING** consequence: once the
+holding hand moves to the other slot it STAYS there, so that single flip left the
+label-keyed cube orphaned for the remaining ~32 s of the hold. ⭐ **That is the
+mechanism behind T3's 113-of-205 spurious releases — few flips, each permanent
+until the operator re-grabs.**
+
+⚠⚠ **A MEASUREMENT ARTIFACT WAS CAUGHT AND CORRECTED HERE — the first version of
+this harness was WRONG.** It counted every frame on which the holding LABEL was
+absent, and reported 779 vs 3. But that counts the operator putting the hand down
+or switching hands, which **no ownership scheme can or should survive** — it is
+not evidence about keying at all. The corrected metric counts only frames where
+**the holding PHYSICAL hand is still on screen** (its track id is present), which
+is the only place a failure to resolve means the key lost a hand it should have
+kept. ⚠ The suspicious signal was the ratio itself: 779 of 816 hand-frames from a
+single relabel is not a mechanism, it is a bug in the metric.
+
+⭐⭐ **SECOND SESSION, MUCH STRONGER (2026-08-22)** —
+`2026-08-22_152603_t3_ownership_ab2`, **3530 frames, 1703 with a hand (~2.2 min)**.
+The owner provoked the failure properly this time: the DR-1 log is full of
+`switch confirmed: 'Right' -> 'Left'` events.
+
+| | session 1 | **session 2** |
+|---|---|---|
+| relabel events | 1 | **24** |
+| ids | reconstructed by replay | ⭐ **read from the recording** |
+| LABEL orphaned frames | 794 | **377** |
+| TRACK orphaned frames | 0 | **0** |
+
+⭐ **24 independent relabels, and the track-keyed cube was orphaned on ZERO of
+them.** The label-keyed control lost the cube for 377 frames (~15 s cumulative)
+while the holding hand was plainly still on screen. **This is the result 4.1/T3
+was built for.** ⚠ Still n=1 SESSION — 24 events is a real sample of the
+mechanism, not a population rate; do not convert it into a per-minute figure.
+
+⚠ **Limits of this result, stated plainly:**
+1. **n = 1 session, 1 relabel event.** The direction is unambiguous and the
+   mechanism is understood, but the magnitude must not be quoted as a rate.
+2. **It exercises the DEBUG tool's parity path**, which reads ids from the
+   in-process tracker. **Production reads them off the wire** — same values, same
+   semantics, different code path. ⛔ **A production run is still owed.**
+3. Ids were **reconstructed by replay** rather than read from the recording,
+   because `--record` stored no `trackId` at the time. Sound (DR-1 is
+   deterministic on identical input) but weaker than stored evidence. ⭐ **Fixed:
+   the recorder now writes `trackId`**, so future takes carry it.
+
+### ⛔⛔ 2.2.3 THE STRANDED-CUBE BUG — INTRODUCED BY THIS MIGRATION, FOUND LIVE BY THE OWNER (2026-08-22)
+
+**Owner, during session 2**: *"in the shipped window, at one point there was a
+bug: the cube was indicated as grabbed but did not move at all and the free hand
+could not grab it again."*
+
+**Cause — the migration's own fallback, turned against it.** The release pass read
+`cube_owned_by(_owner_key(handedness))`. When a hand's track ENDS,
+`_hand_track_ids[hand]` becomes -1, so `_owner_key` degrades to the handedness
+LABEL — but the cube is owned by an **int track id**, so the lookup misses,
+`continue` runs, and release never fires. ⚠ **Track ids are monotonic and never
+reused**, so the cube stays owned by an id that can never appear again:
+
+| symptom | mechanism |
+|---|---|
+| "indicated as grabbed" | `owner is not None` → the snap border still draws |
+| "did not move at all" | no live hand resolves to that owner key |
+| "could not grab it again" | `unowned_cube_names()` excludes any owned cube |
+
+⚠⚠ **THE LESSON: the fallback fires exactly when the id is missing, which is
+exactly when release needs to find the cube owned by that now-absent id.** It was
+described (in §2.2.1, and in the code) as a safety net; it was the defect. Under
+the OLD label keying this was unreachable — **the migration introduced it.**
+
+⭐ **FIX**: drive release from the **CUBES**, not from the current frame's owner
+key, and govern each held cube by the tracker of whichever slot its owning TRACK
+occupies now (`_owner_hand_of_cube`, refreshed per frame):
+
+- **relabel** → the track changes slot, the governing hand follows → cube HELD
+- **dropout** → track absent, the LAST governing hand is deliberately KEPT so its
+  tracker coasts D2's 150 ms → then releases. ⚠ Clearing it here instead would
+  release on the first missed frame and **undo Phase D**
+- **track ends** → same path → the cube RELEASES instead of stranding
+
+⚠ **Why the tests missed it**: `verify_track_ownership.py` checked that a
+*relabel* keeps the cube, but never that a *track ending* releases it. The case is
+now covered (it asserts the old lookup returns None while the cube is still owned
+— reproducing the strand — that the governing hand is KEPT when the track vanishes,
+and that it FOLLOWS a relabel). N6 parity kept in `LiveSnapDebug`, per-arm.
+
+⚠ **A second instrumentation gap surfaced while verifying this**: `--record` stored
+only `arms[0].cubes`, and in the ownership rig arms[0] is the LABEL control — so
+the SHIPPED arm's cubes were the ones missing from the file, and no recording made
+before this could answer the stranding question. **The recorder now stores every
+arm**, and `analysis/t3_stranded_cube_check.py` measures the defect directly
+(longest run of frames a cube is owned by a track present in no slot; a short run
+is D2's coast working, a long run is the bug).
+
+✅⭐ **THE FIX IS CONFIRMED FROM DATA (2026-08-22, session 4)** —
+`2026-08-22_153609_t3_strand_check`, 1280 frames, only **398 with a hand** (the
+operator repeatedly took the holding hand fully out of frame, which is the
+protocol this defect needs). First recording able to answer the question, because
+it stores **both** arms.
+
+| arm | cube | longest run owned by an ABSENT track |
+|---|---|---|
+| `blend:label` | — | never owned by an absent track (string owners cannot strand) |
+| **`blend:track`** | large | **4 frames** |
+| **`blend:track`** | small | **5 frames** |
+
+⭐ At 26.7 fps, D2's 150 ms coast is ~4 frames. So the cube is held briefly across
+a dropout — **exactly the designed behaviour** — and then released. ⚠ Before the
+fix the run would have continued to the END of the session. **No strand.**
+⭐ The runs also prove the scenario was genuinely exercised: a cube must be GRABBED
+before its hand can leave, so a non-zero run is itself evidence the test ran.
+
+⚠ Still to do: the same confirmation on **production**, which reaches the ids over
+the wire rather than in-process.
+
 ### 2.3 ✅ D1 AS BUILT (2026-08-21) — `Resources/hand_state.py`
 
 | | |

@@ -312,10 +312,18 @@ def palm_width(points_xy):
 class HandTrack:
     """One persistent hand identity. `label` is provisional until `locked`."""
 
-    def __init__(self, centroid, raw_label, score, pw, log=print, owner=None):
+    def __init__(self, centroid, raw_label, score, pw, log=print, owner=None,
+                 track_id=-1):
         # `owner` supplies the CURRENT frame-rate-derived dwells (N7). None means
         # "use the module defaults", which keeps this class usable standalone.
         self.owner = owner
+        # ⭐ STABLE IDENTITY (2026-08-22, queue 4.1 / T3). The label is NOT an
+        # identity -- it flips, and 113 of 205 spurious cube releases were
+        # exactly that flip orphaning a held cube. `track_id` is monotonic per
+        # tracker and never reused, so anything keyed on it survives a relabel.
+        # ⚠ List POSITION is not an identity either: `self.tracks` is filtered
+        # every frame as tracks age out, so indices shift under you.
+        self.track_id = track_id
         self.history = [centroid]
         self.votes = {"Left": 0.0, "Right": 0.0}
         self.votes[raw_label] = score
@@ -380,6 +388,14 @@ class HandIdentityTracker:
 
     def __init__(self, log=print, fallback_fps=FALLBACK_FPS):
         self.tracks = []
+        self._next_track_id = 0
+        # Parallel to the `observations` list passed to update(): the stable
+        # track id backing each detection, or -1 where none does (a detection
+        # that started no track, e.g. the "no free slot" fallback).
+        # ⭐ Exposed as an ATTRIBUTE rather than folded into update()'s return so
+        # existing callers keep working unchanged -- update() still returns just
+        # the labels (analysis harnesses depend on that).
+        self.last_track_ids = []
         self._log = log
         self.rate = FrameRateEstimator(fallback_fps)
         self._logged_fps = None
@@ -465,7 +481,9 @@ class HandIdentityTracker:
             # With two hands tracked they are almost certainly one of each, so a
             # new track takes the label the existing track is not using.
             start_label = free if (free and self.tracks) else lab
-            tr = HandTrack(cen, start_label, sc, pw, log=self._log, owner=self)
+            tr = HandTrack(cen, start_label, sc, pw, log=self._log, owner=self,
+                           track_id=self._next_track_id)
+            self._next_track_id += 1
             if free and self.tracks:
                 tr.locked = True
                 self._log(f"[hands] identity locked: '{start_label}' "
@@ -523,6 +541,16 @@ class HandIdentityTracker:
             self._log(f"[hands] duplicate label would have been emitted; "
                       f"flipped the non-track-backed detection to "
                       f"'{assigned[loser]}'")
+
+        # --- publish the stable id backing each observation (4.1 / T3) ---
+        # ⚠ MUST happen BEFORE the age-out below. `obs_to_track` holds INDICES
+        # into `self.tracks`, and the age-out rebuilds that list -- every index
+        # after a removed track shifts by one, so reading them afterwards
+        # silently returns the wrong track's id. (Caught while writing this.)
+        self.last_track_ids = [-1] * len(observations)
+        for oi, ti in obs_to_track.items():
+            if 0 <= ti < len(self.tracks):
+                self.last_track_ids[oi] = self.tracks[ti].track_id
 
         # --- age out tracks that were not seen this frame ---
         for ti, tr in enumerate(self.tracks):

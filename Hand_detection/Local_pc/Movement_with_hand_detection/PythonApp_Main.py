@@ -3,7 +3,10 @@ import sys
 import os
 from typing import List, Tuple
 
-from Resources.HandsTriggeredActions import on_hands_frame, on_hands_world_frame, configure_source_resolution
+from Resources.HandsTriggeredActions import (
+    on_hands_frame, on_hands_world_frame, on_hand_tracks_frame,
+    configure_source_resolution,
+)
 
 # "hands" packets carry both hands' full 21-point landmark lists, flattened
 # as [left_x0, left_y0, ..., left_x20, left_y20, right_x0, right_y0, ...,
@@ -48,6 +51,15 @@ def receive_float_array(datatype: str, array: List[float]) -> None:
     elif datatype == "face":
         # TODO: Add logic for face movement
         pass
+
+    elif datatype == "hand_tracks":
+        # Stable DR-1 track ids, [Left, Right], -1 = slot empty (queue 4.1/T3).
+        # Sent BEFORE this frame's "hands" packet, so ownership resolution below
+        # already has the current identities.
+        if len(array) < 2:
+            print(f"[MainPage] Warning: 'hand_tracks' array too short ({len(array)}, expected 2).")
+        else:
+            on_hand_tracks_frame(int(array[0]), int(array[1]))
 
     elif datatype == "hands_world":
         if len(array) < VALUES_PER_HANDS_WORLD_PACKET:

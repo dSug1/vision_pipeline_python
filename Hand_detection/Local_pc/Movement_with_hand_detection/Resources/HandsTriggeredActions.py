@@ -1,5 +1,9 @@
+import atexit
+import json
 import math
+import os
 import time
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from .CubeWindow import CubeWindow
 # Palm chirality geometry, SHARED with LiveSnapDebug.py so the sign convention
@@ -221,6 +225,142 @@ def _top_left_for_center(center: Tuple[float, float], size: int) -> Tuple[float,
     return (center[0] - size / 2, center[1] - size / 2)
 
 
+# ⭐⭐ OWNERSHIP KEYS ON THE STABLE TRACK ID, NOT THE HANDEDNESS LABEL
+# (queue 4.1 / T3, 2026-08-22). The label is not an identity: it flips, and
+# **113 of 205 measured spurious cube releases** were exactly that flip
+# orphaning a held cube -- larger than true dropouts (83).
+#
+# ⛔ A client-side repair for this was built, live-tested and REVERTED
+# (`git show d4972b5`): it inferred "same hand" from POSITION, and two hands in
+# the same place are indistinguishable by position -- which is what OCCLUSION
+# is. Live, it handed a held cube to the operator's other physical hand. The
+# generalisable lesson recorded then was "prefer waiting for the layer that
+# knows"; this IS that layer.
+#
+# ⚠ THE FALLBACK IS NOT OPTIONAL. If the wire carries no id (-1 -- an older
+# server, or a frame where DR-1 could not resolve identity) ownership degrades
+# to the old label key rather than breaking. A cube must never become
+# unreleasable because an id went missing.
+_hand_track_ids: Dict[str, int] = {h: -1 for h in TRACKED_HANDS}
+
+
+def on_hand_tracks_frame(left_id: int, right_id: int) -> None:
+    """Store this frame's stable DR-1 track ids. Called from the "hand_tracks"
+    packet, which the server sends BEFORE the same frame's "hands" packet."""
+    _hand_track_ids["Left"] = int(left_id)
+    _hand_track_ids["Right"] = int(right_id)
+
+
+# ⛔⛔ THE STRANDED-CUBE BUG, AND WHY RELEASE CANNOT USE `_owner_key` (2026-08-22)
+#
+# Owner report, live: "the cube was indicated as grabbed but did not move at all
+# and the free hand could not grab it again."
+#
+# Root cause, introduced BY the track-id migration itself. The release pass used
+# to read `cube_owned_by(_owner_key(handedness))`. When a hand's track ENDS,
+# `_hand_track_ids[handedness]` goes to -1, so `_owner_key` degrades to the LABEL
+# -- but the cube is owned by an int TRACK ID, so the lookup misses, `continue`
+# runs, and the release never fires. Track ids are monotonic and never reused, so
+# that cube stays owned by a dead id forever: still drawn with the snap border
+# (owner is not None), driven by nothing, and excluded from
+# `unowned_cube_names()` so it can never be re-grabbed. All three reported
+# symptoms, exactly.
+#
+# ⚠ The fallback made it worse, not better: it fires precisely when the id is
+# missing, which is precisely when we need to find the cube owned by that now
+# absent id. Under the OLD label keying this was unreachable.
+#
+# ⭐ THE FIX: drive release from the CUBES, not from the current frame's owner
+# key, and govern each held cube by the tracker of whichever slot its owning
+# TRACK is in right now (`_owner_hand_of_cube`, refreshed every frame).
+#   - relabel  -> the track moves slot, the governing hand follows it, cube HELD
+#   - dropout  -> the track is absent, the LAST governing hand's tracker coasts
+#                 (D2's 150 ms) and only then releases -- Phase D preserved
+#   - track end-> same path, so the cube is released instead of stranded
+_owner_hand_of_cube: Dict[str, str] = {}
+
+# ⛔⛔ SECOND STRAND CAUSE, found on the FIRST recorded PRODUCTION run
+# (2026-08-22, `2026-08-22_154426_production_4_1`): cubes stayed owned by an
+# absent track for runs of 40 frames (~1.6 s), repeatedly.
+#
+# ⚠ IT IS NOT "the track ended" -- the hands were still DETECTED. Their track ids
+# went to -1 while landmarks kept arriving:
+#     f1997  hands=[('Left', 3), ('Right', 2)]  owner=3
+#     f1999  hands=[('Left',-1), ('Right',-1)]  owner=3   <- stranded
+#
+# ⭐ ROOT CAUSE, server-side: `_normalized_to_pixel_coordinates` returns None for
+# any landmark outside [0,1] -- i.e. a hand PARTIALLY OUT OF FRAME. One None makes
+# `palm_centroid` None, which fails `all(o[0] is not None ...)`, which skips DR-1
+# ENTIRELY for that frame, so NO hand gets a trackId and the wire carries -1 for
+# both slots. Moving a hand near the frame edge is enough.
+#
+# The cube is then owned by an int that matches no live key, while its governing
+# slot still holds a DETECTED hand -- so `holds_track` is True and the release
+# above never fires. Un-driveable and un-regrabbable: the owner's exact report.
+#
+# ⚠ THIS IS A SAFETY NET, NOT THE ROOT FIX. The root fix is server-side (DR-1
+# should survive a partially-out-of-frame hand, e.g. centroid over the VALID
+# landmarks) and is a change to measured identity behaviour, so it is the owner's
+# call -- see the queue. This bounds the damage meanwhile: a cube may never be
+# stranded FOREVER.
+#
+# ⚠ The threshold is deliberately LONGER than D2's 150 ms coast, so this cannot
+# fight Phase D: it only fires well after the bridge has already given up.
+OWNER_ABSENT_RELEASE_MS = 700.0
+_owner_absent_since: Dict[str, float] = {}
+
+
+def _release_stranded_cubes(now_ms: float) -> set:
+    """Release any cube whose owning TRACK has been unrepresented too long."""
+    live = {tid for tid in _hand_track_ids.values() if tid >= 0}
+    released = set()
+    for name, cube in list(cube_window.cubes.items()):
+        owner = cube.owner
+        if owner is None or not isinstance(owner, int):
+            _owner_absent_since.pop(name, None)
+            continue
+        if owner in live:
+            _owner_absent_since.pop(name, None)
+            continue
+        first = _owner_absent_since.setdefault(name, now_ms)
+        if now_ms - first >= OWNER_ABSENT_RELEASE_MS:
+            cube_window.release_cube(name)
+            _owner_absent_since.pop(name, None)
+            _owner_hand_of_cube.pop(name, None)
+            released.add(name)
+    return released
+
+
+def _refresh_cube_owner_hands() -> None:
+    """Follow each held cube's owning TRACK to whichever slot holds it now.
+
+    ⚠ Only updates when the track IS visible. When it is not, the last known
+    governing hand is deliberately KEPT, because that hand's tracker is what
+    implements D2's coast -- clearing it here would release on the first missed
+    frame and undo Phase D."""
+    id_to_hand = {tid: h for h, tid in _hand_track_ids.items() if tid >= 0}
+    for name, cube in cube_window.cubes.items():
+        if cube.owner is None:
+            _owner_hand_of_cube.pop(name, None)
+        elif isinstance(cube.owner, int):
+            hand = id_to_hand.get(cube.owner)
+            if hand is not None:
+                _owner_hand_of_cube[name] = hand
+        else:
+            _owner_hand_of_cube[name] = cube.owner      # label-fallback owner
+
+
+def _owner_key(handedness: str):
+    """The value cube ownership is keyed on for this hand THIS FRAME.
+
+    Returns the stable track id when one is available, else the handedness
+    string. ⚠ Never persist the result: it is re-resolved every frame, and that
+    is the whole point -- the same physical hand keeps its key across a relabel.
+    """
+    tid = _hand_track_ids.get(handedness, -1)
+    return tid if tid >= 0 else handedness
+
+
 def _try_snap(handedness: str, hand_pos: Tuple[float, float], exclude=frozenset()) -> Optional[str]:
     """Claims the nearest unowned cube within GRAB_RADIUS of hand_pos, if
     any (skipping names in `exclude` — see on_hands_frame's same-frame
@@ -247,7 +387,7 @@ def _try_snap(handedness: str, hand_pos: Tuple[float, float], exclude=frozenset(
         if dist <= grab_radius and (best_dist is None or dist <= best_dist):
             best_name, best_dist = name, dist
     if best_name is not None:
-        cube_window.snap_cube(best_name, handedness)
+        cube_window.snap_cube(best_name, _owner_key(handedness))
     return best_name
 
 
@@ -483,6 +623,102 @@ _hand_rotation = palm_rotation.Horn(palm_rotation.PALM_LANDMARKS, "ref")
 _hand_rotation_states: Dict[str, Optional[dict]] = {h: None for h in TRACKED_HANDS}
 
 
+# ---------------------------------------------------------------------------
+# OPTIONAL SESSION RECORDING (2026-08-22) — production had none, and that was a
+# real gap: every debug session could be measured afterwards while production
+# could only be described. The stranded-cube bug took three exchanges to pin
+# down for exactly that reason.
+#
+# ⭐ The schema is DELIBERATELY IDENTICAL to `LiveSnapDebug.py --record`, so every
+# existing harness (`analysis/t5*`, `t3_ownership_live_ab.py`,
+# `t3_stranded_cube_check.py`) reads a production take with no changes.
+#
+# ⚠ Enabled by ENVIRONMENT VARIABLE, not a CLI flag: production is launched
+# PythonApp_Main -> Launcher -> Client, so a flag would need plumbing through
+# three processes while an env var is inherited by all of them for free.
+#     VISION_RECORD=1                 turn it on
+#     VISION_RECORD_TAG=<name>        session folder suffix
+#     VISION_RECORD_NOTE=<text>       stored in meta.json
+#
+# ⚠ Frames are appended AS THEY ARRIVE, not buffered until exit. Production has
+# no clean shutdown path here, and a buffered take would be lost whenever the
+# window is closed with the X button -- which is how these sessions usually end.
+_RECORD_ROOT = r"E:\Python\Recordings for vision_pipeline\Recordings_perception_layer"
+_rec = {"fh": None, "dir": None, "n": 0, "t0": None, "hands": 0}
+
+
+def _record_open():
+    if _rec["fh"] is not None or os.environ.get("VISION_RECORD") != "1":
+        return
+    tag = os.environ.get("VISION_RECORD_TAG", "production")
+    stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    d = os.path.join(_RECORD_ROOT, "sessions", f"{stamp}_{tag}")
+    try:
+        os.makedirs(d, exist_ok=True)
+        fh = open(os.path.join(d, "raw_landmarks.jsonl"), "w", encoding="utf-8")
+    except OSError as e:
+        print(f"[record] cannot record, continuing WITHOUT it: {e}")
+        os.environ["VISION_RECORD"] = "0"      # do not retry every frame
+        return
+    _rec.update(fh=fh, dir=d, t0=time.perf_counter())
+    print(f"[record] RECORDING -> {d}")
+    atexit.register(_record_close)
+
+
+def _record_close():
+    if _rec["fh"] is None:
+        return
+    try:
+        _rec["fh"].close()
+        elapsed = time.perf_counter() - (_rec["t0"] or time.perf_counter())
+        with open(os.path.join(_rec["dir"], "meta.json"), "w", encoding="utf-8") as m:
+            json.dump({"sequence": os.environ.get("VISION_RECORD_TAG", "production"),
+                       "source": "HandsTriggeredActions (PRODUCTION, over the socket)",
+                       "note": os.environ.get("VISION_RECORD_NOTE", ""),
+                       "frames": _rec["n"], "duration_s": round(elapsed, 2),
+                       "measured_fps": round(_rec["n"] / elapsed, 2) if elapsed else 0.0,
+                       "frames_with_hand": _rec["hands"]}, m, indent=2)
+        print(f"[record] saved {_rec['n']} frames ({_rec['hands']} with a hand) "
+              f"to {_rec['dir']}")
+    except Exception as e:
+        print(f"[record] error while closing: {e}")
+    finally:
+        _rec["fh"] = None
+
+
+def _record_frame(hands):
+    """One line per frame, same shape as the debug recorder's."""
+    if _rec["fh"] is None:
+        return
+    rec_hands = []
+    for handedness, landmarks in hands:
+        if not _is_detected(landmarks):
+            continue
+        world = _latest_world_landmarks.get(handedness) or []
+        rec_hands.append({
+            "handedness": handedness,
+            "trackId": int(_hand_track_ids.get(handedness, -1)),
+            "landmarks": [[round(x, 2), round(y, 2)] for x, y in landmarks],
+            "world_landmarks": [[round(a, 5), round(b, 5), round(c, 5)]
+                                for a, b, c in world],
+        })
+    row = {
+        "tCapture": round((time.perf_counter() - _rec["t0"]) * 1000.0, 2),
+        "hands": rec_hands,
+        # Same per-arm nesting the debug recorder uses, so one harness reads both.
+        "cubes": {"production": {
+            name: {"owner": c.owner,
+                   "orientation": [round(v, 6) for v in c.orientation]}
+            for name, c in cube_window.cubes.items()}},
+    }
+    _rec["fh"].write(json.dumps(row) + "\n")
+    _rec["n"] += 1
+    if rec_hands:
+        _rec["hands"] += 1
+    if _rec["n"] % 50 == 0:
+        _rec["fh"].flush()
+
+
 def on_hands_world_frame(left_world: List[Tuple[float, float, float]], right_world: List[Tuple[float, float, float]]) -> None:
     """Called once per received "hands_world" packet, storing each hand's
     latest metric world landmarks for on_hands_frame (below) to read when
@@ -535,6 +771,12 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     connecting, since "hands_world" is sent every frame)."""
     hands = (("Left", left_landmarks), ("Right", right_landmarks))
 
+    # Optional session recording (VISION_RECORD=1). Opened lazily on the first
+    # frame so a run without it pays nothing. Recorded BEFORE this frame's
+    # gesture logic, so the row shows the state the logic was about to act on.
+    _record_open()
+    _record_frame(hands)
+
     # D1: resolve every hand's tracking state FIRST, before any pass acts on it,
     # so the release pass and the per-hand pass below cannot disagree about
     # whether a hand is present this frame. `time.perf_counter() * 1000.0` is
@@ -547,9 +789,19 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
         _hand_state_trackers[handedness].update(_is_detected(landmarks), now_ms)
 
     released_this_frame = set()
-    for handedness, landmarks in hands:
-        owned_cube = cube_window.cube_owned_by(handedness)
-        if owned_cube is None:
+    # Bound the strand FIRST, so a cube owned by a track the wire has stopped
+    # representing cannot survive indefinitely (see OWNER_ABSENT_RELEASE_MS).
+    released_this_frame |= _release_stranded_cubes(now_ms)
+    _refresh_cube_owner_hands()
+    for owned_cube, cube in list(cube_window.cubes.items()):
+        if cube.owner is None:
+            continue
+        handedness = _owner_hand_of_cube.get(owned_cube)
+        if handedness is None:
+            # Owned, but its track has never been seen in any slot -- nothing can
+            # govern it, so releasing is the only way it does not strand.
+            cube_window.release_cube(owned_cube)
+            released_this_frame.add(owned_cube)
             continue
         if not _hand_state_trackers[handedness].holds_track:
             # Tracking lost: release (freeze in place), matching
@@ -627,7 +879,7 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             #     held cube, so arming it on an empty hand would leave it armed
             #     until the NEXT grab and then blend a grab that never bridged.
             _hand_orientation_filters[handedness].omega = IDENTITY_QUATERNION
-            if cube_window.cube_owned_by(handedness) is not None:
+            if cube_window.cube_owned_by(_owner_key(handedness)) is not None:
                 _resync_blend_left[handedness] = RESYNC_BLEND_FRAMES
 
         hand_quat_now = None
@@ -657,7 +909,7 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                 if _d is not None:          # None = degenerate fit: keep the filtered value
                     hand_quat_now = _d
 
-        owned_cube = cube_window.cube_owned_by(handedness)
+        owned_cube = cube_window.cube_owned_by(_owner_key(handedness))
         if owned_cube is None:
             can_snap = (not thumb_outward) or _thumb_outward_snap_allowed[handedness]
             if can_snap:

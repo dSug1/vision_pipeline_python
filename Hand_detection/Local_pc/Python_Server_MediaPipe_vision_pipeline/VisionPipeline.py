@@ -6,9 +6,11 @@ from Resources.Server import Start_socket_server as StartServer
 from Resources.Server import SendPacket as SendPacketThroughSocket
 from Resources.Server import SendMetaPacket as SendMetaPacketThroughSocket
 from Resources.Server import SendHandsWorldPacket as SendHandsWorldPacketThroughSocket
+from Resources.Server import SendHandTracksPacket as SendHandTracksPacketThroughSocket
 from Resources.utils_for_remapping_coordinates_and_output_formatting import (
     remap_keypoints,
     remap_world_keypoints,
+    extract_hand_track_id,
     extract_hand_by_type,
     extract_hand_world_by_type
 )
@@ -109,10 +111,18 @@ try:
         remap_world_keypoints(right_world_landmarks, expected_count=21, invert_x=False)
     )
 
+    # Stable DR-1 track ids for the two slots (4.1 / T3). Two ints, same slot
+    # order as every other hands packet: [Left, Right]. -1 = slot empty.
+    hand_track_ids = [
+        extract_hand_track_id(allHandsLandmarksCoordinatesArray, "Left"),
+        extract_hand_track_id(allHandsLandmarksCoordinatesArray, "Right"),
+    ]
+
     # Send the in-memory coordinates straight over the socket (no disk round-trip).
     try:
         # hands_world sent BEFORE hands -- see SendHandsWorldPacket's
         # docstring for why the order matters.
+        SendHandTracksPacketThroughSocket(hand_track_ids, connection)
         SendHandsWorldPacketThroughSocket(flat_hands_world_coords, connection)
         SendPacketThroughSocket(flat_face_coords, flat_hands_coords, connection)
     except (BrokenPipeError, ConnectionResetError, OSError) as e:

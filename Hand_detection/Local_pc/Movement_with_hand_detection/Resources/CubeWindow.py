@@ -149,12 +149,20 @@ class Cube:
     gesture design (proximity snap, open-palm rotate, closed-fist release)
     that grew out of Part One's original grab/release/translate/depth/
     rotate matrix (`PART_ONE.md` §3) after pinch was archived 2026-08-01.
-    `owner` is None (idle) or a handedness string ("Left"/"Right") —
-    either hand can snap either object, no fixed pairing."""
+    `owner` is None (idle) or an OWNER KEY — either hand can snap either
+    object, no fixed pairing.
+
+    ⭐ **The owner key is the stable DR-1 TRACK ID (an int) since 2026-08-22**
+    (queue 4.1 / T3), not a handedness string. The label is not an identity: it
+    flips, and 113 of 205 measured spurious releases were that flip orphaning a
+    held cube. ⚠ It falls back to the handedness string when no id is available
+    (-1 on the wire), so this field is deliberately typed loosely — it is
+    whatever `HandsTriggeredActions._owner_key()` returned. **Compare it, never
+    parse it**: nothing may assume it is a hand name."""
     mesh: Mesh
     size: int
     position: Tuple[float, float] = (0.0, 0.0)
-    owner: Optional[str] = None
+    owner: Optional[object] = None   # owner key: track id (int), or a handedness str
     # Rotation-while-snapped state (§13.7) — orientation is a quaternion
     # (w,x,y,z), relative-to-grab baseline pair captured at the instant of
     # grab so the object keeps its OWN orientation at that moment rather
@@ -265,22 +273,26 @@ class CubeWindow:
         snap."""
         return [name for name, cube in self.cubes.items() if cube.owner is None]
 
-    def cube_owned_by(self, handedness: str):
-        """The name of the cube currently snapped to `handedness`
-        ("Left"/"Right"), or None if that hand holds nothing. Either hand
+    def cube_owned_by(self, owner_key):
+        """The name of the cube currently snapped to `owner_key`
+        (a stable track id, or a handedness string as fallback -- see
+        `Cube.owner`), or None if that hand holds nothing. Either hand
         can hold at most one cube at a time (sticky grab, one cube per
         hand) — enforced by construction here since snap only ever assigns
         an unowned cube."""
         for name, cube in self.cubes.items():
-            if cube.owner == handedness:
+            if cube.owner == owner_key:
                 return name
         return None
 
-    def snap_cube(self, cube_name: str, handedness: str) -> None:
-        """Claim an unowned cube for `handedness`. Caller (`HandsTriggeredActions.py`)
-        is responsible for the proximity/arbitration check — this just
-        performs the assignment."""
-        self.cubes[cube_name].owner = handedness
+    def snap_cube(self, cube_name: str, owner_key) -> None:
+        """Claim an unowned cube for `owner_key`. Caller
+        (`HandsTriggeredActions.py`) is responsible for the proximity/
+        arbitration check — this just performs the assignment.
+
+        ⚠ `owner_key` is whatever `_owner_key()` returned: a stable track id, or
+        a handedness string as the fallback. Do not assume a hand name."""
+        self.cubes[cube_name].owner = owner_key
 
     def release_cube(self, cube_name: str) -> None:
         """Clear ownership; the cube stays exactly where it is (frozen in
