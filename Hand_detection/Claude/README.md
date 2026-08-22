@@ -111,6 +111,19 @@ measures 3.59x and the baseline is captured per grab.
 by occlusion (routed to B5), T1 back-of-hand rotation quality, T4 yaw/palm-sink,
 N12 pitch-crossing jump.
 
+⭐⭐ **THE HIGHEST-VALUE TARGET: T3 and U7 are ONE root cause.** The handedness
+label is unreliable — **measured 10.8% wrong** — and the pipeline uses it as both
+**identity** (T3: which hand owns the cube, so a relabel drops it) and **chirality
+truth** (U7: which way the palm faces, so a mislabel inverts rule 3). Fixing the
+label, or removing the dependency on it, fixes both. Patching either symptom alone
+fixes neither — that was this session's lesson, paid for seven times.
+
+✅ **U6 is DECIDED — two pipelines are KEPT** (owner, 2026-08-22). So divergence is
+prevented mechanically, not by refactoring: run `analysis/parity_replay.py` when
+either tool's gesture logic changes, or whenever "it does not happen in
+production" comes up. ⚠ One camera means the two can never run at once, so such a
+claim always compares separate sessions of a possibly intermittent defect.
+
 ---
 
 ## 4. ⛔ Tried and REJECTED — do not re-propose without new evidence
