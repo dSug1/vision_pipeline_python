@@ -1,4 +1,27 @@
-"""⭐ T3 -- can a relabelled hand be recognised, and at what threshold?
+"""⭐ T3 -- the defect is real; the CLIENT-SIDE fix for it was built and REVERTED.
+
+⛔⛔ READ THIS FIRST (2026-08-22). A client-side transfer rule was built on these
+numbers, wired into production and the debug tool, live-tested -- and reverted the
+next day. `Resources/hand_ownership.py` no longer exists. **This script is kept
+because it holds both halves of the argument**: the measurement that justified
+building it, and the measurement that killed it.
+
+⚠ **Why it died, and it was structural rather than a tuning miss.** It recognised
+"the same hand" by POSITION, and two hands in the same place are indistinguishable
+by position -- which is exactly what OCCLUSION is. Live, it handed a held cube to
+the operator's other physical hand. The GUARD VARIANTS section below is the
+post-mortem: **38 of its 49 corpus "saves" occur with a second hand seen inside
+the preceding second**, so nearly the whole benefit sat in the regime where the
+mechanism cannot be trusted, and the safe remainder is 11 of 236 (4.7%).
+
+⭐ **The fix belongs one layer down.** `HandState` v2 carries a TRACK identity, so
+ownership keys on the track and the question disappears. That migration is
+scheduled with 4.1/M9 (spec §2.2). Reconstructing a track id from positions on the
+client is guessing at something the protocol is about to state outright.
+
+--- the original brief follows, unchanged ---
+
+⭐ T3 -- can a relabelled hand be recognised, and at what threshold?
 
 Queue T3 was re-opened on 2026-08-21 by `d2_bridge_ab.py`: of 205 spurious cube
 releases, **113 are the owner's own hand reappearing under the OTHER handedness
@@ -94,6 +117,7 @@ def main():
 
     # Every moment a held hand vanishes, and what the other slot was doing.
     cand, blocked, pure_dropout, no_geom = [], [], 0, 0
+    variants = []
     for d in sorted(glob.glob(os.path.join(a.root, "*"))):
         f = os.path.join(d, "raw_landmarks.jsonl")
         if not os.path.isdir(d) or not os.path.exists(f):
@@ -130,12 +154,33 @@ def main():
                     if p is not None:
                         found = math.hypot(p[0] - here[0], p[1] - here[1]) / scale
                     break
+            # Two candidate TIGHTENINGS, measured because the live session of
+            # 2026-08-21 showed the shipped guard letting a wrong transfer
+            # through: two hands were in frame, one exited, and the cube went to
+            # the OTHER PHYSICAL HAND, which was near where the first had been.
+            #   same_frame  a true relabel is instantaneous -- the owner slot
+            #               empties on the very frame the other fills. A hand
+            #               that vanishes for several frames and THEN appears
+            #               elsewhere is a reacquisition, not a relabel.
+            #   solo        no second hand seen anywhere in the preceding second.
+            #               Position cannot separate two hands that are in the
+            #               same place, which is exactly what occlusion IS, so
+            #               the only safe answer is to refuse when a second hand
+            #               is known to be around at all.
+            same_frame = (found is not None
+                          and hand_by_label(sub[i + 1], OTHER[owner]) is not None)
+            solo = True
+            for k in range(max(0, i - int(1000.0 / 40.0)), i + 1):
+                if len(sub[k].get("hands") or []) > 1:
+                    solo = False
+                    break
             if found is None:
                 pure_dropout += 1
             elif other_busy:
                 blocked.append(found)
             else:
                 cand.append(found)
+                variants.append((found, same_frame, solo))
 
     print("=" * 90)
     print("T3 -- RELABEL TRANSFER: is the moved hand recognisable, and how tight?")
@@ -167,13 +212,16 @@ def main():
     dist("GUARD-BLOCKED (other slot already busy)", blocked)
 
     # ── What the SHIPPED rule does to the corpus ─────────────────────────────
-    thr = shipped("TRANSFER_PALM_WIDTHS", "hand_ownership.py", 0.5)
+    # ⚠ 0.5 was the threshold the REVERTED `hand_ownership.py` shipped with; the
+    # module is gone, so the value is stated here rather than read from it. It is
+    # kept so the numbers below stay comparable with what was actually run live.
+    thr = 0.5
     transferred = sum(1 for x in cand if x <= thr)
     missed = len(cand) - transferred
     print()
     print("  " + "=" * 84)
-    print(f"  SHIPPED RULE APPLIED ({thr:.2f} palm widths + the busy-slot guard, "
-          f"inside D2's {COAST_MS:.0f} ms coast)")
+    print(f"  THE REVERTED RULE, AS IT RAN ({thr:.2f} palm widths + the busy-slot "
+          f"guard, inside D2's {COAST_MS:.0f} ms coast)")
     print("  " + "=" * 84)
     print(f"    {transferred:>4}  cubes FOLLOW their hand instead of dropping  ⭐ T3's effect")
     print(f"    {missed:>4}  candidates fall outside the threshold -> still drop")
@@ -186,6 +234,32 @@ def main():
     print("      are the two-hand case and stay open (spec §0.4's duplicate-label")
     print("      problem); the threshold misses are ambiguous and dropping is the")
     print("      safe default there.")
+    # ── Tightening the guard, after the 2026-08-21 live session ──────────────
+    print()
+    print("  " + "=" * 84)
+    print("  GUARD VARIANTS -- the shipped guard let a WRONG transfer through live")
+    print("  " + "=" * 84)
+    print("    Two hands were in frame, one exited, and the cube went to the other")
+    print("    PHYSICAL hand because it was near where the first had been. Position")
+    print("    cannot separate two hands in the same place -- and that is exactly")
+    print("    what occlusion is. So the question is what to add, and what it costs.")
+    print()
+    inside = [v for v in variants if v[0] <= thr]
+    rows = [
+        ("shipped (busy-slot guard only)", lambda v: True),
+        ("+ same-frame only (a relabel is instantaneous)", lambda v: v[1]),
+        ("+ no 2nd hand seen in the last ~1 s", lambda v: v[2]),
+        ("+ BOTH", lambda v: v[1] and v[2]),
+    ]
+    print(f"    {'variant':<48}{'transfers kept':>15}")
+    for name, keep in rows:
+        n = sum(1 for v in inside if keep(v))
+        print(f"    {name:<48}{n:>10} / {len(inside)}")
+    print()
+    print("    ⚠ 'transfers kept' is NOT a score to maximise. Every one of these is")
+    print("      a cube that stays held; the live session says some of them stayed")
+    print("      held BY THE WRONG HAND, and that is visible where the saves are not.")
+
     print()
     print("  ⭐ HOW TO READ THIS. The candidates are a hand that vanished from one")
     print("     slot and appeared in the other within a few frames. If that is the")

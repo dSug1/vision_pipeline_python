@@ -128,6 +128,7 @@ for _ in range(30):
 check("all three released once the coast was exhausted",
       all(a.cube_owned_by("Right") is None for a in arms))
 
+
 print("\n" + "=" * 78)
 print(f"{len(FAILS)} failure(s)" + ("" if not FAILS else ": " + ", ".join(FAILS)))
 print("=" * 78)

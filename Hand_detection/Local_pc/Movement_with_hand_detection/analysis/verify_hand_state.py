@@ -161,9 +161,11 @@ check("a clock that steps BACKWARDS clamps to 0, never negative",
 print("\n8. PORT CONTRACT -- stdlib only, no side effects")
 # Strip EVERY string literal and comment before scanning, not just the leading
 # docstring: the prose legitimately discusses `time.perf_counter()` and numpy
-# (it says the module must not use them). `verify_hand_ownership.py` shipped the
-# slice-off-the-docstring version first and it false-positived on a class
-# docstring; tokenize is the version that does not.
+# (it says the module must not use them). A sibling check once shipped the
+# slice-off-the-leading-docstring version and false-positived on the phrase
+# "transfer time." inside a CLASS docstring; tokenize is the version that does
+# not. A port-contract scan that trips over its own prose teaches the reader to
+# ignore it.
 import io  # noqa: E402
 import tokenize  # noqa: E402
 

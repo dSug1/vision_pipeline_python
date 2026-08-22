@@ -2383,6 +2383,19 @@ and is a separate decision, naturally paired with 4.1/M9** — which is what mak
 this contract's metric fields (`palm.position` in metres, `depth`) meaningful at
 all. Until then, do not serialise this struct.
 
+⭐⭐ **AND THE MIGRATION NOW HAS A SECOND, MEASURED CUSTOMER — ADD A TRACK ID TO
+IT (2026-08-22).** Queue **T3** measured that **113 of 205 spurious cube releases
+are the owner's own hand reappearing under the other handedness label**: cube
+ownership keys on the label, so any relabel — DR-1 erring *or* correcting itself —
+orphans a held cube. A client-side repair was built, live-tested and **reverted**,
+because it had to infer "same hand" from POSITION and two hands in the same place
+are indistinguishable by position (that is what occlusion IS); it handed a held
+cube to the operator's other hand. ⭐ **v2 makes the whole question vanish: carry
+the DR-1 track identity on the wire and key ownership on it.** So when this
+migration is done alongside 4.1/M9, **`trackId` is a required field, not an
+optional nicety**, and `HandsTriggeredActions`'s `cube_owned_by(handedness)` moves
+to it. Evidence: `analysis/t3_relabel_threshold.py`, `analysis/d2_bridge_ab.py`.
+
 ### 2.3 ✅ D1 AS BUILT (2026-08-21) — `Resources/hand_state.py`
 
 | | |
