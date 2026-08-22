@@ -355,6 +355,168 @@ the anchor over a **3.59x range** (ratio 0.53–1.89) with observability holding
 0.85. Ample dynamic range, and because `d0` is captured AT GRAB every grab
 re-normalises — so **no min/max calibration screen is needed** to make Z work.
 
+### U7 — is chirality recoverable WITHOUT the handedness label? (2026-08-22)
+
+| script | purpose |
+|---|---|
+| `verify_geometric_chirality.py` | ⭐ **golden vectors, written BEFORE the port exists** (rule 6, U3 precedent). Guards the arithmetic (rotation invariance, reflection flips the sign, k³ scaling) and the resolver's STATE MACHINE, which is the part a port gets wrong |
+| `u7_geometric_chirality.py` | ⭐ **U7 STEP 0 — the go/no-go measurement, run BEFORE any production change.** Scores a label-free chirality cue against the operator's **declaration** (`meta.json.known_hand` / the `known_<hand>_<facing>` sequence name), never against `is_thumb_outward(px, label)` — that circularity is why the defect survived seven patches (B4) |
+
+⚠ **The mechanism in `HANDEDNESS_LABEL_DEFECT.md` §5 needed correcting first.**
+That section proposes taking the palm/back cue from "the 3D palm normal" instead
+of the 2D cross product. **3D alone does not remove the chirality dependence** —
+the shipped 2D signed area already IS the z-component of
+`cross(wrist→index_MCP, wrist→pinky_MCP)`, and that normal points out of the back
+for one chirality and out of the palm for the other in 2D and 3D alike. A left
+hand showing its palm and a right hand showing its back are mirror images; no
+function of the palm quad alone separates them.
+
+⭐ **What does separate them is the THUMB, because it leaves the palm plane.** The
+signed volume `V = det[index_MCP−wrist, pinky_MCP−wrist, thumb−wrist]` over
+`world_landmarks` is rotation- and translation-invariant and flips sign only under
+reflection — so `sign(V)` is chirality computed from geometry, with no label in it.
+
+**RESULT — chirality accuracy vs the declaration, 7 sessions, 2555 single-hand frames:**
+
+| | MediaPipe label | `sign(V)` |
+|---|---|---|
+| corpus | 98.8% | **99.8%** |
+| ⭐ `known_right_reentry` (the ONLY discriminating take) | 89.4% (31 errors) | **98.3% (5 errors) — 84% fewer** |
+
+⚠ **Read the corpus row as near-meaningless on its own.** Six of the seven takes
+are "held steady" clips on which MediaPipe is already 100%, so the average is
+dominated by frames that were never in doubt. The re-entry take is the only one
+that exercises the defect. Its 31/293 = **10.6% reproduces the documented 10.8%**.
+
+⭐ **The two signals are INDEPENDENT, not a restatement of each other** — they
+disagree on 30 corpus frames and geometry is right on **28** of them. (Worth
+checking, because if MediaPipe internally chirality-normalised its world landmarks
+by its own label, `sign(V)` would prove nothing.) They are both wrong on only 3
+frames, so the failures are largely uncorrelated.
+
+⭐ **STEP 7 is the actual deliverable — rule 3's input at every recorded snap:**
+
+| frame | label | `sign(V)` | rule 3 now | rule 3 with V |
+|---|---|---|---|---|
+| 37 | Left | Left | False | False |
+| **122** | **Right — WRONG** | **Left** | **False → snap allowed (the defect)** | **True → snap forbidden (correct)** |
+| 137 | Left | Left | True | True |
+| 185 | Left | Left | False | False |
+| 352 | Left | Left | False | False |
+
+**1 of 5 snaps changes, and it is the defective one** — frame 122, the exact snap
+written up in `HANDEDNESS_LABEL_DEFECT.md` §2. The four sound snaps are untouched.
+
+⚠ **The residual 5 errors, and the conditioning:** they form 4 runs of lengths
+[2,1,1,1] — **3 of 4 are isolated single frames**, which a 2-frame debounce (DR-1
+already uses that pattern) would remove. `sign(V)` has its own conditioning
+signal, the thumb's perpendicular distance from the palm plane: median **8.8 mm**,
+p10 **7.9 mm**, min **0.9 mm**. That is the analogue of `edge_on_measure` for the
+2D sign and it should gate the new cue the same way. Accuracy on the
+worst-conditioned decile is still 98.8%.
+
+⛔ **NOT yet measured, and it is the real gap**: the four declared-*facing* takes
+are all takes where MediaPipe never errs, so they cannot show the facing fix.
+**The acceptance test remains a known-hand LIVE take** (`LiveSnapDebug.py
+--known-hand left|right`), never a replay that trusts the recorded label.
+
+**✅ BUILT 2026-08-22 — STEPS 8 AND 9 ARE THE BUILD'S OWN EVIDENCE.**
+
+**STEP 8, the parameter sweep — and it killed a component of the design:**
+
+| T (mm) | debounce 1 | debounce 2 | debounce 3 |
+|---|---|---|---|
+| 0 | 5 | 4 | **0** |
+| 3 | 5 | 4 | 3 |
+| 5 | 5 | 4 | 3 |
+| 7 | 7 | 5 | 0 |
+
+(re-entry take, n=293; **all** cells score 0 errors across the six clean takes.)
+
+⛔ **The thickness GATE earns nothing and was NOT shipped.** 0 mm and 5 mm are
+identical, and at 3–5 mm it is actively **worse** — suppressing observations
+stalls the debounce and lets a bad value persist. Under **A10 a null result is
+recorded, not shipped hopefully**, so `palm_plane_thickness()` ships as a
+diagnostic only. ⭐ **The 3-frame debounce does all the work**, and its mechanism
+is explicable rather than fitted: the longest spurious run measured is 2 frames.
+It costs nothing because **a hand cannot change chirality** — within a track the
+value is constant, so the debounce never delays a real transition.
+⚠ **Honest caveat: debounce=3 was chosen against 5 residual errors in ONE
+session.** Small sample. Re-validate on the live known-hand take.
+
+**STEP 9 — the A/B through the REAL `PalmFacingTracker`**, not a reimplementation:
+of the 5 recorded snaps, rule 3's input changes on **exactly 1 — frame 122** —
+and the four sound snaps are unchanged. Geometry overrode the label on **32**
+frames; the debounce absorbed **3** spurious excursions.
+
+⚠⚠ **Read all of this as evidence of INTENT, not of the defect being gone.** The
+4.1 post-mortem's decisive fact is that its final session measured CLEAN and the
+owner still saw bugs. Offline green is necessary, not sufficient.
+
+### T3 / U8 -- the back-of-hand steal, and the two defects hiding behind it (2026-08-22)
+
+| script | purpose |
+|---|---|
+| `n8_back_steal.py` | detects **ownership transfers** (a recorded fact) and **silent handovers**, then asks what the palm/back cue was. Prints COVERAGE, because a zero from a session that never contained the manoeuvre means nothing |
+| `t3_remap_ab.py` | drives the debug tool's real `update_hands` over a recording with `OWNER_FOLLOWS_TRACK` off and on. One variable between arms |
+| `u8_entry_settling.py` | derives U8's window: palm width, entry speed, implied transit time, and the empirical leading-run-of-wrong-chirality |
+| `verify_owner_remap.py` | golden vectors, written BEFORE the wiring, pinning the cases 4.1 got wrong |
+
+**THREE DEFECTS, ONE APPEARANCE.** All three looked like *"a back-of-hand hand
+takes the cube"*, and separating them required recording each one:
+
+| # | mechanism | evidence | fix |
+|---|---|---|---|
+| 1 | **silent handover** -- DR-1 swaps two tracks between slots; ownership is a slot NAME, so the cube changes PHYSICAL HAND with no release, no snap, **rule 3 never consulted** | `n8_back_steal_b` f478 | `owner_remap.py` |
+| 2 | **inherited per-hand state** -- a track entering a slot inherited the previous occupant's `PalmFacingTracker`, so its back read as PALM for 2 frames | `t3_remap_debug_test` f1050 | reset the tracker on track change |
+| 3 | **provisional chirality** -- a newly ENTERED hand measured wrong for 5 frames | `t3_remap_production_test` f664 | U8 gate |
+
+**RESULT, live and recorded, both tools:**
+
+| | debug | production |
+|---|---|---|
+| coverage | 1420 fr / 487 two-hand / 1328 held / 506 back | 928 fr / 258 two-hand / 721 held / 275 back |
+| silent handovers | 0 | 0 |
+| back-of-hand steals | 0 | 0 |
+| back-of-hand snaps | 2, **both legal** (armed exception) | 1, **legal** (`snap_allowed=True` recorded) |
+
+**U8's window is 6 frames, and it is a TRANSIT TIME, not a tuning constant** --
+palm width 69 px / entry speed 11 px/frame = 4.8 frames; empirically 93.4% of
+tracks settle by age 5 and it then plateaus; the recorded failure grabbed at age
+5. ⚠ **The count alone was insufficient** -- 6 frames landed exactly on the grab
+frame while the held value was still wrong -- so `confirmed` also requires the
+latest observation to AGREE with the held value.
+
+⛔ **FOUR CHEAPER REMEDIES MEASURED AND REJECTED** (do not re-propose):
+conditioning gate (bad frames were 11-16 mm, ABOVE the 8.8 mm median); falling
+back to the label (76.8% vs geometry's 89.7% at track age 0); temporal voting
+(wrong value stable for 5 consecutive frames); and resolving the two-hand
+chirality contradiction (real -- 191 of 14460 frames -- but trust-the-older is
+46.6%, squarer 53.4%, thicker 63.9%: **detection yes, resolution no**).
+
+⚠⚠ **TWICE A HARNESS HERE REPORTED CLEAN ON A TAKE THE OWNER HAD JUST WATCHED THE
+DEFECT IN.** The first counted a SLOT change as a hand change -- label-as-identity,
+the very confusion under diagnosis. The second recomputed the cue with a
+slot-keyed tracker while production ran track-aware. ⭐ **When the owner's eyes
+and the instrument disagree, the instrument is the suspect** -- and it is why
+production now RECORDS `thumb_outward` / `chirality_confirmed` / `snap_allowed`
+rather than forcing a recomputation.
+
+### ⛔ `guard_sensitivity.py` had been DEAD since 2026-08-03 (found 2026-08-22)
+
+It AST-compared `HandsTriggeredActions._is_thumb_outward`'s **body** against an
+inlined reference — but queue item **1.2 moved that logic into `palm_geometry.py`
+the same month**, leaving a one-line delegation behind. From that day the guard
+**could not pass**. It printed `GUARD IS BROKEN` on every run for 19 days, and the
+message was correct but about **itself**.
+
+⭐ **A guard that cannot pass is worse than no guard**: its failure carries no
+information, so everyone learns to ignore it — and the chirality convention was
+left effectively unguarded through the very sessions that broke it. Repointed at
+the four functions that now hold the logic (`is_thumb_outward`, `signed_palm_area`,
+`palm_vectors`, `geometric_chirality`), with mutants for U7's new sign convention
+and an **N6 check that production still delegates rather than re-inlining**.
+
 ### 4.1 / T3 — ownership on the stable track id (2026-08-22)
 
 | script | purpose |

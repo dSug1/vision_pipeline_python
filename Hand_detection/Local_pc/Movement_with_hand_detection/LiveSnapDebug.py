@@ -70,6 +70,7 @@ PRODUCTION_ROTATION = _PRot.Horn(_PRot.PALM_LANDMARKS, "ref")
 # (queue item 1.2). Same reasoning as hand_identity above: imported, never copied.
 # `Resources` is a package alongside this file; importing this ONE module does not
 # pull in HandsTriggeredActions/CubeWindow, so no pygame window is opened.
+from Resources import owner_remap
 from Resources import palm_geometry  # noqa: E402
 from Resources import hand_state  # noqa: E402
 from Resources import hand_tracks  # noqa: E402  (4.1 migration, shared with production)  (queue D1 -- state lives on CubeState)
@@ -722,6 +723,14 @@ class CubeState:
     # divergence class N6 exists to prevent, created while fixing a divergence.
     # Per-arm, because each arm owns its own cubes and its own timers.
     owner_absent_since: Dict[str, float] = field(default_factory=dict)
+    # ⭐ T3 NARROW REMAP (2026-08-22): cube name -> the DR-1 TRACK id that holds
+    # it, captured at the snap. Ownership itself stays a SLOT NAME, so nothing
+    # else changes; this only lets the owner slot FOLLOW its track when DR-1
+    # swaps the two hands between slots. Without it the cube follows the LABEL to
+    # the other physical hand with no release, no snap and no rule-3 check --
+    # the recorded back-of-hand steal (`2026-08-22_184440_n8_back_steal_b`, f478).
+    # ⚠ Per-arm, like every other cube field, so the arms cannot contaminate.
+    holder_track: Dict[str, int] = field(default_factory=dict)
     hand_state_trackers: Dict[str, object] = field(default_factory=dict)
     # ⭐ Finishing 4.1's migration, mirroring production (N6). Per-hand state is
     # rebound each frame to whichever TRACK is in that slot, so a relabel carries
@@ -770,12 +779,20 @@ class CubeState:
                 return name
         return None
 
-    def snap_cube(self, name: str, owner_key) -> None:
+    def snap_cube(self, name: str, owner_key, holder_track=None) -> None:
         self.cubes[name].owner = owner_key
+        # T3: remember WHICH HAND took it, so the owner slot can follow that hand
+        # across a relabel. `None`/-1 means no identity this frame -- store
+        # nothing rather than a sentinel, so `remap_owner` simply no-ops.
+        if holder_track is not None and holder_track >= 0:
+            self.holder_track[name] = holder_track
+        else:
+            self.holder_track.pop(name, None)
 
     def release_cube(self, name: str) -> None:
         cube = self.cubes[name]
         cube.owner = None
+        self.holder_track.pop(name, None)
         cube.grab_hand_orientation = None
         cube.grab_cube_orientation = None
         cube.grab_landmark_weights = None
@@ -1091,7 +1108,8 @@ def _try_snap(state: CubeState, handedness: str, hand_pos: Tuple[float, float], 
         if dist <= grab_radius and (best_dist is None or dist <= best_dist):
             best_name, best_dist = name, dist
     if best_name is not None:
-        state.snap_cube(best_name, _owner_key(handedness, state))
+        state.snap_cube(best_name, _owner_key(handedness, state),
+                        holder_track=_hand_track_ids.get(handedness, -1))
     return best_name
 
 
@@ -1261,6 +1279,28 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
     # ⚠ A LONGER COAST MAKES THIS WORSE, NOT BETTER -- which is why the owner saw
     # it at 300 and 450 ms.
     # Same constant and semantics as production's `OWNER_ABSENT_RELEASE_MS`.
+    # ⭐⭐ T3 NARROW REMAP -- runs FIRST, before anything reads `cube.owner`.
+    #
+    # DR-1 swaps two tracks between slots constantly. Ownership is a slot NAME, so
+    # without this the cube silently changes PHYSICAL HAND at that instant: no
+    # release, no snap, and rule 3 never consulted -- which is exactly why every
+    # ordinary back-of-hand grab is blocked and the recorded steal was not
+    # (`2026-08-22_184440_n8_back_steal_b`, f478: t7 and t8 swap, owner stays
+    # "Right", the cube passes to the BACK hand).
+    #
+    # ⚠ This is NOT 4.1's migration: ownership REMAINS a slot name, nothing else
+    # moves off the slot, and an ABSENT track is a no-op here (the coast/release
+    # path below still owns that case). See `Resources/owner_remap.py`.
+    for _n, _c in state.cubes.items():
+        if _c.owner is None:
+            state.holder_track.pop(_n, None)   # N6: same guard as production
+            continue
+        _new_owner = owner_remap.remap_owner(
+            _c.owner, state.holder_track.get(_n), _hand_track_ids)
+        if _new_owner != _c.owner:
+            state.stats["owner_remaps"] = state.stats.get("owner_remaps", 0) + 1
+            _c.owner = _new_owner
+
     _live_ids = {t for t in _hand_track_ids.values() if t >= 0}
     for _n, _c in list(state.cubes.items()):
         _o = _c.owner
@@ -1372,6 +1412,13 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
         if owned is None:
             can_snap = ((not thumb_outward) or state.thumb_outward_snap_allowed[handedness])
             can_snap = can_snap and handedness not in snap_blocked   # S3, see docstring
+            # ⭐⭐ U8, mirroring production exactly (N6): rule 3 may not act on a
+            # PROVISIONAL chirality. A newly entered hand's thumb has not cleared
+            # the frame edge, so its palm/back answer can be confidently wrong --
+            # measured at f664 of `2026-08-22_190955_t3_remap_production_test`.
+            # See `HandsTriggeredActions` for the three cheaper remedies that were
+            # measured and rejected.
+            can_snap = can_snap and _palm_facing_trackers[handedness].chirality_confirmed
             if can_snap:
                 owned = _try_snap(state, handedness, hand_pos, exclude=released_this_frame)
                 if owned is not None:
@@ -1752,7 +1799,13 @@ def main():
                     _hand_track_ids[_lab] = _ids[_i]
 
             _count_relabels()
-            _bind_upstream_track_state(time.perf_counter() * 1000.0)
+            # ⭐ ONE clock read for the whole frame, reused below by U8's
+            # confirmation window. Reading it per hand would be a second (and
+            # third) sample of the same instant -- and the owner's constraint on
+            # U8 was explicitly that it must not sample per frame to work out a
+            # rate. It does not: it never estimates fps at all, it just subtracts.
+            _frame_ms = time.perf_counter() * 1000.0
+            _bind_upstream_track_state(_frame_ms)
 
             for d, label in zip(detections, labels):
                 # thumb_outward is chirality-sensitive, so it must be computed
@@ -1761,8 +1814,12 @@ def main():
                 # exactly as production does -- same shared tracker class, same
                 # per-hand state. Mirrored here because the debug tool must stay in
                 # tune with production (owner instruction, 2026-08-02).
+                # ⭐ U7: the WORLD landmarks drive the chirality correction now,
+                # not the label -- same shared tracker, same single edit as
+                # production. See `Claude/HANDEDNESS_LABEL_DEFECT.md`.
                 _dr2_outward, _dr2_valid = _palm_facing_trackers[label].update(
-                    d["pixel_landmarks"], label
+                    d["pixel_landmarks"], label, d["world_landmarks"],
+                    track_id=_hand_track_ids.get(label, -1), now_ms=_frame_ms
                 )
                 hand_data_by_hand[label] = {
                     "pixel_landmarks": d["pixel_landmarks"],

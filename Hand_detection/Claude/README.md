@@ -11,11 +11,18 @@ start a second list, do not "helpfully" reorder it. This file points at it.
 
 ---
 
-> ⛔⛔ **2026-08-22 — TWO DEFECT DOCUMENTS TAKE PRECEDENCE OVER EVERYTHING BELOW:**
-> - `HANDEDNESS_LABEL_DEFECT.md` — the handedness label is **wrong 10.8% of the
->   time** and every chirality-sensitive rule inverts on it (queue **U7**).
-> - `POSTMORTEM_4_1_IDENTITY_MIGRATION.md` — 4.1's identity migration: built,
->   patched five times, **reverted** (`TRACK_OWNERSHIP = False`, nothing deleted).
+> ✅ **2026-08-22 — U7 IS FIXED AND SHIPPED.** `HANDEDNESS_LABEL_DEFECT.md` is now
+> a RESOLVED write-up: the label is still wrong 10.8% of the time, but nothing
+> chirality-sensitive reads it any more — geometry does. ⚠ Read it anyway before
+> touching chirality: it records **three distinct defects with one appearance**,
+> and the two cheaper fixes that were measured and failed.
+>
+> ⛔ `POSTMORTEM_4_1_IDENTITY_MIGRATION.md` still stands — 4.1's identity
+> migration: built, patched five times, **reverted** (`TRACK_OWNERSHIP = False`,
+> nothing deleted). ⭐ **T3 was instead fixed NARROWLY** (`Resources/owner_remap.py`):
+> ownership stays a slot NAME and only follows its track across a relabel, so
+> there is no seam of the kind the post-mortem blames. Read it before any wider
+> attempt.
 
 ## 1. Read order
 
@@ -96,27 +103,51 @@ sign freeze; Phase D's 150 ms dropout coast + 3-frame resync blend; `horn-palm`
 anchor; and — newest — the **mirror fix** that made production and the debug tool
 the same pipeline.
 
-**Next build**: **4.2 — Z-axis translation**, driving cube Z from 4.1's depth
-ratio. ⚠ It must also make snap gating **3D** (`_try_snap`'s grab radius becomes a
-3D check — a real change to existing logic). See `PART_ONE.md` §3.1's "YOU ARE
-HERE" block.
+**✅ THREE FIXES SHIPPED AND OWNER-ACCEPTED LIVE (2026-08-22)** — *"fix is
+working. I believe this is good to ship."* All three presented as the same
+symptom (**a back-of-hand hand ends up with the cube**) and were only separable by
+recording them:
 
-⭐ **4.1 is DONE, both halves** (2026-08-22): the depth **estimator**
-(`Resources/palm_depth.py`, A10-passed, wired to nothing yet) and the **`trackId`
-wire migration** (cube ownership keys on the stable DR-1 track id, not the
-handedness label). ⭐ **No depth calibration step is needed** — the reach envelope
-measures 3.59x and the baseline is captured per grab.
+| | fix | flag |
+|---|---|---|
+| **U7** | chirality from GEOMETRY, not the 10.8%-wrong label — `sign(det[index_MCP−wrist, pinky_MCP−wrist, thumb_CMC−wrist])` over `world_landmarks`, in `palm_geometry.py` and wired into `PalmFacingTracker.update()`, the one place the label entered the cue in **either** tool | `GEOMETRIC_CHIRALITY` |
+| **T3** | a held cube's owner SLOT follows its DR-1 TRACK across a relabel (`Resources/owner_remap.py`) — closes the **silent handover**, where the cube changed physical hand with no release, no snap and rule 3 never consulted | `OWNER_FOLLOWS_TRACK` |
+| **U8** | rule 3 refuses to snap while a newly entered hand's chirality is still **provisional** — a transit time, 6 frames, derived from palm width ÷ entry speed | `CHIRALITY_CONFIRM_FRAMES` |
+
+Also: **production now RECORDS the cue it used** (`thumb_outward`,
+`chirality_confirmed`, `orientation_valid`, `snap_allowed`) instead of forcing a
+recomputation — a recomputation is a second implementation that can silently
+disagree with the real one, and twice tonight it did.
+
+⛔ **The original write-up's mechanism ("use the 3D palm normal") was wrong** — 3D
+alone does not remove the chirality dependence; the **thumb** is what does.
+
+**Next build: 4.2 — Z-axis translation**, driving cube Z from 4.1's depth ratio.
+⚠ It must also make snap gating **3D** (`_try_snap`'s grab radius becomes a 3D
+check — a real change to existing logic), which is precisely why U7/U8 went
+first: that is the rule the bad chirality corrupts. See `PART_ONE.md` §3.1's
+"YOU ARE HERE" block.
+
+⭐ **4.1's DEPTH ESTIMATOR is done** (`Resources/palm_depth.py`, A10-passed, wired
+to nothing yet — that is 4.2). ⭐ **No depth calibration step is needed** — the
+reach envelope measures 3.59x and the baseline is captured per grab.
+⚠ **4.1's `trackId` OWNERSHIP MIGRATION IS REVERTED** (`TRACK_OWNERSHIP = False`);
+the wire still carries the id, and T3 is now fixed by the NARROW remap instead —
+see `POSTMORTEM_4_1_IDENTITY_MIGRATION.md` and `Resources/owner_remap.py`.
 
 **Open, deliberately not next**: the two-hand swap (spec §0.4), N8 cube-stealing
-by occlusion (routed to B5), T1 back-of-hand rotation quality, T4 yaw/palm-sink,
-N12 pitch-crossing jump.
+**palm-first** (routed to B5 — snap is pure proximity; only the back-of-hand and
+relabel routes are closed), T1 back-of-hand rotation quality, T4 yaw/palm-sink,
+N12 pitch-crossing jump, U5 occlusion coast.
 
-⭐⭐ **THE HIGHEST-VALUE TARGET: T3 and U7 are ONE root cause.** The handedness
-label is unreliable — **measured 10.8% wrong** — and the pipeline uses it as both
-**identity** (T3: which hand owns the cube, so a relabel drops it) and **chirality
-truth** (U7: which way the palm faces, so a mislabel inverts rule 3). Fixing the
-label, or removing the dependency on it, fixes both. Patching either symptom alone
-fixes neither — that was this session's lesson, paid for seven times.
+✅ **RESOLVED 2026-08-22 — T3 and U7 shared one root cause, and BOTH are fixed.**
+The handedness label is still **10.8% wrong**, but nothing now reads it as
+identity (T3 → `owner_remap.py`) or as chirality truth (U7 → geometry). ⚠ The
+lesson survives the fix and is the reusable part: **the label was doing two jobs
+it was never fit for**, and patching either symptom alone fixed neither — paid for
+seven times. ⚠ A third defect of the *same appearance* remained after both
+(**U8**: a newly entered hand's chirality is undefined until the thumb is in
+view), so "same symptom" never meant "same cause".
 
 ✅ **U6 is DECIDED — two pipelines are KEPT** (owner, 2026-08-22). So divergence is
 prevented mechanically, not by refactoring: run `analysis/parity_replay.py` when
@@ -146,6 +177,10 @@ This is the section that saves the most time. Each was measured, not guessed.
 | **N11 left/right asymmetry** | **not reproduced**; direction reversed on clean takes |
 | **Post-hoc `invert_x` mirroring** | **falsified 2026-08-22** — MediaPipe is not mirror-equivariant (7.7–10 mm, 12–20°). Replaced by flipping the frame before detection |
 | **Ownership keyed on the handedness label** | **replaced 2026-08-22** by the stable track id. Live A/B, 3 sessions: label orphaned a held cube 794/377/15 frames, track 0 every time |
+| **A thumb-plane-thickness gate on chirality** | **measured null, NOT shipped** — sweeping 0→7 mm changed nothing to 5 mm and was WORSE at 3–5 mm; at the production failure the bad frames sat at 11–16 mm, **above** the 8.8 mm median. Good conditioning, wrong answer |
+| **Falling back to the handedness label while chirality is unconfirmed** | **measured backwards** — at track age 0 geometry is **89.7%** and the label **76.8%**. The label is WORST exactly at hand entry |
+| **Temporal voting to fix a newly entered hand's chirality** | **cannot work** — the wrong value was stable for **5 consecutive** frames, so any majority picks it |
+| **Resolving the two-hand chirality contradiction by trusting one hand** | **near chance** — the contradiction is real (191 of 14460 two-hand frames) but trust-the-older is 46.6%, squarer 53.4%, thicker 63.9%. **Detection yes, resolution no — suppress, do not guess** |
 | **A depth calibration screen** (min/max reach) | **not needed** — absolute scale is unobservable AND cancels in the ratio form; `d0` is per-grab; the envelope is already 3.59x |
 
 ⚠ **Retractions are kept on purpose.** A claim that was overturned is more useful
@@ -199,7 +234,10 @@ ownership should follow the *physical* hand — today the cube the pipeline call
 | record a PRODUCTION session | `VISION_RECORD=1 VISION_RECORD_TAG=<name> ... PythonApp_Main.py` — same JSONL schema, so every `analysis/` harness reads it |
 | the 4.1/T3 ownership A/B rig | `LiveSnapDebug.py --ownership-ab` — two panels, label vs track keying |
 | chirality guard (run after ANY mirroring/handedness change) | `VerifyChiralityFixture.py` |
-| golden vectors | `analysis/verify_*.py` — 10 suites |
+| the back-of-hand steal / rule-3 audit | `analysis/n8_back_steal.py` — silent handovers, back-steals, back-snaps, with COVERAGE printed |
+| the T3 remap A/B on a recording | `analysis/t3_remap_ab.py` |
+| re-derive U8's window if the frame rate moves | `analysis/u8_entry_settling.py` |
+| golden vectors | `analysis/verify_*.py` — 20 suites |
 
 ⚠ **One webcam, and DSHOW is exclusive across processes** — production and the
 debug tool cannot run at the same time. Compare them back-to-back. (Two capture

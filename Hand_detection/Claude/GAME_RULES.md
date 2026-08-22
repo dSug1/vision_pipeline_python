@@ -103,6 +103,24 @@ plain language, not implementation detail (link to the code instead).
      `last_known_thumb_outward`/`thumb_outward_snap_allowed` per-hand state
      pair. Orientation sign convention calibrated live 2026-08-01 (see
      `GESTURE_PIPELINE_SPEC.md` §13.6).
+   - ⭐ **BEHAVIOUR ADDED 2026-08-22 (U8), owner-accepted live — A HAND THAT HAS
+     JUST ENTERED THE FRAME CANNOT SNAP AT ALL for ~6 frames (~380 ms).**
+     Not a bug and not the edge-on latency below: the palm/back cue is computed
+     from the THUMB's offset from the palm plane, so while a hand is still
+     entering — the thumb being the last part to appear — that cue is not merely
+     noisy but **undefined**, and MediaPipe supplies a plausible hallucinated
+     thumb. Measured: a back-of-hand hand read as PALM and took a cube this rule
+     forbids. The game now **refuses to snap while the chirality is provisional**
+     rather than guess, which is the same choice rule 1's edge-on freeze makes.
+     ⚠ **Felt cost, priced before shipping**: ~22% of grabs are delayed by about
+     380 ms — *delayed*, never refused; the hand is still there when the gate
+     opens. See queue item **U8** and `analysis/u8_entry_settling.py`.
+   - ⭐ **RELATED, 2026-08-22 (T3):** a held object no longer changes hands when
+     the tracker relabels the two hands. Previously ownership followed the
+     handedness *label*, so when the labels swapped the object silently passed to
+     the other physical hand **without any un-snap or snap — so this rule was
+     never consulted**. That was the one way a back-of-hand hand could take an
+     object legitimately held by the other. `Resources/owner_remap.py`.
    - **⚠ KNOWN LATENCY, INTRODUCED 2026-08-03 — TO BE REMOVED BY QUEUE ITEM
      2.3.** Turning the hand palm↔back is registered *late*: the game keeps
      using the previous palm/back reading until the hand is clearly out of

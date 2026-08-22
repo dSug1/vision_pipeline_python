@@ -79,6 +79,347 @@ def edge_on_measure(landmarks):
     return abs(s) / den if den > 1e-9 else 0.0
 
 
+# --------------------------------------------------------------------------
+# U7 -- CHIRALITY FROM GEOMETRY, not from MediaPipe's handedness label
+# --------------------------------------------------------------------------
+# THE DEFECT (`Claude/HANDEDNESS_LABEL_DEFECT.md`): the handedness label is wrong
+# **10.8%** of the time, measured against the operator's declaration, and
+# `is_thumb_outward` below applies a handedness-dependent chirality correction --
+# so its answer INVERTS under a wrong label. A back-of-hand hand computes as
+# "palm" and passes rule 3's gate. MediaPipe scored one such wrong label 0.94, so
+# score-gating does not catch it.
+#
+# ⛔ THE OBVIOUS FIX DOES NOT WORK, and the reason is worth keeping. The write-up
+# first proposed taking the cue from "the 3D palm normal" instead of the 2D cross
+# product. But `signed_palm_area` above ALREADY IS that normal's z-component, and
+# that normal points out of the BACK for one chirality and out of the PALM for the
+# other -- in 2D and in 3D alike. A left hand showing its palm and a right hand
+# showing its back are MIRROR IMAGES; no function of the palm quad alone separates
+# them. Going to 3D adds precision, not chirality.
+#
+# ⭐ WHAT DOES WORK IS THE THUMB, because it leaves the palm plane. The signed
+# volume of the tetrahedron (wrist, index_MCP, pinky_MCP, thumb_CMC) is invariant
+# under rotation and translation and changes sign ONLY under reflection. So its
+# sign is chirality computed from geometry, with no label anywhere in it.
+#
+# MEASURED (`analysis/u7_geometric_chirality.py`, scored against the operator's
+# DECLARATION -- never against `is_thumb_outward(px, label)`, which is the
+# circularity that hid this defect through seven patches):
+#
+#   * corpus 99.8% vs the label's 98.8% (2555 frames, 7 declared sessions)
+#   * on the ONE take that exercises the defect: 98.3% vs 89.4% -- 31 errors to 5
+#   * the two signals are INDEPENDENT: they disagree on 30 frames and geometry is
+#     right on 28. (Checked deliberately -- had MediaPipe chirality-normalised its
+#     world landmarks by its own label, sign(V) would merely restate the label.)
+#   * at the 5 recorded snaps, rule 3's input changes on exactly ONE: frame 122,
+#     the documented failing snap. The four sound snaps are untouched.
+#
+# ⚠ REQUIRES `world_landmarks`. With none available this degrades to the label,
+# which is exactly today's behaviour -- never worse.
+
+THUMB_CMC = 1
+
+# One bit, fitted by majority over the whole declared corpus and stated openly:
+# a NEGATIVE signed volume means the apparent (mirrored) hand is `Left`. Under
+# this project's mirrored convention that is a physical RIGHT hand.
+CHIRALITY_V_NEGATIVE_IS_LEFT = True
+
+# Consecutive agreeing observations required to CHANGE the held chirality.
+#
+# ⭐ CHOSEN BY MEASUREMENT, and the mechanism is explicable rather than fitted to
+# noise: the residual geometric errors on the discriminating take form runs of
+# [2, 1, 1, 1], so the longest spurious excursion is 2 frames and requiring 3
+# clears all four runs -- 5 errors to 0, with 0 errors introduced across the six
+# clean takes. Swept in `analysis/u7_geometric_chirality.py` (STEP 8).
+#
+# ⭐ WHY THE LATENCY COST IS NEAR ZERO, unlike DR-2's dwell: a hand cannot change
+# chirality. Within one track the value is CONSTANT, so this debounce never delays
+# a real transition -- it only delays adopting a DIFFERENT physical hand that has
+# taken over the slot, where a few frames of lag is invisible. That is why a
+# 3-frame requirement is affordable here and a 4-frame one was not in DR-2 (N7).
+CHIRALITY_DEBOUNCE_FRAMES = 3
+
+# U8 -- frames of geometric observation before a track's chirality may drive a
+# RULE. Below this the value is PROVISIONAL: still produced and still used for
+# display, but `ChiralityResolver.confirmed` is False and rule 3 refuses to snap.
+#
+# ⭐⭐ THIS IS A TRANSIT TIME, NOT A TUNING CONSTANT. The owner's argument, and it
+# is the correct physical account of the failure: chirality is the THUMB's offset
+# from the palm plane, so when the back of a right hand enters from the right, the
+# thumb is the LAST part to appear. Until it does, the quantity is undefined --
+# and MediaPipe supplies a hallucinated thumb, so the wrong answer arrives stable
+# and well-conditioned rather than noisy.
+#
+# DERIVED FROM MEASUREMENT (`analysis/u8_entry_settling.py`), three ways that agree:
+#   1. PHYSICAL: palm width 69 px (median) / entry speed 11 px/frame (median, for
+#      the 75 corpus tracks that start at a vertical frame edge) = 4.8 frames to
+#      travel one palm width. p75 is 10.1 frames.
+#   2. EMPIRICAL: the leading run of wrong chirality per track -- 89.5% of tracks
+#      are correct at frame 0, 93.4% by age 5, and it then PLATEAUS (93.9% at age
+#      15). Waiting longer than ~5 buys almost nothing.
+#   3. THE RECORDED FAILURE: `2026-08-22_190955_t3_remap_production_test`, track
+#      t4 -- chirality wrong through age 4, correct at age 5, and the forbidden
+#      grab landed at age 5. So the window must be at least 6 to cover it.
+#
+# COST, priced before shipping: a 6-frame window delays 17 of 78 corpus snaps
+# (21.8%) by ~380 ms at the measured 15-17 fps. DELAYED, not refused -- the hand
+# is still there when the gate opens. 8 frames would cost 33% of snaps for +0.5%
+# of coverage, which is why this is 6 and not more.
+#
+# ⭐⭐ EXPRESSED IN MILLISECONDS (owner instruction, 2026-08-22), because it is a
+# TRANSIT TIME and a frame count is only correct at the rate it was measured at.
+# N7/N10 already burned this project once: the SAME camera and machine measured
+# 24.1 fps in daylight and 15.1 fps in dim light, so DR-1's 500 ms `SWITCH_MS`
+# silently became ~761 ms. A frame constant here would drift the same way.
+#
+# 400 ms, DERIVED rather than converted from a guessed rate:
+#   * the measured transit -- palm width / entry speed, expressed in time
+#     (`u8_entry_settling.py` step 3b) -- is median **230 ms**, p75 **453 ms**.
+#     400 sits inside that range and covers the slower entries, which are the
+#     dangerous ones: a slow entry hides the thumb for LONGER.
+#   * the recorded failure session ran at a measured **18.14 fps**, and its
+#     forbidden grab sat **317 ms** after that track's first observation, so the
+#     window must exceed 317 ms.
+#
+# ⚠ WHY NOT 330 (= the validated 6 frames at 18.14 fps). It works, but only by
+# **13 ms** -- a 4% margin on a quantity that varies with how fast the operator
+# moves. Measured trade across the corpus, suppressed palm-frames vs margin:
+#
+#     280 ms  10.7%   -37 ms  (fails -- would NOT block the recorded grab)
+#     330 ms  12.0%   +13 ms  (works, but on a knife edge)
+#     400 ms  14.1%   +83 ms  <- shipped
+#     450 ms  15.4%  +133 ms  (approaching the p75 transit; diminishing)
+#
+# 400 buys 6x the margin for 2.1 percentage points more suppression.
+# ⚠ Suppression here is FRAMES, not grabs: the gate reopens, so a grab is delayed
+# rather than refused.
+#
+# ⭐⭐ GATED ON ELAPSED TIME, NOT ON A FRAME COUNT DERIVED FROM MEASURED FPS.
+# That was considered and is strictly worse here: `FrameRateEstimator.fps` SORTS
+# a ring buffer on every access (DR-1 pays that four times a frame), whereas
+# elapsed time costs one subtraction and one comparison, needs no estimator, and
+# has neither rounding nor the estimator's lag after a lighting change. Both call
+# sites already hold `now_ms`, so nothing new is sampled.
+CHIRALITY_CONFIRM_MS = 400.0
+
+# ⚠ THE ONE THING THE FRAME COUNT DID BETTER, kept as a floor: chirality cannot
+# be confirmed from frames that were never delivered. If detection is sparse --
+# a hand seen in 2 of 10 frames -- elapsed time alone would confirm on almost no
+# evidence. So confirmation ALSO requires a minimum number of observations.
+# Mirrors the floors already in `hand_identity.frames_for()` (2, 2, 2, 3), which
+# exist for exactly this reason.
+CHIRALITY_CONFIRM_MIN_FRAMES = 3
+
+# Used only by a caller that supplies no timestamp (older harnesses, unit tests).
+# The rig's measured rate; a caller that passes `now_ms` never touches this.
+CHIRALITY_FALLBACK_FPS = 18.0
+CHIRALITY_CONFIRM_FRAMES = max(
+    CHIRALITY_CONFIRM_MIN_FRAMES,
+    int(CHIRALITY_CONFIRM_MS * CHIRALITY_FALLBACK_FPS / 1000.0 + 0.5))
+
+# A/B switch. `False` restores the pre-U7 behaviour exactly (the raw MediaPipe
+# label drives the chirality correction), so the two can be compared live rather
+# than argued about -- the post-mortem's rule 6.
+GEOMETRIC_CHIRALITY = True
+
+
+def signed_palm_volume(world_landmarks, thumb_idx=THUMB_CMC):
+    """det[index_MCP - wrist, pinky_MCP - wrist, thumb - wrist] over WORLD
+    landmarks. Rotation- and translation-invariant; flips sign only under
+    reflection, which is what makes it a chirality measure."""
+    w = world_landmarks[WRIST]
+    ax = world_landmarks[INDEX_MCP][0] - w[0]
+    ay = world_landmarks[INDEX_MCP][1] - w[1]
+    az = world_landmarks[INDEX_MCP][2] - w[2]
+    bx = world_landmarks[PINKY_MCP][0] - w[0]
+    by = world_landmarks[PINKY_MCP][1] - w[1]
+    bz = world_landmarks[PINKY_MCP][2] - w[2]
+    cx = world_landmarks[thumb_idx][0] - w[0]
+    cy = world_landmarks[thumb_idx][1] - w[1]
+    cz = world_landmarks[thumb_idx][2] - w[2]
+    return (ax * (by * cz - bz * cy)
+            - ay * (bx * cz - bz * cx)
+            + az * (bx * cy - by * cx))
+
+
+def palm_plane_thickness(world_landmarks, thumb_idx=THUMB_CMC):
+    """The thumb's perpendicular distance from the palm plane, in metres --
+    |V| normalised by the palm quad's area. This is the CONDITIONING of the
+    chirality sign, the exact analogue of `edge_on_measure` for the 2D sign.
+
+    ⚠⚠ DIAGNOSTIC ONLY -- it is deliberately NOT a gate, and that is a MEASURED
+    decision, not an oversight. Sweeping a threshold from 0 to 7 mm changed the
+    error count not at all between 0 and 5 mm, and between 3 and 5 mm it made
+    things WORSE (0 residual errors -> 3), because suppressing observations stalls
+    the debounce counter and lets a bad value persist. Under A10 a filter that
+    shows no measured benefit is not shipped hopefully. Kept exposed because it is
+    the honest conditioning signal and costs one division -- and because if a
+    future failure IS conditioning-driven, this is the quantity to plot.
+
+    Observed range over the declared corpus: min 0.9 mm, p10 7.9 mm, median 8.8 mm."""
+    w = world_landmarks[WRIST]
+    ax = world_landmarks[INDEX_MCP][0] - w[0]
+    ay = world_landmarks[INDEX_MCP][1] - w[1]
+    az = world_landmarks[INDEX_MCP][2] - w[2]
+    bx = world_landmarks[PINKY_MCP][0] - w[0]
+    by = world_landmarks[PINKY_MCP][1] - w[1]
+    bz = world_landmarks[PINKY_MCP][2] - w[2]
+    nx, ny, nz = (ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx)
+    nn = math.sqrt(nx * nx + ny * ny + nz * nz)
+    if nn < 1e-12:
+        return 0.0
+    return abs(signed_palm_volume(world_landmarks, thumb_idx)) / nn
+
+
+def geometric_chirality(world_landmarks, thumb_idx=THUMB_CMC):
+    """'Left' / 'Right' -- the APPARENT (mirrored) chirality, from geometry alone.
+
+    Returns None only when the volume is exactly zero (perfectly degenerate),
+    which lets the caller hold rather than guess. The returned value is in the
+    same convention `is_thumb_outward` expects, so it is a drop-in for the label."""
+    v = signed_palm_volume(world_landmarks, thumb_idx)
+    if v == 0.0:
+        return None
+    return "Left" if ((v < 0) == CHIRALITY_V_NEGATIVE_IS_LEFT) else "Right"
+
+
+class ChiralityResolver:
+    """Holds a debounced geometric chirality for ONE hand.
+
+    Falls back to the supplied MediaPipe label until it has a confident geometric
+    value, so the worst case is exactly today's behaviour. Reset when the track
+    dies -- a returning hand is a NEW hand and inherits nothing (the 4.1
+    post-mortem's rule 2, which is what turned a state seam into frozen cubes)."""
+
+    def __init__(self, debounce=CHIRALITY_DEBOUNCE_FRAMES):
+        self.debounce = debounce
+        self.held = None
+        self._pending = None
+        self._run = 0
+        # U8: geometric observations seen for the CURRENT track. Until this
+        # reaches CHIRALITY_CONFIRM_FRAMES the chirality is PROVISIONAL and
+        # chirality-sensitive RULES must not act on it (see `confirmed`).
+        self.frames_seen = 0
+        # Timestamp of this track's FIRST geometric observation. `None` until one
+        # arrives, and stays None for a caller that supplies no `now_ms` -- which
+        # then falls back to the frame count. One subtraction per frame; no frame
+        # rate is estimated and nothing is sampled.
+        self._first_ms = None
+        self._last_ms = None
+        # True while the raw observation disagrees with the held value -- the
+        # chirality is IN DISPUTE and no chirality-sensitive rule may act.
+        self._disputed = False
+        # diagnostics -- how often geometry overrode the label, and how often a
+        # spurious excursion was absorbed. Both are what an A/B wants to read.
+        self.overrides = 0
+        self.debounce_absorbed = 0
+
+    @property
+    def confirmed(self):
+        """False while this track's chirality is still PROVISIONAL.
+
+        ⭐ WHY A RULE MUST NOT ACT ON A PROVISIONAL VALUE -- the owner's physical
+        argument, which is the whole justification for this gate: chirality IS the
+        thumb's offset from the palm plane, so when a hand enters the frame side-on
+        the quantity is not merely noisy, it is UNDEFINED until the thumb clears
+        the edge. MediaPipe fills the gap with a plausible hallucinated thumb, so
+        the wrong value arrives STABLE and well-conditioned -- which is why no
+        amount of debouncing, voting or conditioning-gating caught it (all three
+        were measured and all three failed).
+
+        `confirmed` is False only while GEOMETRIC_CHIRALITY is driving the answer.
+        With no world landmarks the label is in charge and there is nothing to
+        confirm, so this stays True and behaviour is exactly as before.
+
+        ⭐⭐ TWO CONDITIONS, and the second was learned the hard way. The frame
+        count alone is NOT enough: on the recorded production failure the count
+        was satisfied on the very frame of the forbidden grab, while the HELD
+        value was still the wrong one -- the debounce had not yet switched it.
+        A count says "we have looked long enough"; it does not say "the answer is
+        settled". So a rule may act only when BOTH hold:
+
+          1. enough observations for the thumb to have entered view
+             (`CHIRALITY_CONFIRM_FRAMES` -- a transit time, see the constant), and
+          2. the latest observation AGREES with the held value.
+
+        (2) is DR-2's philosophy applied to chirality: while the raw cue and the
+        held value disagree, the chirality is IN DISPUTE, and a disputed chirality
+        inverts `is_thumb_outward`. Freeze the rule rather than guess which side
+        is right -- measured, guessing is near chance (46-64%)."""
+        if not GEOMETRIC_CHIRALITY:
+            return True
+        if self.held is None:
+            # No geometric value has ever been adopted, so the LABEL is driving
+            # the answer and there is nothing for this gate to confirm.
+            # ⚠ THIS BRANCH IS LOAD-BEARING, and omitting it was a real bug: with
+            # no `world_landmarks` `frames_seen` never increments, so the gate
+            # stayed shut forever and every caller that supplies only pixel
+            # landmarks (harnesses, `verify_three_arm_bridge`) could never snap.
+            # The gate must make an un-migrated caller unchanged, never blocked.
+            return True
+        # The observation floor always applies -- see CHIRALITY_CONFIRM_MIN_FRAMES.
+        if self.frames_seen < CHIRALITY_CONFIRM_MIN_FRAMES:
+            return False
+        if self._first_ms is None:
+            # No timestamps supplied: fall back to the frame count at the rig's
+            # rate, which is exactly the pre-2026-08-22 behaviour.
+            return self.frames_seen >= CHIRALITY_CONFIRM_FRAMES and not self._disputed
+        if (self._last_ms - self._first_ms) < CHIRALITY_CONFIRM_MS:
+            return False
+        return not self._disputed
+
+    def update(self, world_landmarks, handedness, now_ms=None):
+        """-> the chirality label the chirality-sensitive rules should use.
+
+        `now_ms` is OPTIONAL and additive: supplied, the confirmation window is a
+        real duration (`CHIRALITY_CONFIRM_MS`) and is therefore correct at any
+        capture rate; omitted, it falls back to a frame count at the rig's rate,
+        which is what shipped before. Callers already hold this timestamp, so
+        passing it samples nothing new."""
+        if not GEOMETRIC_CHIRALITY or not world_landmarks:
+            return handedness
+        self.frames_seen += 1
+        if now_ms is not None:
+            if self._first_ms is None:
+                self._first_ms = now_ms
+            self._last_ms = now_ms
+        obs = geometric_chirality(world_landmarks)
+        if obs is None:
+            # Degenerate this frame: hold, and treat the chirality as disputed --
+            # we have no evidence either way, which is not the same as agreement.
+            self._disputed = True
+            return self.held if self.held is not None else handedness
+        self._disputed = (self.held is not None and obs != self.held)
+        if self.held is None:
+            self.held = obs           # first sighting: adopt at once
+        elif obs == self.held:
+            self._pending, self._run = None, 0
+        else:
+            if obs == self._pending:
+                self._run += 1
+            else:
+                self._pending, self._run = obs, 1
+            if self._run >= self.debounce:
+                self.held = obs
+                self._pending, self._run = None, 0
+            else:
+                self.debounce_absorbed += 1
+        if self.held != handedness:
+            self.overrides += 1
+        return self.held
+
+    def reset(self):
+        self.held = None
+        self._pending = None
+        self._run = 0
+        # A new hand starts PROVISIONAL again. This is the point of the reset:
+        # the confirmation belonged to the previous track, not to this one.
+        self.frames_seen = 0
+        self._first_ms = None
+        self._last_ms = None
+        self._disputed = False
+
+
 def is_thumb_outward(landmarks, handedness):
     """True when the hand shows its BACK to the camera (thumb outward) --
     GESTURE_PIPELINE_SPEC.md §13.6, GAME_RULES.md rule 3.
@@ -173,10 +514,37 @@ class PalmFacingTracker:
         self.frozen = None        # last confident thumb-outward value
         self.in_band = False
         self.exit_run = 0         # consecutive frames above the exit threshold
+        # U7: chirality resolved from geometry rather than from MediaPipe's label.
+        # ⭐ IT LIVES HERE ON PURPOSE. `update()` is the ONE place the handedness
+        # label enters the palm/back cue in either tool, so fixing it here fixes
+        # production and the debug tool in a single edit -- N6, "shared, never
+        # copied". Putting it in the two call sites instead is precisely how
+        # §13.6.1's production-only inversion happened.
+        self.chirality = ChiralityResolver()
+        # ⭐ Which TRACK this tracker's held state belongs to. Slot-keyed state
+        # inherited across a relabel is post-mortem §3.4, and it was still live
+        # after the T3 ownership remap: measured 2026-08-22 in
+        # `2026-08-22_185958_t3_remap_debug_test` at f1050, where track t9 moved
+        # from slot Right to slot Left, inherited t5's chirality, and its
+        # back-of-hand read as PALM for two frames -- long enough to grab a cube
+        # that rule 3 should have refused.
+        self._track_id = None
         # diagnostics
         self.band_entries = 0
         self.frames_frozen = 0
         self.chatter_suppressed = 0
+        self.track_changes = 0
+
+    @property
+    def chirality_confirmed(self):
+        """False while this hand's chirality is still PROVISIONAL (U8).
+
+        ⭐ Rule 3 must consult this, not just `thumb_outward`. `thumb_outward` is
+        computed FROM the chirality, so a provisional chirality yields a
+        confidently-wrong palm/back answer -- measured: a back-of-hand hand read
+        as PALM and grabbed a cube rule 3 forbids
+        (`2026-08-22_190955_t3_remap_production_test`, f664)."""
+        return self.chirality.confirmed
 
     @property
     def orientation_valid(self):
@@ -184,19 +552,44 @@ class PalmFacingTracker:
         `HandState.quality.orientationValid` when that contract lands."""
         return not self.in_band
 
-    def update(self, landmarks, handedness):
+    def update(self, landmarks, handedness, world_landmarks=None, track_id=None,
+               now_ms=None):
         """Returns (thumb_outward, orientation_valid).
 
         `thumb_outward` is the value the gesture layer should act on: measured
         when well-conditioned, frozen while inside the band.
 
-        ⚠ No timestamp parameter, deliberately -- see the EXIT_DWELL note above.
-        A time-based dwell was built here and measured to freeze DR-2 47% longer
-        for no correctness gain, because this is a consecutive-confirmation
-        debounce rather than a duration.
+        ⭐ U7: `world_landmarks` is OPTIONAL and additive. Supplied, the chirality
+        correction is driven by geometry (`ChiralityResolver`) instead of by
+        MediaPipe's 10.8%-wrong label; omitted -- or with `GEOMETRIC_CHIRALITY`
+        off -- behaviour is bit-identical to before. So a caller that has not been
+        migrated is not silently broken, it is merely not yet fixed.
+
+        ⚠ `now_ms` IS NOT FOR DR-2's DWELL, and the distinction matters. DR-2's
+        exit dwell stays a frame COUNT: it is a consecutive-confirmation debounce,
+        and a time-based version was built and measured to freeze DR-2 47% longer
+        for no correctness gain (N7). `now_ms` feeds only U8's confirmation
+        window, which IS a physical transit time and must therefore be a duration.
+        Two dwells in one class, deliberately in different units, each in the unit
+        that matches what it represents.
         """
+        # ⛔ A DIFFERENT HAND IN THIS SLOT INHERITS NOTHING (post-mortem rule 2).
+        # Chirality and palm/back are properties of a PHYSICAL hand, so held state
+        # is meaningless once the track changes -- and worse than meaningless: it
+        # INVERTS the answer, because `is_thumb_outward` is chirality-dependent.
+        # ⚠ Only a real id (>= 0) may trigger this. -1 is DR-1's "no identity this
+        # frame"; treating it as a change would reset constantly and throw away
+        # good state, and treating two -1s as the same hand would be worse still.
+        if (track_id is not None and track_id >= 0
+                and self._track_id is not None and track_id != self._track_id):
+            self.reset()
+            self.track_changes += 1
+        if track_id is not None and track_id >= 0:
+            self._track_id = track_id
+
         eo = edge_on_measure(landmarks)
-        measured = is_thumb_outward(landmarks, handedness)
+        chirality = self.chirality.update(world_landmarks, handedness, now_ms)
+        measured = is_thumb_outward(landmarks, chirality)
 
         if self.frozen is None:
             # First sighting. Trust it even if edge-on: there is nothing to freeze
@@ -232,10 +625,16 @@ class PalmFacingTracker:
         return self.frozen, False
 
     def reset(self):
-        """Drop held state (hand lost / track ended) without clearing counters."""
+        """Drop held state (hand lost / track ended) without clearing counters.
+
+        ⭐ U7: the resolved chirality is dropped too. A returning hand is a NEW
+        hand and must inherit nothing -- the 4.1 post-mortem's rule 2, whose
+        violation (seeding new tracks from slot state) is what froze every cube."""
         self.frozen = None
         self.in_band = False
         self.exit_run = 0
+        self.chirality.reset()
+        self._track_id = None
 
 
 # --------------------------------------------------------------------------

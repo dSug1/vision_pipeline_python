@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Tuple
 from .CubeWindow import CubeWindow
 # Palm chirality geometry, SHARED with LiveSnapDebug.py so the sign convention
 # cannot drift between them again (§13.6.1). Pure stdlib, no side effects.
+from . import owner_remap
 from . import palm_geometry
 from . import palm_rotation
 from . import hand_state
@@ -274,6 +275,17 @@ TRACK_OWNERSHIP = False
 
 _hand_track_ids: Dict[str, int] = {h: -1 for h in TRACKED_HANDS}
 
+# ⭐ T3 NARROW REMAP (2026-08-22): cube name -> the DR-1 TRACK id holding it,
+# captured at the snap. Ownership itself stays a SLOT NAME, so every consumer is
+# untouched; this only lets the owner slot FOLLOW its track when DR-1 swaps the
+# two hands between slots. Without it the cube changes PHYSICAL HAND with no
+# release, no snap and no rule-3 check -- the recorded back-of-hand steal
+# (`2026-08-22_184440_n8_back_steal_b`, f478), and the spurious relabel-releases
+# that are 113 of 205 measured drops (T3).
+# ⚠ NOT 4.1's migration: the key type does not change and nothing else moves off
+# the slot. Mirrors `LiveSnapDebug.CubeState.holder_track` (N6).
+_cube_holder_track: Dict[str, int] = {}
+
 
 def on_hand_tracks_frame(left_id: int, right_id: int) -> None:
     """Store this frame's stable DR-1 track ids. Called from the "hand_tracks"
@@ -471,6 +483,13 @@ def _try_snap(handedness: str, hand_pos: Tuple[float, float], exclude=frozenset(
             best_name, best_dist = name, dist
     if best_name is not None:
         cube_window.snap_cube(best_name, _owner_key(handedness))
+        # T3: remember WHICH HAND took it. -1 means no identity this frame --
+        # store nothing rather than a sentinel, so the remap simply no-ops.
+        _tid = _hand_track_ids.get(handedness, -1)
+        if _tid >= 0:
+            _cube_holder_track[best_name] = _tid
+        else:
+            _cube_holder_track.pop(best_name, None)
     return best_name
 
 
@@ -883,6 +902,10 @@ def _record_close():
     if _rec["fh"] is None:
         return
     try:
+        # A row may still be held from the final frame (see `_record_flush`).
+        # Dropping it would silently truncate the session by one frame -- exactly
+        # the sort of quiet instrument error this recorder exists to eliminate.
+        _record_flush()
         _rec["fh"].close()
         elapsed = time.perf_counter() - (_rec["t0"] or time.perf_counter())
         with open(os.path.join(_rec["dir"], "meta.json"), "w", encoding="utf-8") as m:
@@ -925,9 +948,45 @@ def _record_frame(hands):
                    "orientation": [round(v, 6) for v in c.orientation]}
             for name, c in cube_window.cubes.items()}},
     }
+    # ⭐⭐ HELD, NOT WRITTEN YET. The palm/back cue this frame's rules act on is
+    # computed BELOW, in the per-hand loop, so writing here would record the
+    # PREVIOUS frame's answer -- a one-frame lie in the one field the instrument
+    # exists to capture. `_record_flush()` writes the row at the end of the frame.
+    # ⚠ `landmarks`/`world_landmarks`/`cubes` are captured HERE deliberately, so
+    # their meaning is unchanged from the two production sessions already recorded
+    # ("the state the logic was about to act on"). Only the cue fields are added
+    # late. Changing the cube timing would silently shift every existing
+    # comparison by a frame.
+    _rec["pending"] = row
+
+
+def _record_flush():
+    """Write the row held by `_record_frame`, now that this frame's cue exists.
+
+    ⭐ WHY THIS EXISTS (owner instruction, 2026-08-22): production recorded no
+    `thumb_outward`, so diagnosing a production session meant RECOMPUTING the cue
+    -- and a recomputation is a second implementation that can silently disagree
+    with the real one. It did, immediately: the first pass over the recorded
+    production steal recomputed with a slot-keyed tracker while production was
+    running track-aware, and reported the session CLEAN when the owner had just
+    watched the defect happen. Record what ran; never re-derive it."""
+    if _rec["fh"] is None or _rec.get("pending") is None:
+        return
+    row = _rec.pop("pending")
+    for h in row["hands"]:
+        slot = h["handedness"]
+        tracker = _palm_facing_trackers[slot]
+        h["thumb_outward"] = bool(_last_known_thumb_outward[slot])
+        # The U8 gate's own state, so a replay can separate "rule 3 refused
+        # because the hand was back" from "rule 3 refused because the chirality
+        # was still provisional" -- two very different behaviours that look
+        # identical from the outside.
+        h["chirality_confirmed"] = bool(tracker.chirality_confirmed)
+        h["orientation_valid"] = bool(tracker.orientation_valid)
+        h["snap_allowed"] = bool(_thumb_outward_snap_allowed[slot])
     _rec["fh"].write(json.dumps(row) + "\n")
     _rec["n"] += 1
-    if rec_hands:
+    if row["hands"]:
         _rec["hands"] += 1
     if _rec["n"] % 50 == 0:
         _rec["fh"].flush()
@@ -1009,6 +1068,31 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     for handedness, landmarks in hands:
         _hand_state_trackers[handedness].update(_is_detected(landmarks), now_ms)
 
+    # ⭐⭐ T3 NARROW REMAP -- runs BEFORE anything reads `cube.owner`.
+    #
+    # DR-1 swaps two tracks between slots constantly. Ownership is a slot NAME, so
+    # without this the cube silently changes PHYSICAL HAND at that instant: no
+    # release, no snap, and rule 3 never consulted -- which is why every ordinary
+    # back-of-hand grab is blocked and the recorded steal was not. It also removes
+    # the spurious relabel-RELEASE (measured: the cube dropped and was re-grabbed
+    # one frame later, with only ONE hand on screen).
+    #
+    # ⚠ NOT 4.1's migration: ownership REMAINS a slot name, nothing else moves off
+    # the slot, and an ABSENT track is a no-op here -- `_release_stranded_cubes`
+    # below still owns that case. See `Resources/owner_remap.py`.
+    for _name, _cube in cube_window.cubes.items():
+        if _cube.owner is None:
+            # Clear the holder here rather than at each release SITE: production
+            # releases from several places (tracking loss, strand, arbitration),
+            # and a forgotten site would leave a stale holder that could re-point
+            # a LATER grab of the same cube at the wrong hand.
+            _cube_holder_track.pop(_name, None)
+            continue
+        _remapped = owner_remap.remap_owner(
+            _cube.owner, _cube_holder_track.get(_name), _hand_track_ids)
+        if _remapped != _cube.owner:
+            _cube.owner = _remapped
+
     released_this_frame = set()
     # Bound the strand FIRST, so a cube owned by a track the wire has stopped
     # representing cannot survive indefinitely (see OWNER_ABSENT_RELEASE_MS).
@@ -1074,8 +1158,17 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
         # frame's quality block as `HandState.quality.orientationValid`. Still
         # read by no RULE (that stays a separate, deliberate decision), but it is
         # now available to one rather than being recomputed later from scratch.
+        # ⭐ U7: hand the tracker this frame's WORLD landmarks so the chirality
+        # correction comes from geometry, not from MediaPipe's handedness label
+        # (measured wrong 10.8% of the time, at 0.94 confidence -- see
+        # `Claude/HANDEDNESS_LABEL_DEFECT.md`). Read from the SAME slot as this
+        # frame's pixel landmarks: "hands_world" is sent immediately BEFORE
+        # "hands" every frame, so the two are same-frame consistent by
+        # construction. `None` before the first packet arrives -> the tracker
+        # falls back to the label, i.e. exactly the old behaviour.
         thumb_outward, _orientation_valid = _palm_facing_trackers[handedness].update(
-            landmarks, handedness
+            landmarks, handedness, _latest_world_landmarks[handedness],
+            track_id=_hand_track_ids.get(handedness, -1), now_ms=now_ms
         )
         tracking.set_orientation_valid(_orientation_valid)
         _last_known_thumb_outward[handedness] = thumb_outward
@@ -1132,7 +1225,25 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
 
         owned_cube = _cube_for_hand(handedness, now_ms)
         if owned_cube is None:
-            can_snap = (not thumb_outward) or _thumb_outward_snap_allowed[handedness]
+            # ⭐⭐ U8: rule 3 may not act on a PROVISIONAL chirality.
+            #
+            # `thumb_outward` is computed FROM the chirality, so while a newly
+            # entered hand's chirality is unconfirmed the palm/back answer can be
+            # confidently WRONG -- not noisy, wrong, because the thumb has not yet
+            # cleared the frame edge and MediaPipe hallucinates one. Measured: a
+            # back-of-hand hand read as PALM and took a cube rule 3 forbids
+            # (`2026-08-22_190955_t3_remap_production_test`, f664, track age 5).
+            #
+            # ⚠ SUPPRESS, DO NOT GUESS -- the DR-2 pattern. Three cheaper remedies
+            # were measured and all failed: conditioning-gating (the bad frames
+            # were ABOVE median thickness), falling back to the label (the label
+            # is WORSE at entry: 76.8% vs geometry's 89.7%), and temporal voting
+            # (the wrong value was stable for 5 consecutive frames).
+            #
+            # Cost: ~22% of snaps delayed by ~380 ms. Delayed, not refused.
+            _chirality_ok = _palm_facing_trackers[handedness].chirality_confirmed
+            can_snap = ((not thumb_outward) or _thumb_outward_snap_allowed[handedness]) \
+                and _chirality_ok
             if can_snap:
                 owned_cube = _try_snap(handedness, hand_pos, exclude=released_this_frame)
                 if owned_cube is not None:
@@ -1188,6 +1299,10 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     # ⚠ WRITE BACK LAST, after every mutation this frame. Skipping it would make
     # the whole rebinding a no-op that silently reset each hand every frame.
     _writeback_track_state(now_ms)
+
+    # ⭐ Now that this frame's palm/back cue and U8 gate state exist, write the
+    # recording row held since the top of the frame. See `_record_flush`.
+    _record_flush()
 
     cube_window.pump_and_draw()
 

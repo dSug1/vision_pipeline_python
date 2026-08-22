@@ -81,6 +81,14 @@ def main():
         right = by.get("Right", {}).get("landmarks") or [(0.0, 0.0)] * 21
         lw = by.get("Left", {}).get("world_landmarks") or [(0.0, 0.0, 0.0)] * 21
         rw = by.get("Right", {}).get("world_landmarks") or [(0.0, 0.0, 0.0)] * 21
+        # ⭐ Feed production the TRACK IDS too, exactly as the live wire does via
+        # the `hand_tracks` packet. ⚠ THIS CAUGHT ITS OWN BUG A SECOND TIME: when
+        # the palm-facing tracker became track-aware, omitting this made production
+        # see -1 forever (so it never reset) while the debug side reset normally --
+        # a divergence that existed ONLY in the harness. Whenever either tool gains
+        # an input, BOTH sides of this harness must gain it.
+        P.on_hand_tracks_frame(by.get("Left", {}).get("trackId", -1),
+                               by.get("Right", {}).get("trackId", -1))
         P.on_hands_world_frame(lw, rw)
         P.on_hands_frame(left, right, now_ms=t)
 
@@ -90,13 +98,33 @@ def main():
         # RECORDED thumb_outward instead and reported 8 "divergences" that were
         # purely that asymmetry -- production recomputes, the harness replayed.
         # A parity harness that is not itself symmetric manufactures divergences.
+        # ...and the debug tool reads its track ids from a MODULE GLOBAL, which
+        # the live tool fills from DR-1 in its main loop. Set it here for the same
+        # reason as production's call above: `update_hands` uses it for the T3
+        # remap and to stamp `holder_track` at a snap.
+        for h in HANDS:
+            D._hand_track_ids[h] = (by.get(h) or {}).get("trackId", -1)
+
         data = {}
         for h in HANDS:
             src = by.get(h)
             if src is None:
                 data[h] = None
                 continue
-            dr2, _valid = D._palm_facing_trackers[h].update(src["landmarks"], h)
+            # ⭐ U7: pass world landmarks, exactly as `LiveSnapDebug.py` does at
+            # its real call site. ⚠ THIS LINE CAUGHT ITS OWN CLASS OF BUG the day
+            # U7 landed: production feeds world landmarks via
+            # `on_hands_world_frame` above, so leaving this call at two arguments
+            # made the harness report a divergence that existed only in the
+            # harness. The symmetry rule in the comment above applies to the
+            # ARGUMENTS as well as to the recompute.
+            # ⚠ `now_ms=t` for the same symmetry reason as the two arguments
+            # above: production gets the frame time via `on_hands_frame(now_ms=t)`,
+            # so omitting it here would put the two sides on different clocks and
+            # manufacture a divergence. Third time this rule has bitten.
+            dr2, _valid = D._palm_facing_trackers[h].update(
+                src["landmarks"], h, src["world_landmarks"],
+                track_id=src.get("trackId", -1), now_ms=t)
             data[h] = {
                 "pixel_landmarks": src["landmarks"],
                 "world_landmarks": src["world_landmarks"],

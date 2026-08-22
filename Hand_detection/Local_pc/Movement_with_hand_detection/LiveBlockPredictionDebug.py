@@ -920,8 +920,14 @@ def main():
             for d, label in zip(detections, labels):
                 seen[label] = True
                 # DR-2 runs ONCE and feeds both arms: it is upstream of the gate.
+                # ⭐ U7: world landmarks drive the chirality correction, matching
+                # `LiveSnapDebug.py` and production. A tool left on the two-argument
+                # call would silently keep the 10.8%-wrong label -- not broken, but
+                # measuring a DIFFERENT pipeline than the one that ships, which is
+                # the divergence class N6 exists to prevent.
                 outward, _valid = LSD._palm_facing_trackers[label].update(
-                    d["pixel_landmarks"], label)
+                    d["pixel_landmarks"], label, d["world_landmarks"],
+                    track_id=LSD._hand_track_ids.get(label, -1))
                 px, world = d["pixel_landmarks"], d["world_landmarks"]
                 data_raw[label] = {"pixel_landmarks": px, "world_landmarks": world,
                                    "thumb_outward": outward}

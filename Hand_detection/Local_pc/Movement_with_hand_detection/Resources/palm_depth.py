@@ -103,8 +103,27 @@ MAX_RATIO = 2.50
 # together -- median retained, relative to the same span while measuring:
 #     diagonal 0-5   1.01x      palm length 0-9  0.94x
 #     diagonal 0-17  0.70x      palm width 5-17  0.63x
-# So the old gate threw away two spans that still carried signal. 0.5 sits below
-# the two survivors and above the collapsed width.
+# So the old gate threw away two spans that still carried signal.
+#
+# ⚠ CORRECTION to an earlier version of this comment, which claimed 0.5 sits
+# "above the collapsed width". It does NOT -- the width retained 0.63, which is
+# ABOVE 0.5, so the floor does not exclude it. That turns out not to matter,
+# because `max()` selects the largest survivor and the width is never the largest
+# when a 0.94/1.01 span is present. The floor's real and only job is deciding
+# when to HOLD, i.e. when EVERY span has collapsed.
+#
+# ⚠⚠ AND THE FLOOR IS SETUP-DEPENDENT IN A WAY THE RATIO ITSELF IS NOT. Under a
+# pinhole camera the ratio is Z0/Z: focal length, field of view and hand size all
+# CANCEL. This floor does not cancel -- it is an absolute size threshold, so it
+# conflates "far away" with "collapsed", both of which shrink every span. For a
+# +/-30 cm reach the retreat ratio stays >= 0.57 for sitting distances of 40-120
+# cm, so the floor is not reached by distance alone there; but a user who leans
+# well back can cross it and have genuine distance read as collapse.
+#
+# ⭐ THE SCALE-INVARIANT FIX, if this ever needs to generalise: distance shrinks
+# every span PROPORTIONALLY while foreshortening shrinks them ANISOTROPICALLY, so
+# the RATIO BETWEEN spans separates the two and is scale-free. Gate the hold on
+# shape (that ratio, or `edge_on_measure`) rather than on absolute size.
 #
 # ⚠ RIGID PALM SPANS ONLY. `wrist->fingertip` also survived edge-on (1.00x) and
 # is deliberately NOT used: any MCP->TIP length changes with GRIP, so it would
