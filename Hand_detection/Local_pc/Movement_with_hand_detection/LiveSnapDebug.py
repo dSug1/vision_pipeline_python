@@ -1,4 +1,6 @@
 import argparse
+import json
+from datetime import datetime
 import math
 import os
 import sys
@@ -85,6 +87,12 @@ HAND_LANDMARKER_MODEL_PATH = os.path.join(
 # class; fist/open-palm detection needs a different approach (custom
 # geometric heuristic or trained classifier) — not yet decided, see
 # GESTURE_PIPELINE_SPEC.md §13.4.
+
+# Recording root for --record. Deliberately the SAME root
+# RecordPerceptionSequence.py writes to, so analysis/t5*.py locate these
+# sessions with the same CAPTURE_ROOT constant and need no new path.
+# Owner rule (memory): recordings live on E:, never --local.
+RECORD_ROOT = r"E:\Python\Recordings for vision_pipeline\Recordings_perception_layer"
 
 TRACKED_HANDS = ("Left", "Right")
 
@@ -1088,7 +1096,10 @@ def _draw_hand(frame, normalized_landmarks, handedness, thumb_outward, snap_allo
                          (0, 200, 0) if snap_allowed else (0, 0, 255))
     else:
         label, color = "thumb-inward", (0, 200, 200)
-    cv2.putText(frame, f"{handedness}: {label}", (text_x, max(text_y, 20)),
+    # Display the ANATOMICAL hand (owner report 2026-08-22). DISPLAY ONLY --
+    # `handedness` keeps its pipeline convention everywhere else in this file.
+    _shown = hand_identity.anatomical_name(handedness)
+    cv2.putText(frame, f"{_shown}: {label}", (text_x, max(text_y, 20)),
                 cv2.FONT_HERSHEY_DUPLEX, 0.6, color, 2, cv2.LINE_AA)
     # Predictive-filter reliability diagnostic (see "Attempt 3" above
     # CONDITIONING_ALPHA_LOW) -- a per-hand signal, drawn here rather than
@@ -1098,7 +1109,7 @@ def _draw_hand(frame, normalized_landmarks, handedness, thumb_outward, snap_allo
     # increasingly coasting on the predicted/extrapolated orientation.
     if reliability_alpha < 0.999:
         color = (0, 140, 255) if reliability_alpha > 0.0 else (0, 0, 255)
-        cv2.putText(frame, f"{handedness}: reliability {reliability_alpha:.2f}", (text_x, max(text_y, 20) + 24),
+        cv2.putText(frame, f"{_shown}: reliability {reliability_alpha:.2f}", (text_x, max(text_y, 20) + 24),
                     cv2.FONT_HERSHEY_DUPLEX, 0.6, color, 2, cv2.LINE_AA)
 
 
@@ -1182,6 +1193,21 @@ def main():
     parser.add_argument("--scale", type=float, default=0.62,
                         help="per-panel display scale for --arms 3")
     parser.add_argument("--gap", type=int, default=8, help="pixels between panels")
+    # --- opt-in recording (added 2026-08-22, spec 14.3.4) -------------------
+    # The owner asked to SEE the cube while a yaw take is recorded. The
+    # perception recorder shows no cube; this tool shows the cube but recorded
+    # nothing. Rather than build a third tool, recording is bolted on here,
+    # OFF by default, so the live view and the capture are the same run.
+    # N17's lesson is applied: tCapture is a REAL monotonic clock, never a
+    # synthesised cadence, and --note exists so the operator's intent is stored.
+    parser.add_argument("--record", action="store_true",
+                        help="also write raw_landmarks.jsonl + per-frame cube state")
+    parser.add_argument("--note", type=str, default="",
+                        help="free-text note stored in meta.json (use with --record)")
+    parser.add_argument("--tag", type=str, default="live_cube_yaw",
+                        help="session folder suffix (use with --record)")
+    parser.add_argument("--duration", type=float, default=None,
+                        help="auto-stop after N seconds (use with --record)")
     args = parser.parse_args()
 
     detector = build_detector()
@@ -1228,11 +1254,37 @@ def main():
     else:
         print(f"[LiveSnapDebug] single arm: {_arm_title(state)}")
 
+    # PREFLIGHT the capture root BEFORE a single frame, never after the
+    # operator's effort -- RecordPerceptionSequence.py learned this the hard way
+    # on 2026-08-02 when a completed take was discarded at save time.
+    session_dir, records, t0 = None, [], time.perf_counter()
+    if args.record:
+        stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        session_dir = os.path.join(RECORD_ROOT, "sessions", f"{stamp}_{args.tag}")
+        try:
+            os.makedirs(session_dir, exist_ok=True)
+            probe = os.path.join(session_dir, ".writable")
+            with open(probe, "w", encoding="utf-8") as fh:
+                fh.write("ok")
+            os.remove(probe)
+        except OSError as e:
+            cap.release()
+            raise SystemExit(
+                f"[LiveSnapDebug] Capture root is not writable, refusing to record.\n"
+                f"                path : {session_dir}\n"
+                f"                error: {e}\n"
+                f"                If this is the external drive it may be asleep -- "
+                f"touch it once and retry.")
+        print(f"[LiveSnapDebug] RECORDING -> {session_dir}")
+        if args.duration:
+            print(f"[LiveSnapDebug] auto-stop after {args.duration:.0f}s")
+
     try:
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
+            t_capture_ms = (time.perf_counter() - t0) * 1000.0   # REAL clock (N17)
             frame = cv2.flip(frame, 1)  # mirror, matching the production pipeline's invert_x
 
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -1314,6 +1366,34 @@ def main():
             # divergence between panels has exactly one cause.
             update_hands_all(arms, hand_data_by_hand, rotation=PRODUCTION_ROTATION)
 
+            if args.record:
+                # Schema is DELIBERATELY identical to RecordPerceptionSequence.py's
+                # raw_landmarks.jsonl, so every existing analysis/t5*.py harness
+                # reads this file unchanged. "cubes" is additive -- those readers
+                # only touch "hands" -- and carries what they could never see
+                # before: the orientation actually applied to the cube.
+                rec_hands = []
+                for handedness in TRACKED_HANDS:
+                    d = hand_data_by_hand.get(handedness)
+                    if d is None:
+                        continue
+                    rec_hands.append({
+                        "handedness": handedness,
+                        "landmarks": [[round(x, 2), round(y, 2)] for x, y in d["pixel_landmarks"]],
+                        "world_landmarks": [[round(x, 5), round(y, 5), round(z, 5)]
+                                            for x, y, z in d["world_landmarks"]],
+                        "thumb_outward": bool(d["thumb_outward"]),
+                    })
+                records.append({
+                    "tCapture": round(t_capture_ms, 2),
+                    "hands": rec_hands,
+                    "cubes": {
+                        name: {"owner": c.owner,
+                               "orientation": [round(v, 6) for v in c.orientation]}
+                        for name, c in arms[0].cubes.items()
+                    },
+                })
+
             for i, arm in enumerate(arms):
                 panel = frame if len(arms) == 1 else frame.copy()
                 for handedness, normalized in normalized_by_hand.items():
@@ -1340,10 +1420,35 @@ def main():
                 print("[LiveSnapDebug] counters reset on all arms")
             if any(cv2.getWindowProperty(n, cv2.WND_PROP_VISIBLE) < 1 for n in windows):
                 break
+            if args.duration and (time.perf_counter() - t0) >= args.duration:
+                print("[LiveSnapDebug] duration reached")
+                break
     finally:
         cap.release()
         cv2.destroyAllWindows()
         print("[LiveSnapDebug] Stopped, camera released.")
+        if session_dir is not None:
+            elapsed = time.perf_counter() - t0
+            fps = len(records) / elapsed if elapsed > 0 else 0.0
+            with open(os.path.join(session_dir, "raw_landmarks.jsonl"), "w",
+                      encoding="utf-8") as fh:
+                for r in records:
+                    fh.write(json.dumps(r) + "\n")
+            with open(os.path.join(session_dir, "meta.json"), "w", encoding="utf-8") as fh:
+                json.dump({
+                    "sequence": args.tag,
+                    "source": "LiveSnapDebug.py --record (cube visible live)",
+                    "note": args.note,
+                    "frames": len(records),
+                    "duration_s": round(elapsed, 2),
+                    "measured_fps": round(fps, 2),
+                    "bridge": args.bridge,
+                    "arms": args.arms,
+                }, fh, indent=2)
+            with_hand = sum(1 for r in records if r["hands"])
+            print(f"[LiveSnapDebug] Saved {len(records)} frames "
+                  f"({fps:.2f} fps measured) to {session_dir}")
+            print(f"[LiveSnapDebug] frames with >=1 hand: {with_hand}/{len(records)}")
 
 
 if __name__ == "__main__":

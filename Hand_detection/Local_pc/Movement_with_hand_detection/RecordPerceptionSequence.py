@@ -80,10 +80,22 @@ DEFAULT_CYCLES = {
     "palm_back_s4_fast": 30,
 }
 
+YAW_AXIS_NOTE = (
+    "YAW axis: rotate about the VERTICAL axis so the palm turns EDGE-ON to the "
+    "camera and back, like turning a PAGE. Keep the fingers pointing STRAIGHT UP "
+    "throughout -- the wrist stays put and only the palm swings. Do NOT tip the "
+    "fingers toward/away (that is PITCH), do NOT tilt the hand sideways in the "
+    "image plane (that is ROLL), and do NOT move closer/further. "
+    "NOTE: the 2026-08-04 yaw take was measured AXIS-CONTAMINATED (spec 14.3.3): "
+    "both palm spans collapsed, meaning pitch was mixed in. Its prompt said "
+    "'doorknob', which is ROLL about the depth axis, not yaw -- that wording is "
+    "removed. A clean single-axis yaw take is what spec 14.3.4 needs."
+)
+
 PITCH_AXIS_NOTE = (
     "PITCH axis: tip the fingers TOWARD then AWAY from the camera, as if nodding "
     "the hand -- the axis runs left-right across the knuckles. Do NOT rotate about "
-    "the vertical axis (yaw, like turning a page/doorknob). Pitch is what the open "
+    "the vertical axis (yaw, like turning a PAGE). Pitch is what the open "
     "pitch-plane-crossing TODO is about and what pitch_sweep_slow/fast used, so a "
     "yaw take would not be comparable; yaw has its own separate open item."
 )
@@ -270,10 +282,12 @@ SEQUENCES = {
     # take exists to make.
     "yaw_sweep_constant_depth": (
         30.0,
-        "ONE hand, held at a FIXED distance. Rotate about the VERTICAL axis "
-        "(yaw, like turning a doorknob or a page) so the palm turns edge-on to "
-        "the camera and back. ~3s per full sweep. Do NOT move the hand closer "
-        "or further away, and do NOT tip the fingers toward/away (that is pitch).",
+        "ONE hand, fingers pointing STRAIGHT UP, held at a FIXED distance. "
+        "Rotate about the VERTICAL axis ONLY -- like turning a PAGE -- so the "
+        "palm turns edge-on to the camera and back. ~3s per full sweep. Keep the "
+        "fingers vertical the whole time. Do NOT tip the fingers toward/away "
+        "(pitch), do NOT tilt the hand sideways in the image (roll), and do NOT "
+        "move closer or further away.",
         "the yaw axis, never recorded: palm-width collapse under yaw (14.3.1), "
         "the multi-anchor scale reference for 4.1/4.2, and T4's yaw-sink",
     ),
@@ -450,6 +464,8 @@ def main():
     print(f"[perception] DO THIS  : {prompt}")
     if args.sequence.startswith("palm_back") or args.sequence.startswith("pitch_sweep"):
         print(f"[perception] AXIS     : {PITCH_AXIS_NOTE}")
+    if args.sequence.startswith("yaw_sweep"):
+        print(f"[perception] AXIS     : {YAW_AXIS_NOTE}")
     print(f"[perception] unblocks : {unblocks}")
 
     t0 = time.perf_counter()

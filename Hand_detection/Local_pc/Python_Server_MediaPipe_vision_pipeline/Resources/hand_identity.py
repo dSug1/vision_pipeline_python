@@ -236,6 +236,53 @@ SWITCH_MIN_SCORE = 0.90
 MAX_ASSOC_PALM_RATIO = 3.0
 
 
+# ---------------------------------------------------------------------------
+# DISPLAY-ONLY anatomical hand name (2026-08-22, owner report)
+# ---------------------------------------------------------------------------
+# Owner, 2026-08-22, after the 14.3.4.3 mirror fix was confirmed working:
+# "on both the sessions, the label 'left' or 'right' hands are inverted".
+# Correct, and MEASURED against the ground-truth clips:
+#
+#     physical RIGHT hand  ->  internal label 'Left'    (751/751 frames)
+#     physical LEFT  hand  ->  internal label 'Right'   (200/200 frames)
+#
+# ⚠ THIS IS PRE-EXISTING, NOT A SIDE EFFECT OF THE MIRROR FIX. Before it,
+# detection ran on the raw frame and `_mirror_handedness()` flipped the label;
+# after it, detection runs on the mirrored frame and MediaPipe reports the same
+# value directly. Both routes display the SAME thing, which is why
+# `VerifyChiralityFixture.py` -- whose ground truth literally reads "PHYSICAL
+# Right hand -> expected label 'Left' (mirrored convention)" -- passed unchanged
+# before AND after.
+#
+# ⛔⛔ DO NOT "FIX" THIS BY FLIPPING THE INTERNAL LABEL. The internal value is
+# load-bearing in four places that are all calibrated to the current convention:
+#   1. `palm_geometry.is_thumb_outward()` applies a handedness-dependent
+#      chirality correction (`if handedness == "Left": cross = -cross`).
+#      Flipping the label inverts that sign -- which IS §13.6.1, the bug that
+#      shipped inverted in production and survived an "end-to-end confirmed"
+#      claim.
+#   2. All 415 recorded sessions store labels in this convention; flipping live
+#      would desynchronise every replay harness from the live pipeline.
+#   3. `VerifyChiralityFixture.py` encodes it as ground truth.
+#   4. Cube ownership and DR-1's track slots key on it (see queue T3).
+#
+# ⭐ So the label is corrected for DISPLAY ONLY, at the two places a human reads
+# it, and the internal convention is left exactly as it is. Defined HERE, in the
+# module both the server and `LiveSnapDebug.py` already import, so the two
+# cannot drift (rule N6: imported, never copied).
+_ANATOMICAL = {"Left": "Right", "Right": "Left"}
+
+
+def anatomical_name(track_label):
+    """The physical hand a track label refers to -- for ON-SCREEN TEXT ONLY.
+
+    `track_label` is the pipeline's internal label ('Left'/'Right'). Returns the
+    hand the operator is actually holding up, which is its opposite. ⚠ Never feed
+    this back into any rule, filter or ownership key -- see the block above.
+    """
+    return _ANATOMICAL.get(track_label, track_label)
+
+
 def palm_centroid(points_xy):
     """Centroid of the rigid palm landmarks. `points_xy` is the full 21-point
     list of (x, y) tuples; returns None if any needed point is missing."""

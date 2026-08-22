@@ -46,6 +46,10 @@ if not cap.isOpened():
 ret, frame = cap.read()
 if not ret:
     raise RuntimeError("Could not read an initial frame from the webcam.")
+# MIRROR BEFORE DETECTION (2026-08-22, spec 14.3.4.3). This frame is NOT just a
+# size probe: the loop below consumes it before reading the next one, so it
+# reaches inference and must be mirrored like every other frame.
+frame = cv2.flip(frame, 1)
 height, width = frame.shape[:2]
 try:
     SendMetaPacketThroughSocket(width, height, connection)
@@ -72,19 +76,27 @@ try:
         break
 
     # Process face keypoints: 6 keypoints × 2 = 12 values
+    # invert_x=False: the FRAME was mirrored before detection (spec 14.3.4.3), so
+    # these coordinates are already in the mirrored/selfie frame. Mirroring again
+    # would put face keypoints back into the un-mirrored frame -- the exact
+    # double-flip class M5d warns about (an EVEN number of flips still "works",
+    # an odd number inverts).
     flat_face_coords = remap_keypoints(
         facekeypointsCoordinates,
         width,
         height,
-        expected_count=6
+        expected_count=6,
+        invert_x=False,
     )
 
     # Process hands landmarks: 21 keypoints per hand × 2 = 42 values per hand
     left_landmarks = extract_hand_by_type(allHandsLandmarksCoordinatesArray, "Left")
     right_landmarks = extract_hand_by_type(allHandsLandmarksCoordinatesArray, "Right")
     flat_hands_coords = (
-        remap_keypoints(left_landmarks, width, height, x_key="x_px", y_key="y_px", expected_count=21) +
-        remap_keypoints(right_landmarks, width, height, x_key="x_px", y_key="y_px", expected_count=21)
+        remap_keypoints(left_landmarks, width, height, x_key="x_px", y_key="y_px",
+                        expected_count=21, invert_x=False) +
+        remap_keypoints(right_landmarks, width, height, x_key="x_px", y_key="y_px",
+                        expected_count=21, invert_x=False)
     )
 
     # World landmarks (metric, hand-relative 3D) -- added for rotation-while-
@@ -93,8 +105,8 @@ try:
     left_world_landmarks = extract_hand_world_by_type(allHandsLandmarksCoordinatesArray, "Left")
     right_world_landmarks = extract_hand_world_by_type(allHandsLandmarksCoordinatesArray, "Right")
     flat_hands_world_coords = (
-        remap_world_keypoints(left_world_landmarks, expected_count=21) +
-        remap_world_keypoints(right_world_landmarks, expected_count=21)
+        remap_world_keypoints(left_world_landmarks, expected_count=21, invert_x=False) +
+        remap_world_keypoints(right_world_landmarks, expected_count=21, invert_x=False)
     )
 
     # Send the in-memory coordinates straight over the socket (no disk round-trip).
@@ -111,6 +123,8 @@ try:
     timestamp_ms += 33  # ~30 FPS
 
     ret, frame = cap.read()
+    if ret:
+        frame = cv2.flip(frame, 1)   # mirror BEFORE detection -- spec 14.3.4.3
     if not ret:
         break
 finally:

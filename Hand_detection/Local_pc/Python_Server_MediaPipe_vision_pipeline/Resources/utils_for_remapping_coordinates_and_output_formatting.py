@@ -16,11 +16,18 @@ def remap_point(x, y, frame_width, frame_height, invert_x, center_origin, flip_y
 
 
 def remap_keypoints(points, frame_width, frame_height, x_key="x", y_key="y", expected_count=None,
-                    invert_x=True, center_origin=False, flip_y=False):
+                    invert_x=False, center_origin=False, flip_y=False):
     """
     Remaps a list of keypoints (dicts with x/y) to the new coordinate system.
     Returns a flattened list: [x1, y1, x2, y2, ...]
     If expected_count is set and doesn't match, returns fallback zeros.
+
+    ⚠ `invert_x` DEFAULTS TO FALSE SINCE 2026-08-22 (spec 14.3.4.3). It used to
+    default to True, because the pipeline detected on the RAW frame and mirrored
+    coordinates afterward. `VisionPipeline.py` now mirrors the FRAME before
+    detection, so coordinates arrive already mirrored and must NOT be mirrored
+    again. Turning this back on re-introduces a double flip -- the M5d
+    even/odd-flip trap that produced §13.6.1.
     """
     # set invert_x=True, center_origin=True, flip_y=True if you want to have the keypoints origins to be at the center of the display with negative and positive variance around this origin
     if expected_count is not None and (not points or len(points) != expected_count):
@@ -53,7 +60,7 @@ def extract_hand_world_by_type(hands_array, handedness):
     return hand.get("world_landmarks", []) if hand else []
 
 
-def remap_world_keypoints(points, expected_count=None, invert_x=True):
+def remap_world_keypoints(points, expected_count=None, invert_x=False):
     """Flattens a list of world-landmark dicts (x/y/z, metric hand-relative
     coordinates, NOT pixel coordinates) into [x1, y1, z1, x2, y2, z2, ...].
     Unlike remap_keypoints, values are kept as floats (no int cast --
@@ -61,16 +68,23 @@ def remap_world_keypoints(points, expected_count=None, invert_x=True):
     option, since world_landmarks are already hand-relative, not
     image-relative.
 
-    `invert_x`: negate x to stay mirror-consistent with the pixel
-    landmarks' own invert_x=True remapping -- the pixel remap mirrors
-    AFTER detection on an un-mirrored frame, so world_landmarks (computed
-    by the SAME detection pass, before any mirroring) need the same
-    x-negation to represent the same visually-mirrored hand. This has NOT
-    been live-verified yet (unlike the debug tool's LiveSnapDebug.py, which
-    runs detection on an already-mirrored frame and needs no extra
-    negation) -- confirm the rotation's sign/axis feel live once this
-    wire-protocol extension is actually in use, don't assume this is
-    correct as-is."""
+    ⛔⛔ `invert_x` NOW DEFAULTS TO FALSE, AND THE OLD RATIONALE WAS FALSIFIED
+    (2026-08-22, spec 14.3.4.3). It previously defaulted to True and read:
+    "negate x to stay mirror-consistent with the pixel landmarks ... This has NOT
+    been live-verified yet ... don't assume this is correct as-is."
+
+    ⭐ It was verified, and it was wrong. Negating x after the fact equals
+    mirroring the frame before detection ONLY if MediaPipe is mirror-equivariant.
+    `analysis/t6_mirror_route_ab.py` measured both routes on the SAME frames:
+    they disagree by **7.7-10 mm** of world landmark and **12-20° of fitted
+    rotation** -- 3-4x the palm's own 2.76 mm rigidity, and NOT tracking drift
+    (a stateless IMAGE-mode control makes it larger). Production and the debug
+    tool were therefore different pipelines, which is what the owner saw as
+    "the behavior in the production was not the same".
+
+    `VisionPipeline.py` now mirrors the FRAME before detection, exactly as the
+    debug tool and recorders always have, so world landmarks arrive already
+    mirrored. ⚠ Re-enabling this flag would mirror them a second time."""
     if expected_count is not None and (not points or len(points) != expected_count):
         return [0.0] * expected_count * 3
 

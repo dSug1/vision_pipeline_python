@@ -13,30 +13,36 @@ FONT_SIZE = 1
 FONT_THICKNESS = 1
 HANDEDNESS_TEXT_COLOR = (88, 205, 54) # vibrant green
 
-# Mirror-consistent handedness (2026-08-01, direct request -- root-caused
-# from a live bug report, not guessed). VisionPipeline.py runs MediaPipe
-# detection on the RAW, un-mirrored camera frame (no cv2.flip anywhere in
-# that file), but the pixel/world landmark COORDINATES get mirrored
-# afterward for display consistency (utils_for_remapping_coordinates_
-# and_output_formatting.py's remap_keypoints/remap_world_keypoints,
-# invert_x=True). MediaPipe's own Left/Right classification assumes an
-# already-mirrored ("selfie") input by convention -- fed an UN-mirrored
-# frame, it reports the TRUE anatomical hand, the OPPOSITE of what the
-# mirrored display shows. Left uncorrected, this silently broke any
-# chirality-sensitive consumer of the handedness label: confirmed live,
-# HandsTriggeredActions.py's `_is_thumb_outward` (`if handedness ==
-# "Left": cross = -cross`) computed the wrong sign, inverting the
-# thumb-outward/inward snap restriction in production -- opposite of the
-# already-correct debug tool (LiveSnapDebug.py flips the frame BEFORE
-# detection, so its handedness needs no such correction). Fixed at this
-# single source, not by patching each chirality-sensitive consumer
-# separately -- everything downstream (both the "hands" and "hands_world"
-# packets, both keyed off this same field) inherits the fix consistently.
-_MIRRORED_HANDEDNESS = {"Left": "Right", "Right": "Left"}
-
-
-def _mirror_handedness(category_name):
-    return _MIRRORED_HANDEDNESS.get(category_name, category_name)
+# ⭐⭐ HANDEDNESS NEEDS NO CORRECTION ANY MORE (2026-08-22, spec 14.3.4.3).
+# `VisionPipeline.py` now mirrors the FRAME before detection, exactly as the
+# debug tool and the recorders always did. MediaPipe's Left/Right classification
+# assumes an already-mirrored ("selfie") input by convention, so on a mirrored
+# frame it natively reports the label that matches what the operator sees. The
+# old `_mirror_handedness()` flip is therefore REMOVED -- keeping it would apply
+# a SECOND flip and re-invert chirality, which is precisely the §13.6.1 bug in
+# reverse.
+#
+# ⚠ HISTORY, kept because the trap is easy to re-enter: from 2026-08-01 to
+# 2026-08-22 this file DID flip the label. That was correct THEN, because the
+# pipeline detected on the RAW, un-mirrored frame and mirrored only the
+# COORDINATES afterward (`remap_keypoints`/`remap_world_keypoints`,
+# invert_x=True) -- so MediaPipe saw a true anatomical hand and reported the
+# opposite of the mirrored display. Uncorrected, that silently inverted
+# `_is_thumb_outward`'s handedness-dependent sign in production only (§13.6.1).
+#
+# ⭐ WHY THE WHOLE APPROACH CHANGED: mirroring the coordinates after detection is
+# only equivalent to mirroring the frame before it if MediaPipe is
+# mirror-equivariant. It is NOT -- measured 2026-08-22 by
+# `analysis/t6_mirror_route_ab.py`: the two routes disagree by 7.7-10 mm of
+# world landmark and 12-20° of fitted rotation on the SAME frames. So the
+# post-hoc mirror was never a valid substitute; production and the debug tool
+# were different pipelines. Mirroring the frame makes them identical BY
+# CONSTRUCTION, and deletes the equivariance assumption instead of tuning it.
+#
+# ⚠ M5d still applies: this convention depends on THREE independent flips
+# (image-y, preview mirroring, MediaPipe's selfie handedness). An EVEN number of
+# mistakes still "works"; an odd number inverts. `VerifyChiralityFixture.py` is
+# the permanent guard -- run it after ANY change here.
 
 
 # Track-level hand identity (DR-1) now lives in `hand_identity.py`, SHARED with
@@ -83,7 +89,9 @@ def draw_landmarks_on_image(frame_image_shape, rgb_image, detection_result):
     hand_landmarks = hand_landmarks_list[idx]
     hand_world_landmarks = hand_world_landmarks_list[idx]
     handedness = handedness_list[idx]
-    mirrored_handedness = _mirror_handedness(handedness[0].category_name)
+    # The frame was mirrored before detection, so MediaPipe's own label is
+    # already the mirror-consistent one -- do NOT flip it again (see above).
+    mirrored_handedness = handedness[0].category_name
 
     hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()     # Prepare protobuf for drawing
     handslandmarks_coords = []  # This will store the extracted coordinates
@@ -124,11 +132,13 @@ def draw_landmarks_on_image(frame_image_shape, rgb_image, detection_result):
     text_x = int(min(x_coordinates) * width)
     text_y = int(min(y_coordinates) * height) - MARGIN
 
-    # Draw handedness (left or right hand) on the image -- the MIRRORED
-    # label, so this on-screen debug text matches what a human sees of
-    # their own mirrored reflection, not MediaPipe's raw (un-mirrored)
-    # classification.
-    cv2.putText(annotated_image, f"{mirrored_handedness}",
+    # Draw the ANATOMICAL hand -- the one the operator is physically holding up
+    # (owner report 2026-08-22: the on-screen label read inverted). This is a
+    # DISPLAY-ONLY correction: `mirrored_handedness` itself is untouched and
+    # keeps flowing to every consumer in the pipeline's own convention. See
+    # `hand_identity.anatomical_name`'s comment block for why the internal label
+    # must not be flipped instead (§13.6.1).
+    cv2.putText(annotated_image, f"{hand_identity.anatomical_name(mirrored_handedness)}",
                 (text_x, text_y), cv2.FONT_HERSHEY_DUPLEX,
                 FONT_SIZE, HANDEDNESS_TEXT_COLOR, FONT_THICKNESS, cv2.LINE_AA)
 

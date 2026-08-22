@@ -316,6 +316,33 @@ to check.
 | `n11_compare.py` | N11 retest on clean single-hand takes — **asymmetry did not reproduce, direction reversed** |
 | `speed_threshold.py` | the speed sweep that closed N3: implausible-flip fraction rises **6% → 58%** |
 
+### T5 — rotation-axis fidelity (2026-08-22, owner-reported yaw defect)
+
+Owner: *"when I rotate my hand on the yaw axis, the cube seems to rotate on an axis
+which is not the world z axis"*, pitch and roll believed fine but unconfirmed.
+
+| script | purpose |
+|---|---|
+| `t5_rotation_axis_fidelity.py` | the headline measurement: fitted axis vs the axis the take prescribes. **Yaw 33.1° off vertical, pitch 3.9–9.3° off horizontal.** Includes the **mirror control** — negating x leaves the tilt *bit-identical*, which **falsifies `invert_x` as the cause** |
+| `t5b_rotation_axis_mechanism.py` | separates *constant frame misalignment* from *constellation degeneracy* by binning on rotation angle and `palm_observability`. **Neither explains yaw**: observability never leaves 0.85–0.89. ⭐ Also measures **palm+tips beating palm-only on axis fidelity in every take** |
+| `t5c_operator_or_estimator.py` | ⚠ **the decisive control.** 2D-pixel-only (never touches world z, per the B4 rule that an anchor metric must not share an expression with the anchor). **The one yaw take is AXIS-CONTAMINATED** — width 0.629 / length 0.670, both collapse — so it is *not* a clean single-axis yaw. The pitch takes ARE clean (length 0.278–0.468, width holds) |
+| `t5d_roll_from_free_manipulation.py` | attempts to harvest roll from unscripted takes. **Returns 0 segments at the honest thresholds**; relaxed thresholds yield n=2–11 with 12–20° sweeps, which `t5b` shows is inside the axis-estimation noise floor. **Roll remains unmeasured — it needs a scripted take** |
+
+⚠ **The small-angle noise floor, established by `t5b` and binding on any future axis
+work**: below ~30° of rotation the axis is barely determined — a *clean* pitch take
+reads **44–63° off its own axis** there. Never quote an axis deviation without the
+rotation magnitude it was measured at.
+
+⚠ **Consequence for `GESTURE_PIPELINE_SPEC.md` §14.3.2**, which is load-bearing for
+4.1: its "under yaw, width and length degrade equally" rests on this same
+contaminated take, so the *mechanism* it claims (edge-on collapses everything at
+once) is not established by it. Its *recommendation* (`max4` + S10 freeze) is
+unaffected — `max4` won under both readings and the freeze is the conservative call.
+
+| `t5e_axis_vs_hand_long_axis.py` | eliminates "the cube is faithfully following a tilted hand": hand long axis **+4.7°** vs fitted axis **+23.8°** |
+| `t5f_equal_rotation.py` | the owner's requirement split in two on the CLEAN take: **angle gain 1.11 (satisfied)**, **axis 13.0° off vertical (the real defect)** |
+| `t6_mirror_route_ab.py` | ⛔ **production vs debug**: MediaPipe is **NOT mirror-equivariant**. Same frames, two routes → **7.66 mm / 11.83°** apart in VIDEO mode, **10.07 mm / 20.14°** in the stateless IMAGE control. **Not tracking drift** — the control makes it larger |
+
 ### Recording-corpus utilities
 
 | script | purpose |

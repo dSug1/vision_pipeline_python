@@ -276,10 +276,28 @@ to follow — no S-item lives outside it.**
 | | |
 |---|---|
 | **next build** | **4.1 — M9 metric depth**, leading to 4.2 (Z-axis translation) |
-| ⛔ **blocked on the owner** | **a YAW take must be recorded first** (§14.3.1: the anchor must be MULTI-anchor, and that cannot be validated without one). Ask for it before writing code. |
-| ⚠ read before building | §14.3.1 (multi-anchor), **S10** (the palm-width anchor COLLAPSES edge-on, so the depth ratio must FREEZE inside the DR-2 band — reuse `PalmFacingTracker`'s pattern — or Z-control inherits the pitch-crossing failure) |
+| ✅ **NOT blocked** (corrected 2026-08-22) | The yaw take **was recorded on 2026-08-04** — `2026-08-04_164647_yaw_sweep_constant_depth`, 741 frames, verified present on disk — and **§14.3.2 already analysed it** (`max4` CV 0.056 under yaw). The earlier "⛔ blocked on the owner: a YAW take must be recorded first" line was §14.3.1's wording carried forward past §14.3.2, which superseded it the same day. See row N18. ⚠ **§14.3.2 also REFUTED §14.3.1's prediction**: under yaw, width and length degrade *equally* (0.128 vs 0.125) — no anchor is immune — which **promotes S10's freeze from backstop to prerequisite**. |
+| ⚠ read before building | §14.3.1 **and then §14.3.2, which corrects it** (multi-anchor), **S10** (the palm-width anchor COLLAPSES edge-on, so the depth ratio must FREEZE inside the DR-2 band — reuse `PalmFacingTracker`'s pattern — or Z-control inherits the pitch-crossing failure) |
 | ⭐ the scale reference already exists | `hand_skeleton.palm_width_world()` (spec §0.18). 1.7's fit is NOT needed. |
 | ⭐ do it **with** 4.1 | **the `HandState` v2 wire migration**, which is what makes v2's metric fields mean anything — and it now has a second, measured customer: **carry a `trackId` and key cube ownership on it** (see T3 below, and spec §2.2's 2026-08-22 addendum) |
+
+⚠⚠ **NEW, 2026-08-22 — READ BEFORE 4.1 USES §14.3.2.** The owner reported that a
+YAW hand rotation turns the cube about a tilted axis. **Measured and confirmed**
+(`analysis/t5*`): yaw is **25.6° off vertical** at large rotation vs pitch's
+**5.0°**. Two suspects were tested and **both cleared** — the `invert_x` mirror
+(a reflection can only reverse an axis, never tilt one: `M R M⁻¹ = R(−Mn,θ)`;
+empirically the tilt is bit-identical) and constellation degeneracy
+(`palm_observability` never leaves 0.85–0.89). ⛔ **The cause is NOT yet
+identified, and it cannot be from existing data**: the corpus's only yaw take is
+**axis-contaminated** — the operator mixed pitch in (2D-pixel control,
+`t5c`), so part of that 25.6° is the hand, not the estimator. **A clean yaw
+retake settles both this AND §14.3.2's mechanism claim, which rests on the same
+take** (spec §14.3.3/§14.3.4). §14.3.2's *recommendation* — `max4` + S10 freeze —
+**is unaffected; build 4.1 as prescribed.** ⭐ One actionable result already:
+**palm+tips beats palm-only on axis fidelity in every take** (pitch 8.1°→3.9°),
+but production ships palm-only for measured JITTER reasons — that is an **A/B
+under A10**, not a switch to flip. ⚠ **ROLL has never been recorded** and stays
+unmeasured.
 
 **What just shipped (2026-08-21/22), all owner-accepted live:**
 
@@ -498,6 +516,25 @@ Optional and parallelisable at any time: **0.4** (predictor eval harness, S1) an
 | U4 | `PART_ONE.md` §7.4 dangling reference | docs | open | — | §3 cites §7.4 for `gesture_config.json`; that section does not exist |
 
 ## 4. Known wire-protocol gap (live pipeline, not recording)
+
+> ⚠⚠ **CORRECTED 2026-08-22 — THE GAP DESCRIBED BELOW IS CLOSED. The wire DOES
+> carry `world_landmarks`.** `VisionPipeline.py` builds a `hands_world` packet
+> (`remap_world_keypoints`, 21x3 per hand) and sends it *before* each `"hands"`
+> packet; `PythonApp_Main.py` decodes it as `hands_world` into
+> `on_hands_world_frame`. It was extended for rotation-while-snapped (§13.7) and
+> the section below was never updated. **Consequence for 4.1: the depth anchor
+> needs NO protocol work** — `hand_skeleton.palm_width_world()` can run
+> client-side on data already arriving today.
+>
+> ⭐ **What is genuinely NOT on the wire is DR-1's TRACK IDENTITY.**
+> `hand_identity.py` lives only under
+> `Local_pc/Python_Server_MediaPipe_vision_pipeline/Resources/` and nothing
+> client-side imports it; the client receives landmarks keyed by handedness SLOT
+> only. **That — not `world_landmarks` — is the real content of the `HandState`
+> v2 migration, and it is what T3 needs** (see §3.1's T3 row and
+> `PERCEPTION_LAYER_SPEC.md` §2.2's 2026-08-22 addendum).
+>
+> The original text is kept below for provenance. Read it as history, not status.
 
 The existing socket protocol (`VisionPipeline.py` → `Client.py` →
 `PythonApp_Main.py`) currently sends only 2D pixel-space landmarks (21

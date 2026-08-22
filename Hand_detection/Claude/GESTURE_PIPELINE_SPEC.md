@@ -4240,6 +4240,365 @@ build step in this document.
 
 ---
 
+### 14.3.3 ⚠⚠ THE YAW TAKE §14.3.2 RESTS ON IS AXIS-CONTAMINATED (2026-08-22)
+
+**Read this before using §14.3.2's mechanism claim for 4.1.** Measured with
+`analysis/t5c_operator_or_estimator.py`, using **2D pixel landmarks only** — it
+never touches world z, so it does not share an expression with what it is
+auditing (the B4 rule).
+
+A rigid plate foreshortens the dimension PERPENDICULAR to its rotation axis and
+leaves the parallel one alone, so which span collapses says which axis the hand
+actually turned about. Collapse ratio = p5(span)/p95(span):
+
+| take | palm WIDTH | palm LENGTH | what the operator actually did |
+|---|---|---|---|
+| `yaw_sweep_constant_depth` | **0.629** | **0.670** | ⚠ **BOTH collapse — a MIXED axis, not a clean yaw** |
+| `pitch_sweep_slow` (2026-08-04) | 0.891 | **0.278** | clean pitch ✅ |
+| `palm_back_s2_slow` RIGHT | 0.646 | **0.294** | clean pitch ✅ |
+| `palm_back_s2_slow` LEFT | 0.710 | **0.468** | clean pitch ✅ |
+
+**What this does and does not overturn:**
+
+1. ⚠ **§14.3.2's MECHANISM claim is not established by this take.** It reads
+   "width and length degrade equally under yaw" as proof that *edge-on collapses
+   all four palm landmarks at once*. But the operator rotated about a mixed axis,
+   which produces equal degradation on its own. The two explanations are
+   confounded in this recording and it cannot separate them.
+2. ✅ **§14.3.2's RECOMMENDATION stands unchanged**: `max4` won under either
+   reading, and S10's freeze is the conservative call either way. **Build 4.1 as
+   §14.3.2 prescribes** — this note changes the confidence in *why*, not *what*.
+3. ⚠ **§14.3.2 already warned "n = 1 yaw take ... magnitudes should not be quoted
+   as settled."** That warning was right and is now stronger: it is n=1 *and*
+   contaminated. **Do not quote 0.128/0.125 as yaw anchor CVs.**
+
+⭐ **A CLEAN `yaw_sweep_constant_depth` RETAKE IS THE CHEAPEST FIX** and it settles
+two questions at once — this one, and whether the owner-reported cube-rotation
+tilt (below) is the estimator's or the hand's.
+
+### 14.3.4 Owner-reported: a yaw hand-rotation turns the cube about a tilted axis (2026-08-22)
+
+**Owner, 2026-08-22**: *"when I rotate my hand on the yaw axis, the cube seems to
+rotate on an axis which is not the world z axis"*, with pitch and roll believed
+correct but unconfirmed.
+
+**The cube's axis IS the estimator's axis, exactly.** `HandsTriggeredActions.py`
+(~L711) computes `delta = hand_quat_now * conj(grab_hand_orientation)` and
+left-multiplies it onto the cube. There is **no frame conversion**, and none is
+needed: the renderer's frame (`CubeWindow._draw_object_3d` — x right, y down via
+pygame, +z away from the viewer) **matches** the landmark frame on all three axes.
+So any axis error in the fit transfers to the cube 1:1.
+
+Measured (`analysis/t5_rotation_axis_fidelity.py`, at large rotation where the
+axis is well determined):
+
+| hand rotation | expected axis | measured deviation |
+|---|---|---|
+| **YAW** | vertical | **25.6°** (33.1° pooled) |
+| **PITCH** | horizontal | **5.0°** |
+| **ROLL** | depth | ⚠ **NEVER MEASURED — no take exists** |
+
+**Two candidate causes were tested and BOTH FAILED:**
+
+1. ❌ **The `invert_x` mirror is NOT the cause.** Analytically a reflection can only
+   REVERSE an axis, never tilt one: `M R M⁻¹ = R(−Mn, θ)`. Empirically, negating x
+   flips the axis signs and leaves the deviation **bit-identical at 33.1°**.
+   ⚠ This also means `remap_world_keypoints`'s "confirm the rotation's sign/axis
+   feel live, don't assume this is correct as-is" caveat is **still open** — the
+   mirror is exonerated for the TILT, not for the SIGN.
+2. ❌ **Constellation degeneracy is NOT the cause** in this take.
+   `palm_observability` never leaves **0.85–0.89** across the whole yaw sweep — it
+   never approaches the DR-2 band, so the palm never went rank-deficient.
+   (It *does* bite the `palm_back` takes at full extension: observability 0.588
+   with the axis 84.8° off.)
+
+⛔ **THE CAUSE IS THEREFORE NOT YET IDENTIFIED, AND §14.3.3 IS WHY IT CANNOT BE
+FROM EXISTING DATA**: the only yaw take is axis-contaminated, so an unknown part
+of that 25.6° is the operator's own pitch rather than estimator error. **A clean
+yaw take is required before attributing it.**
+
+⭐ **ONE ACTIONABLE RESULT ALREADY**: the 9-point **palm+tips** constellation beats
+production's 5-point palm-only on axis fidelity in **every take measured** —
+pitch 8.1°→3.9°, palm_back RIGHT 22.4°→6.4°, LEFT 36.9°→19.0°, yaw 28.3°→24.9°.
+⚠ **Do not just switch it on**: production ships palm-only deliberately
+(`HandsTriggeredActions.py` L482) because tips scored orientation p95 9.85→27.79
+**worse** in free play. Those measure different things — that was JITTER, this is
+AXIS — so this is an **A/B to run under A10**, not a change to make.
+
+### ⭐⭐ 14.3.4.1 THE OWNER RE-FRAMED IT, AND TWO CAUSES ARE NOW ELIMINATED BY CONTROL (2026-08-22)
+
+**Owner's requirement, stated precisely**: *"rotation of the hand on the vertical
+world axis = equal rotation of the cube in the vertical 2d screen axis"*. Observed:
+the cube turns about a **mix of screen x and y**. That matches the measurement —
+the fitted axis sits **29.8° off screen-vertical inside the screen plane**.
+
+**1. ❌ NOT the hand's own anatomy** (`analysis/t5e_axis_vs_hand_long_axis.py`).
+Turning a palm edge-on is forearm pronation, whose axis is the hand's LONG axis —
+so a tilted hand would produce a tilted cube axis *correctly*. Refuted: in the yaw
+take the hand's long axis is **+4.7° from screen-vertical** (near-upright) while the
+fitted axis is **+23.8°**. The cube is not faithfully following a tilted hand.
+⚠ The pitch control reads **+80.9°**, which is *correct* (pitch's axis IS ~90° from
+vertical) and is what shows the harness is sane.
+
+**2. ❌ NOT the fitting code — Horn is EXACT.** Synthetic control: a REAL palm
+constellation rotated by an exact amount about vertical, fed through production's
+estimator, recovers the axis to **0.000°** and the angle to **0.01°** at 10/20/30/
+45/60/80°. ⭐ **So `palm_rotation.Horn` is not the defect and must not be
+"fixed".** Together with §14.3.4's mirror and degeneracy controls, **every
+code-side candidate is now eliminated. The error is in the DATA.**
+
+**⭐ WHAT THE DATA DOES DO, measured on the same synthetic rig with z scaled to 0.6
+(a compressed depth estimate — MediaPipe's weakest coordinate, §13.2):**
+
+| applied yaw | recovered angle | axis tilt |
+|---|---|---|
+| 10° | **7.03°** | 7.5° |
+| 30° | **23.87°** | 6.4° |
+| 60° | **61.63°** | 3.8° |
+
+⭐⭐ **Depth error UNDER-REPORTS the yaw angle — 10° of hand becomes 7° of cube —
+and that alone violates the owner's "equal rotation" requirement**, independently
+of any axis question. The tilt it induces is modest and lands on **z**, whereas the
+observed real-data tilt is toward **x**; so z-compression explains the *angle*
+shortfall but not all of the *axis* mixing.
+
+⚠ **The residue still cannot be attributed from this corpus** (§14.3.3): a
+mixed-axis operator rotation tilts the axis toward x exactly as observed, and the
+only yaw take has measured pitch contamination. **A clean yaw take remains the
+one missing control.**
+
+⭐ **DESIGN CONSEQUENCE, and it converges with 4.1.** The signal a z-free yaw
+estimate needs — how far the palm quad has foreshortened — **is the same
+measurement 4.1's `max4` anchor already makes**. Building a z-free orientation
+decomposition (roll from the in-image knuckle angle, exact; yaw from width
+foreshortening; pitch from length foreshortening) reuses 4.1's machinery rather
+than duplicating it. ⚠ Its own costs are real and must not be waved past: a cosine
+is insensitive near 0°, foreshortening is sign-ambiguous (needs DR-2's palm sign to
+disambiguate), and width also shrinks with DISTANCE — which is precisely the
+confound 4.1/M9 exists to resolve. **This is an A10 A/B, not a refactor.**
+
+### ⛔⛔ 14.3.4.3 PRODUCTION AND THE DEBUG TOOL ARE NOT THE SAME PIPELINE (2026-08-22)
+
+**Owner, 2026-08-22**: *"in this debug configuration the vertical axis rotation
+looks ok ... it seemed to me the behavior in the production was not the same."*
+**Correct, and now measured** (`analysis/t6_mirror_route_ab.py`).
+
+**FIRST, WHAT IS SHARED — audited, so nobody re-hunts these.** Identical in both:
+the estimator (`Horn(PALM_LANDMARKS,'ref')`), the delta math
+(`delta = q_now * conj(q_grab)`, left-multiplied), `ROTATION_SLERP_FACTOR` 0.35,
+and **DR-1** — the server runs `hand_identity` and OVERRIDES MediaPipe's
+handedness with the resolved track label (`hands_visualizer.py`), exactly as
+`LiveSnapDebug.py` does. Pixel and world landmarks are extracted with the SAME
+label key, so they cannot be cross-assigned. **None of these is the difference.**
+
+**⭐ EXACTLY ONE THING DIFFERS — WHERE THE MIRROR IS APPLIED:**
+
+| | detection input | world landmarks |
+|---|---|---|
+| **debug** (`LiveSnapDebug.py`, and the recorders) | frame `cv2.flip`ped **before** detect | used as-is |
+| **production** (`VisionPipeline.py`) | **raw, un-mirrored** | **x-negated after** (`remap_world_keypoints(invert_x=True)`) |
+
+Those are equivalent **only if MediaPipe is mirror-equivariant**
+(`W_mirrored_input == diag(-1,1,1) · W_raw_input`). ⚠ **Both files flagged this as
+never verified, in nearly the same words** — `remap_world_keypoints`: *"This has
+NOT been live-verified yet ... don't assume this is correct as-is"*;
+`LiveSnapDebug.py`: *"verify live when that port happens"*.
+
+**⛔ IT IS NOW VERIFIED, AND IT IS FALSE.** Both routes run on the SAME camera
+frames through two detectors:
+
+| | world-landmark RMS, debug vs mirrored-production | angle between the two routes' rotations |
+|---|---|---|
+| **VIDEO mode** (what both systems actually run) | **7.66 mm** p50 (p95 9.54, max 19.8) | **11.83°** p50 (p95 15.9, max 19.5) |
+| **IMAGE mode** (stateless control) | **10.07 mm** p50 (p95 16.7) | **20.14°** p50 (p95 25.0) |
+
+1. ⚠ **This is NOT tracking-state drift.** The obvious confound is that two VIDEO
+   detectors carry independent temporal state. The stateless IMAGE-mode control
+   makes the disagreement **larger, not smaller** — so it is the MODEL, not the
+   tracker. **MediaPipe is not mirror-equivariant.**
+2. **The magnitude is not noise.** 7.7–10 mm is on the scale of MediaPipe's own
+   documented 13–15 mm world-landmark error (§1.4) and **3–4× the palm's own
+   2.76 mm rigidity** (§0.2).
+3. ⭐⭐ **It explains the owner's report exactly.** The clean-take residual axis
+   tilt of **13°** (§14.3.4.2) was measured on *debug-route* recordings — the
+   recorders flip before detection. **Production carries that PLUS ~12° of route
+   disagreement**, which is why the debug tool "looks ok" and production does not.
+
+**⭐ THE FIX IS TO DELETE THE ASSUMPTION, NOT TO TUNE IT**: make the server
+`cv2.flip` the frame **before** detection, exactly as the debug tool does. Then
+production *is* the debug route by construction — same input, same output — and no
+equivariance is assumed anywhere.
+
+⚠⚠ **It is a COORDINATED change; doing part of it re-creates §13.6.1's silent
+handedness inversion.** All four together:
+1. `VisionPipeline.py` — flip the frame before `detect_for_video`
+2. `remap_keypoints` (pixel) — `invert_x` → **False** (already mirrored)
+3. `remap_world_keypoints` — `invert_x` → **False**
+4. `hands_visualizer._mirror_handedness` — **remove**; MediaPipe now reports the
+   mirrored label natively, so mirroring it again would re-invert chirality
+
+### ✅ 14.3.4.5 OWNER CONFIRMED THE MIRROR FIX LIVE — and found the label inversion (2026-08-22)
+
+⭐⭐ **§14.3.4.3's fix is LIVE-CONFIRMED.** Owner, after running both apps
+back-to-back: *"both sessions are OK now. fix is positive."* **The production
+pipeline and the debug tool now behave the same**, which is what §14.3.4.3
+predicted and what the recording-based fixtures could not prove.
+
+**Separate defect reported in the same breath**: *"on both the sessions, the label
+'left' or 'right' hands are inverted (probably because the camera is taking the
+view from the opposite of the hand). It shall be rectified."* **Correct, and
+measured against the ground-truth clips:**
+
+| ground truth | internal label |
+|---|---|
+| physical **RIGHT** hand | `Left` (751/751 frames) |
+| physical **LEFT** hand | `Right` (200/200 frames) |
+
+⚠⚠ **THIS IS PRE-EXISTING, NOT A SIDE EFFECT OF THE MIRROR FIX.** Before it,
+detection ran on the raw frame and `_mirror_handedness()` flipped the label;
+after it, detection runs on the mirrored frame and MediaPipe reports that same
+value directly. **Both routes display the same thing** — which is exactly why
+`VerifyChiralityFixture.py`, whose ground truth literally reads *"PHYSICAL Right
+hand -> expected label 'Left' (mirrored convention)"*, passed unchanged before AND
+after.
+
+⛔⛔ **THE INTERNAL LABEL WAS NOT FLIPPED, AND MUST NOT BE.** It is load-bearing in
+four places, all calibrated to the current convention:
+1. `palm_geometry.is_thumb_outward()`'s handedness-dependent chirality correction
+   (`if handedness == "Left": cross = -cross`). **Flipping the label inverts that
+   sign — that IS §13.6.1**, the bug that shipped inverted in production and
+   survived an "end-to-end confirmed" claim.
+2. All **415 recorded sessions** store labels in this convention — flipping live
+   would desynchronise every replay harness from the live pipeline.
+3. `VerifyChiralityFixture.py` encodes it as ground truth.
+4. Cube ownership and DR-1's track slots key on it (queue **T3**).
+
+⭐ **FIXED AS DISPLAY-ONLY**, at the two places a human reads it:
+`hands_visualizer.py`'s preview text and `LiveSnapDebug.py`'s per-hand overlay.
+The helper is `hand_identity.anatomical_name()`, defined in the module **both**
+already import so the two cannot drift (rule N6: imported, never copied). ⚠ Its
+docstring forbids feeding the result back into any rule, filter or ownership key.
+
+**Re-verified after the display change**: `VerifyChiralityFixture.py` ALL PASS,
+10/10 golden-vector suites PASS — the fixture passing is itself the proof the
+internal convention did not move.
+
+⚠ **Not yet eyeballed live** — the label change is cosmetic and low-risk, but it
+has not been seen on screen yet.
+
+### ✅ 14.3.4.4 THE FIX IS BUILT (2026-08-22) — ⚠ automated checks green, LIVE CONFIRMATION STILL OPEN
+
+**FIVE sites, not four.** §14.3.4.3's plan listed four; a fifth was found while
+implementing and would have been a silent regression:
+
+| # | site | change |
+|---|---|---|
+| 1 | `VisionPipeline.py` | `cv2.flip(frame, 1)` before detection, on **BOTH** `cap.read()` calls |
+| 2 | ⚠ **face** `remap_keypoints` | `invert_x` → **False** — **MISSED BY THE ORIGINAL PLAN** |
+| 3 | hands pixel `remap_keypoints` ×2 | `invert_x` → **False** |
+| 4 | `remap_world_keypoints` ×2 | `invert_x` → **False** |
+| 5 | `hands_visualizer._mirror_handedness` | **removed**; the mirrored frame makes MediaPipe's own label already correct |
+
+⚠ **On site 1**: the FIRST `cap.read()` is not only a resolution probe — the loop
+consumes that frame before reading the next, so it reaches inference. Flipping
+only the loop's read would have left frame 1 un-mirrored.
+
+⚠ **On site 2**: face keypoints carried `invert_x=True` too. Left alone they would
+have been mirrored TWICE (once by the frame flip, once by the remap) — the M5d
+even/odd-flip trap, latent because the face consumer is still a `pass`.
+
+⭐ **Both utils' DEFAULTS were also flipped to `invert_x=False`** and the
+falsified rationale in `remap_world_keypoints`'s docstring replaced with the
+measurement, so a future call site cannot silently reinstate the flip.
+
+**Automated results after the change:**
+- `VerifyChiralityFixture.py` — **ALL CHECKS PASSED**, 100% on every clip
+  (label / production sign / negative control), same as the pre-change baseline
+- the 10 golden-vector suites — **10/10 PASS**
+
+⛔⛔ **DO NOT READ THAT AS CONFIRMED.** Those fixtures run on **RECORDINGS**, which
+were always made with the frame flipped before detection. They prove the
+downstream sign convention is right *for mirrored-label input* — which is what
+production now emits — but **they never execute the live server**. §13.6.1 shipped
+inverted while passing an end-to-end claim; the only thing that closes this gap is
+the owner watching the running pipeline.
+
+⭐ **What to watch, and why DIRECTION matters more than axis**: an axis error is
+what prompted this work, but **chirality is the failure mode of this class of
+change**. A cube that turns about the right axis *the wrong way* is a sign
+inversion — and it is exactly what a recording-based fixture cannot catch.
+
+**Status 2026-08-22: built, automated checks green, both apps launched and run
+without error, owner verdict NOT YET GIVEN.** ⚠ Not committed.
+
+⚠ **Side-by-side is impossible on one webcam** — DSHOW is exclusive ACROSS
+processes, so production and the debug tool must be compared back-to-back. (Two
+`VideoCapture` handles inside ONE process both succeed, which is a misleading
+test — it does not predict cross-process behaviour.)
+
+⭐ **Verification is already built**: `analysis/verify_chirality_fixture.py` /
+`VerifyChiralityFixture.py` and the `known_left_*`/`known_right_*` takes exist for
+exactly this class, and §0.12's Q1 was written to catch it. **Run them before and
+after.** ⚠ And note this decides the same question for the **web/mobile port**
+(U3), which faces the identical choice.
+
+### ⭐⭐ 14.3.4.2 THE CLEAN YAW TAKE IS RECORDED, AND IT SPLITS THE DEFECT IN TWO (2026-08-22)
+
+`2026-08-22_134553_yaw_sweep_constant_depth` — RIGHT hand, 508 frames, 24.79 fps,
+a hand in **508/508** frames. ⚠ Ended at 20.5 s of a requested 30 s (preview window
+closed early), which still gives ~6 sweeps and is ample. **The recorder's prompt was
+corrected FIRST** — "doorknob" (which is ROLL about depth, not yaw) removed, and
+"fingers STRAIGHT UP" / "no sideways tilt" added, plus a new `YAW_AXIS_NOTE`.
+
+**✅ IT PASSES THE CLEANLINESS GATE** (`analysis/t5c_operator_or_estimator.py`):
+
+| take | WIDTH collapse | LENGTH collapse | verdict |
+|---|---|---|---|
+| **2026-08-22 (new)** | **0.219** | 0.751 | ✅ textbook single-axis yaw |
+| 2026-08-04 (old) | 0.629 | 0.670 | ❌ mixed axis |
+
+**⭐ RESULT — the owner's requirement is TWO claims and they fail differently**
+(`analysis/t5f_equal_rotation.py`; ground truth is z-free, from palm-width
+foreshortening, unwrapped past edge-on with the palm-facing sign):
+
+| | old (contaminated) | **new (clean)** |
+|---|---|---|
+| axis, in-screen tilt from vertical | +21.6° | **+12.3°** |
+| axis, 3D off-vertical | 31.2° | **13.0°** |
+| angle gain (median) | not interpretable | **1.11** |
+
+1. ⭐ **"EQUAL rotation" is broadly SATISFIED.** Gain by true-yaw band: 0.93 / 0.68 /
+   0.86 / 1.11 / 1.13 / 1.10 / 1.11 / 1.11 — **median 1.11**. The cube turns about as
+   far as the hand does. ⚠ This **retires the worry raised in §14.3.4.1** that depth
+   error would badly under-report the angle: the synthetic used z×0.6, and the real
+   z is evidently not that compressed. The residual pattern is a mild *under*-rotation
+   between 20–60° and a ~11% *over*-rotation past 60°.
+2. ⛔ **THE AXIS IS THE REAL DEFECT, AND IT IS NOW CLEANLY QUANTIFIED AT ~13°.**
+   That is what shows on screen as the owner's "mix of x and y".
+3. ⭐⭐ **ROUGHLY HALF THE PREVIOUSLY REPORTED FIGURE WAS OPERATOR CONTAMINATION**
+   (31.2° → 13.0°). ⚠ **Quote 13.0°, never the old 25.6/27.3/33.1° numbers** — those
+   came from the mixed-axis take and §14.3.3 explains why.
+
+⚠ **What is still NOT established**: whether the residual ~13° is entirely estimator
+bias or partly residual operator wobble — a freehand "pure" yaw can plausibly carry
+~10°. The controls in §14.3.4/§14.3.4.1 rule out the mirror, the frame convention,
+constellation degeneracy, the hand's own anatomy, and the Horn fit itself, so the
+remaining candidates are **MediaPipe's world-z error** and **residual hand wobble**.
+
+⭐ **A NOTE ON THE Z-FREE MEASUREMENT, learned the hard way here**: `acos(width)`
+**FOLDS at edge-on** — past 90° the width comes back up, so 150° reads as 30°. A
+first pass produced a nonsense "gain 3.57" from exactly this, and a second produced
+"gain 21.5" by freezing the estimator's reference on an already-rotated frame rather
+than the most face-on one. **Both traps are inherent to any foreshortening-based
+angle design, not to the harness** — so if a z-free yaw estimate is ever built, it
+MUST carry a sign cue (DR-2's palm sign works) and a face-on reference.
+
+⚠ **The small-angle noise floor, binding on any future axis measurement**: below
+~30° of rotation the axis is barely determined — a *clean* pitch take reads
+**44–63° off its own axis** there. Never quote an axis deviation without the
+rotation magnitude it was measured at. This is also why `t5d`'s harvested roll
+segments (12–20° sweeps) prove nothing.
+
 ## 16. THE BLOCK REPRESENTATION (owner design, 2026-08-04) — the current direction
 
 **Owner's formulation**, recorded verbatim because the framing is the
