@@ -181,18 +181,34 @@ CHIRALITY_DEBOUNCE_FRAMES = 3
 #     forbidden grab sat **317 ms** after that track's first observation, so the
 #     window must exceed 317 ms.
 #
-# ⚠ WHY NOT 330 (= the validated 6 frames at 18.14 fps). It works, but only by
-# **13 ms** -- a 4% margin on a quantity that varies with how fast the operator
-# moves. Measured trade across the corpus, suppressed palm-frames vs margin:
+# ⭐⭐ LOWERED 400 -> 200 ON 2026-08-22 after the live U9 take. Owner: *"400 ms is
+# too long. Half of it would be good I think."* ⚠ It was NOT lowered on the
+# request alone -- 200 ms is BELOW the recorded failure's 317 ms, so on the
+# original reasoning it should leak. It does not, and the measurement says why:
 #
-#     280 ms  10.7%   -37 ms  (fails -- would NOT block the recorded grab)
-#     330 ms  12.0%   +13 ms  (works, but on a knife edge)
-#     400 ms  14.1%   +83 ms  <- shipped
-#     450 ms  15.4%  +133 ms  (approaching the p75 transit; diminishing)
+#   window   f664 refused?   by what
+#   400 ms   yes             time (317 < 400)
+#   300 ms   yes             DISPUTE (raw observation disagrees with held)
+#   250 ms   yes             DISPUTE
+#   200 ms   yes             DISPUTE
+#   150 ms   yes             DISPUTE
+#   100 ms   yes             DISPUTE
 #
-# 400 buys 6x the margin for 2.1 percentage points more suppression.
-# ⚠ Suppression here is FRAMES, not grabs: the gate reopens, so a grab is delayed
-# rather than refused.
+# ⭐ THE DISPUTE CONDITION IS THE PRIMARY GUARD, not this window. That inverts the
+# original design story: the window was thought to be the protection and the
+# dispute check a refinement added when 6 frames landed exactly on the grab
+# frame. Measured, the dispute check catches the recorded failure on its own at
+# every window tried, and the window is a BACKSTOP for a hand whose bad chirality
+# never disagrees with itself. Keeping some window is still right -- a stable
+# wrong value is exactly the failure mode the corpus shows (5 consecutive frames)
+# -- but it does not need to cover 317 ms to do its job.
+#
+# COST at 200 ms: **8.3%** of palm-reading frames suppress snapping, down from
+# 14.1% at 400 ms. ⚠ Suppression is FRAMES, not grabs: the gate reopens, so a
+# grab is delayed rather than refused.
+#
+# ⚠ U9's edge margin also now covers part of what this protected: a half-visible
+# hand cannot grab at all, whatever its chirality says.
 #
 # ⭐⭐ GATED ON ELAPSED TIME, NOT ON A FRAME COUNT DERIVED FROM MEASURED FPS.
 # That was considered and is strictly worse here: `FrameRateEstimator.fps` SORTS
@@ -200,7 +216,7 @@ CHIRALITY_DEBOUNCE_FRAMES = 3
 # elapsed time costs one subtraction and one comparison, needs no estimator, and
 # has neither rounding nor the estimator's lag after a lighting change. Both call
 # sites already hold `now_ms`, so nothing new is sampled.
-CHIRALITY_CONFIRM_MS = 400.0
+CHIRALITY_CONFIRM_MS = 200.0
 
 # ⚠ THE ONE THING THE FRAME COUNT DID BETTER, kept as a floor: chirality cannot
 # be confirmed from frames that were never delivered. If detection is sparse --
@@ -418,6 +434,143 @@ class ChiralityResolver:
         self._first_ms = None
         self._last_ms = None
         self._disputed = False
+
+
+# --------------------------------------------------------------------------
+# U9 -- THE PLAY AREA: the object may never reach the display edge
+# --------------------------------------------------------------------------
+# OWNER, 2026-08-22: *"add a margin (half a hand width when hand is at 40 cm from
+# camera) by which the cube is dropped when the center of the hand goes beyond
+# that margin (before hand full exit of the frame): this helps when grabbing back
+# the cube upon hand re-entrance: it gives time to detect the full hand to grab
+# the cube (otherwise, currently, the cube is grabbed when the hand is already
+# fully entered and the cube ends up grabbed at the edge of the hand)."*
+#
+# ⭐ THE MECHANISM. Today a held cube is released only once tracking is lost --
+# i.e. once the hand is essentially GONE -- so the cube is abandoned right at the
+# frame edge. On re-entry the hand is within grab radius while still only half
+# visible, so it snaps immediately, and the grab is referenced to a hand pose
+# built from landmarks that are half missing. The cube ends up hanging off the
+# EDGE of the hand rather than sitting in it. Releasing earlier leaves the cube
+# further inside the frame, so the hand must come properly into view before it is
+# close enough to grab -- by which time there is a whole hand to grab with.
+#
+# ⚠ THE MARGIN MUST GATE SNAPPING TOO, not just release. Gating only the release
+# would drop the cube and let the same half-visible hand re-snap it on the very
+# next frame, which is a flap, not a fix.
+#
+# ⭐⭐ THE MARGIN -- 60 px, the owner's "half a hand width at 40 cm". It is now the
+# INSET of the play area (see `clamp_to_play_area`).
+# Derived two independent ways, which agree:
+#   * OPTICAL (pinhole, hand breadth 85 mm): half a hand width at 40 cm is
+#     49-65 px across plausible webcam FOVs -- 59 px at a typical 60 deg.
+#   * EMPIRICAL: the corpus's p99 palm width is 127 px, which at 60 deg implies
+#     0.37 m -- so 40 cm IS the closest the operator actually works, and half of
+#     that width is 63 px.
+#
+# ⛔⛔ AN ADAPTIVE MARGIN (0.5 x the CURRENT palm width) WAS BUILT FIRST AND IS
+# WRONG. It is more elegant, it is literally "half a hand width" at any distance,
+# and it FAILED LIVE the first time it was tried -- owner, 2026-08-22: *"the
+# margin seems inconsistent: when I grab the cube close to the margin and go
+# beyond the margin again, the cube follows beyond the margin."*
+#
+# The measurement, from `2026-08-22_214607_u9_edge_margin_debug_test` f594-f595:
+#
+#     f594  width 50.9 px  margin 25.4  edge-dist 22.5  -> beyond, DROP
+#     f595  width 28.2 px  margin 20.0  edge-dist 30.8  -> NOT beyond, re-grabs
+#
+# The measured palm width collapsed 45% in ONE frame, so the margin collapsed
+# with it and the hand was no longer outside its own margin -- it re-grabbed and
+# carried the cube out of frame, which is exactly the reported symptom.
+# ⚠ And this is NOT a systematic edge effect that could be corrected for: bucketed
+# by distance-to-edge, the median width is flat (84 px at 0-25 px from the edge,
+# 87 px at 200 px). It is per-frame JITTER -- and an adaptive threshold inherits
+# the jitter of its own input precisely where the decision matters most.
+#
+# ⭐ THE LESSON, worth more than the constant: a threshold must not be computed
+# from a quantity that is noisy in the regime the threshold governs. Half a hand
+# width is the right SIZE; the current frame's hand is the wrong way to measure it.
+EDGE_MARGIN_PX = 60.0
+
+# ⚠ NO HYSTERESIS, deliberately. DR-2 needs it (EXIT_HYSTERESIS_FACTOR) because
+# its input dithers; this input is a hand CENTRE position, which is smooth. The
+# chatter that was observed came entirely from the adaptive width above, and it
+# goes away with the fixed margin. Add hysteresis only if boundary flapping is
+# actually seen, and measure it first.
+
+
+def clamp_to_play_area(x, y, size, frame_size, margin_px=EDGE_MARGIN_PX):
+    """Clamp a cube's TOP-LEFT so the WHOLE cube stays inside the play area.
+
+    ⭐⭐ THE PLAY AREA IS THE POINT, and it is a different rule from the hand
+    margin above -- owner, 2026-08-23: *"I can still push step by step the cube to
+    the edge of the display window, which I would like to avoid: I want the cube
+    to be constrained in a smaller window within a display window (hence the
+    margin); currently this is not robustly implemented."*
+
+    ⚠ WHY THE HAND RULE ALONE COULD NEVER DO THIS, which is the lesson: translation
+    is GRAB-RELATIVE (§14.1), so the cube keeps whatever offset it had from the
+    hand at the moment of the grab. The cube can therefore sit much closer to the
+    edge than the hand centre does, and every grab-push-drop cycle re-establishes
+    a new offset and walks it further out. `beyond_edge_margin` decides WHEN TO
+    LET GO; only a positional clamp decides WHERE THE CUBE MAY BE. One is a
+    trigger, the other an invariant, and the trigger cannot enforce the invariant.
+
+    ⭐ Stateless and absolute: no history, nothing to drift, nothing to "fluctuate".
+
+    ⚠⚠ THIS IS A 2D RULE AND IT MUST BE REVISITED WHEN 4.2 (Z-AXIS) LANDS.
+    The display is the camera's FIELD OF VIEW -- a frustum, not a box -- so an
+    object's PROJECTED extent shrinks as it moves away and grows as it comes
+    near. `size` here is a constant today only because nothing drives Z yet.
+    Once it does:
+      * `size` must become the object's extent AS PROJECTED at its current depth,
+        not its nominal size. Otherwise a distant object is held needlessly far
+        from the edge, and -- the dangerous direction -- a NEAR object's real
+        footprint exceeds the margin and can still overflow the play area.
+      * ✅ AND THE SHAPE IS DECIDED (owner, 2026-08-23): **a WORLD-SPACE VOLUME,
+        accounting for the camera frustum** -- not a screen-space rectangle. So
+        the clamp moves into world coordinates: at the object's depth, take the
+        frustum's lateral extent, inset it by the world margin, clamp the
+        object's world position inside that, then project. ⭐ The on-screen
+        boundary will MOVE with depth (inward as the object recedes). That is the
+        intended consequence, not a regression.
+      * ⭐⭐ THE MARGIN IS ALREADY A WORLD QUANTITY, so this is a change of UNITS,
+        not of the number: it was derived as HALF A HAND BREADTH AT 40 cm =
+        **42.5 mm**, and EDGE_MARGIN_PX is just its projection there (554 px
+        focal length * 0.0425 m / 0.40 m = 58.9 px). At other depths the same
+        42.5 mm is 78 px at 0.30 m, 34 px at 0.70 m, 24 px at 1.00 m.
+        **Carry 42.5 mm forward, not 60 px.**
+    ⚠ Do this in the same pass as U2's bounding-radius change: both replace the
+    `size` term, and doing them separately means touching this twice.
+    Recorded in queue rows 4.2, U9 and U2.
+
+    ⚠ DEGENERATE CASE: if the play area is narrower than the cube (a tiny window,
+    or a margin larger than half of it) the clamp would invert and pin the cube to
+    a nonsense corner. Centre it instead -- the least surprising thing, and it
+    keeps the cube on screen."""
+    if not frame_size:
+        return (x, y)
+    w, h = frame_size[0], frame_size[1]
+    if w <= 0 or h <= 0:
+        return (x, y)
+
+    def _axis(v, extent):
+        lo = margin_px
+        hi = extent - margin_px - size
+        if hi < lo:
+            return (extent - size) / 2.0
+        return max(lo, min(v, hi))
+
+    return (_axis(x, w), _axis(y, h))
+
+
+def palm_width_px(landmarks):
+    """Hand breadth across the knuckles, in pixels: index_MCP to pinky_MCP.
+
+    ⚠ Kept, but NOT used by the edge margin -- see EDGE_MARGIN_PX. It jitters by
+    tens of percent frame to frame, which is why the margin is fixed."""
+    return math.hypot(landmarks[INDEX_MCP][0] - landmarks[PINKY_MCP][0],
+                      landmarks[INDEX_MCP][1] - landmarks[PINKY_MCP][1])
 
 
 def is_thumb_outward(landmarks, handedness):

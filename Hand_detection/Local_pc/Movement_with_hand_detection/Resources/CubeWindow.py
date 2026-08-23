@@ -1,4 +1,6 @@
 import pygame
+
+from . import palm_geometry
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
@@ -251,9 +253,14 @@ class CubeWindow:
         bounds."""
         cube = self.cubes[cube_name]
         x, y = position
-        clamped_x = max(0.0, min(x, self.window_size[0] - cube.size))
-        clamped_y = max(0.0, min(y, self.window_size[1] - cube.size))
-        cube.position = (clamped_x, clamped_y)
+        # ⭐⭐ U9: clamp to the PLAY AREA (the window inset by the edge margin),
+        # not to the window itself. Owner, 2026-08-23: the cube could be pushed
+        # step by step to the very edge of the display. ⚠ The hand-side margin
+        # cannot prevent that -- translation is grab-relative, so the cube keeps
+        # its own offset from the hand and creeps further out on every
+        # grab-push-drop cycle. This is the invariant; that is the trigger.
+        cube.position = palm_geometry.clamp_to_play_area(
+            x, y, cube.size, self.window_size)
 
     def cube_center(self, cube_name: str) -> Tuple[float, float]:
         """Center point of the named cube, for proximity/grab-radius checks

@@ -910,6 +910,13 @@ def _record_close():
         elapsed = time.perf_counter() - (_rec["t0"] or time.perf_counter())
         with open(os.path.join(_rec["dir"], "meta.json"), "w", encoding="utf-8") as m:
             json.dump({"sequence": os.environ.get("VISION_RECORD_TAG", "production"),
+                       # ⭐ 2 = cubes snapshotted AFTER the frame's logic, matching
+                       # the debug recorder, and carrying position + size. ABSENT
+                       # (or 1) means the OLD alignment: cubes were captured
+                       # before the logic, so a harness pairing hands[i] with
+                       # cubes[i] is off by one frame. Check this before comparing
+                       # takes across 2026-08-23.
+                       "recorder_schema": 2,
                        "source": "HandsTriggeredActions (PRODUCTION, over the socket)",
                        "note": os.environ.get("VISION_RECORD_NOTE", ""),
                        "frames": _rec["n"], "duration_s": round(elapsed, 2),
@@ -942,21 +949,10 @@ def _record_frame(hands):
     row = {
         "tCapture": round((time.perf_counter() - _rec["t0"]) * 1000.0, 2),
         "hands": rec_hands,
-        # Same per-arm nesting the debug recorder uses, so one harness reads both.
-        "cubes": {"production": {
-            name: {"owner": c.owner,
-                   "orientation": [round(v, 6) for v in c.orientation]}
-            for name, c in cube_window.cubes.items()}},
     }
-    # ⭐⭐ HELD, NOT WRITTEN YET. The palm/back cue this frame's rules act on is
-    # computed BELOW, in the per-hand loop, so writing here would record the
-    # PREVIOUS frame's answer -- a one-frame lie in the one field the instrument
-    # exists to capture. `_record_flush()` writes the row at the end of the frame.
-    # ⚠ `landmarks`/`world_landmarks`/`cubes` are captured HERE deliberately, so
-    # their meaning is unchanged from the two production sessions already recorded
-    # ("the state the logic was about to act on"). Only the cue fields are added
-    # late. Changing the cube timing would silently shift every existing
-    # comparison by a frame.
+    # ⭐⭐ HELD, NOT WRITTEN YET. Both the palm/back cue and the cube state this
+    # frame produces are computed BELOW, so writing here would record the PREVIOUS
+    # frame's answers. `_record_flush()` writes the row at the end of the frame.
     _rec["pending"] = row
 
 
@@ -973,6 +969,25 @@ def _record_flush():
     if _rec["fh"] is None or _rec.get("pending") is None:
         return
     row = _rec.pop("pending")
+    # ⭐⭐ CUBES SNAPSHOT TAKEN HERE -- AFTER this frame's logic, matching the debug
+    # recorder (2026-08-23). Until now production captured them BEFORE, so a snap
+    # or release during frame i first appeared in frame i+1's row while `hands`
+    # came from frame i. ⚠ That one-frame skew is invisible and it fooled a
+    # harness the same day: pairing hands[i] with cubes[i] reported 11 phantom
+    # "cube held beyond the margin" violations in production that vanished once
+    # the rows were realigned. Two recorders with different frame semantics are a
+    # trap for every future analysis, so they now agree.
+    # ⚠ Takes recorded before 2026-08-23 lack `recorder_schema` in meta.json and
+    # carry the OLD alignment -- see `_record_close`.
+    # ⭐ POSITION + SIZE are new here too: without them the play-area invariant
+    # (U9) could only be checked by replaying a take, i.e. by re-deriving what the
+    # tool already knew.
+    row["cubes"] = {"production": {
+        name: {"owner": c.owner,
+               "position": [round(v, 2) for v in c.position],
+               "size": c.size,
+               "orientation": [round(v, 6) for v in c.orientation]}
+        for name, c in cube_window.cubes.items()}}
     for h in row["hands"]:
         slot = h["handedness"]
         tracker = _palm_facing_trackers[slot]

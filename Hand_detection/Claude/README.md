@@ -112,7 +112,10 @@ recording them:
 |---|---|---|
 | **U7** | chirality from GEOMETRY, not the 10.8%-wrong label — `sign(det[index_MCP−wrist, pinky_MCP−wrist, thumb_CMC−wrist])` over `world_landmarks`, in `palm_geometry.py` and wired into `PalmFacingTracker.update()`, the one place the label entered the cue in **either** tool | `GEOMETRIC_CHIRALITY` |
 | **T3** | a held cube's owner SLOT follows its DR-1 TRACK across a relabel (`Resources/owner_remap.py`) — closes the **silent handover**, where the cube changed physical hand with no release, no snap and rule 3 never consulted | `OWNER_FOLLOWS_TRACK` |
-| **U8** | rule 3 refuses to snap while a newly entered hand's chirality is still **provisional** — a transit time, 6 frames, derived from palm width ÷ entry speed | `CHIRALITY_CONFIRM_FRAMES` |
+| **U8** | rule 3 refuses to snap while a newly entered hand's chirality is still **provisional** — **200 ms**, gated on ELAPSED TIME so it is correct at any capture rate (no fps estimate, no per-frame sampling). ⭐ Measured: the *dispute* condition, not the window, is the primary guard — the recorded failure is refused at every window from 400 down to 100 ms | `CHIRALITY_CONFIRM_MS` |
+
+| **U9** | every object is confined to a **play area** — the display window inset by **60 px** (half a hand width at 40 cm), so it can never be pushed to the edge. ⛔ TWO hand-side *triggers* were built and reverted first: **a trigger cannot enforce an invariant** (translation is grab-relative, so the object keeps its own offset and creeps outward on every grab-push-drop cycle). ⚠ **2D rule — revisit at 4.2**: ✅ decided 2026-08-23 that the play area is a **world-space volume, frustum-aware**, so the clamp moves into world coordinates and the on-screen boundary moves with depth. ⭐ The margin is already a world quantity (half a hand breadth = **42.5 mm**); 60 px is just its projection at 40 cm | `EDGE_MARGIN_PX` |
+| **recorders** | both tools now log the cue AND cube position/size, sampled at the same point in the frame (`recorder_schema: 2`). Production used to sample cubes a frame earlier than debug, which silently skewed any harness pairing hands with cubes | — |
 
 Also: **production now RECORDS the cue it used** (`thumb_outward`,
 `chirality_confirmed`, `orientation_valid`, `snap_allowed`) instead of forcing a
@@ -122,11 +125,21 @@ disagree with the real one, and twice tonight it did.
 ⛔ **The original write-up's mechanism ("use the 3D palm normal") was wrong** — 3D
 alone does not remove the chirality dependence; the **thumb** is what does.
 
+⚠⚠ **Four times this session a harness reported CLEAN on a take the owner had just
+watched fail.** Every time the instrument was wrong, not the owner. That is why
+production now RECORDS what it ran instead of forcing a recomputation, and why
+the recorders have their own parity guard. See `PART_ONE.md` §3.1's YOU-ARE-HERE
+block for all four.
+
 **Next build: 4.2 — Z-axis translation**, driving cube Z from 4.1's depth ratio.
 ⚠ It must also make snap gating **3D** (`_try_snap`'s grab radius becomes a 3D
 check — a real change to existing logic), which is precisely why U7/U8 went
-first: that is the rule the bad chirality corrupts. See `PART_ONE.md` §3.1's
-"YOU ARE HERE" block.
+first: that is the rule the bad chirality corrupts. ⚠⚠ **And it must revisit
+U9's play-area clamp**, which is 2D. ✅ **Two decisions are already made** (owner,
+2026-08-23): **no snapping while depth is frozen** (S10's edge-on freeze —
+suppress rather than guess, flagged tunable for game feel), and **the play area
+is a world-space volume accounting for the camera frustum**, not a screen
+rectangle. See `PART_ONE.md` §3.1's "YOU ARE HERE" block and 4.2's row.
 
 ⭐ **4.1's DEPTH ESTIMATOR is done** (`Resources/palm_depth.py`, A10-passed, wired
 to nothing yet — that is 4.2). ⭐ **No depth calibration step is needed** — the
@@ -177,6 +190,8 @@ This is the section that saves the most time. Each was measured, not guessed.
 | **N11 left/right asymmetry** | **not reproduced**; direction reversed on clean takes |
 | **Post-hoc `invert_x` mirroring** | **falsified 2026-08-22** — MediaPipe is not mirror-equivariant (7.7–10 mm, 12–20°). Replaced by flipping the frame before detection |
 | **Ownership keyed on the handedness label** | **replaced 2026-08-22** by the stable track id. Live A/B, 3 sessions: label orphaned a held cube 794/377/15 frames, track 0 every time |
+| **A hand-side TRIGGER to keep an object off the display edge** | **built twice, reverted twice** — translation is grab-relative, so the object keeps its own offset from the hand and creeps outward on every grab-push-drop cycle. **A trigger cannot enforce an invariant**; U9 ships a positional clamp instead |
+| **An ADAPTIVE edge margin (half the CURRENT palm width)** | **failed live** — the measured width collapsed 45% in ONE frame, the margin collapsed with it, and the object was carried out of frame. A threshold must not be computed from a quantity that is noisy where the threshold acts |
 | **A thumb-plane-thickness gate on chirality** | **measured null, NOT shipped** — sweeping 0→7 mm changed nothing to 5 mm and was WORSE at 3–5 mm; at the production failure the bad frames sat at 11–16 mm, **above** the 8.8 mm median. Good conditioning, wrong answer |
 | **Falling back to the handedness label while chirality is unconfirmed** | **measured backwards** — at track age 0 geometry is **89.7%** and the label **76.8%**. The label is WORST exactly at hand entry |
 | **Temporal voting to fix a newly entered hand's chirality** | **cannot work** — the wrong value was stable for **5 consecutive** frames, so any majority picks it |
@@ -237,7 +252,9 @@ ownership should follow the *physical* hand — today the cube the pipeline call
 | the back-of-hand steal / rule-3 audit | `analysis/n8_back_steal.py` — silent handovers, back-steals, back-snaps, with COVERAGE printed |
 | the T3 remap A/B on a recording | `analysis/t3_remap_ab.py` |
 | re-derive U8's window if the frame rate moves | `analysis/u8_entry_settling.py` |
-| golden vectors | `analysis/verify_*.py` — 20 suites |
+| the two recorders must not drift apart | `analysis/verify_recorder_parity.py` |
+| the play area (an object may never reach the display edge) | `analysis/verify_play_area.py` |
+| golden vectors | `analysis/verify_*.py` — 22 suites |
 
 ⚠ **One webcam, and DSHOW is exclusive across processes** — production and the
 debug tool cannot run at the same time. Compare them back-to-back. (Two capture

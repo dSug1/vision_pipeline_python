@@ -802,9 +802,13 @@ class CubeState:
     def set_target_position(self, name: str, top_left: Tuple[float, float]) -> None:
         cube = self.cubes[name]
         x, y = top_left
-        clamped_x = max(0.0, min(x, self.window_size[0] - cube.size))
-        clamped_y = max(0.0, min(y, self.window_size[1] - cube.size))
-        cube.position = (clamped_x, clamped_y)
+        # ⭐⭐ U9 (N6, mirrors `CubeWindow.set_target_position`): clamp to the PLAY
+        # AREA -- the window inset by the edge margin -- not to the window itself.
+        # The hand-side margin cannot enforce this: translation is grab-relative,
+        # so the cube keeps its own offset from the hand and creeps outward on
+        # every grab-push-drop cycle. Trigger vs invariant.
+        cube.position = palm_geometry.clamp_to_play_area(
+            x, y, cube.size, self.window_size)
 
 
 def _is_thumb_outward(pixel_landmarks, handedness: str) -> bool:
@@ -1902,7 +1906,16 @@ def main():
                         (f"{i}:{arm.arm_label}"
                          f":{getattr(arm, 'ownership', '?')}"
                          f":{arm.bridge_window_ms:.0f}ms"): {
+                            # ⭐ POSITION + SIZE recorded 2026-08-23. Without them
+                            # the play-area invariant (U9) can only be checked by
+                            # REPLAYING a take, i.e. by re-deriving what the tool
+                            # already knew -- and a re-derivation is a second
+                            # implementation that can silently disagree. `size` is
+                            # here too so a harness can test the whole object's
+                            # extent, not just its top-left corner.
                             name: {"owner": c.owner,
+                                   "position": [round(v, 2) for v in c.position],
+                                   "size": c.size,
                                    "orientation": [round(v, 6) for v in c.orientation]}
                             for name, c in arm.cubes.items()
                         }
@@ -1952,6 +1965,13 @@ def main():
                     fh.write(json.dumps(r) + "\n")
             with open(os.path.join(session_dir, "meta.json"), "w", encoding="utf-8") as fh:
                 json.dump({
+                    # ⭐ Matches production's marker (N6). 2 = cubes are
+                    # snapshotted AFTER the frame's logic and carry position +
+                    # size. The debug tool always had the "after" alignment;
+                    # production did not until 2026-08-23, and the mismatch
+                    # produced phantom violations in a harness that paired
+                    # hands[i] with cubes[i].
+                    "recorder_schema": 2,
                     "sequence": args.tag,
                     "source": "LiveSnapDebug.py --record (cube visible live)",
                     "note": args.note,

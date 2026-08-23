@@ -298,17 +298,26 @@ def main():
         return rr.confirmed
 
     # The SAME wall-clock window must be enforced whatever the rate. At 15 fps
-    # that is ~5 frames; at 30 fps ~10. A frame constant could not do both.
-    slow_needed = int(MS / (1000.0 / 15.0)) + 1
-    fast_needed = int(MS / (1000.0 / 30.0)) + 1
+    # that is ~7 frames; at 30 fps ~13. A frame constant could not do both.
+    # ⚠ Compute the frame count from the window rather than hard-coding it, and
+    # use ceil: the first draft used int()+1 and broke the moment MS/step divided
+    # exactly (400 ms at 15 fps is exactly 6 intervals), asserting "one short" on
+    # a frame that was exactly ON the boundary. The N frames span N-1 intervals.
+    import math as _m
+
+    def frames_for_ms(fps, ms):
+        return int(_m.ceil(ms / (1000.0 / fps))) + 1
+
+    slow_needed = frames_for_ms(15.0, MS)
+    fast_needed = frames_for_ms(30.0, MS)
     check("15 fps: one frame short of %.0f ms -> provisional" % MS,
-          run_at(15.0, slow_needed), False)
+          run_at(15.0, slow_needed - 1), False)
     check("15 fps: %.0f ms elapsed -> confirmed" % MS,
-          run_at(15.0, slow_needed + 1), True)
+          run_at(15.0, slow_needed), True)
     check("30 fps: the same FRAME count is NOT yet enough (half the time)",
-          run_at(30.0, slow_needed + 1), False)
+          run_at(30.0, slow_needed), False)
     check("30 fps: %.0f ms elapsed -> confirmed" % MS,
-          run_at(30.0, fast_needed + 1), True)
+          run_at(30.0, fast_needed), True)
     check("...and that needs about twice the frames, as it should",
           fast_needed > slow_needed, True)
 

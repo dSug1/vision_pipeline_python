@@ -37,16 +37,50 @@ plain language, not implementation detail (link to the code instead).
      correctly, on the argument that *"losing tracking is not the same as
      letting go"*, and it comes with a UI signal. **M10.7 remains deferred
      and undecided** — see the next bullet, which is unchanged.
-   - ⛔ **KNOWN, MEASURED, NOT FIXED: a handedness RELABEL also drops the
-     object.** Ownership is keyed to MediaPipe's Left/Right label, which is not
-     stable, so when the label moves the object is orphaned — **113 of 205
-     spurious releases, the single largest cause**, larger than dropouts
-     (queue T3). A client-side repair was built and live-tested on 2026-08-21
-     and **reverted on 2026-08-22**: it identified "the same hand" by position,
-     which cannot separate two hands in the same place, and it handed a held
-     object to the operator's other hand. **The fix is re-pointed at the
-     `HandState` v2 wire protocol, which carries a track identity** — scheduled
-     with queue 4.1/M9. ⚠ Do not re-attempt this from the client side.
+   - ✅ **FIXED 2026-08-22 (queue T3): a handedness RELABEL no longer drops the
+     object.** Ownership was keyed to MediaPipe's Left/Right label, which is not
+     stable, so when the label moved the object was orphaned — **113 of 205
+     spurious releases, the single largest cause**, larger than dropouts. A held
+     object's owner now follows its tracked hand across a relabel
+     (`Resources/owner_remap.py`). Measured on a recorded take: the spurious
+     drop-and-regrab disappears, and it took a **single hand moving between
+     labels with no second hand present** to trigger it.
+     - ⭐ **It also closed a route nobody had named**: when the two hands swapped
+       labels, a held object passed to the *other physical hand* with **no
+       un-snap and no snap at all** — so rule 3 was never consulted. That was the
+       one way a back-of-hand hand could take an object legitimately held by the
+       other, and it is why ordinary back-of-hand grabs were correctly blocked
+       while that one was not.
+     - ⚠ An earlier client-side repair was built, live-tested on 2026-08-21 and
+       **reverted on 2026-08-22**: it identified "the same hand" by POSITION,
+       which cannot separate two hands in the same place, and it handed a held
+       object to the operator's other hand. ⛔ **Do not re-attempt that approach.**
+       The shipped fix uses the tracked identity instead, and deliberately leaves
+       ownership expressed as a hand SLOT so nothing else changed.
+   - ⭐ **OBJECTS ARE CONFINED TO A PLAY AREA, ADDED 2026-08-23 (U9).** Every
+     object is constrained to the display window inset by a fixed margin (60 px,
+     which is half a hand width at 40 cm — the closest the operator works). It
+     cannot be pushed to the edge of the display, however many times it is
+     nudged. The margin is the same for every object and needs no per-object
+     setup: the bounds are derived from the object's own size.
+     - ⛔ **This replaced two attempts to do it by DROPPING the object when the
+       hand neared the edge, both reverted.** They could not work: an object
+       keeps whatever offset it had from the hand when it was grabbed, so it can
+       sit much closer to the edge than the hand does, and each grab-push-drop
+       cycle walks it further out. Deciding *when to let go* can never decide
+       *where the object may be*. Do not re-propose a hand-side trigger for this.
+     - ⚠ **This is a 2D rule today and it will need revisiting twice.**
+       (a) **When objects gain DEPTH (queue 4.2).** ✅ **Decided 2026-08-23: the
+       play area is a volume in the WORLD, shaped by the camera's field of
+       view** — not a fixed rectangle on screen. So the boundary an object stops
+       at will *move on screen* with depth: further away, it stops sooner in
+       screen terms; closer, later. That is intended. ⭐ The margin itself does
+       not change — it was always a real-world distance (half a hand breadth,
+       ~42.5 mm); today's 60 px is just how that looks at 40 cm.
+       (b) **For an imported 3D object (queue U2):** the margin must be applied
+       against a bounding-sphere radius, not a single size, or the boundary will
+       move as the object rotates.
+
    - ⭐ **Side effect on N8 (cube-stealing, below): partially closed for
      free.** An occlusion shorter than 150 ms no longer releases the cube,
      so there is nothing for the occluding hand to steal. Occlusions longer
@@ -104,7 +138,7 @@ plain language, not implementation detail (link to the code instead).
      pair. Orientation sign convention calibrated live 2026-08-01 (see
      `GESTURE_PIPELINE_SPEC.md` §13.6).
    - ⭐ **BEHAVIOUR ADDED 2026-08-22 (U8), owner-accepted live — A HAND THAT HAS
-     JUST ENTERED THE FRAME CANNOT SNAP AT ALL for ~6 frames (~380 ms).**
+     JUST ENTERED THE FRAME CANNOT SNAP AT ALL for 200 ms.**
      Not a bug and not the edge-on latency below: the palm/back cue is computed
      from the THUMB's offset from the palm plane, so while a hand is still
      entering — the thumb being the last part to appear — that cue is not merely
@@ -112,9 +146,12 @@ plain language, not implementation detail (link to the code instead).
      thumb. Measured: a back-of-hand hand read as PALM and took a cube this rule
      forbids. The game now **refuses to snap while the chirality is provisional**
      rather than guess, which is the same choice rule 1's edge-on freeze makes.
-     ⚠ **Felt cost, priced before shipping**: ~22% of grabs are delayed by about
-     380 ms — *delayed*, never refused; the hand is still there when the gate
-     opens. See queue item **U8** and `analysis/u8_entry_settling.py`.
+     ⚠ **Felt cost**: a grab by a just-entered hand is delayed by up to 200 ms
+     (lowered from 400 ms after the owner found that too long) — *delayed*, never refused; the hand is still
+     there when the gate opens. ⭐ The window is a DURATION, so the delay
+     feels the same whether the rig is running 15 fps or 30 — which is the
+     point: a frame count would have felt twice as long in dim light.
+     See queue item **U8** and `analysis/u8_entry_settling.py`.
    - ⭐ **RELATED, 2026-08-22 (T3):** a held object no longer changes hands when
      the tracker relabels the two hands. Previously ownership followed the
      handedness *label*, so when the labels swapped the object silently passed to
@@ -299,6 +336,24 @@ plain language, not implementation detail (link to the code instead).
      **M4's χ² gate** (reject the implausible single-frame excursion and
      coast on the model). Queued as item T3 in the merged build queue;
      expected to close in Phases 1–2 rather than needing its own filter.
+
+7. **No snapping while depth is frozen.** ⚠ **DECIDED 2026-08-23, applies once
+   queue 4.2 (Z-axis translation) ships — not live yet.** When an object's depth
+   cannot be measured — the hand is edge-on, so the depth reading is being *held*
+   rather than measured — a hand cannot pick anything up.
+   - **Why refuse rather than guess.** A frozen depth is a remembered value, not
+     an observation, and 4.2 makes the grab check three-dimensional. Deciding
+     whether a hand is close enough to an object using a number the sensor is not
+     currently supplying is exactly the kind of confident-but-wrong answer that
+     rule 3 spent this project's worst debugging on. It is the same choice the
+     game already makes when the palm/back reading is untrustworthy (rule 1's
+     edge-on freeze) and when a just-entered hand's chirality has not settled.
+   - ⚠ **Flagged as tunable for game feel** (owner's framing). If refusing turns
+     out to be too strict in play, the fallback to try is degrading to the flat
+     2D grab radius while frozen, rather than refusing outright. ⛔ Do not change
+     it on impression — measure how often the freeze actually coincides with a
+     grab attempt first. Queue **4.2**; §14.3.2 had left this open and it is now
+     closed.
 
 ## Not yet built
 

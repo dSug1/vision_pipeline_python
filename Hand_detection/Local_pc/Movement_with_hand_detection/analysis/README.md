@@ -461,6 +461,9 @@ owner still saw bugs. Offline green is necessary, not sufficient.
 | `t3_remap_ab.py` | drives the debug tool's real `update_hands` over a recording with `OWNER_FOLLOWS_TRACK` off and on. One variable between arms |
 | `u8_entry_settling.py` | derives U8's window: palm width, entry speed, implied transit time, and the empirical leading-run-of-wrong-chirality |
 | `verify_owner_remap.py` | golden vectors, written BEFORE the wiring, pinning the cases 4.1 got wrong |
+| `verify_play_area.py` | U9: every object confined to the window inset by 60 px. Records the two reverted hand-side triggers and why a trigger cannot enforce an invariant |
+| `verify_recorder_parity.py` | ⭐ the two RECORDERS must write the same fields and sample them at the same point in the frame. Checked by SOURCE, no camera needed |
+| `u8_entry_settling.py` | derives U8's window from palm width / entry speed, in ms |
 
 **THREE DEFECTS, ONE APPEARANCE.** All three looked like *"a back-of-hand hand
 takes the cube"*, and separating them required recording each one:
@@ -494,10 +497,13 @@ back to the label (76.8% vs geometry's 89.7% at track age 0); temporal voting
 chirality contradiction (real -- 191 of 14460 frames -- but trust-the-older is
 46.6%, squarer 53.4%, thicker 63.9%: **detection yes, resolution no**).
 
-⚠⚠ **TWICE A HARNESS HERE REPORTED CLEAN ON A TAKE THE OWNER HAD JUST WATCHED THE
-DEFECT IN.** The first counted a SLOT change as a hand change -- label-as-identity,
-the very confusion under diagnosis. The second recomputed the cue with a
-slot-keyed tracker while production ran track-aware. ⭐ **When the owner's eyes
+⚠⚠ **FOUR TIMES A HARNESS HERE REPORTED CLEAN ON A TAKE THE OWNER HAD JUST WATCHED
+THE DEFECT IN.** (1) counted a SLOT change as a hand change -- label-as-identity, the very
+confusion under diagnosis; (2) recomputed the cue with a slot-keyed tracker while
+production ran track-aware; (3) looked the hand up by the cube's owner SLOT, so a
+relabel made the check skip; (4) paired `hands[i]` with `cubes[i]` when production
+sampled cubes a frame earlier -- **11 phantom violations**, all of which vanished
+on realignment. ⭐ **When the owner's eyes
 and the instrument disagree, the instrument is the suspect** -- and it is why
 production now RECORDS `thumb_outward` / `chirality_confirmed` / `snap_allowed`
 rather than forcing a recomputation.
