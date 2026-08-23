@@ -4601,6 +4601,440 @@ has not been seen on screen yet.
 
 ---
 
+### ⚠ 14.3.4.6 THE CARD-REFERENCE YAW TAKE (2026-08-23) — CLEAN, BUT TOO SHORT TO CONCLUDE
+
+`2026-08-23_202153_yaw_card_axis_check`, debug tool, 586 frames / 34.3 s.
+⚠ **Analysed over 5.0–31.3 s only** — the operator asked for the first 5 s and last
+3 s to be dropped (*"I was not really on position then"*). Harness:
+`analysis/t5g_cube_axis_from_recording.py`.
+
+⭐⭐ **THE METHOD IS NEW AND IT IS THE PART WORTH KEEPING.** The operator held a flat
+card clamped at the **BASE of the index and middle fingers** — i.e. on the rigid
+palm plate the Horn fit actually uses (landmarks 0, 5, 9, 13, 17) — plane parallel
+to the palm, long edge VERTICAL. Under a pure yaw a vertical card stays vertical,
+so **wobble becomes visible to the operator in the moment and can be corrected as
+it happens**, instead of being discovered in the analysis afterwards.
+⚠ **NOT at the fingertips**, which was the first instinct: fingertips contribute
+NOTHING to the rotation fit and sit two joints away from the plate, so a finger
+flex would rotate the card without rotating the estimate — and be blamed on the
+estimator. ⚠ The card is never in the file (recordings hold landmarks, never
+pixels — N14); it is an operator-control device, and the cleanliness gate is what
+confirms from the data that the control worked.
+
+⭐ **AND IT WORKED.** Pitch contamination, which is sweep-independent, came out
+BETTER than the take that currently defines "clean":
+
+| | this take | 2026-08-22 "clean" | 2026-08-04 mixed |
+|---|---|---|---|
+| palm LENGTH collapse (contamination) | **0.833** | 0.751 | 0.670 |
+| palm WIDTH collapse (sweep size) | 0.639 | **0.219** | 0.629 |
+
+⛔ **BUT THE SWEEP WAS TOO SMALL, AND THAT IS WHAT MAKES IT INCONCLUSIVE.** Width
+implies only **~50°** of yaw from face-on; the cube reached a maximum of 55.9° and
+a median of 39.3°. The 13.0° reference was measured **at large rotation**, and
+§14.3.4.2's binding rule is that an axis deviation is meaningless without the
+rotation magnitude it was measured at — below ~30° even a *clean pitch* take reads
+44–63° off its own axis.
+
+**Axis vs rotation magnitude — the only honest way to read it:**
+
+| rotation band | frames | axis off-vertical (median) |
+|---|---|---|
+| 30–40° | 63 | 66.8° |
+| 40–50° | 37 | 59.2° |
+| **50–60°** | **9** | **39.1°** |
+| 60–90° | 0 | never reached |
+
+⭐ **Monotonically converging, exactly as the noise floor predicts** — and it never
+reached the band where 13.0° was measured. **This take shows no evidence of a NEW
+or worse defect; it simply cannot resolve the old one.** ⛔ Do not quote 39° or
+66° as the yaw tilt.
+
+⭐ **ONE THING IT DOES REPRODUCE INDEPENDENTLY**: implied hand yaw ~50° against a
+cube maximum of 55.9° is a gain of **~1.12**, against the 1.11 median measured on
+the 2026-08-22 clean take by a completely different method. "Equal rotation" holds.
+
+✅✅ **AND IT DELIVERED AN UNASKED-FOR RESULT THAT MATTERS MORE — 4.2's DEPTH
+ANCHOR IS NOT FOOLED BY ROTATION.** A rotation-only take is the direct test of the
+A10 property `palm_depth` was built for (a depth anchor must stay CONSTANT while
+the hand merely rotates), and this is the first time it has been measured **live,
+with an object actually attached**, from the cube's own recorded depth rather than
+a re-derivation:
+
+| rotation | frames | median object depth |
+|---|---|---|
+| 0–15° | 129 | 0.479 m |
+| 15–30° | 214 | 0.483 m |
+| 30–45° | 98 | 0.490 m |
+| 45–90° | 11 | 0.495 m |
+
+**+16 mm across a 50° rotation.** The total depth span over the take was 90 mm, so
+the great majority of that is the operator's hand genuinely moving, not
+foreshortening leaking into Z. ⭐ That is the `max4` multi-anchor rule doing
+precisely the job §14.3.1/§14.3.2 designed it for.
+
+⚠⚠ **TWO HARNESS BUGS WERE CAUGHT AND FIXED BEFORE ANY NUMBER WAS REPORTED**, both
+of them already documented traps:
+
+1. ⛔ The first pass referenced the cube's orientation to the **first held frame**
+   of the trimmed window. §14.3.4.2 records exactly this trap ("produced 'gain
+   21.5' by freezing the reference on an already-rotated frame rather than the most
+   face-on one"). The reference is now the **widest-palm frame** in the window, and
+   that alone moved the reported axis from 77° to 65°.
+2. ⛔ The cleanliness gate conflated **a SHORT sweep with a DIRTY one**. Width
+   collapse is ~cos(sweep) BY CONSTRUCTION, so a clean 50° yaw scores 0.64 and
+   looks identical to the contaminated 2026-08-04 take. ⭐ **The two numbers answer
+   different questions and must be read separately: LENGTH collapse measures
+   contamination and is sweep-independent; WIDTH collapse measures how far the hand
+   turned.** The gate now prints both as implied angles.
+
+⭐ **WHAT TO DO NEXT — the retake needs TWO changes, not one:**
+- **Turn further**, until the palm is nearly edge-on (~80°), not the ~50° achieved.
+- ⭐ **PAUSE about a second at each extreme.** Only **9 frames** of 452 landed in
+  the informative 50–60° band because the sweeps moved fastest exactly where the
+  measurement is meaningful. The pause, not the sweep count, is what fills that bin.
+⚠ Going past edge-on is acceptable for THIS measurement — the axis comes from the
+recorded quaternion, which does not fold — but the width-based *sweep* estimate
+above does fold past 90°, so read it as a floor once the palm passes edge-on.
+
+### ✅✅ 14.3.4.7 THE YAW QUESTION IS ANSWERED (2026-08-23) — the tilt is real, and the one candidate fix is REJECTED
+
+`2026-08-23_203307_yaw_card_axis_check_b` — the retake with the two corrections
+§14.3.4.6 asked for (turn further, **and pause at each extreme**). It worked:
+**77° sweep** (width collapse 0.229, matching the 2026-08-22 clean take's 0.219),
+contamination 0.798 (better than that take's 0.751), **536 frames above the noise
+floor and 185 in the 60–90° band** against take 1's nine. ⭐ **The PAUSE was the
+fix, not the extra sweeps** — the hand moves fastest exactly where the measurement
+is meaningful.
+
+**Axis by rotation band, from the cube's own recorded quaternion:**
+36.7° (30–40) → 29.8° (40–50) → 18.0° (50–60) → **17.2° (60–90, n=185)** —
+converged and stable.
+
+#### ⛔ THE CARD DID NOT REDUCE THE TILT. IT READ HIGHER.
+
+The card was introduced to remove **operator wobble** as a candidate by control.
+It did control the sweep — contamination genuinely improved — but the measured
+tilt went **UP**, not down: ~17–19° with the card versus **12.6–13.0°** on the
+card-free clean take. Two readings, and both point the same way for the decision:
+(a) the residual is not wobble, so removing wobble cannot help it; or (b) gripping
+a card perturbs the hand or its landmarks and adds error of its own.
+⭐ **Either way the card-free take remains the better measurement of the defect,
+and 13° stands as the number.** ⚠ The card method is still worth keeping for
+what it was good at — it produced the cleanest contamination score ever measured
+— but it must not be used for the axis magnitude itself.
+
+#### ⛔⛔ THE 9-POINT CONSTELLATION A/B IS CLOSED: REJECTED UNDER A10
+
+Open since 2026-08-22 on the strength of "palm+tips beats palm-only on axis
+fidelity in every take measured". ⚠ **Those numbers came from the CONTAMINATED
+2026-08-04 take.** Re-run on the clean card-free take, with jitter measured on a
+real production handling take, one variable, same frames
+(`analysis/t5h_constellation_ab.py`):
+
+| | axis @ 60–90° (clean yaw) | jitter p95 (production handling) |
+|---|---|---|
+| **palm, 5 pt — SHIPS** | **12.6°** | **25.41°** |
+| palm+tips, 9 pt | 11.2° | 30.34° |
+
+**+1.4° of axis accuracy for +4.9° of p95 jitter.** ⛔ **Do not switch the
+constellation.** It reproduces the DIRECTION of the original jitter finding
+(tips worse) while the axis benefit is a fraction of what the contaminated take
+advertised. A10: a null-or-negative result is recorded, not shipped hopefully.
+
+⭐ **The harness validates itself on the way**: `t5h` reads **12.6°** for the
+shipped constellation on the take `t5f` measured at **13.0°** — two different
+implementations, two different routes to the ground truth, same answer.
+
+#### ⭐ WHAT TO DO ABOUT THE YAW TILT: ACCEPT ~13° FOR NOW
+
+Every code-side cause is eliminated (§14.3.4/§14.3.4.1: mirror, frame convention,
+constellation degeneracy, hand anatomy, the Horn fit itself — exact to 0.000° on
+synthetic input). Operator wobble is now argued against by control. The remaining
+candidate is **MediaPipe's world-z error**, i.e. the DATA, and the only lever that
+would move it is a **z-free rotation decomposition** (roll from the in-image
+knuckle angle, yaw from width foreshortening, pitch from length foreshortening).
+⚠ That is a substantial build, it shares its measurement with 4.1's anchor, and
+it carries real costs — cosine-insensitive near 0°, sign-ambiguous (needs DR-2's
+palm sign), and width also shrinks with DISTANCE, which is the very confound
+4.1/M9 exists to resolve. **Not worth it ahead of 4.4+B5.**
+
+⚠ **ROLL IS STILL NEVER MEASURED.** No scripted take exists and harvesting it from
+free play fails (those takes are ~85% two-handed). **Do not claim rotation is
+correct in all three axes** — two are measured, one is unknown.
+
+### ⭐⭐ 14.3.4.8 THE OWNER'S ACTUAL QUESTION, ANSWERED — and a NEW LEVER on the tilt (2026-08-23)
+
+⚠ **§14.3.4.7's "accept ~13°" recommendation is SUPERSEDED by this section.** It
+was made in the units the analysis happened to use, and those units understated
+what the defect looks like on screen.
+
+#### 1. Does the cube rotate purely about the vertical axis? **NO — it LEANS as it turns.**
+
+Owner, 2026-08-23: *"did the cube purely rotate around the vertical axis? ... this
+is key for me, as the cube has to represent the physical world correctly."*
+⛔ The honest answer, measured on the clean card-free take by rotating the cube's
+own UP vector and asking how far it leaves vertical:
+
+| hand turned | cube tipped out of upright (median / p90) |
+|---|---|
+| 0–20° | 6.8° / 10.7° |
+| 20–40° | 12.3° / 16.1° |
+| 40–60° | 21.9° / 25.4° |
+| **60–90°** | **26.8° / 32.2°** |
+
+⭐ **State it this way from now on, not as "13° of axis deviation".** A 13° axis
+tilt sounds minor; *"the object leans up to 27° as you turn it"* is what the owner
+sees, and it is the same fact. **The rotation AMOUNT is right (gain 1.13, matching
+§14.3.4.2's 1.11 by an independent route); the UPRIGHTNESS is not.**
+
+#### 2. ⭐ THE LEAN IS A SYSTEMATIC BIAS, NOT NOISE, AND IT LIVES IN THE SCREEN PLANE
+
+Owner's observation, and it is the right one: *"the +12.3° is close to the +13°.
+Check if this is a pure coincidence."* **It is not a coincidence — it is a
+decomposition.** Measured over 388 frames above 40°:
+
+| | |
+|---|---|
+| axis components, median abs | x **0.212**, y 0.974, z **0.064** |
+| tilt measured IN the screen plane (x vs y) | **12.31°** |
+| tilt measured in full 3D (includes z) | **12.98°** |
+| share of the tilt that is in-plane | **95%** |
+
+The two numbers agree because **the axis error has almost no depth component**: it
+is a SIDEWAYS LEAN of the rotation axis as seen on screen, exactly the *"mix of
+screen x and y"* the owner reported in §14.3.4.1. ⚠ And it is **100% consistent in
+direction** (every one of 388 frames leans the same way, IQR 9.3–17.2°) — a
+systematic bias, which is the class of error that CAN have a correction.
+
+⚠ **This qualifies §14.3.4.1's reasoning.** That section argued depth error's
+induced tilt "lands on z, while the observed tilt is toward x", and used it to
+separate the two. The observed tilt is indeed ~all x — but item 3 shows z-trust
+nonetheless drives it, so that argument does not exclude depth as the cause.
+
+#### 3. ⭐⭐ NEW: THE TILT SCALES WITH HOW MUCH THE FIT TRUSTS MEDIAPIPE'S WORLD Z
+
+Re-fitting the SHIPPED constellation with world z multiplied by a constant `k`
+(everything else identical), on the clean card-free take:
+
+| z-scale `k` | axis tilt @>40° | cube tip-out @60–90° | gain (fitted/true) |
+|---|---|---|---|
+| 0.00 | **2.0°** | **3.9°** | 1.34 |
+| 0.20 | 2.1° | 3.9° | 1.27 |
+| 0.40 | **3.7°** | **6.6°** | 1.20 |
+| 0.60 | 7.0° | 12.6° | 1.16 |
+| 0.85 | 11.1° | 19.6° | 1.13 |
+| **1.00 — SHIPS** | **13.0°** | **23.4°** | **1.13** |
+
+⭐ **Monotonic, and large.** Down-weighting z to 0.4 would cut the visible lean
+from **23.4° to 6.6°**, at the cost of the cube over-rotating by 20% instead of
+13%. That is the first lever ever found that moves this defect.
+
+⛔⛔ **DO NOT SHIP IT ON THIS EVIDENCE.** It is ONE take, ONE operator, ONE axis.
+Before it could be considered it needs, under A10: **(a)** the PITCH takes — z is
+what makes pitch observable at all, so `k` may well destroy it; **(b)** jitter in
+real handling, since down-weighting a coordinate can amplify noise; **(c)** the
+ROLL axis, which has still never been recorded at all; **(d)** a principled
+statement of what `k` IS — today it is a global fudge factor, and the honest
+version is anisotropic weighting of a coordinate already known to be the least
+reliable (§13.2), not a magic number.
+⚠ And it interacts with 4.2: `palm_depth` deliberately uses **pixel** spans and
+never world z, so it is unaffected — verify that, do not assume it.
+
+#### ⚠ TWO MEASUREMENT TRAPS HIT AGAIN IN THIS SESSION, BOTH ALREADY DOCUMENTED
+
+1. **The `acos` FOLD.** A first pass at the gain column read **2.41–3.02** where
+   the true value is ~1.13, because width foreshortening folds past edge-on
+   (a 140° pose reads as 40°). §14.3.4.2 records the identical failure producing
+   "3.57". Fixed by unwrapping with DR-2's palm-facing sign — after which the
+   harness reproduces the documented 1.11 as **1.13**.
+2. **The card perturbs the hand, and the operator identified the mechanism**:
+   *"I had to tilt the hand and arm to keep the card straight up."* That is why
+   the card take reads 17–19° against the card-free 12.6–13.0°. ⭐ **The card
+   method controls the SWEEP well — best contamination score ever measured — but
+   it must never be used for the tilt magnitude.**
+
+### ⛔⛔ 14.3.4.9 THE z-SCALE LEAD IS DEAD (2026-08-23) — it moves the error from yaw to pitch
+
+§14.3.4.8 found that the yaw axis tilt scales with how much the Horn fit trusts
+MediaPipe's world z, and flagged the obvious way it could die: **z is what makes
+PITCH observable at all.** Under pitch the knuckle row barely moves in the image
+and the hand rotates INTO the screen, so a fit that ignores depth has almost
+nothing left to measure. Tested (`analysis/t5i_zscale_sweep.py`):
+
+| `k` (world z x k) | YAW axis | PITCH axis *(validated take)* | PITCH axis *(2nd take)* |
+|---|---|---|---|
+| **1.00 — SHIPS** | 14.5° | **5.5°** | 30.0° |
+| 0.60 | 7.9° | 5.3° | 33.7° |
+| 0.40 | **4.3°** | **10.6°** | 38.0° |
+| 0.20 | 1.9° | 19.3° | 45.6° |
+| 0.00 | 0.6° | 22.5° | 60.4° |
+
+⛔ **REJECTED.** At the k that makes yaw good (0.4), pitch roughly DOUBLES on the
+take where pitch is currently excellent. There is no k that improves both. **This
+is not a fix, it is a redistribution** — exactly the failure this test was written
+to catch, and the reason it was written before proposing anything.
+
+⭐⭐ **BUT THE DIAGNOSIS IS NOW ESTABLISHED, NOT MERELY SUSPECTED.** Scaling world z
+moves the yaw tilt smoothly from 14.5° to 0.6°, which demonstrates the tilt is
+**caused by MediaPipe's world-z error**. §14.3.4/§14.3.4.1 had eliminated every
+code-side cause and pointed at the data; this is the positive evidence for it.
+
+⚠ **AND IT CLOSES THE 'JUST WEIGHT z LESS' FAMILY**, not only this one constant. A
+weighting that helps yaw necessarily hurts pitch, because the two axes need
+opposite things from the same coordinate. ⛔ Anisotropic covariance was already
+tried and failed five times (queue 2.3, audited and confirmed genuine) — this is
+the same wall from a different side. **The only remaining candidate is the z-free
+rotation decomposition** (roll from the in-image knuckle angle, yaw from width
+foreshortening, pitch from length foreshortening), which does not weight z at all
+because it never uses it.
+
+#### ⚠⚠ A THIRD MEASUREMENT TRAP, AND IT NEARLY PRODUCED A FALSE ALARM
+
+The first pitch run reported **45–55°** where §14.3.4 documents **5.0°**, which
+looked like pitch being catastrophically broken. It was the harness. **Two
+harnesses were measuring different quantities under the same name:**
+
+* `t5_rotation_axis_fidelity.py` **AVERAGES the per-frame axes first**, then reports
+  how far that MEAN axis sits from the expected one — pure BIAS. That is where
+  "pitch 5.0°" comes from.
+* `t5i` was reporting the **MEDIAN PER-FRAME deviation**, which also carries
+  frame-to-frame SCATTER.
+
+Both are legitimate and they are not the same number. `t5i` now prints **both**,
+and at k=1.0 its MEAN-axis column reads **5.5°** against the documented 5.0° —
+which is what says the harness is sound.
+⭐ **THE RULE: two numbers measuring "the axis error" are not comparable unless
+they aggregate the same way. Print the aggregation, not just the value.**
+⚠ An earlier pass also assumed pitch's expected axis was a fixed screen-horizontal;
+it is the **knuckle row**, which is only horizontal when the hand is held upright.
+
+### ✅✅ 14.3.4.10 ROLL IS MEASURED AT LAST (2026-08-23) — and it CONFIRMS the depth diagnosis
+
+`2026-08-23_211528_roll_card_axis_check_b` (first 4 s dropped, operator).
+**The roll axis had never been recorded in this project.** Harness:
+`analysis/t5j_roll_axis.py`.
+
+⭐⭐ **ROLL IS THE CONTROL EVERY OTHER MEASUREMENT NEEDED.** It is rotation about
+the CAMERA axis, so it happens entirely in the image plane and **its ground truth
+needs no depth at all** — just the in-image angle of the knuckle row. So it
+separates "the fit/conventions are wrong" from "the depth data is wrong", which
+yaw and pitch cannot do on their own.
+
+| axis | mean-axis error | gain (fitted/true) | needs depth? |
+|---|---|---|---|
+| **ROLL** | **6.7°** | **1.02** | ⭐ **NO** |
+| YAW | 14.5° | 1.13 | yes |
+| PITCH *(validated take)* | 5.5° | 0.74 | yes |
+
+⭐ **Roll's gain is 1.02 — essentially exact.** The two axes that depend on depth
+are wrong in OPPOSITE directions (yaw over-rotates 13%, pitch under-rotates 26%)
+while the axis that does not depend on depth is right.
+
+⛔ **That is independent confirmation of §14.3.4.9's conclusion by a completely
+different route.** The Horn fit, the quaternion maths, the frame conventions and
+the renderer are all SOUND — roll exercises every one of them and comes out
+right. **The defect is MediaPipe's world-z.** Two independent lines of evidence
+now say so: scaling z slides the yaw tilt 14.5°→0.6°, and the one axis that
+never touches z is accurate.
+
+⭐ **THE OPERATOR AID THAT MADE THE TAKE POSSIBLE, worth reusing.** The first
+attempt was discarded by the owner — *"I have to stay exactly perpendicular to the
+axis of the camera and this is difficult"*. ⭐ `edge_on_measure` is **INVARIANT
+under pure roll** (an in-plane rotation turns both palm vectors together, changing
+neither their lengths nor the angle between them) and drops only when yaw or pitch
+leaks in. It was added to the debug HUD as a live `sq` readout, and the operator
+held it steady at **0.65–0.71** across the whole take. Cleanliness: width collapse
+**0.904**, length **0.891** — both high, which is exactly what a pure roll should
+produce, since nothing foreshortens.
+⚠ Absolute squareness was 0.68, not 1.0 — the palm was somewhat turned. That does
+not matter here: **purity (steadiness) is what the measurement needs, not
+squareness**, and steadiness is what the aid delivers.
+
+### ⭐⭐ 14.3.4.11 THE FIX FOR THE YAW LEAN: SOLVE ORIENTATION FROM 2D, NOT FROM PREDICTED DEPTH (design, 2026-08-23)
+
+Owner, 2026-08-23: *"this is a show-stopper for me as I can't tolerate a cube which
+rotates differently than what it should to reflect the physical world."*
+
+**The evidence now points at ONE intervention, and the literature independently
+prescribes the same one.**
+
+#### The evidence, in one table
+
+| axis | mean-axis error | gain | uses MediaPipe's world z? |
+|---|---|---|---|
+| **ROLL** | **6.7°** | **1.02** | ⭐ **NO** — pure image plane |
+| YAW | 14.5° | 1.13 (over) | yes |
+| PITCH | 5.5° | 0.74 (under) | yes |
+
+⭐ **The axis that never touches depth is the accurate one, and the two that do are
+wrong in OPPOSITE directions.** Add §14.3.4.9's finding — scaling world z slides the
+yaw tilt smoothly 14.5° → 0.6° — and the conclusion is not in doubt: **MediaPipe's
+2D landmarks are good; its predicted depth is what breaks the rotation.**
+
+#### The prescription: PnP against a canonical palm, not Horn against predicted 3D
+
+Today `palm_rotation.Horn` fits **3D↔3D**: the canonical palm constellation against
+MediaPipe's `world_landmarks`, z and all. **Replace it with a 2D↔3D fit** — solve
+the pose that best PROJECTS a canonical 3D palm onto the observed 2D pixel
+landmarks. The predicted depth is then never consumed at all.
+
+⭐ **This is what the current literature does.** Monocular hand methods recover
+GLOBAL orientation by aligning a 3D model to 2D keypoints under a camera model
+rather than trusting regressed root-relative depth — *Monocular 3D Hand Pose
+Estimation with Implicit Camera Alignment* (arXiv 2506.11133) does exactly this
+with a PnP formulation on MediaPipe 2D keypoints, and *EPro-PnP* (arXiv 2303.12787)
+is the general end-to-end form. The depth ambiguity that makes regressed z
+unreliable for orientation is the stated motivation in both.
+
+#### ⭐⭐ FOUR REASONS THIS FITS THIS PROJECT UNUSUALLY WELL
+
+1. ⛔ **NO MANO, SO NO LICENCE PROBLEM (N13).** The papers use MANO; **we do not
+   need it.** The fit needs only the RIGID 5-POINT PALM — wrist + four MCPs — and
+   its anthropometric dimensions are **already in the codebase**
+   (`palm_depth.NOMINAL_SPAN_M`, added for 4.2). That is the entire model.
+2. ⭐ **THE PLANAR AMBIGUITY IS ALREADY SOLVED HERE.** A near-planar target has a
+   well-known two-fold pose ambiguity — a mirror flip about the line of sight.
+   IPPE (Collins & Bartoli, IJCV 2014; `cv::SOLVEPNP_IPPE`) is built for planar
+   targets and **returns BOTH solutions with their reprojection errors**. ⭐ And
+   the disambiguator already exists and is live: **U7's geometric chirality**
+   (`palm_geometry.signed_palm_volume`), which is exactly a palm-front/palm-back
+   decision. ⚠ This is also the "bas-relief / mirror hypothesis" S11(c) parked as
+   research — it arrives here as a solved sub-problem rather than a new one.
+3. ⭐ **THE CAMERA MODEL ALREADY EXISTS.** `palm_geometry.focal_px` and its
+   documented 60°-FOV assumption shipped with 4.2.
+4. ⭐⭐ **AND FOR THE FIRST TIME THE MEASUREMENT RIG IS COMPLETE.** `t5i` scores
+   yaw AND pitch (mean-axis, per-frame median, and gain); `t5j` scores roll against
+   a depth-free ground truth. **All three axes, on recorded takes, one variable.**
+   A replacement estimator can be A/B'd against the shipped Horn on identical
+   frames — which is the only reason this is now a buildable item rather than a
+   hope.
+
+#### ⚠ THE COSTS, STATED BEFORE ANYONE STARTS
+
+* ⛔ **THE PORT CONTRACT.** `palm_rotation` is stdlib-only and numpy-free BY
+  CONTRACT so it can be transliterated to JS/Swift/Kotlin (U3). `cv2.solvePnP`
+  would break that. IPPE's core is compact (a homography plus a local analytic
+  solve) and is implementable in stdlib — **budget that, or the port debt is real.**
+  ⛔ Do not quietly import cv2 into the client estimator layer.
+* ⚠ **PnP NEEDS INTRINSICS, AND OURS ARE ASSUMED.** Focal-length error mostly
+  corrupts the OUT-OF-PLANE component — i.e. exactly yaw and pitch, the thing
+  being fixed. ⭐ **This is the first hard technical reason for queue U12** (the
+  start-of-game calibration step), which until now was only about grab reach.
+* ⚠ **NOT A RERUN OF 2.3.** The five null attempts there re-weighted the FUSION of
+  a bad signal. This replaces the INPUT. Different intervention, and the
+  distinction should be stated in any write-up so the history is not misread.
+* ⚠ **A10 APPLIES IN FULL**: it must beat Horn on all three axes AND not regress
+  jitter in real handling (the trap that killed the 9-point constellation), or it
+  is recorded and not shipped.
+
+#### ⭐ SEQUENCING
+
+The owner calls this a show-stopper, so it outranks the "not worth it ahead of
+4.4+B5" line in §14.3.4.7 — **that judgement is withdrawn.** ⚠ But note 4.4+B5
+does not depend on it and vice versa: rotation fidelity and grab/release are
+independent subsystems.
+
 ### ✅ 14.3.5 4.2 IS BUILT (2026-08-23) — Z-axis translation, a 3D snap gate, and the play area as a world volume
 
 ✅✅ **CONFIRMED LIVE IN BOTH TOOLS, back to back, 2026-08-23** — owner, debug:

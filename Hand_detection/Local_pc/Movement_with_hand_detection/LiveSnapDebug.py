@@ -274,13 +274,19 @@ def _update_depth(hand_data_by_hand):
 _snap_depth_trackers = {h: _PDepth.HandDepthTracker() for h in TRACKED_HANDS}
 
 
+# This frame's pixel landmarks per hand, for the HUD's SQUARE readout only.
+_last_pixel_landmarks = {}
+
+
 def _update_snap_depth(hand_data_by_hand, frame_size):
     """Stamp each detected hand's `(depth_m, valid)` onto its data dict."""
     for hand in TRACKED_HANDS:
         d = hand_data_by_hand.get(hand)
         if d is None:
             _snap_depth_trackers[hand].reset()
+            _last_pixel_landmarks.pop(hand, None)
             continue
+        _last_pixel_landmarks[hand] = d["pixel_landmarks"]
         d["hand_depth"] = _snap_depth_trackers[hand].update(
             d["pixel_landmarks"], frame_size)
 
@@ -1248,6 +1254,21 @@ def _draw_bridge_hud(frame, state, height):
             sd = _snap_depth_trackers[h].depth_m
             if sd is not None:
                 parts.append(f"{h[0]}z {sd * 100:.0f}cm")
+            # ⭐⭐ SQUARE = how square the palm is to the camera (`edge_on_measure`:
+            # 0 = edge-on, 1 = knuckle row square to the lens).
+            #
+            # ⭐ THE REASON IT IS ON THE HUD: it is **INVARIANT UNDER PURE ROLL**.
+            # Roll is an in-image-plane rotation, so both palm vectors turn together
+            # -- their lengths and the angle between them do not change, and neither
+            # does this number. It drops ONLY when yaw or pitch leaks in. So for a
+            # roll take the operator can simply hold it high and steady, instead of
+            # trying to judge "am I still perpendicular to the camera?" by feel --
+            # which the owner reported as too hard to do on 2026-08-23, discarding a
+            # take over it.
+            # ⚠ It is a LIVE OPERATOR AID, not a gate: nothing acts on it here.
+            lm = _last_pixel_landmarks.get(h)
+            if lm is not None:
+                parts.append(f"{h[0]}sq {palm_geometry.edge_on_measure(lm):.2f}")
         parts += [f"{n[:1]}obj {c.depth_m * 100:.0f}cm"
                   for n, c in state.cubes.items()]
         if parts:

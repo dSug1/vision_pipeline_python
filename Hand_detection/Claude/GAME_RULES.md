@@ -353,7 +353,14 @@ plain language, not implementation detail (link to the code instead).
      and that is a *ceiling*, since it counts every edge-on frame rather than
      those where a hand was also within grab radius of a free object. Production
      records `depth_valid` per hand, so narrowing it is a query against an
-     existing session, not a new one.
+     existing session, not a new one. ⭐ **And it held up live: 2.0% in the first
+     production take, nothing reported un-grabbable.**
+   - ⭐⭐ **OWNER, 2026-08-23: KEEP AS IS, AND FILE IT FOR RECALL WHEN PLAYABILITY
+     WORK STARTS.** Not a live concern. It is recorded as a **known dial**, so if
+     the game ever feels reluctant to pick things up, this is one of the first two
+     places to look — the other being `GRAB_Z_TOLERANCE_M`, and both are covered
+     by queue **U12** (a start-of-game calibration step). ⛔ Do not touch either
+     before then.
 
 8. **An object moves toward and away from the camera with the hand that holds
    it.** ✅✅ **BUILT AND CONFIRMED LIVE 2026-08-23** (queue 4.2, BOTH tools — owner, debug: *"yes. this is working properly"*; production: *"this is working fine"*). Moving a

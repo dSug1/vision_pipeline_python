@@ -28,7 +28,8 @@ start a second list, do not "helpfully" reorder it. This file points at it.
 
 | you want to… | read |
 |---|---|
-| **start a build session** | this file → `PART_ONE.md` §3.1's "YOU ARE HERE" block → that item's row |
+| ⭐⭐ **START THE NEXT BUILD (T6)** | **`HANDOFF_T6_ORIENTATION_FROM_2D.md`** — a complete brief, written so a fresh session can implement immediately |
+| **start any other build session** | this file → `PART_ONE.md` §3.1's "YOU ARE HERE" block → that item's row |
 | know **why** something failed | `GESTURE_PIPELINE_SPEC.md` — the authoritative record of what failed and why |
 | know the **forward design** below the gesture layer | `PERCEPTION_LAYER_SPEC.md` (⚠ read its §0.1 amendment log BEFORE any module body) |
 | know how the **game behaves** | `GAME_RULES.md` — the behavioural statement of record |
@@ -38,7 +39,7 @@ start a second list, do not "helpfully" reorder it. This file points at it.
 order is historical — **the queue superseded it.** Keep it for the goal,
 constraints and prior-art scan; do not take build order from it.
 
-⚠ `HANDOFF_*.md` are per-session briefs, now closed. `_archived_old_*` is dead.
+⚠ `HANDOFF_*.md` are per-session briefs. ⭐ **`HANDOFF_T6_ORIENTATION_FROM_2D.md` is OPEN and is the next build**; the others are closed. `_archived_old_*` is dead.
 
 ---
 
@@ -140,6 +141,15 @@ production now RECORDS what it ran instead of forcing a recomputation, and why
 the recorders have their own parity guard. See `PART_ONE.md` §3.1's YOU-ARE-HERE
 block for all four.
 
+⭐⭐ **NEXT BUILD IS T6 — ORIENTATION FROM 2D, AND THE OWNER WANTS IT BEFORE ANYTHING
+ELSE** (*"I want to implement the fix before anything else is built"*). The object
+does not turn purely about the vertical — **it LEANS up to ~27°** at a 60–90° hand
+turn, which the owner calls a show-stopper. ⭐ **The cause is PROVEN twice over**
+(scaling world z slides the tilt 14.5°→0.6°; ROLL — the axis needing no depth —
+measures gain 1.02 while yaw and pitch err in opposite directions), and the fix is
+a **2D↔3D planar PnP** replacing the 3D↔3D Horn fit. ⛔ No MANO needed. ⭐ Full
+brief: **`HANDOFF_T6_ORIENTATION_FROM_2D.md`**; design: §14.3.4.11; row: **T6**.
+
 ✅✅ **4.2 IS SHIPPED AND OWNER-CONFIRMED LIVE IN BOTH TOOLS (2026-08-23)** —
 debug *"yes. this is working properly"*, production *"this is working fine"*.
 Z-axis translation, the 3D snap gate and the world-space play volume are live; 23
@@ -226,6 +236,9 @@ This is the section that saves the most time. Each was measured, not guessed.
 | **Falling back to the handedness label while chirality is unconfirmed** | **measured backwards** — at track age 0 geometry is **89.7%** and the label **76.8%**. The label is WORST exactly at hand entry |
 | **Temporal voting to fix a newly entered hand's chirality** | **cannot work** — the wrong value was stable for **5 consecutive** frames, so any majority picks it |
 | **Resolving the two-hand chirality contradiction by trusting one hand** | **near chance** — the contradiction is real (191 of 14460 two-hand frames) but trust-the-older is 46.6%, squarer 53.4%, thicker 63.9%. **Detection yes, resolution no — suppress, do not guess** |
+| **Down-weighting MediaPipe's world z to fix the rotation axis** | ⛔ **REJECTED 2026-08-23** — the k that makes yaw good doubles the pitch error. Yaw and pitch need OPPOSITE things from the same coordinate, so the whole 'weight z less' family is closed (cf. 2.3's five nulls). ⭐ It DID establish the diagnosis: the tilt is caused by world-z error |
+| **The 9-point palm+tips constellation for rotation** | ⛔ **A10 REJECT 2026-08-23** — +1.4° of axis fidelity for +4.9° of p95 jitter in real handling. Its "wins in every take" reputation rested on the axis-CONTAMINATED 2026-08-04 yaw take |
+| **A physical card held in the hand to remove yaw wobble** | ⚠ **the method controls the SWEEP well** (best contamination score ever measured) **but reads the TILT HIGHER** (17–19° vs the card-free 12.6–13.0°). Keep it for cleanliness, never for axis magnitude |
 | **A depth calibration screen** (min/max reach) | **not needed** — absolute scale is unobservable AND cancels in the ratio form; `d0` is per-grab; the envelope is already 3.59x |
 
 ⚠ **Retractions are kept on purpose.** A claim that was overturned is more useful
@@ -263,6 +276,15 @@ position.
 bundled, not hot-linked, on both platforms (N13). ⚠ 16 MB of dead model files to
 strip at package time (U11).
 
+⭐ **DECIDED 2026-08-23**: **4.4 (release trigger) and B5 (grab from finger arcs) are ONE
+project, not two queue items** — same mechanism from both ends, same finger
+signal, and N8 (stealing an object) rides on it. The whole **5.x block is an
+optional MENU for future improvement**, nothing scheduled and nothing waiting on
+it. And a **start-of-game calibration step is recorded as queue U12** — to build
+later, when a real game exists and playability starts to matter, NOT now.
+⚠ U12 is NOT the depth calibration that 4.1 measured as unnecessary; read its row
+before reopening that.
+
 **Still the owner's to make**: U1 open-palm/fist priority; U2 real 3D-file import
 (**blocked on the platform choice, not on effort** — do not build it against the
 pygame renderer); U3 the web/mobile port; and, new on 2026-08-22, whether cube
@@ -285,6 +307,14 @@ ownership should follow the *physical* hand — today the cube the pipeline call
 6. **Golden vectors BEFORE a port exists**, not after (U3 precedent — the very
    first run caught a real banker's-rounding bug).
 7. **Check the licence before proposing any model**, and state it (N13).
+8. ⭐ **Anything that needs an object's ON-SCREEN size uses
+   `palm_geometry.projected_size_px`, NEVER `object.size`** (4.2, owner-captured
+   2026-08-23). Since Z-translation shipped, `size` means only *"how big it is at
+   the resting depth"*; the real extent depends on where the object currently is.
+   This binds the centre, the play-area clamp, the grab radius and both
+   renderers. ⚠ `_top_left_for_center` was DELETED from both tools for exactly
+   this reason — it converted with the nominal size, and a surviving copy makes
+   an object drift sideways as it moves in depth. Do not reintroduce it.
 
 ---
 

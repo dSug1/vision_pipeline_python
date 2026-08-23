@@ -350,6 +350,73 @@ unaffected — `max4` won under both readings and the freeze is the conservative
 | `m9_depth_envelope.py` | the **A10 test** for `Resources/palm_depth.py`, two-sided: RESPONSIVE on `depth_sweep` **3.68x**, and STABLE on rotation-in-place. ⭐ Reports the **DRIFT FLOOR** — a span parallel to the rotation axis cannot foreshorten, so its variation is the operator genuinely moving. On the clean yaw take the floor is **1.40x**, so the estimator's OWN error is **1.30x**, not the raw 1.82x. ⚠ **Never quote the raw stable span alone.** Naive width-only scores **8.04x** there |
 | `verify_palm_depth.py` | golden vectors, dependency-free — the artifact a port must reproduce (U3 discipline). ⭐ **§§10–14 added for 4.2** cover the second estimator: the 1/Z law, span selection under foreshortening, S10's hold + exit hysteresis, and — the one that guards a build-breaking failure — that a hand 20% off the anthropometric median still lands inside `GRAB_Z_TOLERANCE_M` |
 
+### T5i / T5j — the rig that makes T6 measurable (2026-08-23)
+
+| script | purpose |
+|---|---|
+| `t5i_zscale_sweep.py` | YAW and PITCH: axis error (**both** as MEAN-axis bias *and* median per-frame) plus gain, swept over a world-z scale factor. ⚠ Prints the aggregation, because two harnesses reporting "the axis error" differently once made pitch look broken at 45–55° when its mean axis was 5.5° |
+| `t5j_roll_axis.py` | ⭐⭐ **ROLL — the axis that had never been recorded.** Ground truth is the in-image knuckle angle, so it uses **NO DEPTH AT ALL**, which is what makes it the control that separates "the fit is wrong" from "the depth data is wrong" |
+
+⭐⭐ **TOGETHER THEY CLOSED THE DIAGNOSIS**, and their table is the baseline T6 must beat:
+
+| axis | mean-axis error | gain | uses world z? |
+|---|---|---|---|
+| **ROLL** | **6.7°** | **1.02** | **NO** |
+| YAW | 14.5° | 1.13 over | yes |
+| PITCH | 5.5° | 0.74 under | yes |
+
+**The axis that never touches depth is the accurate one; the two that do are wrong
+in OPPOSITE directions.** With the z-scale sweep (tilt slides 14.5°→0.6°) that is
+two independent proofs that **MediaPipe's predicted depth breaks the rotation**.
+⛔ Down-weighting z is NOT the fix — the k that helps yaw doubles pitch. See
+`Claude/HANDOFF_T6_ORIENTATION_FROM_2D.md`.
+
+⚠ **ROLL'S CLEANLINESS GATE IS THE OPPOSITE OF YAW'S**: nothing foreshortens under
+a pure roll, so BOTH spans must stay HIGH. And `edge_on_measure` is **invariant
+under pure roll**, which is why it was added to the debug HUD as a live operator
+aid — the owner discarded a take before it existed.
+
+### T5h — the constellation A/B, CLOSED (2026-08-23)
+
+| script | purpose |
+|---|---|
+| `t5h_constellation_ab.py` | replays a recording through **5-point palm** (ships) and **9-point palm+tips**, one variable, same frames. ⚠ Reads AXIS off a clean wide yaw take and JITTER off a real handling take — using one take for both is how this question stayed open since 2026-08-22 |
+
+⛔⛔ **VERDICT: REJECTED UNDER A10.** +1.4° of axis (12.6→11.2 at 60–90° on the
+clean card-free yaw take) for **+4.9° of p95 jitter** (25.41→30.34 on
+`production_4_1`). ⭐ The "palm+tips wins in every take" reputation came from the
+axis-**CONTAMINATED** 2026-08-04 yaw take. Do not switch the constellation.
+
+⭐ **The harness validates itself**: it reads **12.6°** for the shipped
+constellation on the take `t5f` measured at **13.0°** — two implementations, two
+routes to ground truth, same answer.
+
+### T5g — the cube's axis read from what the RENDERER used (2026-08-23)
+
+| script | purpose |
+|---|---|
+| `t5g_cube_axis_from_recording.py` | ⭐⭐ measures the cube's rotation axis from its **recorded orientation quaternion**, not from a re-derivation of the estimator. Every other `t5*` harness reconstructs the rotation from landmarks — a second implementation that can silently disagree with the real one. The owner's complaint is about the cube ON SCREEN, so the cube's own orientation is the right quantity. Also reports axis binned by rotation magnitude, and whether depth drifts *because of* rotation |
+
+✅✅ **ITS FIRST RUN PRODUCED A RESULT NOBODY ASKED FOR AND IT IS THE BEST ONE:**
+**4.2's depth anchor is not fooled by rotation.** On a rotation-only take the
+object's own recorded depth moved just **+16 mm across a 50° turn** (0.479 →
+0.495 m). That is the A10 property `palm_depth` exists for — a depth anchor must
+stay CONSTANT while the hand merely rotates — measured for the first time **live,
+with an object actually attached**.
+
+⚠ **The yaw-axis question it was built for is still open**: the take was clean
+(pitch contamination 0.833, better than the reference "clean" take's 0.751) but
+**too short** — ~50° of sweep where 13.0° was measured at large rotation. The axis
+converges monotonically as rotation grows (66.8° → 59.2° → 39.1°) exactly as the
+noise floor predicts, and never reaches the informative band. See spec §14.3.4.6.
+
+⛔ **TWO HARNESS BUGS WERE CAUGHT BEFORE ANY NUMBER WAS REPORTED**, both already
+documented traps — referencing an **already-rotated frame** instead of the most
+face-on one (worth 12° on its own), and a gate that **conflated a SHORT sweep with
+a DIRTY one** (width collapse is ~cos(sweep) by construction). ⭐ Width measures
+HOW FAR the hand turned; LENGTH measures contamination and is sweep-independent.
+**Read them separately.**
+
 ### 4.2 — Z-axis translation, the 3D snap gate, and the play VOLUME (2026-08-23)
 
 | script | purpose |
