@@ -462,6 +462,7 @@ owner still saw bugs. Offline green is necessary, not sufficient.
 | `u8_entry_settling.py` | derives U8's window: palm width, entry speed, implied transit time, and the empirical leading-run-of-wrong-chirality |
 | `verify_owner_remap.py` | golden vectors, written BEFORE the wiring, pinning the cases 4.1 got wrong |
 | `verify_play_area.py` | U9: every object confined to the window inset by 60 px. Records the two reverted hand-side triggers and why a trigger cannot enforce an invariant |
+| ⭐ **reading the play area from a take** | since `recorder_schema: 2` both recorders write cube `position` + `size`, so the invariant is checked **directly from the recording** — no replay, no re-derivation. Verified on `2026-08-23_173029_schema2_production_check`: **0 of 1018 cube-frames outside**, closest approach 0.0 px slack |
 | `verify_recorder_parity.py` | ⭐ the two RECORDERS must write the same fields and sample them at the same point in the frame. Checked by SOURCE, no camera needed |
 | `u8_entry_settling.py` | derives U8's window from palm width / entry speed, in ms |
 

@@ -117,6 +117,15 @@ recording them:
 | **U9** | every object is confined to a **play area** — the display window inset by **60 px** (half a hand width at 40 cm), so it can never be pushed to the edge. ⛔ TWO hand-side *triggers* were built and reverted first: **a trigger cannot enforce an invariant** (translation is grab-relative, so the object keeps its own offset and creeps outward on every grab-push-drop cycle). ⚠ **2D rule — revisit at 4.2**: ✅ decided 2026-08-23 that the play area is a **world-space volume, frustum-aware**, so the clamp moves into world coordinates and the on-screen boundary moves with depth. ⭐ The margin is already a world quantity (half a hand breadth = **42.5 mm**); 60 px is just its projection at 40 cm | `EDGE_MARGIN_PX` |
 | **recorders** | both tools now log the cue AND cube position/size, sampled at the same point in the frame (`recorder_schema: 2`). Production used to sample cubes a frame earlier than debug, which silently skewed any harness pairing hands with cubes | — |
 
+✅ **All of the above are live-confirmed in BOTH tools (2026-08-23).** The recorder
+rework is verified end to end: the play-area invariant is now read **straight from
+a recording** — 0 of 1018 cube-frames outside — with no replay and no
+re-derivation, which is exactly what it was for. ⛔ One thing is NOT closed: U7's
+declared-ground-truth acceptance take. The attempt used both hands, so its
+declaration was retracted in that session's `meta.json`; U7 is shipped and
+behaviourally confirmed, but the known-hand measurement still needs a take with
+one hand throughout.
+
 Also: **production now RECORDS the cue it used** (`thumb_outward`,
 `chirality_confirmed`, `orientation_valid`, `snap_allowed`) instead of forcing a
 recomputation — a recomputation is a second implementation that can silently
