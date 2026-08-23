@@ -69,17 +69,13 @@ plain language, not implementation detail (link to the code instead).
        sit much closer to the edge than the hand does, and each grab-push-drop
        cycle walks it further out. Deciding *when to let go* can never decide
        *where the object may be*. Do not re-propose a hand-side trigger for this.
-     - ⚠ **This is a 2D rule today and it will need revisiting twice.**
-       (a) **When objects gain DEPTH (queue 4.2).** ✅ **Decided 2026-08-23: the
-       play area is a volume in the WORLD, shaped by the camera's field of
-       view** — not a fixed rectangle on screen. So the boundary an object stops
-       at will *move on screen* with depth: further away, it stops sooner in
-       screen terms; closer, later. That is intended. ⭐ The margin itself does
-       not change — it was always a real-world distance (half a hand breadth,
-       ~42.5 mm); today's 60 px is just how that looks at 40 cm.
-       (b) **For an imported 3D object (queue U2):** the margin must be applied
-       against a bounding-sphere radius, not a single size, or the boundary will
-       move as the object rotates.
+     - ✅ **(a) IS DONE — the play area became a WORLD VOLUME on 2026-08-23
+       (queue 4.2), and it is now **rule 10** above.** The margin never changed:
+       it was always a real-world distance (half a hand breadth, ~42.5 mm), and
+       60 px was only how that looks at 40 cm.
+       ⚠ **(b) is still open (queue U2):** for an imported 3D object the margin
+       must be applied against a bounding-sphere radius, not a single size, or
+       the boundary will move as the object rotates.
 
    - ⭐ **Side effect on N8 (cube-stealing, below): partially closed for
      free.** An occlusion shorter than 150 ms no longer releases the cube,
@@ -337,8 +333,7 @@ plain language, not implementation detail (link to the code instead).
      coast on the model). Queued as item T3 in the merged build queue;
      expected to close in Phases 1–2 rather than needing its own filter.
 
-7. **No snapping while depth is frozen.** ⚠ **DECIDED 2026-08-23, applies once
-   queue 4.2 (Z-axis translation) ships — not live yet.** When an object's depth
+7. **No snapping while depth is frozen.** ✅✅ **BUILT AND CONFIRMED LIVE 2026-08-23** (queue 4.2, debug tool — owner: *"yes. this is working properly"*). ⚠ Production not yet watched. When an object's depth
    cannot be measured — the hand is edge-on, so the depth reading is being *held*
    rather than measured — a hand cannot pick anything up.
    - **Why refuse rather than guess.** A frozen depth is a remembered value, not
@@ -353,7 +348,47 @@ plain language, not implementation detail (link to the code instead).
      2D grab radius while frozen, rather than refusing outright. ⛔ Do not change
      it on impression — measure how often the freeze actually coincides with a
      grab attempt first. Queue **4.2**; §14.3.2 had left this open and it is now
-     closed.
+     closed. ⭐ **The measurement now exists**: the edge-on band covers **1.6%**
+     of hand-frames over the whole corpus (`analysis/m9_working_distance.py`) —
+     and that is a *ceiling*, since it counts every edge-on frame rather than
+     those where a hand was also within grab radius of a free object. Production
+     records `depth_valid` per hand, so narrowing it is a query against an
+     existing session, not a new one.
+
+8. **An object moves toward and away from the camera with the hand that holds
+   it.** ✅✅ **BUILT AND CONFIRMED LIVE 2026-08-23** (queue 4.2, debug tool — owner: *"yes. this is working properly"*). ⚠ Production not yet watched. Moving a
+   holding hand nearer brings the object nearer; moving it away pushes the object
+   away. The object grows and shrinks on screen accordingly, because it is nearer
+   or further — **its real size never changes.**
+   - **The grab frame is continuous in Z**, exactly as it already is in X/Y and
+     in orientation: an object keeps its own depth at the instant of grab and
+     moves only by how much the hand's apparent size changes afterwards. Picking
+     something up never teleports it toward the hand.
+   - **The object cannot be pushed out of reach.** It is confined to a depth
+     range measured from where the operator's hands actually go (0.30–0.85 m,
+     the p1–p99 of 86 109 recorded hand-frames). An object parked at either wall
+     is still at a depth the hand demonstrably reaches, so it can always be
+     picked up again.
+   - **While the hand is edge-on the object's depth HOLDS** rather than guessing —
+     the same suppression rule 1 already applies to the palm/back reading.
+   - `GESTURE_PIPELINE_SPEC.md` §14.3 (design) and §14.3.5 (what was built).
+
+9. **An object can only be picked up by a hand that is beside it — in all three
+   dimensions.** ✅✅ **BUILT AND CONFIRMED LIVE 2026-08-23** (queue 4.2, debug tool — owner: *"yes. this is working properly"*). ⚠ Production not yet watched.
+   Reaching *past* an object, or stopping *short* of it, no longer grabs it just
+   because the hand crosses it on screen. ⚠ The two tolerances are deliberately
+   different sizes: sideways it is the same reach that always applied, but along
+   the camera axis it is much more forgiving, because the game can only estimate
+   how far away a hand is by assuming a typical hand size — a player with unusual
+   hands would otherwise be unable to pick anything up at all.
+
+10. **The play area is a volume, not a rectangle.** ✅✅ **BUILT AND CONFIRMED LIVE 2026-08-23** (queue 4.2, debug tool — owner: *"yes. this is working properly"*). ⚠ Production not yet watched. Rule "an object may never reach the display
+    edge" (U9) still holds, but the boundary is now a real distance in the world —
+    half a hand's breadth — rather than a fixed number of pixels. ⭐ **So the
+    on-screen boundary MOVES as an object changes depth**: it draws inward as the
+    object recedes and outward as it approaches. That is the rule being correct,
+    not a glitch — the margin exists to leave room for a hand, and a hand looks
+    smaller when it is further away.
 
 ## Not yet built
 
@@ -377,23 +412,29 @@ plain language, not implementation detail (link to the code instead).
   2026-08-02**: now gated behind its hard prerequisites — M4 (occlusion
   detection: without it, a partially-hidden hand drops its object) and
   M10 (commitment dynamics) — because building it first means building it
-  twice. Merged queue item 4.4.
+  twice. Merged queue item 4.4. ⚠⚠ **AND ITS CONFOUND IS NO LONGER
+  HYPOTHETICAL (2026-08-23).** This design distinguishes "release" from "moving
+  toward the camera" by arguing that a release scales the FINGERS while
+  Z-translation scales fingers AND wrist together. Z-translation is now BUILT,
+  and it does not use fingers at all — it reads the four RIGID PALM SPANS, and
+  deliberately excludes every MCP→TIP length precisely because those change with
+  GRIP. ⭐ That is good news for the discrimination (the two signals touch
+  different landmarks), but the reasoning must be **re-verified against the real
+  implementation** rather than carried over: check §14.2's planned recordings
+  against `palm_depth`'s actual ratio, not against the imagined confound.
 - Open-palm rotation gating — **not planned**: rotation stays permanently
   ungated now that open-palm/closed-fist detection is parked (rule 4).
-- **Z-axis (camera-view-axis) translation, design confirmed 2026-08-01, not
-  yet built**: moving a snapped hand closer to/farther from the camera
-  would move the cube along the same axis. Driven by apparent hand-span
-  ratio (not raw MediaPipe `z`), mapped absolutely/continuously like
-  today's X/Y translation. Snap itself would become a 3D proximity check
-  (hand must be close to the cube on X, Y, **and** this new Z axis, not
-  just X/Y as today). **Re-sequenced 2026-08-02**: gated behind M2
-  (calibrated skeleton) and M9 (metric depth) — no calibrated skeleton
-  means no usable depth. Merged queue item 4.2. **Related (2026-08-01):
-  shares root cause with the translation fix's yaw/palm-sinking
-  limitation above** — M9's foreshortening correction addresses both.
-  **Still undecided**: what the 3D snap check does when `depthValid` is
-  false — fall back to 2D proximity, or refuse to snap. Full design:
-  `GESTURE_PIPELINE_SPEC.md` §14.3.
+- ✅ **Z-axis (camera-view-axis) translation — BUILT AND CONFIRMED LIVE
+  2026-08-23. Moved OUT of this section; it is now rules 8, 9 and 10 above.**
+  ⚠ Production not yet watched — debug only so far. The two questions this entry carried are both answered: the 3D snap
+  check **refuses** when depth is frozen (rule 7), and no calibration step is
+  needed (the ratio cancels the unknown hand size exactly). ⚠ The M2 gate this
+  entry named turned out not to apply — M2 is dead, and the depth estimator
+  never needed a calibrated skeleton, only the rigid palm quad. Full account:
+  `GESTURE_PIPELINE_SPEC.md` §14.3 (design) and §14.3.5 (what was built).
+  ⚠ **The yaw/palm-sinking limitation above is NOT closed by this** — 4.2 drives
+  the object's depth, it does not correct the translation anchor's yaw swing.
+  That is still T4.
 
 **Build order — see `PART_ONE.md` §3.1.** As of 2026-08-02 the project has
 **one merged build queue** covering both the gesture features above and

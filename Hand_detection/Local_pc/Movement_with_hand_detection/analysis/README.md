@@ -348,7 +348,37 @@ unaffected — `max4` won under both readings and the freeze is the conservative
 | script | purpose |
 |---|---|
 | `m9_depth_envelope.py` | the **A10 test** for `Resources/palm_depth.py`, two-sided: RESPONSIVE on `depth_sweep` **3.68x**, and STABLE on rotation-in-place. ⭐ Reports the **DRIFT FLOOR** — a span parallel to the rotation axis cannot foreshorten, so its variation is the operator genuinely moving. On the clean yaw take the floor is **1.40x**, so the estimator's OWN error is **1.30x**, not the raw 1.82x. ⚠ **Never quote the raw stable span alone.** Naive width-only scores **8.04x** there |
-| `verify_palm_depth.py` | 24 golden vectors, dependency-free — the artifact a port must reproduce (U3 discipline) |
+| `verify_palm_depth.py` | golden vectors, dependency-free — the artifact a port must reproduce (U3 discipline). ⭐ **§§10–14 added for 4.2** cover the second estimator: the 1/Z law, span selection under foreshortening, S10's hold + exit hysteresis, and — the one that guards a build-breaking failure — that a hand 20% off the anthropometric median still lands inside `GRAB_Z_TOLERANCE_M` |
+
+### 4.2 — Z-axis translation, the 3D snap gate, and the play VOLUME (2026-08-23)
+
+| script | purpose |
+|---|---|
+| `m9_working_distance.py` | ⭐⭐ **where the operator's hand actually sits, and whether an object is reachable at all.** Runs the SHIPPED estimator over the corpus (86 109 trusted hand-frames, 65 sessions) and reports the depth distribution, the reachability of an object at a given resting depth, and DECISION 1's cost ceiling |
+| `verify_play_volume_from_recording.py` | the play-area invariant read **straight out of a recording**, schema-aware: schema 3 recomputes the margin and extent at each frame's recorded depth, schema 2 uses the old fixed 60 px. ⚠ Exits 1 if no session carried cube rows — a harness that tested nothing must never report a pass |
+| `verify_play_area.py` §2 | the world volume: the frustum, the depth-dependent boundary, the walls, and the check that the world rule and U9's pixel rule still MEET at 0.40 m |
+
+⛔⛔ **THE NUMBER THIS SECTION EXISTS FOR, and it changed a shipped constant.** An
+object's resting depth was first set to **0.40 m**, on the strength of U9's own
+row: *"40 cm IS the closest the operator actually works"*. **That sentence reads
+the corpus's p99 palm width — it is about the CLOSEST APPROACH, not the typical
+distance.** Measured:
+
+| p1 | p5 | p25 | **MEDIAN** | p75 | p95 | p99 |
+|---|---|---|---|---|---|---|
+| 0.309 | 0.372 | 0.443 | **0.497** | 0.558 | 0.668 | 0.837 |
+
+Against 4.2's own axial gate, an object at **0.40 m** is reachable on **70.9%**
+of trusted frames; at the measured median, **91.2%**. ⛔ A quarter of all frames
+unable to pick anything up would have read as a **broken build**, not a mis-sized
+constant. ⭐ **The reusable form: a constant borrowed from another row's
+derivation inherits that row's QUESTION, not just its number.**
+
+⭐ The same run reports **DECISION 1's cost ceiling — 1.6%** of hand-frames are
+inside the edge-on band. ⚠ A *ceiling*, not the cost: it counts every edge-on
+frame, not those where a hand was also within grab radius of a free object.
+Narrowing it is now a query against a session, because production records
+`depth_valid` per hand (`recorder_schema: 3`).
 
 ⭐ **The envelope answered the calibration question**: an ordinary push/pull moves
 the anchor over a **3.59x range** (ratio 0.53–1.89) with observability holding at
@@ -461,8 +491,8 @@ owner still saw bugs. Offline green is necessary, not sufficient.
 | `t3_remap_ab.py` | drives the debug tool's real `update_hands` over a recording with `OWNER_FOLLOWS_TRACK` off and on. One variable between arms |
 | `u8_entry_settling.py` | derives U8's window: palm width, entry speed, implied transit time, and the empirical leading-run-of-wrong-chirality |
 | `verify_owner_remap.py` | golden vectors, written BEFORE the wiring, pinning the cases 4.1 got wrong |
-| `verify_play_area.py` | U9: every object confined to the window inset by 60 px. Records the two reverted hand-side triggers and why a trigger cannot enforce an invariant |
-| ⭐ **reading the play area from a take** | since `recorder_schema: 2` both recorders write cube `position` + `size`, so the invariant is checked **directly from the recording** — no replay, no re-derivation. Verified on `2026-08-23_173029_schema2_production_check`: **0 of 1018 cube-frames outside**, closest approach 0.0 px slack |
+| `verify_play_area.py` | U9: every object confined to the window inset by 60 px. Records the two reverted hand-side triggers and why a trigger cannot enforce an invariant. ⭐ **§2 added for 4.2**: the same rule as a world-space VOLUME |
+| ⭐ `verify_play_volume_from_recording.py` | since `recorder_schema: 2` both recorders write cube `position` + `size`, so the invariant is checked **directly from the recording** — no replay, no re-derivation. Verified on `2026-08-23_173029_schema2_production_check`: **0 of 1018 cube-frames outside**, closest approach 0.0 px slack. ⭐ **That ad-hoc check is now a committed harness** (4.2) and reproduces those exact numbers — which is what says it reads real files rather than merely agreeing with itself |
 | `verify_recorder_parity.py` | ⭐ the two RECORDERS must write the same fields and sample them at the same point in the frame. Checked by SOURCE, no camera needed |
 | `u8_entry_settling.py` | derives U8's window from palm width / entry speed, in ms |
 

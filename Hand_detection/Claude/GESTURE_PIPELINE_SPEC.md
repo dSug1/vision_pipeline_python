@@ -4599,6 +4599,146 @@ internal convention did not move.
 ⚠ **Not yet eyeballed live** — the label change is cosmetic and low-risk, but it
 has not been seen on screen yet.
 
+---
+
+### ✅ 14.3.5 4.2 IS BUILT (2026-08-23) — Z-axis translation, a 3D snap gate, and the play area as a world volume
+
+✅ **CONFIRMED LIVE IN THE DEBUG TOOL, 2026-08-23** — owner: ***"yes. this is
+working properly"***. Take `2026-08-23_193716_4_2_zaxis_debug_first_look`, the
+first session ever written at `recorder_schema: 3`. Everything below is also
+built, golden-vectored (23 suites), parity-clean and measured against the corpus.
+
+⚠ **PRODUCTION HAS NOT BEEN WATCHED.** One camera means the two tools can never
+run at once, so that is a separate back-to-back session — and §13.6.1's
+inversion was **production-only** while the debug tool looked fine.
+`parity_replay` reporting no divergence is real evidence that the logic agrees,
+but it replays recorded landmarks; it does not exercise production's own capture,
+mirror and socket path, which is exactly where that inversion lived.
+
+**What shipped, in one table:**
+
+| | where | flag / constant |
+|---|---|---|
+| **Z translation** — a held object's depth follows the hand's grab-referenced span ratio | `HandsTriggeredActions.on_hands_frame` / `LiveSnapDebug.update_hands`, driving `Cube.depth_m` from `palm_depth.DepthRatioTracker` | `Z_TRANSLATION` |
+| **3D snap gate** — a hand may only claim an object it is close to on X, Y **and** Z | `_try_snap` in both tools; axial term from the new `palm_depth.HandDepthTracker` | `GRAB_Z_TOLERANCE_M = 0.15` |
+| **DECISION 1** — no snapping while depth is frozen | `can_snap` in both tools | `SNAP_REQUIRES_VALID_DEPTH` |
+| **DECISION 2** — the play area is a world-space volume, frustum-aware | `palm_geometry.clamp_to_play_volume`, from both tools' `set_target_center` | `PLAY_AREA_MARGIN_M = 0.0425` |
+| **projection** — an object's on-screen extent is its real size AT ITS DEPTH | `palm_geometry.projected_size_px`, used by the centre, the clamp, the grab radius and both renderers | `REFERENCE_DEPTH_M` |
+| **recorders** — `depth_m` + `projected_size` per object, `hand_depth_m` + `depth_valid` per hand | both recorders | `recorder_schema: 3` |
+
+#### ⭐⭐ The four things §14.3/§14.3.2 left open, and what they resolved to
+
+1. **"The exact mapping from span ratio to a Z position."**
+   `cube.depth_m = cube.grab_depth_m / ratio`, clamped to the play volume.
+   ⚠ **§14.3 decision 2 ("absolute and continuous, not relative-delta") and
+   §14.1's no-pop rule LOOK contradictory here, and the resolution is the ratio's
+   own baseline.** `ratio` is `d/d0` with `d0` captured AT THE GRAB, so this is a
+   direct, memoryless function of this frame's measurement — nothing integrates,
+   nothing drifts, and every re-grab re-normalises. That satisfies decision 2.
+   And because the ratio is 1.0 on the grab frame by construction, the object's
+   depth is unchanged at that instant — the same no-pop guarantee §14.1 gives
+   X/Y, obtained the same way. ⛔ Reading decision 2 as *"snap the object to the
+   hand's depth on grab"* would put a Z teleport into the one gesture this
+   project has spent the most effort removing.
+   Multiplicative rather than additive is **forced, not chosen**: the hand's own
+   depth is knowable only up to an unknown scale, so a ratio is the only quantity
+   the sensor supplies.
+
+2. **"The same radius extended into 3D, or a separately-tuned Z tolerance?"**
+   **An ellipsoid, and the asymmetry is the point.** Lateral stays the projected
+   grab radius (X/Y feel unchanged, and it now scales correctly with depth);
+   axial gets its own, much looser `GRAB_Z_TOLERANCE_M = 0.15 m`.
+   ⛔ **A sphere would have shipped an un-grabbable object.** The axial term
+   compares against a depth scaled by NOMINAL anatomy, so a user 20% off the
+   median reads ~80 mm away from where they are, *constantly*; the small object's
+   spherical tolerance would have been 43 mm. The failure would have looked like
+   a broken build, not a mis-sized constant.
+
+3. **"What does the check do when `depthValid` is false?"** — closed by the owner
+   as DECISION 1: **refuse**. Measured cost **ceiling 1.6%** of hand-frames
+   (`analysis/m9_working_distance.py`), and that is a ceiling, not the cost: it
+   counts every edge-on frame, not those where a hand was also within grab radius
+   of a free object. `depth_valid` is now recorded per hand so narrowing it is a
+   query against a session rather than a new session.
+
+4. **"Does the span metric need recalibration across users?"** — **no calibration
+   step, confirmed** (4.1's finding stands): the ratio cancels scale exactly. ⚠
+   But 4.2 needed a second, *absolute* estimator the ratio form cannot provide —
+   the snap gate asks about a hand that has not grabbed anything, so there is no
+   baseline. `palm_depth.HandDepthTracker` substitutes anthropometric medians for
+   the missing baseline and **therefore carries a per-user scale bias**. That bias
+   is constant, not noise, which is what makes it usable for a tolerance decision
+   and useless for anything else. ⛔ It gates snapping and nothing else; feeding
+   it into the Z mapping would re-import the error the ratio design deletes.
+
+#### ⚠⚠ THE CONSTANT THAT WAS ABOUT TO BE WRONG, AND HOW IT WAS CAUGHT
+
+An object's resting depth was first set to **0.40 m**, because U9 derived its
+60 px margin there and U9's row says *"40 cm IS the closest the operator actually
+works"*. ⭐ **That sentence is about the CLOSEST APPROACH — it reads the corpus's
+p99 palm width.** The TYPICAL distance is 10 cm further, and the typical distance
+is what an object must sit at to be reachable.
+
+Measured with the shipped estimator over **86 109 trusted hand-frames across 65
+sessions** (`analysis/m9_working_distance.py`):
+
+| p1 | p5 | p25 | **MEDIAN** | p75 | p95 | p99 |
+|---|---|---|---|---|---|---|
+| 0.309 | 0.372 | 0.443 | **0.497** | 0.558 | 0.668 | 0.837 |
+
+Against 4.2's own axial gate: an object at 0.40 m is reachable on **70.9%** of
+trusted frames; at the measured median, **91.2%**. ⛔ **A quarter of all frames
+unable to pick anything up would have read as a broken build.**
+`REFERENCE_DEPTH_M = 0.50`. U9's derivation depth survives as
+`U9_DERIVATION_DEPTH_M`, used only by the golden vector that asserts the world
+margin and the pixel margin still meet there.
+
+⭐ **The reusable form of this: a constant borrowed from another row's derivation
+inherits that row's QUESTION, not just its number.** U9 was asking "how big is a
+hand near the edge"; 4.2 was asking "where does the hand live". Same corpus,
+different statistic.
+
+#### The play volume's walls decide something non-obvious
+
+`PLAY_DEPTH_MIN_M = 0.30`, `PLAY_DEPTH_MAX_M = 0.85` — the measured p1..p99 of
+the operator's own working distance. ⚠ **It is the WALLS, not the tolerance, that
+bound re-grabbability**: release freezes an object in all three axes, and a
+re-grab needs the hand within `GRAB_Z_TOLERANCE_M` of it, so a wall beyond the
+operator's reach would let an object be parked where it can never be picked up
+again. Cross-checked against the independent reach measurement
+(`m9_depth_envelope.py`: ratio 0.53–1.89, i.e. 0.26–0.94 m from a 0.50 m rest) —
+both walls sit inside the arm's envelope with margin.
+
+#### ⚠ What "the object gets bigger" is and is not
+
+An object's PROJECTION scales with depth; its real size never changes. That is
+what §14.3 decision 4's *"real size stays fixed per-object"* means under a
+perspective camera, and it is **not** the dropped depth-proxy scale/colour row —
+that one scaled the real object as a depth *readout*. Without the projection,
+Z-translation would be literally invisible on screen.
+
+Consequence, and it is load-bearing: **`cube.size` is now the extent at the
+resting depth only.** The centre, the clamp, the grab radius and both renderers
+read `projected_size_px`. `_top_left_for_center` was DELETED from both tools for
+exactly this reason — it converted with the nominal size, and a stale copy is how
+an object's centre would silently drift as it moved in Z.
+
+#### Evidence
+
+| claim | harness |
+|---|---|
+| the world volume, the depth-free fallback, the walls, and the agreement with U9's 60 px | `analysis/verify_play_area.py` (golden vectors) |
+| the absolute estimator: 1/Z law, span selection, S10 hold + hysteresis, non-median hand reachable | `analysis/verify_palm_depth.py` §§10–14 |
+| the invariant read STRAIGHT from a recording, schema-aware | `analysis/verify_play_volume_from_recording.py` |
+| working distance, reachability, DECISION 1's cost ceiling | `analysis/m9_working_distance.py` |
+| production and the debug tool still agree frame by frame | `analysis/parity_replay.py` — **no divergence**, 509 frames |
+| the two recorders write the same fields | `analysis/verify_recorder_parity.py` |
+
+⚠ The recording-based invariant check reproduces the previously hand-quoted
+result exactly (`schema2_production_check`: 1018 cube-frames, 0 outside, closest
+approach 0.0 px), which is what says the harness reads real files correctly
+rather than merely agreeing with itself.
+
 ## 15. Perception-layer spec integrated (2026-08-02) — the current direction
 
 A design spec for the **hand-perception stack below the gesture layer** was

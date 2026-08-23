@@ -271,3 +271,174 @@ class DepthRatioTracker:
         self.ratio = 1.0
         self.in_band = False
         self.exit_run = 0
+
+
+# ==========================================================================
+# 4.2 -- ABSOLUTE HAND DEPTH, FOR THE 3D SNAP GATE ONLY
+# ==========================================================================
+# ⭐⭐ WHY A SECOND ESTIMATOR EXISTS, AND WHY IT IS NOT A DUPLICATE.
+#
+# `DepthRatioTracker` above answers "how much nearer than at the grab?" and its
+# baseline is captured AT THE GRAB. That is exactly right for driving a held
+# object, and the unknown hand size cancels EXACTLY in the ratio.
+#
+# ⚠ But 4.2's snap gate asks a question the ratio form cannot answer: *before*
+# any grab, is this hand at the same depth as that object? There is no grab
+# baseline yet, and a free hand's ratio is measured against wherever it happened
+# to enter -- a number with no relation to the object's depth.
+#
+# ⭐ SO THIS ONE SUBSTITUTES NOMINAL ANATOMY FOR THE MISSING BASELINE: under a
+# pinhole camera `Z = f * S / span_px`, so assuming the rigid palm spans have
+# their anthropometric median lengths gives an absolute depth in metres.
+#
+# ⚠⚠ AND IT IS ONLY EVER TRUE UP TO THE USER'S OWN HAND SIZE. Absolute metric
+# scale is unobservable from one uncalibrated camera (see this module's header);
+# nothing here refutes that. A hand 20% smaller than nominal reads ~20% FURTHER
+# than it is, permanently. **That error is a constant per user, not noise** --
+# which is what makes it usable for a TOLERANCE decision and useless for
+# anything else. Hence, and this is binding:
+#
+#   * this value gates SNAPPING and nothing else;
+#   * `GRAB_Z_TOLERANCE_M` in the gesture layer is sized to swallow that bias
+#     (+/-20% of nominal hand breadth is +/-0.08 m at 0.40 m), so the gate stays
+#     REACHABLE for a user whose hands are not median;
+#   * the held object's depth is driven by the RATIO form above, where the same
+#     unknown cancels and no such bias exists.
+#
+# ⛔ DO NOT feed this into the Z-translation mapping "because it is in metres".
+# That would re-import the scale error the ratio design exists to eliminate.
+#
+# Anthropometric medians for the four rigid palm spans, in metres. Hand breadth
+# across the metacarpals is the 85 mm U9's own margin derivation already used --
+# this is the SAME assumption, not a new one. The other three are the
+# corresponding adult wrist-to-MCP medians.
+# ⚠ NOT derived from `world_landmarks`: the M2 audit established that those do
+# not encode a pose-consistent skeleton (0/21 bones inside target), so measuring
+# a nominal length from them would be measuring the estimator, not a hand.
+# ⭐ DECISION 1, OWNER 2026-08-23: **NO SNAPPING WHILE DEPTH IS FROZEN.** With the
+# grab check now three-dimensional, a snap decided from a HELD depth would be
+# deciding proximity from a number the sensor is not currently supplying. Same
+# philosophy as DR-2's sign freeze and U8's provisional chirality: SUPPRESS,
+# DO NOT GUESS. Spec §14.3.2 left this open; it is closed.
+#
+# ⚠ FLAGGED TUNABLE FOR GAME FEEL (the owner's own framing). If refusing feels
+# too strict in play, the fallback to try is degrading to the flat 2D radius
+# while frozen -- set this False -- rather than refusing outright. ⛔ Do not
+# change it on impression: measure how often the freeze actually coincides with
+# a grab attempt first. Both the freeze and the refusal are RECORDED
+# (`depth_valid`, `snap_allowed`, recorder schema 3) precisely so that is a query
+# against an existing take and not a new session.
+#
+# ⚠ Lives HERE, not in either tool, for the reason N6 exists: production and the
+# debug tool must apply the same policy, and "kept in sync by hand" is how the
+# chirality convention drifted into a production-only inversion (§13.6.1).
+SNAP_REQUIRES_VALID_DEPTH = True
+
+# The AXIAL half-tolerance of the 3D grab check, in metres. The lateral half
+# stays the projected grab radius, so X/Y feel is untouched and Z is a new
+# AND-condition.
+#
+# ⚠⚠ WHY IT IS NOT "the same radius made spherical", which was §14.3.2's other
+# candidate. A sphere would give the small object a 43 mm axial tolerance, while
+# the hand depth feeding the check is scaled by NOMINAL anatomy (see
+# `NOMINAL_SPAN_M` below): a user whose hands are 20% off the median reads ~80 mm
+# away from where they are, CONSTANTLY. A 43 mm sphere would be unreachable for
+# them -- the object simply could never be picked up, and the failure would look
+# like a broken build rather than a mis-sized constant. 0.15 m swallows that bias
+# with room to spare while still being a real constraint (the play volume is
+# 0.65 m deep).
+# ⚠ A first value with a stated derivation, not a measured optimum -- same
+# live-tuning discipline as GRAB_RADIUS_MULTIPLIER and ROTATION_SLERP_FACTOR.
+GRAB_Z_TOLERANCE_M = 0.15
+
+NOMINAL_SPAN_M = {
+    (5, 17): 0.085,     # hand breadth across the knuckles
+    (0, 9): 0.100,      # wrist -> middle MCP (palm length)
+    (0, 5): 0.100,      # wrist -> index MCP
+    (0, 17): 0.092,     # wrist -> pinky MCP
+}
+
+
+class HandDepthTracker:
+    """Absolute hand depth in metres, plus S10 validity, with NO grab baseline.
+
+    `update(landmarks, frame_size) -> (depth_m, valid)`.
+
+    `valid` is False while the value is being HELD rather than measured -- the
+    S10 edge-on band, with the same enter/exit hysteresis as
+    `DepthRatioTracker`. ⭐ Under queue 4.2's DECISION 1 (owner, 2026-08-23) the
+    gesture layer REFUSES a snap when this is False rather than guessing: a
+    frozen depth is a held value, not a measurement, and deciding proximity from
+    a number the sensor is not currently supplying is the confidently-wrong
+    answer this project has paid for repeatedly.
+
+    ⚠ Unlike the ratio tracker, the S10 band IS the gate here, not a diagnostic.
+    The ratio tracker could relax it because it has a per-span baseline to test
+    each span against; with no baseline there is nothing to compare a span to,
+    so the band is the only signal available that the palm has collapsed.
+    """
+
+    def __init__(self, threshold=EDGE_ON_THRESHOLD):
+        self.threshold = threshold
+        self.exit_threshold = threshold * EXIT_HYSTERESIS_FACTOR
+        self.depth_m = None
+        self.in_band = False
+        self.exit_run = 0
+        self.frames_frozen = 0
+
+    def measure(self, landmarks, focal):
+        """Raw depth from the least-foreshortened span. None if unusable.
+
+        Foreshortening only ever SHRINKS an apparent span, and a shrunken span
+        makes `f * S / span` too LARGE -- so the smallest per-span depth is the
+        one computed from the span the current pose left most intact. Same
+        selection rule as the ratio form's `max()`, seen from the other side.
+        """
+        spans = palm_spans(landmarks)
+        if spans is None or focal is None:
+            return None
+        best = None
+        for (pair, px) in zip(PALM_SPANS, spans):
+            if px <= 1e-6:
+                continue
+            z = focal * NOMINAL_SPAN_M[pair] / px
+            if best is None or z < best:
+                best = z
+        return best
+
+    def update(self, landmarks, frame_size):
+        try:                                    # imported, never copied (N6)
+            focal = PG.focal_px(frame_size)
+        except AttributeError:                  # pragma: no cover - old module
+            focal = None
+        raw = self.measure(landmarks, focal)
+        if raw is None:
+            self.frames_frozen += 1
+            return self.depth_m, False
+
+        eo = PG.edge_on_measure(landmarks)
+        if eo < self.threshold:
+            self.in_band = True
+            self.exit_run = 0
+        elif self.in_band:
+            if eo > self.exit_threshold:
+                self.exit_run += 1
+                if self.exit_run >= EXIT_DWELL_FRAMES:
+                    self.in_band = False
+                    self.exit_run = 0
+            else:
+                self.exit_run = 0
+
+        if self.in_band:
+            # HOLD. Never publish a depth measured through a collapsed palm.
+            self.frames_frozen += 1
+            return self.depth_m, False
+
+        self.depth_m = PG.clamp_depth(raw)
+        return self.depth_m, True
+
+    def reset(self):
+        """Hand lost / track ended -- the held value belonged to that hand."""
+        self.depth_m = None
+        self.in_band = False
+        self.exit_run = 0

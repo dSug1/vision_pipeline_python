@@ -40,11 +40,31 @@ def check(name, got, want):
     print("  [%s] %-62s %r" % ("PASS" if ok else "FAIL", name, got))
 
 
+SCHEMA = 3          # ⭐ 3 = 4.2's depth fields. 2 = position+size, 1/absent = old.
+
+# ⚠ Add a field here the moment either recorder gains one. The list is the
+# CONTRACT, not a snapshot: a field written by one recorder and not the other is
+# precisely the divergence class this file exists to catch, and 4.2 added four.
+CUBE_FIELDS = ["depth_m", "orientation", "owner", "position", "projected_size", "size"]
+HAND_FIELDS = ["depth_valid", "hand_depth_m"]
+
+
 def cube_fields(src, marker):
     """The per-cube dict keys written by a recorder, found from its source."""
     i = src.index(marker)
-    chunk = src[i:i + 2000]   # wide enough to clear the comment blocks
-    return sorted(set(re.findall(r'"(owner|position|size|orientation)":', chunk)))
+    chunk = src[i:i + 3000]   # wide enough to clear the comment blocks
+    return sorted(set(re.findall(
+        r'"(owner|position|size|depth_m|projected_size|orientation)":', chunk)))
+
+
+def hand_fields(src):
+    """The 4.2 per-hand depth keys a recorder writes, anywhere in its source."""
+    # ⚠ Both spellings: production assigns onto an existing row
+    # (`h["hand_depth_m"] = ...`), the debug tool builds a dict literal
+    # (`"hand_depth_m": ...`). Matching only one form would report a field
+    # missing that is written on every frame -- an instrument saying CLEAN about
+    # the wrong thing, which is the failure this whole file guards against.
+    return sorted(set(re.findall(r'"(hand_depth_m|depth_valid)"\s*[:\]]', src)))
 
 
 def main():
@@ -54,14 +74,26 @@ def main():
     print("1. both recorders write the same per-cube fields")
     pf = cube_fields(prod, 'row["cubes"] = {"production"')
     df = cube_fields(debug, '"cubes": {')
-    check("production fields", pf, ["orientation", "owner", "position", "size"])
-    check("debug fields", df, ["orientation", "owner", "position", "size"])
+    check("production fields", pf, CUBE_FIELDS)
+    check("debug fields", df, CUBE_FIELDS)
     check("they match", pf == df, True)
 
     print()
+    print("1b. and the same per-hand DEPTH fields (4.2)")
+    # ⚠ `depth_ratio` is deliberately in NEITHER: the object's own `depth_m` is
+    # the recorded outcome, and the debug tool's ratio tracker is per ARM so it
+    # could not write a per-hand value that meant the same thing.
+    ph, dh = hand_fields(prod), hand_fields(debug)
+    check("production fields", ph, HAND_FIELDS)
+    check("debug fields", dh, HAND_FIELDS)
+    check("they match", ph == dh, True)
+    check("neither writes a per-hand depth_ratio",
+          '"depth_ratio"' in prod or '"depth_ratio"' in debug, False)
+
+    print()
     print("2. both stamp recorder_schema, so an old take is distinguishable")
-    check("production stamps it", '"recorder_schema": 2' in prod, True)
-    check("debug stamps it", '"recorder_schema": 2' in debug, True)
+    check("production stamps it", '"recorder_schema": %d' % SCHEMA in prod, True)
+    check("debug stamps it", '"recorder_schema": %d' % SCHEMA in debug, True)
 
     print()
     print("3. production samples cubes AFTER the frame's logic")

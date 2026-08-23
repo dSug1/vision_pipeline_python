@@ -132,6 +132,14 @@ def main():
                 "score": src.get("score", 0.97),
                 "raw_handedness": src.get("raw_handedness", h),
             }
+        # ⭐ 4.2, and this is the SAME RULE for the FOURTH time: whenever either
+        # tool gains an input, BOTH sides of this harness must gain it.
+        # Production computes its hand depth inside `on_hands_frame`; the debug
+        # tool has it stamped upstream by `_update_snap_depth` (once per frame,
+        # because `update_hands` runs per arm). Omitting this line would compare
+        # production's 3D snap gate against a 2D one and report a divergence
+        # that exists only here.
+        D._update_snap_depth(data, (640, 480))
         D.update_hands(arm, data, now_ms=t)
 
         # --- compare

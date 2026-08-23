@@ -139,6 +139,88 @@ def main():
     check("no wall-clock is read (update takes no timestamp)",
           PD.DepthRatioTracker.update.__code__.co_argcount, 2)
 
+    # ======================================================================
+    print("\n" + "=" * 78)
+    print("Golden vectors -- palm_depth.HandDepthTracker (4.2's 3D snap gate)")
+    print("=" * 78)
+    FR = (640, 480)
+
+    print("\n--- 10. absolute depth from nominal anatomy ---")
+    # ⚠ The point of these vectors is NOT that the metre value is TRUE -- it
+    # cannot be, absolute scale is unobservable from one uncalibrated camera and
+    # this substitutes anthropometric medians for the missing baseline. It is
+    # that the value is the RIGHT FUNCTION of the image: proportional to 1/span,
+    # selected from the least-foreshortened span, and bounded by the play volume.
+    h = PD.HandDepthTracker()
+    d1, v1 = h.update(hand(scale=1.0), FR)
+    check("a face-on hand measures (not holds)", v1, True)
+    check("...and lands inside the play volume",
+          PD.PG.PLAY_DEPTH_MIN_M <= d1 <= PD.PG.PLAY_DEPTH_MAX_M, True)
+
+    # ⭐ THE INVARIANCE THAT MATTERS: doubling every span halves the depth, and
+    # halving them doubles it -- a pinhole camera's 1/Z law. Anything else here
+    # would mean the estimator is not measuring distance at all.
+    h2 = PD.HandDepthTracker()
+    near, _ = h2.update(hand(scale=2.0), FR)
+    h3 = PD.HandDepthTracker()
+    far, _ = h3.update(hand(scale=0.5), FR)
+    check("twice the apparent size -> half the depth", near, d1 / 2.0, 1e-6)
+    check("half the apparent size -> twice the depth", far, min(d1 * 2.0, PD.PG.PLAY_DEPTH_MAX_M), 1e-6)
+
+    print("\n--- 11. the least-foreshortened span wins ---")
+    # Narrowing the knuckle row foreshortens the WIDTH span only. Depth must not
+    # move with it: the surviving spans still measure the same distance. This is
+    # the ratio form's `max()` seen from the other side (a shrunken span inflates
+    # `f*S/span`, so the SMALLEST per-span depth is the least corrupted one).
+    h4 = PD.HandDepthTracker()
+    d_square, _ = h4.update(hand(scale=1.0, half_width=30.0), FR)
+    h5 = PD.HandDepthTracker()
+    d_narrow, _ = h5.update(hand(scale=1.0, half_width=18.0), FR)
+    check("a 40% narrower knuckle row moves depth by <5%",
+          abs(d_narrow - d_square) / d_square < 0.05, True)
+
+    print("\n--- 12. S10: the band HOLDS, and says so ---")
+    # ⭐ 4.2 DECISION 1 rests entirely on this bit: a snap is REFUSED while
+    # `valid` is False. If the tracker ever reported True through the band, the
+    # decision would silently stop applying and nothing would look wrong.
+    h6 = PD.HandDepthTracker()
+    good, _ = h6.update(hand(scale=1.0), FR)
+    d_edge, v_edge = h6.update(hand(scale=1.0, half_width=0.05), FR)
+    check("edge-on reports INVALID rather than a number it cannot measure", v_edge, False)
+    check("...and HOLDS the last measured depth", d_edge, good, 1e-12)
+    check("...and counts the frozen frame", h6.frames_frozen, 1)
+    # Hysteresis: one good frame is not enough to leave the band (EXIT_DWELL).
+    check("one recovered frame does not leave the band",
+          h6.update(hand(scale=1.0), FR)[1], False)
+    for _ in range(PD.EXIT_DWELL_FRAMES):
+        last = h6.update(hand(scale=1.0), FR)
+    check("a sustained recovery run does", last[1], True)
+
+    print("\n--- 13. degradations never fabricate a value ---")
+    h7 = PD.HandDepthTracker()
+    check("a short landmark list holds and reports invalid",
+          h7.update([(0, 0)] * 5, FR), (None, False))
+    check("no frame size -> no focal -> no depth",
+          h7.update(hand(), None), (None, False))
+    h8 = PD.HandDepthTracker()
+    h8.update(hand(), FR)
+    h8.reset()
+    check("reset drops the held depth (it belonged to that hand)", h8.depth_m, None)
+
+    print("\n--- 14. the tolerance is reachable for a non-median hand ---")
+    # ⚠⚠ THE FAILURE MODE THIS EXISTS TO CATCH: the depth is scaled by NOMINAL
+    # anatomy, so a user 20% off the median reads a CONSTANT offset. If
+    # GRAB_Z_TOLERANCE_M were ever tightened below that offset, nothing could be
+    # picked up -- and it would look like a broken build, not a bad constant.
+    h9 = PD.HandDepthTracker()
+    median, _ = h9.update(hand(scale=1.0), FR)
+    h10 = PD.HandDepthTracker()
+    small_hand, _ = h10.update(hand(scale=0.8), FR)     # 20% smaller than nominal
+    check("a 20% smaller hand still lands inside GRAB_Z_TOLERANCE_M",
+          abs(small_hand - median) <= PD.GRAB_Z_TOLERANCE_M, True)
+    check("the policy constants live here, not in either tool",
+          (PD.SNAP_REQUIRES_VALID_DEPTH, round(PD.GRAB_Z_TOLERANCE_M, 3)), (True, 0.15))
+
     print("\n" + "=" * 78)
     if FAILURES:
         print(f"{len(FAILURES)} FAILURE(S):")

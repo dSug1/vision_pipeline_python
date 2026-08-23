@@ -564,6 +564,204 @@ def clamp_to_play_area(x, y, size, frame_size, margin_px=EDGE_MARGIN_PX):
     return (_axis(x, w), _axis(y, h))
 
 
+# --------------------------------------------------------------------------
+# 4.2 -- THE CAMERA MODEL, AND THE PLAY AREA AS A WORLD-SPACE VOLUME
+# --------------------------------------------------------------------------
+# ✅ OWNER DECISION, 2026-08-23: *"the play area is a WORLD-SPACE VOLUME,
+# accounting for the camera frustum"* -- not a screen-space rectangle. U9's
+# `clamp_to_play_area` above is the depth-free special case that shipped while
+# nothing drove Z; this is the general rule 4.2 needs.
+#
+# ⭐⭐ THIS IS A CHANGE OF UNITS, NOT OF THE NUMBER. The margin was always a world
+# quantity -- HALF A HAND BREADTH AT 40 cm = 42.5 mm -- and `EDGE_MARGIN_PX = 60`
+# is simply its projection at that one depth. Carried forward as metres it now
+# projects correctly at EVERY depth:
+#
+#     depth   0.30 m   0.40 m   0.70 m   1.00 m
+#     margin  78 px    59 px    34 px    24 px
+#
+# ⭐ SO THE ON-SCREEN BOUNDARY MOVES WITH DEPTH -- inward as the object recedes,
+# outward as it approaches. That is the intended consequence of the decision, not
+# a regression. Do not "fix" it.
+#
+# ⭐ AND IT FIXES A LATENT RESOLUTION BUG ON THE WAY. `EDGE_MARGIN_PX` is a fixed
+# pixel count, so on a 1280-wide webcam it was half the intended world size. The
+# focal length below scales with the frame, so the world margin does not.
+#
+# ⚠ THE ONE ASSUMPTION, STATED PLAINLY: the horizontal field of view. Nothing in
+# this project ever calibrated the camera, and U9's own derivation already leaned
+# on "a typical 60 deg" webcam -- so this constant is not a new assumption, it is
+# the SAME assumption U9 made, now written down in one place instead of being
+# baked into a pixel count. ⚠ It only ever sets the SCALE between metres and
+# pixels; every quantity that matters for feel (the margin, the grab radius) was
+# tuned in pixels at the reference depth and is reproduced there exactly.
+CAMERA_HFOV_DEG = 60.0
+
+# ⭐⭐ WHERE AN OBJECT LIVES, AND THE DEPTH AT WHICH ITS `size` IS ITS TRUE
+# PROJECTION. **MEASURED, NOT CHOSEN** (`analysis/m9_working_distance.py`, 86 109
+# trusted hand-frames across 65 corpus sessions, using the shipped estimator):
+#
+#     p1     p5     p25    MEDIAN   p75    p95    p99
+#     0.309  0.372  0.443  0.497    0.558  0.668  0.837
+#
+# ⚠⚠ AND THE OBVIOUS VALUE WAS WRONG. 0.40 m was the first choice, because U9
+# derived its margin there and its row says "40 cm IS the closest the operator
+# actually works". ⭐ THAT SENTENCE IS ABOUT THE **CLOSEST APPROACH** -- it reads
+# the corpus's **p99** palm width. The TYPICAL distance is 10 cm further, and it
+# is the typical distance an object must sit at to be reachable. Measured against
+# 4.2's own axial gate (+/-0.15 m):
+#
+#     object at 0.40 m -> 70.9% of trusted hand-frames could pass
+#     object at 0.497 m -> 91.1%
+#
+# ⛔ A quarter of all frames unable to pick anything up would have looked like a
+# BROKEN BUILD, not a mis-sized constant -- exactly the failure this project
+# keeps paying for when a plausible number is shipped instead of a measured one.
+# Re-run the harness if the camera, the FOV assumption or the operator's setup
+# changes; the constant is a property of the setup, not of the code.
+REFERENCE_DEPTH_M = 0.50
+
+# The depth U9's `EDGE_MARGIN_PX = 60` was derived at, kept ONLY so the golden
+# vectors can assert that the world margin and the pixel margin it replaces still
+# meet there. ⚠ Not a reference for anything else -- the margin is 42.5 mm at
+# every depth, which is the whole point of the world form.
+U9_DERIVATION_DEPTH_M = 0.40
+
+# Half a hand breadth (85 mm anthropometric median). U9's 60 px, in metres.
+PLAY_AREA_MARGIN_M = 0.0425
+
+# ⚠⚠ THE VOLUME IS BOUNDED IN Z TOO, and the bound decides something less obvious
+# than "the object shrinks to a dot": **an object may only be pushed to a depth
+# the hand can come back to.** Release freezes an object in place in all three
+# axes, and re-grabbing needs the hand within `GRAB_Z_TOLERANCE_M` of it -- so a
+# wall placed beyond the operator's reach would let an object be parked somewhere
+# it can never be picked up again. It is the WALLS that bound re-grabbability,
+# not the tolerance.
+#
+# ⭐ SO THE WALLS ARE THE MEASURED RANGE OF DEPTHS THE HAND ACTUALLY VISITS,
+# p1..p99 = 0.309..0.837 m over 86 109 trusted frames
+# (`analysis/m9_working_distance.py`), rounded to 0.30..0.85. Every reachable
+# depth stays reachable, and nothing outside the operator's own demonstrated
+# range is offered. ⚠ Cross-checked against the independent reach measurement:
+# `analysis/m9_depth_envelope.py` puts a deliberate push/pull at ratio 0.53..1.89
+# (3.59x), i.e. 0.26..0.94 m from a 0.50 m rest -- so both walls sit INSIDE the
+# arm's envelope with margin, which is what makes them reachable rather than
+# merely permitted.
+#
+# Geometry check at the walls, 640x480: at 0.30 m the large object projects to
+# 133 px and its margin to 79 px, leaving a 483x323 play area -- still usable; at
+# 0.85 m the small object is 24 px, still visible and still hittable laterally.
+PLAY_DEPTH_MIN_M = 0.30
+PLAY_DEPTH_MAX_M = 0.85
+
+
+def focal_px(frame_size):
+    """Pinhole focal length in pixels, from the frame width and CAMERA_HFOV_DEG.
+
+    640 px wide at 60 deg -> 554.3 px, which is the number U9's margin
+    derivation quoted (554 * 0.0425 / 0.40 = 58.9 px ~ EDGE_MARGIN_PX). ⭐ That
+    agreement is asserted as a golden vector in `analysis/verify_play_area.py`:
+    the world rule and the pixel rule it replaces must meet at
+    `U9_DERIVATION_DEPTH_M`, or one of them is wrong.
+    """
+    if not frame_size or not frame_size[0] or frame_size[0] <= 0:
+        return None
+    return (frame_size[0] / 2.0) / math.tan(math.radians(CAMERA_HFOV_DEG) / 2.0)
+
+
+def clamp_depth(depth_m):
+    """Confine a depth to the play volume's Z extent."""
+    return max(PLAY_DEPTH_MIN_M, min(float(depth_m), PLAY_DEPTH_MAX_M))
+
+
+def projected_size_px(nominal_size_px, depth_m, reference_depth_m=REFERENCE_DEPTH_M):
+    """An object's on-screen extent at `depth_m`, given its extent at the
+    reference depth.
+
+    ⭐ THE FOCAL LENGTH CANCELS. The object's real size is
+    `nominal_size_px * reference_depth / f`, and projecting that back at
+    `depth_m` multiplies by `f / depth_m` -- so this is frame-size independent
+    and carries none of `CAMERA_HFOV_DEG`'s uncertainty.
+
+    ⚠ THIS IS NOT THE DROPPED DEPTH-PROXY SCALE EFFECT (§14.3 decision 4). The
+    object's REAL size never changes; only its projection does, which is what
+    "real size stays fixed per-object" means under a perspective camera. Without
+    it Z-translation would be literally invisible on screen.
+    """
+    if depth_m is None:
+        return float(nominal_size_px)
+    return float(nominal_size_px) * reference_depth_m / clamp_depth(depth_m)
+
+
+def world_from_px(x_px, y_px, depth_m, frame_size):
+    """Image point -> world offset from the optical axis, in metres, at `depth_m`.
+
+    The optical axis is taken at the frame CENTRE (no principal-point
+    calibration exists, and none is needed: the play volume is symmetric about
+    the same centre, so any offset would cancel out of the clamp anyway).
+    """
+    f = focal_px(frame_size)
+    if f is None or depth_m is None:
+        return None
+    return ((x_px - frame_size[0] / 2.0) * depth_m / f,
+            (y_px - frame_size[1] / 2.0) * depth_m / f)
+
+
+def px_from_world(x_m, y_m, depth_m, frame_size):
+    """The inverse of `world_from_px`."""
+    f = focal_px(frame_size)
+    if f is None or depth_m is None:
+        return None
+    return (x_m * f / depth_m + frame_size[0] / 2.0,
+            y_m * f / depth_m + frame_size[1] / 2.0)
+
+
+def clamp_to_play_volume(cx_px, cy_px, depth_m, nominal_size_px, frame_size,
+                         margin_m=PLAY_AREA_MARGIN_M,
+                         reference_depth_m=REFERENCE_DEPTH_M):
+    """Clamp an object's CENTRE into the play volume. Takes and returns PIXELS.
+
+    Written the way the decision states it, deliberately, rather than as the
+    algebraically-equal one-liner: at the object's depth take the frustum's
+    lateral extent, inset it by the world margin AND by the object's own world
+    half-extent, clamp the object's WORLD position inside that, then project.
+    A reader looking for the owner's rule should find the owner's rule.
+
+    ⚠ Takes the object's NOMINAL size (its extent at the reference depth) and
+    projects it here, so no caller can pass a stale projected size.
+
+    ⚠ FALLS BACK TO THE 2D RULE when there is no usable depth or frame size --
+    `clamp_to_play_area` above, unchanged. An object whose depth was never
+    driven must still be confined; degrading to the depth-free rule is the
+    honest answer, and it is exactly the behaviour that shipped in U9.
+
+    ⚠ DEGENERATE CASE, same policy as the 2D rule: if the play area at this
+    depth is narrower than the object, centre it rather than invert the clamp.
+    """
+    f = focal_px(frame_size)
+    if f is None or depth_m is None or not frame_size or frame_size[1] <= 0:
+        size = projected_size_px(nominal_size_px, depth_m, reference_depth_m)
+        tl = clamp_to_play_area(cx_px - size / 2.0, cy_px - size / 2.0,
+                                size, frame_size)
+        return (tl[0] + size / 2.0, tl[1] + size / 2.0)
+
+    z = clamp_depth(depth_m)
+    # The object's real half-extent, recovered from its size at the reference
+    # depth. Constant with depth -- that is the whole point of a world volume.
+    half_extent_m = (nominal_size_px / 2.0) * reference_depth_m / f
+
+    world = world_from_px(cx_px, cy_px, z, frame_size)
+    out = []
+    for v, extent_px in ((world[0], frame_size[0]), (world[1], frame_size[1])):
+        frustum_half_m = (extent_px / 2.0) * z / f      # the FOV at this depth
+        limit = frustum_half_m - margin_m - half_extent_m
+        if limit < 0.0:
+            out.append(0.0)                              # degenerate -> centred
+        else:
+            out.append(max(-limit, min(v, limit)))
+    return px_from_world(out[0], out[1], z, frame_size)
+
+
 def palm_width_px(landmarks):
     """Hand breadth across the knuckles, in pixels: index_MCP to pinky_MCP.
 

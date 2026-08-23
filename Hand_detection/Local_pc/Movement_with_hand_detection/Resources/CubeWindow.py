@@ -186,6 +186,18 @@ class Cube:
     # HandsTriggeredActions.py's `_compute_grab_weights` docstring.
     grab_landmark_weights: Optional[Dict[int, float]] = None
     grab_residual_offset: Optional[Tuple[float, float]] = None
+    # ⭐⭐ 4.2 -- Z-AXIS TRANSLATION (§14.3). `size` above is now the object's
+    # extent AT THE REFERENCE DEPTH; `depth_m` is where it actually is, and
+    # `projected_size` is what it occupies on screen. An object starts at the
+    # reference depth, so everything is 1:1 until a hand pushes it.
+    #
+    # ⚠ `grab_depth_m` is the depth at the INSTANT OF GRAB, and it is the Z
+    # counterpart of `grab_cube_orientation`/`grab_residual_offset`: depth
+    # follows the hand's grab-referenced ratio from there, so the grab frame is
+    # exactly continuous (ratio 1.0 -> depth unchanged, no pop). Cleared on
+    # release like the rest of the grab baseline.
+    depth_m: float = palm_geometry.REFERENCE_DEPTH_M
+    grab_depth_m: Optional[float] = None
 
 
 class CubeWindow:
@@ -246,21 +258,51 @@ class CubeWindow:
         for cube in self.cubes.values():
             cube.position = self._centered_position(cube.size)
 
-    def set_target_position(self, cube_name: str, position: Tuple[float, float]) -> None:
-        """Clamp and store the next position for the named cube ("large" or
-        "small"). Mirrors CursorController.set_target_position_async's
-        clamping, just against the window bounds instead of the screen
-        bounds."""
+    def projected_size(self, cube_name: str) -> float:
+        """The named object's on-screen extent at its CURRENT depth (4.2)."""
+        return self.projected_size_of(self.cubes[cube_name])
+
+    def projected_size_of(self, cube: Cube) -> float:
+        """⚠ Every consumer of an object's screen extent must use THIS, not
+        `cube.size`, now that depth is driven: the grab radius, the centre,
+        the clamp and the renderer. `cube.size` is the extent at the reference
+        depth and is only correct there."""
+        return palm_geometry.projected_size_px(cube.size, cube.depth_m)
+
+    def set_target_center(self, cube_name: str, center: Tuple[float, float]) -> None:
+        """Clamp and store the next CENTRE for the named cube ("large" or "small").
+
+        ⭐⭐ U9: confine the object to the PLAY AREA, not to the window. Owner,
+        2026-08-23: the cube could be pushed step by step to the very edge of
+        the display. ⚠ The hand-side margin cannot prevent that -- translation
+        is grab-relative, so the cube keeps its own offset from the hand and
+        creeps further out on every grab-push-drop cycle. This is the invariant;
+        that was the trigger.
+
+        ⭐⭐ 4.2: the play area is now a WORLD-SPACE VOLUME (owner decision,
+        2026-08-23). The display is the camera's frustum, so at the object's
+        depth the clamp takes the frustum's lateral extent, insets it by the
+        world margin (42.5 mm -- the same half-hand-breadth U9 measured, in the
+        unit it was always in) and by the object's own world half-extent, and
+        clamps there. ⚠ The on-screen boundary therefore MOVES with depth. That
+        is the decision working, not a regression.
+
+        ⚠ The CENTRE is what is stored and clamped, and `position` (the
+        top-left) is derived from it: the projected extent changes with depth,
+        so a top-left held fixed would drift the object sideways as it moves in
+        Z. Depth must therefore be set BEFORE this is called.
+        """
         cube = self.cubes[cube_name]
-        x, y = position
-        # ⭐⭐ U9: clamp to the PLAY AREA (the window inset by the edge margin),
-        # not to the window itself. Owner, 2026-08-23: the cube could be pushed
-        # step by step to the very edge of the display. ⚠ The hand-side margin
-        # cannot prevent that -- translation is grab-relative, so the cube keeps
-        # its own offset from the hand and creeps further out on every
-        # grab-push-drop cycle. This is the invariant; that is the trigger.
-        cube.position = palm_geometry.clamp_to_play_area(
-            x, y, cube.size, self.window_size)
+        cx, cy = palm_geometry.clamp_to_play_volume(
+            center[0], center[1], cube.depth_m, cube.size, self.window_size)
+        size = self.projected_size_of(cube)
+        cube.position = (cx - size / 2.0, cy - size / 2.0)
+
+    # ⚠ `set_target_position` (top-left) was removed in 4.2. Every caller had to
+    # convert a centre into a corner first, with the object's NOMINAL size --
+    # which stops being its on-screen extent the moment depth is driven. One
+    # entry point that takes the CENTRE removes the conversion, and with it the
+    # chance of two call sites converting differently.
 
     def cube_center(self, cube_name: str) -> Tuple[float, float]:
         """Center point of the named cube, for proximity/grab-radius checks
@@ -272,8 +314,13 @@ class CubeWindow:
 
     def cube_center_from(self, cube: Cube) -> Tuple[float, float]:
         """Same as cube_center(name) but takes the Cube object directly,
-        for callers that already have it (avoids a redundant dict lookup)."""
-        return (cube.position[0] + cube.size / 2, cube.position[1] + cube.size / 2)
+        for callers that already have it (avoids a redundant dict lookup).
+
+        ⚠ 4.2: uses the PROJECTED extent, not `cube.size` -- `position` is the
+        top-left of what is actually drawn, so at any depth other than the
+        reference the nominal size would put the centre in the wrong place."""
+        size = self.projected_size_of(cube)
+        return (cube.position[0] + size / 2, cube.position[1] + size / 2)
 
     def unowned_cube_names(self):
         """Names of cubes with no current owner — candidates for a new
@@ -313,6 +360,10 @@ class CubeWindow:
         cube.grab_cube_orientation = None
         cube.grab_landmark_weights = None
         cube.grab_residual_offset = None
+        # 4.2: the Z baseline is part of the grab baseline. `depth_m` itself
+        # FREEZES, exactly like position and orientation -- release means "stays
+        # where it is", and it is now where it is in three axes.
+        cube.grab_depth_m = None
 
     def _draw_object_3d(self, obj: Cube) -> None:
         """Rotates `obj.mesh`'s local vertices by the object's orientation
@@ -333,8 +384,15 @@ class CubeWindow:
         in a real imported 3D object later a matter of building a
         different Mesh, not touching this method."""
         cx, cy = self.cube_center_from(obj)
-        half = obj.size / 2.0
-        camera_distance = obj.size * CUBE_PERSPECTIVE_DISTANCE_RATIO
+        # ⭐ 4.2: the object's REAL size is fixed; its PROJECTION is what depth
+        # changes (§14.3 decision 4 -- the dropped depth-proxy row scaled the
+        # real size, which stays dropped). The virtual camera distance tracks
+        # the projected extent so the object's own perspective foreshortening
+        # is unchanged by where it sits in Z -- otherwise moving it away would
+        # also flatten it, which is a second, wrong effect.
+        size = self.projected_size_of(obj)
+        half = size / 2.0
+        camera_distance = size * CUBE_PERSPECTIVE_DISTANCE_RATIO
 
         projected = []  # (screen_xy, rotated_z) per local vertex, in obj.mesh.vertices order
         for v in obj.mesh.vertices:

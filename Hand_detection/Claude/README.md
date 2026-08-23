@@ -114,7 +114,7 @@ recording them:
 | **T3** | a held cube's owner SLOT follows its DR-1 TRACK across a relabel (`Resources/owner_remap.py`) — closes the **silent handover**, where the cube changed physical hand with no release, no snap and rule 3 never consulted | `OWNER_FOLLOWS_TRACK` |
 | **U8** | rule 3 refuses to snap while a newly entered hand's chirality is still **provisional** — **200 ms**, gated on ELAPSED TIME so it is correct at any capture rate (no fps estimate, no per-frame sampling). ⭐ Measured: the *dispute* condition, not the window, is the primary guard — the recorded failure is refused at every window from 400 down to 100 ms | `CHIRALITY_CONFIRM_MS` |
 
-| **U9** | every object is confined to a **play area** — the display window inset by **60 px** (half a hand width at 40 cm), so it can never be pushed to the edge. ⛔ TWO hand-side *triggers* were built and reverted first: **a trigger cannot enforce an invariant** (translation is grab-relative, so the object keeps its own offset and creeps outward on every grab-push-drop cycle). ⚠ **2D rule — revisit at 4.2**: ✅ decided 2026-08-23 that the play area is a **world-space volume, frustum-aware**, so the clamp moves into world coordinates and the on-screen boundary moves with depth. ⭐ The margin is already a world quantity (half a hand breadth = **42.5 mm**); 60 px is just its projection at 40 cm | `EDGE_MARGIN_PX` |
+| **U9** | every object is confined to a **play area** — the display window inset by **60 px** (half a hand width at 40 cm), so it can never be pushed to the edge. ⛔ TWO hand-side *triggers* were built and reverted first: **a trigger cannot enforce an invariant** (translation is grab-relative, so the object keeps its own offset and creeps outward on every grab-push-drop cycle). ✅ **SUPERSEDED BY 4.2 (2026-08-23)**: the play area is now a **world-space volume, frustum-aware** — the clamp works in world coordinates and the on-screen boundary moves with depth. ⭐ The margin never changed: it was always half a hand breadth = **42.5 mm**, and 60 px was only its projection at 40 cm | `EDGE_MARGIN_PX` |
 | **recorders** | both tools now log the cue AND cube position/size, sampled at the same point in the frame (`recorder_schema: 2`). Production used to sample cubes a frame earlier than debug, which silently skewed any harness pairing hands with cubes | — |
 
 ✅ **All of the above are live-confirmed in BOTH tools (2026-08-23).** The recorder
@@ -140,19 +140,41 @@ production now RECORDS what it ran instead of forcing a recomputation, and why
 the recorders have their own parity guard. See `PART_ONE.md` §3.1's YOU-ARE-HERE
 block for all four.
 
-**Next build: 4.2 — Z-axis translation**, driving cube Z from 4.1's depth ratio.
-⚠ It must also make snap gating **3D** (`_try_snap`'s grab radius becomes a 3D
-check — a real change to existing logic), which is precisely why U7/U8 went
-first: that is the rule the bad chirality corrupts. ⚠⚠ **And it must revisit
-U9's play-area clamp**, which is 2D. ✅ **Two decisions are already made** (owner,
-2026-08-23): **no snapping while depth is frozen** (S10's edge-on freeze —
-suppress rather than guess, flagged tunable for game feel), and **the play area
-is a world-space volume accounting for the camera frustum**, not a screen
-rectangle. See `PART_ONE.md` §3.1's "YOU ARE HERE" block and 4.2's row.
+✅✅ **4.2 IS BUILT AND OWNER-CONFIRMED LIVE (2026-08-23)** — *"yes. this is
+working properly"*. Z-axis translation, the 3D snap gate and the world-space play
+volume are in BOTH tools; 23 golden-vector suites pass and `parity_replay`
+reports **no divergence**. Take: `2026-08-23_193716_4_2_zaxis_debug_first_look`,
+the first ever written at `recorder_schema: 3`.
 
-⭐ **4.1's DEPTH ESTIMATOR is done** (`Resources/palm_depth.py`, A10-passed, wired
-to nothing yet — that is 4.2). ⭐ **No depth calibration step is needed** — the
-reach envelope measures 3.59x and the baseline is captured per grab.
+⚠ **PRODUCTION HAS NOT BEEN WATCHED** — debug only. One camera means the two
+tools can never run at once, so that is a separate back-to-back session, and
+§13.6.1's inversion was **production-only**. Full account: `GESTURE_PIPELINE_SPEC.md` §14.3.5; behaviour:
+`GAME_RULES.md` rules 7–10; status: `PART_ONE.md` §3.1's YOU-ARE-HERE block.
+
+⭐⭐ **The one finding worth carrying out of it — a constant that was about to be
+wrong.** An object's resting depth was first set to 0.40 m on the strength of
+U9's own row (*"40 cm IS the closest the operator actually works"*). **That
+sentence reads the corpus's p99 palm width — it is about the CLOSEST APPROACH.**
+Measured over 86 109 trusted hand-frames across 65 sessions
+(`analysis/m9_working_distance.py`): median **0.497 m**. An object at 0.40 m is
+reachable on 70.9% of frames; at the measured median, 91.2%. ⛔ A quarter of all
+frames unable to pick anything up would have read as a **broken build**, not a
+mis-sized constant. ⭐ **A constant borrowed from another row's derivation
+inherits that row's QUESTION, not just its number.**
+
+⚠ Two more that a reader will otherwise re-derive wrong: the 3D gate is an
+**ellipsoid, not a sphere** (a sphere would be un-grabbable for anyone whose
+hands are off the anthropometric median), and `cube.size` is now the extent at
+the **resting depth only** — the centre, the clamp, the grab radius and both
+renderers read `palm_geometry.projected_size_px`.
+
+⭐ **4.1's DEPTH ESTIMATOR is wired** (`Resources/palm_depth.py`) — 4.2 drives an
+object's depth from it. ⭐ **No depth calibration step is needed** — the reach
+envelope measures 3.59x and the baseline is captured per grab. ⚠ 4.2 added a
+SECOND estimator, `HandDepthTracker`, and the two are not redundant: the ratio
+form drives a HELD object (scale cancels exactly), the absolute form answers the
+snap gate's question, which has no grab to baseline against and therefore carries
+a per-user scale bias. ⛔ The absolute one gates snapping and nothing else.
 ⚠ **4.1's `trackId` OWNERSHIP MIGRATION IS REVERTED** (`TRACK_OWNERSHIP = False`);
 the wire still carries the id, and T3 is now fixed by the NARROW remap instead —
 see `POSTMORTEM_4_1_IDENTITY_MIGRATION.md` and `Resources/owner_remap.py`.
@@ -283,8 +305,10 @@ ownership should follow the *physical* hand — today the cube the pipeline call
 | the T3 remap A/B on a recording | `analysis/t3_remap_ab.py` |
 | re-derive U8's window if the frame rate moves | `analysis/u8_entry_settling.py` |
 | the two recorders must not drift apart | `analysis/verify_recorder_parity.py` |
-| the play area (an object may never reach the display edge) | `analysis/verify_play_area.py` |
-| golden vectors | `analysis/verify_*.py` — 22 suites |
+| the play area / volume (an object may never reach the display edge) | `analysis/verify_play_area.py` |
+| ⭐ the same invariant read STRAIGHT from a recording, schema-aware | `analysis/verify_play_volume_from_recording.py` |
+| where the operator's hand actually sits, and whether an object is reachable | `analysis/m9_working_distance.py` |
+| golden vectors | `analysis/verify_*.py` — 23 suites |
 
 ⚠ **One webcam, and DSHOW is exclusive across processes** — production and the
 debug tool cannot run at the same time. Compare them back-to-back. (Two capture

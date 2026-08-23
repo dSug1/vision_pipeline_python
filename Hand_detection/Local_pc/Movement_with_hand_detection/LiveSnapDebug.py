@@ -255,6 +255,36 @@ def _update_depth(hand_data_by_hand):
         _depth_readout[hand] = (ratio, valid)
 
 
+# ⭐⭐ 4.2 -- THE ABSOLUTE HAND DEPTH THE 3D SNAP GATE READS.
+#
+# UPSTREAM and SHARED across arms, exactly like `_palm_facing_trackers`: it has
+# no grab dependency, so one estimator serves every panel and the arms' only
+# difference stays their own configuration. ⚠ AND IT MUST BE UPDATED ONCE PER
+# FRAME, NOT ONCE PER ARM -- `update_hands` runs per arm, so advancing a
+# hysteretic tracker in there would step its band three times per frame in a
+# three-arm rig. That is why this writes the answer INTO `hand_data_by_hand`
+# (like `thumb_outward`) instead of being computed inside `update_hands`.
+#
+# ⚠ A caller that never calls this leaves `hand_depth` absent, and `update_hands`
+# then runs the PRE-4.2 2D gate. That is deliberate: eight harnesses drive
+# `update_hands` and none of them know about depth. `analysis/parity_replay.py`
+# is the one that MUST call it -- production computes depth internally, so a
+# parity harness that skips this compares a 3D gate against a 2D one and
+# manufactures a divergence. Third time that rule has been written down.
+_snap_depth_trackers = {h: _PDepth.HandDepthTracker() for h in TRACKED_HANDS}
+
+
+def _update_snap_depth(hand_data_by_hand, frame_size):
+    """Stamp each detected hand's `(depth_m, valid)` onto its data dict."""
+    for hand in TRACKED_HANDS:
+        d = hand_data_by_hand.get(hand)
+        if d is None:
+            _snap_depth_trackers[hand].reset()
+            continue
+        d["hand_depth"] = _snap_depth_trackers[hand].update(
+            d["pixel_landmarks"], frame_size)
+
+
 # ⭐ UPSTREAM per-hand state: shared by every arm, so it is bound ONCE per frame,
 # before the arms run. Today that is DR-2's PalmFacingTracker. Keeping it out of
 # the per-arm bundle is what preserves the rig's one-variable property.
@@ -650,6 +680,12 @@ class Cube:
     # in the PALM's own frame. Used instead of the two fields above when
     # update_hands is given an `anchor`; None for §14.1's incumbent path.
     grab_anchor_state: Optional[object] = None
+    # ⭐⭐ 4.2 -- Z-AXIS TRANSLATION, mirroring production's `CubeWindow.Cube`
+    # field for field (N6). `size` is the extent AT THE REFERENCE DEPTH,
+    # `depth_m` is where the object actually is, and `grab_depth_m` is the Z
+    # baseline frozen at the grab so the grab frame is continuous in Z as well.
+    depth_m: float = palm_geometry.REFERENCE_DEPTH_M
+    grab_depth_m: Optional[float] = None
 
 
 @dataclass
@@ -739,6 +775,15 @@ class CubeState:
     # its own cubes and its own history.
     track_registry: object = None
     resync_blend_left: Dict[str, int] = field(default_factory=lambda: {h: 0 for h in TRACKED_HANDS})
+    # ⭐ 4.2: the RATIO estimator that drives a held object's depth. PER ARM,
+    # because its baseline is captured at THAT arm's grab and the arms grab at
+    # different moments -- sharing one would baseline every arm against
+    # whichever grabbed first. ⚠ The ABSOLUTE estimator behind the snap gate is
+    # NOT here: it has no grab dependency, so it is upstream and shared, exactly
+    # like `_palm_facing_trackers`. Keeping the arms' only difference their own
+    # configuration is what makes the rig one-variable.
+    depth_ratio_trackers: Dict[str, object] = field(
+        default_factory=lambda: {h: _PDepth.DepthRatioTracker() for h in TRACKED_HANDS})
     # Per-arm live counters for the on-screen comparison.
     stats: Dict[str, int] = field(
         default_factory=lambda: {"bridged_frames": 0, "saves": 0, "releases": 0})
@@ -766,9 +811,22 @@ class CubeState:
     def _centered_position(self, size: int) -> Tuple[float, float]:
         return ((self.window_size[0] - size) / 2, (self.window_size[1] - size) / 2)
 
+    def projected_size(self, name: str) -> float:
+        """The named object's on-screen extent at its CURRENT depth (4.2).
+        Mirrors `CubeWindow.projected_size` (N6)."""
+        return self.projected_size_of(self.cubes[name])
+
+    def projected_size_of(self, cube: Cube) -> float:
+        """⚠ Every consumer of an object's screen extent must use THIS, not
+        `cube.size`: the grab radius, the centre, the clamp and the renderer."""
+        return palm_geometry.projected_size_px(cube.size, cube.depth_m)
+
     def cube_center(self, name: str) -> Tuple[float, float]:
+        # ⚠ 4.2: the PROJECTED extent, not `cube.size` -- `position` is the
+        # top-left of what is actually drawn.
         cube = self.cubes[name]
-        return (cube.position[0] + cube.size / 2, cube.position[1] + cube.size / 2)
+        size = self.projected_size_of(cube)
+        return (cube.position[0] + size / 2, cube.position[1] + size / 2)
 
     def unowned_cube_names(self):
         return [name for name, cube in self.cubes.items() if cube.owner is None]
@@ -798,17 +856,27 @@ class CubeState:
         cube.grab_landmark_weights = None
         cube.grab_residual_offset = None
         cube.grab_anchor_state = None
+        cube.grab_depth_m = None    # 4.2: depth freezes in place, like position
 
-    def set_target_position(self, name: str, top_left: Tuple[float, float]) -> None:
+    def set_target_center(self, name: str, center: Tuple[float, float]) -> None:
+        """⭐⭐ U9 (N6, mirrors `CubeWindow.set_target_center`): confine the object
+        to the PLAY AREA, not to the window. The hand-side margin cannot enforce
+        this -- translation is grab-relative, so the object keeps its own offset
+        from the hand and creeps outward on every grab-push-drop cycle. Trigger
+        vs invariant.
+
+        ⭐⭐ 4.2: the play area is now a WORLD-SPACE VOLUME (owner, 2026-08-23) --
+        at the object's depth, the frustum's lateral extent inset by the 42.5 mm
+        world margin. The on-screen boundary MOVES with depth; that is intended.
+
+        ⚠ Takes the CENTRE, and depth must already be set for this frame: the
+        projected extent depends on depth, and `position` is derived from the
+        centre with it."""
         cube = self.cubes[name]
-        x, y = top_left
-        # ⭐⭐ U9 (N6, mirrors `CubeWindow.set_target_position`): clamp to the PLAY
-        # AREA -- the window inset by the edge margin -- not to the window itself.
-        # The hand-side margin cannot enforce this: translation is grab-relative,
-        # so the cube keeps its own offset from the hand and creeps outward on
-        # every grab-push-drop cycle. Trigger vs invariant.
-        cube.position = palm_geometry.clamp_to_play_area(
-            x, y, cube.size, self.window_size)
+        cx, cy = palm_geometry.clamp_to_play_volume(
+            center[0], center[1], cube.depth_m, cube.size, self.window_size)
+        size = self.projected_size_of(cube)
+        cube.position = (cx - size / 2.0, cy - size / 2.0)
 
 
 def _is_thumb_outward(pixel_landmarks, handedness: str) -> bool:
@@ -868,8 +936,10 @@ def _compute_grab_weights(object_pos_at_grab: Tuple[float, float], pixel_landmar
     return {i: w / total for i, w in raw.items()}
 
 
-def _top_left_for_center(center: Tuple[float, float], size: int) -> Tuple[float, float]:
-    return (center[0] - size / 2, center[1] - size / 2)
+# ⚠ `_top_left_for_center` was removed in 4.2 (N6: production dropped it too).
+# It converted with the NOMINAL size, which stops being the on-screen extent the
+# moment depth is driven. `CubeState.set_target_center` owns the conversion now,
+# with the projected extent, in one place.
 
 
 # --- Rotation: orthonormal-frame -> quaternion -> slerp ---------------------
@@ -1098,18 +1168,31 @@ def _predictive_filter_step(filt: HandOrientationFilter, raw_quat: Quat, conditi
     return fused
 
 
-def _try_snap(state: CubeState, handedness: str, hand_pos: Tuple[float, float], exclude=frozenset()) -> Optional[str]:
+def _try_snap(state: CubeState, handedness: str, hand_pos: Tuple[float, float],
+              hand_depth_m=None, exclude=frozenset()) -> Optional[str]:
     """Grab radius scales to EACH candidate cube's OWN size (2026-08-01,
     matching production's CubeWindow.py fix) -- a single shared radius
-    stopped making sense once the two cubes have different sizes."""
+    stopped making sense once the two cubes have different sizes.
+
+    ⭐⭐ 4.2, mirroring production's `_try_snap` (N6): the check is 3D. Lateral
+    stays the PROJECTED grab radius (so X/Y feel is unchanged and now scales
+    with depth); axial uses its own, much looser `GRAB_Z_TOLERANCE_M`, because
+    the hand depth carries a constant per-user scale bias a spherical check
+    would make un-grabbable. `hand_depth_m is None` -> the pre-4.2 2D check."""
     best_name, best_dist = None, None
     for name in state.unowned_cube_names():
         if name in exclude:
             continue
-        grab_radius = state.cubes[name].size * GRAB_RADIUS_MULTIPLIER
+        cube = state.cubes[name]
+        grab_radius = state.projected_size_of(cube) * GRAB_RADIUS_MULTIPLIER
         cx, cy = state.cube_center(name)
         dist = math.hypot(hand_pos[0] - cx, hand_pos[1] - cy)
-        if dist <= grab_radius and (best_dist is None or dist <= best_dist):
+        if dist > grab_radius:
+            continue
+        if hand_depth_m is not None and \
+                abs(hand_depth_m - cube.depth_m) > _PDepth.GRAB_Z_TOLERANCE_M:
+            continue
+        if best_dist is None or dist <= best_dist:
             best_name, best_dist = name, dist
     if best_name is not None:
         state.snap_cube(best_name, _owner_key(handedness, state),
@@ -1155,6 +1238,18 @@ def _draw_bridge_hud(frame, state, height):
             rd = _depth_readout.get(h)
             if rd is not None:
                 parts.append(f"{h[0]} {rd[0]:.2f}{'' if rd[1] else '*'}")
+            # ⭐ 4.2: the ABSOLUTE depth the snap gate compares against, in cm,
+            # beside each object's own depth. ⚠ THIS LINE IS THE INSTRUMENT FOR
+            # THE ONE FAILURE MODE THAT WOULD OTHERWISE LOOK LIKE A DEAD BUILD:
+            # the hand depth is scaled by NOMINAL anatomy, so a user whose hands
+            # are far off the median reads a constant offset from the object's
+            # depth and nothing can be picked up. Seeing "hand 55 / obj 40" says
+            # that immediately; a cube that just refuses to be grabbed does not.
+            sd = _snap_depth_trackers[h].depth_m
+            if sd is not None:
+                parts.append(f"{h[0]}z {sd * 100:.0f}cm")
+        parts += [f"{n[:1]}obj {c.depth_m * 100:.0f}cm"
+                  for n, c in state.cubes.items()]
         if parts:
             # ⚠ y = height-36, NOT height-12: the counters line below draws at
             # height-14 AFTER this one, in a larger brighter font, and painted
@@ -1412,10 +1507,24 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                 if _d is not None:
                     hand_quat_now = _d
 
+        # ⭐ 4.2: this frame's absolute hand depth, stamped upstream by
+        # `_update_snap_depth` so one estimator serves every arm. ABSENT means a
+        # caller that predates 4.2 -> pre-4.2 2D gating, deliberately.
+        _hdepth = data.get("hand_depth")
+        _hand_depth_m = _hdepth[0] if _hdepth else None
+        _hand_depth_valid = bool(_hdepth[1]) if _hdepth else None
+
         owned = _cube_for_hand(state, handedness, now_ms)
         if owned is None:
             can_snap = ((not thumb_outward) or state.thumb_outward_snap_allowed[handedness])
             can_snap = can_snap and handedness not in snap_blocked   # S3, see docstring
+            # ⭐⭐ 4.2 DECISION 1 (owner, 2026-08-23), mirroring production: NO
+            # SNAPPING WHILE DEPTH IS FROZEN. A frozen depth is a held value, not
+            # a measurement, and the gate below is 3D now. `None` = no depth
+            # supplied by this caller at all, which is the pre-4.2 path and must
+            # NOT refuse.
+            if _hand_depth_valid is not None and _PDepth.SNAP_REQUIRES_VALID_DEPTH:
+                can_snap = can_snap and _hand_depth_valid
             # ⭐⭐ U8, mirroring production exactly (N6): rule 3 may not act on a
             # PROVISIONAL chirality. A newly entered hand's thumb has not cleared
             # the frame edge, so its palm/back answer can be confidently wrong --
@@ -1423,10 +1532,21 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
             # See `HandsTriggeredActions` for the three cheaper remedies that were
             # measured and rejected.
             can_snap = can_snap and _palm_facing_trackers[handedness].chirality_confirmed
+            # ⚠ A FREE HAND CARRIES NO DEPTH BASELINE (N6: production drops it in
+            # exactly the same place, and for the same reason -- releases happen
+            # at several sites and a forgotten one would leave the next grab
+            # baselined against a span measured before the object was picked up).
+            state.depth_ratio_trackers[handedness].reset()
             if can_snap:
-                owned = _try_snap(state, handedness, hand_pos, exclude=released_this_frame)
+                owned = _try_snap(state, handedness, hand_pos,
+                                  hand_depth_m=_hand_depth_m,
+                                  exclude=released_this_frame)
                 if owned is not None:
                     cube = state.cubes[owned]
+                    # 4.2: freeze the Z baseline pair with the others, so the
+                    # grab frame is continuous in Z too (ratio 1.0 at grab).
+                    cube.grab_depth_m = cube.depth_m
+                    state.depth_ratio_trackers[handedness].freeze(data["pixel_landmarks"])
                     cube.grab_hand_orientation = hand_quat_now
                     cube.grab_cube_orientation = cube.orientation
                     # Object position at the instant of grab -- captured
@@ -1461,6 +1581,16 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                         )
         if owned is not None:
             cube = state.cubes[owned]
+            # ⭐⭐ 4.2 -- Z FIRST, before the X/Y target is applied: the clamp and
+            # the top-left both depend on the projected extent, which depends on
+            # depth. ⚠ `valid` False means the ratio is HELD, not measured, so
+            # depth holds too -- B8 measured every velocity fit losing to "hold
+            # the last value", so there is nothing to extrapolate with.
+            if cube.grab_depth_m is not None:
+                _ratio, _ratio_valid = state.depth_ratio_trackers[handedness].update(
+                    data["pixel_landmarks"])
+                if _ratio_valid and _ratio > 1e-6:
+                    cube.depth_m = palm_geometry.clamp_depth(cube.grab_depth_m / _ratio)
             if anchor is not None:
                 new_center = anchor.apply(cube.grab_anchor_state,
                                           data["pixel_landmarks"],
@@ -1480,7 +1610,10 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                               have[1] + (new_center[1] - have[1]) * t)
                 state.resync_blend_left[handedness] -= 1
             if new_center is not None:      # None = degenerate palm: HOLD, never jump
-                state.set_target_position(owned, _top_left_for_center(new_center, cube.size))
+                # 4.2: the CENTRE is what the play volume clamps; `position` is
+                # derived from it with the projected extent, so an object moving
+                # in Z grows about its own centre, not its corner.
+                state.set_target_center(owned, new_center)
             delta = _quat_multiply(hand_quat_now, _quat_conjugate(cube.grab_hand_orientation))
             target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
             # Slerp was temporarily disabled 2026-08-01 to isolate and
@@ -1548,8 +1681,13 @@ def _draw_cube_3d(overlay, cube: Cube, screen_center: Tuple[float, float]):
     no cube-specific geometry here, mirroring production's identical
     design (mesh-generic rendering, direct request 2026-08-01: the cube is
     a placeholder for future imported 3D objects)."""
-    half = cube.size / 2.0
-    camera_distance = cube.size * CUBE_PERSPECTIVE_DISTANCE_RATIO
+    # ⭐ 4.2 (N6, mirrors production's `_draw_object_3d`): the object's REAL size
+    # is fixed; its PROJECTION is what depth changes. The virtual camera distance
+    # tracks the projected extent so the object's own foreshortening is unchanged
+    # by where it sits in Z -- otherwise pushing it away would also flatten it.
+    size = palm_geometry.projected_size_px(cube.size, cube.depth_m)
+    half = size / 2.0
+    camera_distance = size * CUBE_PERSPECTIVE_DISTANCE_RATIO
     cx, cy = screen_center
 
     projected = []
@@ -1583,13 +1721,18 @@ def _draw_cubes(frame, state: CubeState):
     crisp rather than also being alpha-blended."""
     overlay = frame.copy()
     for cube in state.cubes.values():
-        screen_center = (cube.position[0] + cube.size / 2, cube.position[1] + cube.size / 2)
+        # 4.2: the PROJECTED extent, everywhere. `position` is the top-left of
+        # what is drawn, so using `size` here would offset the centre at any
+        # depth other than the reference one.
+        size = state.projected_size_of(cube)
+        screen_center = (cube.position[0] + size / 2, cube.position[1] + size / 2)
         _draw_cube_3d(overlay, cube, screen_center)
     cv2.addWeighted(overlay, CUBE_ALPHA, frame, 1 - CUBE_ALPHA, 0, frame)
     for cube in state.cubes.values():
         if cube.owner is not None:
+            size = int(round(state.projected_size_of(cube)))
             x, y = int(cube.position[0]), int(cube.position[1])
-            cv2.rectangle(frame, (x, y), (x + cube.size, y + cube.size), SNAP_BORDER_COLOR, SNAP_BORDER_WIDTH)
+            cv2.rectangle(frame, (x, y), (x + size, y + size), SNAP_BORDER_COLOR, SNAP_BORDER_WIDTH)
 
 
 def build_detector():
@@ -1843,6 +1986,11 @@ def main():
             # even after the y-position was fixed -- two independent bugs on the
             # same line of output, and the first one masked the second.
             _update_depth(hand_data_by_hand)
+            # ⭐ 4.2: the ABSOLUTE hand depth the 3D snap gate reads. ONCE per
+            # frame, before the arms, for the same reason DR-2 is resolved here:
+            # it is a property of the hand, not of an arm's cubes, and stepping
+            # its hysteresis once per arm would advance it three times a frame.
+            _update_snap_depth(hand_data_by_hand, (width, height))
 
             # ⭐ ONE update per arm, all fed the SAME `hand_data_by_hand`. The
             # arms differ only in their own Phase D configuration, so a
@@ -1882,6 +2030,18 @@ def main():
                         # to re-derive ids by re-running DR-1 -- sound, since it
                         # is deterministic, but stored is strictly better evidence.
                         "trackId": int(_hand_track_ids.get(handedness, -1)),
+                        # ⭐ 4.2 / schema 3 (N6, matching production's
+                        # `_record_flush`): the depth the snap gate actually
+                        # used, and whether it was MEASURED or held. Without
+                        # `depth_valid` a snap refused by DECISION 1 is
+                        # indistinguishable from a hand that was near nothing --
+                        # and DECISION 1 is the constant flagged for re-tuning,
+                        # so that distinction is the whole point of the field.
+                        "hand_depth_m": (None if d.get("hand_depth") is None
+                                         or d["hand_depth"][0] is None
+                                         else round(d["hand_depth"][0], 4)),
+                        "depth_valid": bool(d.get("hand_depth")
+                                            and d["hand_depth"][1]),
                     })
                 records.append({
                     "tCapture": round(t_capture_ms, 2),
@@ -1913,9 +2073,17 @@ def main():
                             # implementation that can silently disagree. `size` is
                             # here too so a harness can test the whole object's
                             # extent, not just its top-left corner.
+                            # ⭐ 4.2 / schema 3: `depth_m` and `projected_size`.
+                            # `size` stays the NOMINAL extent so nothing that
+                            # reads it changes meaning; `projected_size` is what
+                            # was actually drawn and what the play-area
+                            # invariant is expressed in now that both the margin
+                            # and the extent move with depth.
                             name: {"owner": c.owner,
                                    "position": [round(v, 2) for v in c.position],
                                    "size": c.size,
+                                   "depth_m": round(c.depth_m, 4),
+                                   "projected_size": round(arm.projected_size_of(c), 2),
                                    "orientation": [round(v, 6) for v in c.orientation]}
                             for name, c in arm.cubes.items()
                         }
@@ -1971,7 +2139,12 @@ def main():
                     # production did not until 2026-08-23, and the mismatch
                     # produced phantom violations in a harness that paired
                     # hands[i] with cubes[i].
-                    "recorder_schema": 2,
+                    # ⭐ 3 (4.2) = depth is on the wire: per cube `depth_m` and
+                    # `projected_size`, per hand `hand_depth_m` / `depth_valid`.
+                    # ⚠ REQUIRED to check the play area on a schema-3 take: the
+                    # margin and the object's extent both move with depth, so a
+                    # harness assuming 60 px and a fixed size reads it wrong.
+                    "recorder_schema": 3,
                     "sequence": args.tag,
                     "source": "LiveSnapDebug.py --record (cube visible live)",
                     "note": args.note,
