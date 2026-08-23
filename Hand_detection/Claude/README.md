@@ -212,15 +212,26 @@ no non-commercially-licensed dependencies (N13); recordings stay on E:;
 rotation stays permanently ungated by open-palm; `GAME_RULES.md` rule 2 is the
 dropout behaviour of record.
 
-⚠ **SHIPPING, not yet started (queue U10, raised 2026-08-23)**: **camera privacy is the real
-exposure, not licensing.** Everything runs client-side and no frames leave the
-device — the corpus is landmarks-only and never held a pixel — **but that has to
-be WRITTEN DOWN**: a privacy policy saying exactly that, plus per-store camera
-declarations (Steam / App Store / Google Play each differ) and platform
-permission strings. ⚠⚠ **If minors might play, COPPA and GDPR-K raise the bar
-sharply** — decide the intended audience early, it changes what the policy must
-say. ✅ Related and already verified: the MediaPipe model AND its WASM runtime are
-bundled, not hot-linked, on both platforms (see N13).
+⚠⚠ **SHIPPING, not yet started (queue U10/U11, 2026-08-23)**: **camera privacy is
+the real exposure, not licensing.** Everything runs client-side and no frames
+leave the device — the corpus is landmarks-only and never held a pixel — **but
+that has to be WRITTEN DOWN**: a privacy policy saying exactly that, per-store
+camera declarations (Steam / App Store / Google Play each differ) and platform
+permission strings.
+
+✅⛔ **AUDIENCE DECIDED (owner, 2026-08-23): ALL PUBLIC, INCLUDING YOUTH — so COPPA
+and GDPR-K are LIVE**, and Play's Families / Apple's Kids Category apply. Three
+things follow that are **binding on architecture, not preferences**: **no
+third-party analytics or ads SDKs**; **the local-only, no-transmission design is
+now load-bearing for compliance** (anything that transmits is a compliance event,
+raised before it is built); and **`VISION_RECORD=1` must be compile-time-disabled
+in shipping builds**, not merely default-off. ⛔ Professional advice is not
+optional here — but those three are actionable today and are what protects the
+position.
+
+✅ Already verified, no action: the MediaPipe model AND its WASM runtime are
+bundled, not hot-linked, on both platforms (N13). ⚠ 16 MB of dead model files to
+strip at package time (U11).
 
 **Still the owner's to make**: U1 open-palm/fist priority; U2 real 3D-file import
 (**blocked on the platform choice, not on effort** — do not build it against the
