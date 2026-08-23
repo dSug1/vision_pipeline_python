@@ -119,7 +119,7 @@ def check_session(name):
                                 FRAME[1] - margin - (pos[1] + extent))
                     if worst is None or slack < worst:
                         worst, worst_at = slack, (i, arm, oname)
-                    if slack < -1e-6:
+                    if slack < -ROUNDING_TOLERANCE_PX:
                         viol.append((i, arm, oname, round(slack, 2)))
     return n, viol, worst, worst_at, schema
 
@@ -138,7 +138,7 @@ def report(name):
     tag = "PASS" if not viol else "FAIL"
     print(f"  [{tag}] {name}")
     print(f"         schema {schema}   cube-frames {n}   violations {len(viol)}"
-          f"   closest approach {worst:.1f} px"
+          f"   closest approach {worst:+.3f} px"
           + (f" (frame {worst_at[0]}, {worst_at[2]})" if worst_at else ""))
     for v in viol[:5]:
         print(f"           frame {v[0]:5d}  {v[1]}/{v[2]}  outside by {-v[3]:.1f} px")

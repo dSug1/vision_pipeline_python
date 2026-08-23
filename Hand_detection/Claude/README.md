@@ -140,15 +140,14 @@ production now RECORDS what it ran instead of forcing a recomputation, and why
 the recorders have their own parity guard. See `PART_ONE.md` §3.1's YOU-ARE-HERE
 block for all four.
 
-✅✅ **4.2 IS BUILT AND OWNER-CONFIRMED LIVE (2026-08-23)** — *"yes. this is
-working properly"*. Z-axis translation, the 3D snap gate and the world-space play
-volume are in BOTH tools; 23 golden-vector suites pass and `parity_replay`
-reports **no divergence**. Take: `2026-08-23_193716_4_2_zaxis_debug_first_look`,
-the first ever written at `recorder_schema: 3`.
-
-⚠ **PRODUCTION HAS NOT BEEN WATCHED** — debug only. One camera means the two
-tools can never run at once, so that is a separate back-to-back session, and
-§13.6.1's inversion was **production-only**. Full account: `GESTURE_PIPELINE_SPEC.md` §14.3.5; behaviour:
+✅✅ **4.2 IS SHIPPED AND OWNER-CONFIRMED LIVE IN BOTH TOOLS (2026-08-23)** —
+debug *"yes. this is working properly"*, production *"this is working fine"*.
+Z-axis translation, the 3D snap gate and the world-space play volume are live; 23
+golden-vector suites pass and `parity_replay` reports **no divergence**. The
+production take proves Z was genuinely exercised (objects swept **0.316–0.850 m**,
+10 snaps under the 3D gate, 0 play-area violations) and independently reproduced
+the constant it was built on: its hand depth medians **0.502 m** against the
+0.497 m corpus median. Full account: `GESTURE_PIPELINE_SPEC.md` §14.3.5; behaviour:
 `GAME_RULES.md` rules 7–10; status: `PART_ONE.md` §3.1's YOU-ARE-HERE block.
 
 ⭐⭐ **The one finding worth carrying out of it — a constant that was about to be

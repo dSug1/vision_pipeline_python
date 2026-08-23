@@ -333,7 +333,7 @@ plain language, not implementation detail (link to the code instead).
      coast on the model). Queued as item T3 in the merged build queue;
      expected to close in Phases 1–2 rather than needing its own filter.
 
-7. **No snapping while depth is frozen.** ✅✅ **BUILT AND CONFIRMED LIVE 2026-08-23** (queue 4.2, debug tool — owner: *"yes. this is working properly"*). ⚠ Production not yet watched. When an object's depth
+7. **No snapping while depth is frozen.** ✅✅ **BUILT AND CONFIRMED LIVE 2026-08-23** (queue 4.2, BOTH tools — owner, debug: *"yes. this is working properly"*; production: *"this is working fine"*). When an object's depth
    cannot be measured — the hand is edge-on, so the depth reading is being *held*
    rather than measured — a hand cannot pick anything up.
    - **Why refuse rather than guess.** A frozen depth is a remembered value, not
@@ -356,7 +356,7 @@ plain language, not implementation detail (link to the code instead).
      existing session, not a new one.
 
 8. **An object moves toward and away from the camera with the hand that holds
-   it.** ✅✅ **BUILT AND CONFIRMED LIVE 2026-08-23** (queue 4.2, debug tool — owner: *"yes. this is working properly"*). ⚠ Production not yet watched. Moving a
+   it.** ✅✅ **BUILT AND CONFIRMED LIVE 2026-08-23** (queue 4.2, BOTH tools — owner, debug: *"yes. this is working properly"*; production: *"this is working fine"*). Moving a
    holding hand nearer brings the object nearer; moving it away pushes the object
    away. The object grows and shrinks on screen accordingly, because it is nearer
    or further — **its real size never changes.**
@@ -374,7 +374,7 @@ plain language, not implementation detail (link to the code instead).
    - `GESTURE_PIPELINE_SPEC.md` §14.3 (design) and §14.3.5 (what was built).
 
 9. **An object can only be picked up by a hand that is beside it — in all three
-   dimensions.** ✅✅ **BUILT AND CONFIRMED LIVE 2026-08-23** (queue 4.2, debug tool — owner: *"yes. this is working properly"*). ⚠ Production not yet watched.
+   dimensions.** ✅✅ **BUILT AND CONFIRMED LIVE 2026-08-23** (queue 4.2, BOTH tools — owner, debug: *"yes. this is working properly"*; production: *"this is working fine"*).
    Reaching *past* an object, or stopping *short* of it, no longer grabs it just
    because the hand crosses it on screen. ⚠ The two tolerances are deliberately
    different sizes: sideways it is the same reach that always applied, but along
@@ -382,7 +382,7 @@ plain language, not implementation detail (link to the code instead).
    how far away a hand is by assuming a typical hand size — a player with unusual
    hands would otherwise be unable to pick anything up at all.
 
-10. **The play area is a volume, not a rectangle.** ✅✅ **BUILT AND CONFIRMED LIVE 2026-08-23** (queue 4.2, debug tool — owner: *"yes. this is working properly"*). ⚠ Production not yet watched. Rule "an object may never reach the display
+10. **The play area is a volume, not a rectangle.** ✅✅ **BUILT AND CONFIRMED LIVE 2026-08-23** (queue 4.2, BOTH tools — owner, debug: *"yes. this is working properly"*; production: *"this is working fine"*). Rule "an object may never reach the display
     edge" (U9) still holds, but the boundary is now a real distance in the world —
     half a hand's breadth — rather than a fixed number of pixels. ⭐ **So the
     on-screen boundary MOVES as an object changes depth**: it draws inward as the
@@ -424,9 +424,9 @@ plain language, not implementation detail (link to the code instead).
   against `palm_depth`'s actual ratio, not against the imagined confound.
 - Open-palm rotation gating — **not planned**: rotation stays permanently
   ungated now that open-palm/closed-fist detection is parked (rule 4).
-- ✅ **Z-axis (camera-view-axis) translation — BUILT AND CONFIRMED LIVE
-  2026-08-23. Moved OUT of this section; it is now rules 8, 9 and 10 above.**
-  ⚠ Production not yet watched — debug only so far. The two questions this entry carried are both answered: the 3D snap
+- ✅ **Z-axis (camera-view-axis) translation — BUILT AND CONFIRMED LIVE IN BOTH
+  TOOLS 2026-08-23. Moved OUT of this section; it is now rules 8, 9 and 10
+  above.** The two questions this entry carried are both answered: the 3D snap
   check **refuses** when depth is frozen (rule 7), and no calibration step is
   needed (the ratio cancels the unknown hand size exactly). ⚠ The M2 gate this
   entry named turned out not to apply — M2 is dead, and the depth estimator

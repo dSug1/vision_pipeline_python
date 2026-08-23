@@ -4603,17 +4603,47 @@ has not been seen on screen yet.
 
 ### ✅ 14.3.5 4.2 IS BUILT (2026-08-23) — Z-axis translation, a 3D snap gate, and the play area as a world volume
 
-✅ **CONFIRMED LIVE IN THE DEBUG TOOL, 2026-08-23** — owner: ***"yes. this is
-working properly"***. Take `2026-08-23_193716_4_2_zaxis_debug_first_look`, the
-first session ever written at `recorder_schema: 3`. Everything below is also
-built, golden-vectored (23 suites), parity-clean and measured against the corpus.
+✅✅ **CONFIRMED LIVE IN BOTH TOOLS, back to back, 2026-08-23** — owner, debug:
+***"yes. this is working properly"***; owner, production: ***"this is working
+fine"***. ⭐ Production matters separately here because §13.6.1's inversion was
+**production-only** while the debug tool looked fine, and `parity_replay` cannot
+cover it: it replays recorded landmarks and never exercises production's own
+capture, mirror and socket path. Everything below is also golden-vectored (23
+suites), parity-clean and measured against the corpus.
 
-⚠ **PRODUCTION HAS NOT BEEN WATCHED.** One camera means the two tools can never
-run at once, so that is a separate back-to-back session — and §13.6.1's
-inversion was **production-only** while the debug tool looked fine.
-`parity_replay` reporting no divergence is real evidence that the logic agrees,
-but it replays recorded landmarks; it does not exercise production's own capture,
-mirror and socket path, which is exactly where that inversion lived.
+**LIVE ACCEPTANCE, BOTH TOOLS, RECORDED SO THE CLAIM IS CHECKABLE:**
+
+| | debug `193716_4_2_zaxis_debug_first_look` | production `194406_4_2_zaxis_production_check` |
+|---|---|---|
+| owner | *"yes. this is working properly"* | *"this is working fine"* |
+| coverage | 2274 object-frames | 771 frames, 963 hand-frames, 1542 object-frames, 46 s |
+| Z actually exercised | — | large **0.316–0.850 m** (346 distinct), small 0.346–0.850 |
+| snaps under the 3D gate | — | **10**, both hands, 778 held object-frames |
+| S10 freeze fired | — | **2.0%** of hand-frames |
+| play-area invariant | **0 violations** | **0 violations** |
+
+⭐⭐ **TWO INDEPENDENT CONFIRMATIONS FELL OUT OF THAT TAKE, NEITHER OF THEM ASKED FOR:**
+
+1. **The measured constant reproduced itself live.** The hand depth in this
+   session runs p5 0.349 / **median 0.502** / p95 0.707 m — against the corpus
+   median of **0.497 m** that `REFERENCE_DEPTH_M = 0.50` was derived from. A
+   constant measured over 65 old sessions predicted this new one to 5 mm.
+2. **DECISION 1's cost landed where it was predicted.** The freeze fired on 2.0%
+   of hand-frames against the corpus-wide ceiling of 1.6% — same order, and
+   nothing was reported as un-grabbable.
+
+⚠⚠ **AND THE HARNESS CRIED WOLF ONCE MORE — the fifth time this pattern has
+appeared, and again the instrument was the suspect.**
+`verify_play_volume_from_recording.py` reported **361 violations** on the take the
+owner had just watched work. Worst magnitude: **0.0115 px.** ⭐ The cause is that
+the harness compared RECORDED values, which the recorder rounds (`position` and
+`projected_size` to 2 dp, `depth_m` to 4), against an UNROUNDED boundary — and
+an object pinned exactly on that boundary, which is the correct outcome, rounds a
+hundredth of a pixel outside. ⭐ **THE GENERAL RULE, now written into the harness:
+compare at the precision the INPUT carries, not at the precision the arithmetic
+can produce.** Tighten it by recording more digits, never by asserting below what
+was recorded.
+
 
 **What shipped, in one table:**
 
