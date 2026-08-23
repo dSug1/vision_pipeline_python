@@ -212,6 +212,16 @@ no non-commercially-licensed dependencies (N13); recordings stay on E:;
 rotation stays permanently ungated by open-palm; `GAME_RULES.md` rule 2 is the
 dropout behaviour of record.
 
+⚠ **SHIPPING, not yet started (queue U10, raised 2026-08-23)**: **camera privacy is the real
+exposure, not licensing.** Everything runs client-side and no frames leave the
+device — the corpus is landmarks-only and never held a pixel — **but that has to
+be WRITTEN DOWN**: a privacy policy saying exactly that, plus per-store camera
+declarations (Steam / App Store / Google Play each differ) and platform
+permission strings. ⚠⚠ **If minors might play, COPPA and GDPR-K raise the bar
+sharply** — decide the intended audience early, it changes what the policy must
+say. ✅ Related and already verified: the MediaPipe model AND its WASM runtime are
+bundled, not hot-linked, on both platforms (see N13).
+
 **Still the owner's to make**: U1 open-palm/fist priority; U2 real 3D-file import
 (**blocked on the platform choice, not on effort** — do not build it against the
 pygame renderer); U3 the web/mobile port; and, new on 2026-08-22, whether cube
