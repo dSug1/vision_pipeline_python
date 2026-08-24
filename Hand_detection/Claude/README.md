@@ -141,8 +141,22 @@ production now RECORDS what it ran instead of forcing a recomputation, and why
 the recorders have their own parity guard. See `PART_ONE.md` §3.1's YOU-ARE-HERE
 block for all four.
 
-⛔⛔ **T6 WAS BUILT AND A10-REJECTED ON 2026-08-24 — the yaw lean is STILL OPEN and
-still the owner's show-stopper.** Read T6's row and
+⭐⭐⭐ **NEXT BUILD IS `T6d` — THE ANISOTROPIC FIT, LIVE, WITH SLIDERS (owner,
+2026-08-24).** Brief: the **NEXT BUILD block at the TOP of
+`HANDOFF_T6_ORIENTATION_FROM_2D.md`**, which is immediately actionable; the fit and
+its numbers are §2.0.16. In one line: four estimator REPLACEMENTS were built and all
+four A10-rejected, but they mapped the problem — **Horn's flaw is BIAS, every
+per-frame replacement's flaw is VARIANCE** — and the survivor is a CORRECTION that
+keeps Horn and fixes only the palm's tilt. ⭐ It must be **ANISOTROPIC**: yaw
+compresses the palm's WIDTH and pitch its LENGTH, so a gain depending on the
+compression direction ψ treats them oppositely where no scalar can (measured need:
+**1.15 yaw-like vs 1.55 pitch-like**). Fitted per recording: **PITCH drift 76.4° →
+23.6°**, YAW scatter 9.5° → 7.4°. ⛔ `b`/`c` are still unconstrained because each
+sweep exercises only its own ψ — **the slider run is the missing measurement, so
+record it.**
+
+⛔⛔ **T6 (the estimator replacements) WAS BUILT AND A10-REJECTED ON 2026-08-24 — the
+yaw lean is STILL OPEN and still the owner's show-stopper.** Read T6's row and
 `HANDOFF_T6_ORIENTATION_FROM_2D.md` §9 before proposing anything here: four
 explanations for its failure were measured and refuted, and the project's own
 premise (*"the 2D landmarks are good"*) is now amended — that was an inference from

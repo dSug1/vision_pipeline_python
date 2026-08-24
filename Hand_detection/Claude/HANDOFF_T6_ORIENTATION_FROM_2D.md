@@ -12,6 +12,67 @@ handoff, not a source of record: the record is `GESTURE_PIPELINE_SPEC.md`
 
 ---
 
+# ⭐⭐⭐ NEXT BUILD (2026-08-24) — T6d: THE ANISOTROPIC FIT, LIVE, WITH SLIDERS
+
+> **Owner:** *"The immediate next build will be a debug run which implements this
+> anisotropic fit, so I can feel the behaviour during run time. In this debug run,
+> add sliders to modify the anisotropic fit parameters, so I can modify them during
+> runtime and feel the resulting changes in behaviour."*
+
+⛔ **DO NOT start by re-deriving the theory. Read §2.0.16 first (the fit and its
+numbers), then §2.0.9/§2.0.12 (why it is shaped this way), then build.** Everything
+below already exists and is green.
+
+**WHAT TO BUILD.** In `LiveSnapDebug.py`, run the **anisotropic normal rebuild** in
+place of raw `Horn`, with **four live sliders** and a toggle:
+
+| slider | meaning | range | start |
+|---|---|---|---|
+| `r0` | face-on renormalisation of the compression ratio | 0.80 – 1.10 | **1.00** |
+| `a` | isotropic gain on the rebuilt tilt | 0.40 – 1.60 | **1.00** |
+| `b` | `cos 2ψ` term — separates **yaw-like** from **pitch-like** | −0.80 – +0.80 | **0.00** |
+| `c` | `sin 2ψ` term — the diagonal component | −0.80 – +0.80 | **0.00** |
+| toggle | rebuild ON / OFF, to A/B against shipped Horn live | — | **OFF** |
+
+⭐ **Start at identity (`r0=1, a=1, b=c=0`, toggle OFF) so the owner feels TODAY's
+behaviour first**, then dials. The fitted optima to try are in §2.0.16: the yaw
+recording wanted ≈ `r0 1.04, a 1.25, b −0.10, c +0.10`; the pitch recording wanted
+≈ `r0 1.04, a 0.85, b −0.70, c +0.40`.
+
+**THE MATHS IS ALREADY WRITTEN.** `palm_rotation.py` has `_shape_map`,
+`_compression_ratio`, `_palm_normal`, `rebuild_world_normal` and the
+`RebuiltNormalHorn` wrapper. Only two things are missing:
+1. `rebuild_world_normal` must take `(r0, a, b, c)` and use the **anisotropic** gain
+   `g(ψ) = a + b·cos2ψ + c·sin2ψ`, where **ψ is the compression direction in the
+   CANONICAL PALM frame** — the small right-singular direction of the shape map. ⚠ ψ
+   must be taken in the MODEL frame, not the image frame, or it drifts with how the
+   hand is held.
+2. the wrapper must read those four values live rather than from constants.
+
+**PUT ON THE HUD** (all of it is needed to interpret what the hand is doing):
+`ratio` (σ₂/σ₁), `ψ` in degrees, the raw tilt `acos(ratio/r₀)`, the applied gain
+`g(ψ)`, and the resulting tilt. Without ψ on screen the owner cannot tell which part
+of the 2×2 a given hand pose is exercising.
+
+⭐⭐ **AND THIS RUN IS NOT ONLY A FEEL TEST — IT IS THE MISSING MEASUREMENT.** §2.0.16
+closes with the one real gap: a yaw sweep only exercises ψ≈0 and a pitch sweep only
+ψ≈90°, so `b` and `c` are **fitted but unconstrained** (the pitch fit puts gain 0.15
+at a ψ its recording never visits). **Live hand exploration covers the intermediate
+ψ that no recording does.** ⭐ So **RECORD the session with the slider values in
+`meta.json`** — that take becomes the diagonal-ψ data the corpus lacks, and it is
+what would let the 2×2 be fitted as ONE object instead of inferred from two
+endpoints.
+
+⚠ **KEEP IN SCOPE**: production is untouched, and this stays in `LiveSnapDebug.py`
+until the owner has felt it. ⚠ **Jitter is deliberately deferred** (owner) — and
+note it has only ever been measured RAW, bypassing the shipped `orientation_filter`,
+so the recorded 25.5 → 31–34° regressions are measured at the wrong point in the
+pipeline. ⚠ **Roll is not a target** (owner: *"roll is not an issue"*) — guard it
+only against blowing up via the palm-facing degeneracy or a division by zero, both
+of which `rebuild_world_normal` already returns unchanged on.
+
+---
+
 ## 1. The defect, in the owner's terms
 
 When the hand turns like a page (yaw about the vertical), the object **does not
@@ -752,6 +813,111 @@ from one take. Its principled form is the **per-session observed face-on ratio**
 (the p95/p99 of that session's own ratio distribution) — i.e. the owner's
 progressive enrolment, which for this method supplies exactly the one number it
 needs.
+
+### 2.0.15 ⛔ THE MATRIX FORMULATION — and it RETRACTS part of §2.0.14
+
+**The formulation is right and worth keeping.** Model points are `(x, y, 0)`, so a
+camera point is `x·r1 + y·r2 + t` and, dropping z, the observed 2×2 map is
+`M = s·[[r1x, r2x],[r1y, r2y]]` — **M is the top-left block of the palm's rotation
+matrix, times scale.** Orthonormality then FORCES the missing z's: with
+`p = |M[:,0]|²`, `q = |M[:,1]|²`, `w = M[:,0]·M[:,1]`, `λ = 1/s²`,
+`(w² − pq)λ² + (p+q)λ − 1 = 0`, then `r1z = ±√(1−pλ)`, `r2z = −wλ/r1z`,
+`r3 = r1×r2`. The ± is resolved by the sign of MediaPipe's normal (§2.0.12).
+
+⛔⛔ **RESULT: WORSE THAN HORN, AND THE FIRST RUN'S APPARENT WIN WAS AN ARTEFACT.**
+
+| variant | YAW / gain | PITCH / gain | ROLL | JITTER |
+|---|---|---|---|---|
+| Horn (ships) | **13.0 / 1.13** | 20.2 / 0.74 | **6.7** | **25.5** |
+| matrix + S (correct) | ⛔ 34.2 / 1.17 | ⭐ **14.3 / 1.13** | 10.8 | ⛔ 55.0 |
+
+⭐ It **does** improve pitch (20.2 → 14.3) and fixes pitch gain (0.74 → 1.13), which
+is consistent with every other pass. ⛔ But it wrecks yaw and jitter: recovering the
+full orientation per frame from a 2×2 map is extremely noise-sensitive, and near
+edge-on the map is nearly singular.
+
+⛔⛔ **THE ARTEFACT, AND IT IS THE IMPORTANT PART.** The first matrix run reported
+**YAW 6.1° at gain 1.00** — the best number of the whole investigation. It was
+false. The shape-correction `S` had been estimated by averaging RAW face-on maps,
+and each map carries an arbitrary **in-plane hand rotation**; averaging them averaged
+rotations, producing `S = [+0.917 −0.459; +0.469 +0.856]` — **determinant exactly
+1.000, i.e. a 27° ROTATION wearing a shape correction's clothes.** Re-estimating `S`
+by **polar decomposition** (strip the rotation, average only the stretch) gives
+`S = [+0.985 +0.004; +0.004 +1.016]` — **essentially the identity** — and the 6.1°
+becomes 34.2°.
+
+⚠⚠ **AND THAT NEAR-IDENTITY S RETRACTS PART OF §2.0.14.** If the anisotropic shape
+error is ~0, then `r₀ = 0.889` was **not** correcting a shape mismatch — it was
+cancelling the **roll take's own average tilt**. That take's palm really is ~27° off
+face-on on average (cos 27° = 0.89, matching `t5j`'s independently measured span
+collapses of 0.904/0.891). ⛔ **So §2.0.14's roll 9.4 → 0.8 is a fit to one take, not
+a correction**, and its headline must not be quoted as a general result.
+⭐ What survives: **r₀ = 0.90**, a round value not fitted to anything, still gives
+**YAW 8.3 / PITCH 12.5 with gains 1.12 / 1.00** — better than Horn on both axes and
+both gains. The EFFECT is real; the MECHANISM I attributed to it was not.
+
+⭐ **WHAT THIS NARROWS.** Three independent formulations — scalar renorm, matrix
+recovery, planar PnP — all **fix pitch gain** (0.74 → ~1.0–1.13) and all **degrade
+jitter**. Pitch gain is now the one thing every approach agrees on, and jitter is the
+one thing none of them survives. That is a much smaller problem than where this
+started.
+
+### 2.0.16 ⭐⭐⭐ ANISOTROPIC 2×2 SINUSOIDAL FIT, PER RECORDING — the hypothesis holds
+
+⭐⭐ **THE STRUCTURAL ARGUMENT, AND IT IS THE OWNER'S.** Yaw and pitch have always
+demanded opposite corrections — the docs closed the whole "weight z less" family on
+exactly that ("yaw and pitch need opposite things from the same coordinate"). **But
+they foreshorten along PERPENDICULAR directions**: yaw compresses the palm's WIDTH,
+pitch its LENGTH. So a correction that depends on the COMPRESSION DIRECTION ψ can
+treat them differently with one model, which no scalar can. Since ψ is defined mod
+180°, its natural function is `g(ψ) = a + b·cos2ψ + c·sin2ψ` — **exactly the quadratic
+form of a symmetric 2×2 on that direction.** "Sinusoidal regression with a 2×2" is one
+object, not two.
+
+⭐⭐ **AND TWO CAMERA-INDEPENDENT OBJECTIVES MAKE PER-RECORDING FITTING POSSIBLE**, which
+is what the owner asked for after cross-take comparison kept failing on the moving
+camera:
+* **SCATTER** — each frame's axis vs the take's OWN mean axis. A fixed camera tilt
+  moves the mean but cannot touch the spread, so a pure rotation about ANY axis
+  scores 0 whatever the camera does.
+* **DRIFT** — mean axis at a LOW turn vs at a HIGH turn, within one take. ⭐ **This is
+  the owner's complaint as a number**: the cube leans MORE the further you turn it, so
+  a correct estimator has drift ≈ 0. ⚠ Bands are taken per recording (the card yaw
+  stops at ~80° and never passes edge-on, so a fixed 100–150° band is empty there).
+⛔ Neither is gameable by damping — gain is constrained to [0.85, 1.25].
+
+**Takes, chosen on the owner's criteria**: YAW = `2026-08-23_203307_yaw_card_axis_check_b`
+(the card retake); PITCH = `2026-08-04_054702_pitch_sweep_slow` — **most recurring
+poses** (12 operator-counted cycles, 1069 frames vs 722), **highest within-recording
+bias repeatability of any take** (ratio 5.19), and by trap #5's rule the **cleaner
+pitch setup** (for a pitch sweep WIDTH is the contamination channel: 0.892 here vs
+0.808 in the 2026-08-02 take).
+
+| take | | scatter | drift | gain |
+|---|---|---|---|---|
+| **YAW** | identity | 9.5° | 4.0° | 0.82 |
+| | **fitted** | ⭐ **7.4°** | 4.2° | ⭐ **0.95** |
+| **PITCH** | identity | 44.4° | **76.4°** | 0.65 |
+| | **fitted** | ⭐ **21.2°** | ⭐⭐ **23.6°** | ⭐ **1.24** |
+
+⭐⭐⭐ **PITCH IS TRANSFORMED: scatter halved and DRIFT CUT FROM 76.4° TO 23.6°** — a
+two-thirds reduction on the metric that encodes the owner's actual complaint. Yaw
+improves more modestly (scatter −22%, gain 0.82 → 0.95); its drift was already only
+4.0° because the card sweep stops at ~80°.
+
+⭐⭐ **AND THE ANISOTROPY IS CONFIRMED, MEASURED SEPARATELY ON EACH RECORDING WITH NO
+CROSS-TAKE CONTAMINATION**: the gain each take wants **at the ψ it actually
+exercises** is **1.15 for yaw-like (ψ≈0)** and **1.55 for pitch-like (ψ≈90°)**. They
+genuinely differ, which is precisely why every scalar attempt failed and why the 2×2
+is the right object.
+
+⛔⛔ **THE CAVEAT THAT MUST TRAVEL WITH THIS: EACH TAKE CONSTRAINS ONLY ITS OWN ψ.**
+A yaw sweep never visits ψ≈90° and a pitch sweep never visits ψ≈0, so the fitted
+`b` and `c` are largely **unconstrained** — the pitch fit happily puts gain **0.15**
+at ψ=0, a region that recording never enters. ⚠ **So these are two valid
+single-direction calibrations, NOT yet one validated 2×2.** ⭐ What is needed to close
+it is a take that exercises INTERMEDIATE ψ — a diagonal tilt sweep — or a joint fit
+that constrains each take only at its own ψ. **That is the next recording to make.**
 
 ### 2.1 ⚠ PARTLY SUPERSEDED BY §2.0 — the earlier "camera tilt is not a cause" test
 
