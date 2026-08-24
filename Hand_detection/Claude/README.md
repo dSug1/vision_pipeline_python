@@ -28,7 +28,7 @@ start a second list, do not "helpfully" reorder it. This file points at it.
 
 | you want to… | read |
 |---|---|
-| ⭐⭐ **START THE NEXT BUILD (T6)** | **`HANDOFF_T6_ORIENTATION_FROM_2D.md`** — a complete brief, written so a fresh session can implement immediately |
+| ⭐⭐ **RUN THE T6d SLIDER SESSION (the next step)** | **`HANDOFF_T6_ORIENTATION_FROM_2D.md`** — its top block is how to run it, §2.0.17 is what was built |
 | **start any other build session** | this file → `PART_ONE.md` §3.1's "YOU ARE HERE" block → that item's row |
 | know **why** something failed | `GESTURE_PIPELINE_SPEC.md` — the authoritative record of what failed and why |
 | know the **forward design** below the gesture layer | `PERCEPTION_LAYER_SPEC.md` (⚠ read its §0.1 amendment log BEFORE any module body) |
@@ -39,7 +39,7 @@ start a second list, do not "helpfully" reorder it. This file points at it.
 order is historical — **the queue superseded it.** Keep it for the goal,
 constraints and prior-art scan; do not take build order from it.
 
-⚠ `HANDOFF_*.md` are per-session briefs. ⭐ **`HANDOFF_T6_ORIENTATION_FROM_2D.md` is OPEN and is the next build**; the others are closed. `_archived_old_*` is dead.
+⚠ `HANDOFF_*.md` are per-session briefs. ⭐ **`HANDOFF_T6_ORIENTATION_FROM_2D.md` is OPEN — T6d is built and awaiting the owner's live session**; the others are closed. `_archived_old_*` is dead.
 
 ---
 
@@ -141,19 +141,24 @@ production now RECORDS what it ran instead of forcing a recomputation, and why
 the recorders have their own parity guard. See `PART_ONE.md` §3.1's YOU-ARE-HERE
 block for all four.
 
-⭐⭐⭐ **NEXT BUILD IS `T6d` — THE ANISOTROPIC FIT, LIVE, WITH SLIDERS (owner,
-2026-08-24).** Brief: the **NEXT BUILD block at the TOP of
-`HANDOFF_T6_ORIENTATION_FROM_2D.md`**, which is immediately actionable; the fit and
-its numbers are §2.0.16. In one line: four estimator REPLACEMENTS were built and all
-four A10-rejected, but they mapped the problem — **Horn's flaw is BIAS, every
-per-frame replacement's flaw is VARIANCE** — and the survivor is a CORRECTION that
-keeps Horn and fixes only the palm's tilt. ⭐ It must be **ANISOTROPIC**: yaw
-compresses the palm's WIDTH and pitch its LENGTH, so a gain depending on the
-compression direction ψ treats them oppositely where no scalar can (measured need:
-**1.15 yaw-like vs 1.55 pitch-like**). Fitted per recording: **PITCH drift 76.4° →
-23.6°**, YAW scatter 9.5° → 7.4°. ⛔ `b`/`c` are still unconstrained because each
-sweep exercises only its own ψ — **the slider run is the missing measurement, so
-record it.**
+✅⭐⭐⭐ **`T6d` IS BUILT (2026-08-24) — THE NEXT STEP IS THE OWNER'S LIVE SESSION, NOT
+CODE.** How to run it: the **block at the TOP of
+`HANDOFF_T6_ORIENTATION_FROM_2D.md`**; what was built and the four decisions inside
+it: **§2.0.17**; the fit and its numbers: §2.0.16. In one line: four estimator
+REPLACEMENTS were built and all four A10-rejected, but they mapped the problem —
+**Horn's flaw is BIAS, every per-frame replacement's flaw is VARIANCE** — and the
+survivor is a CORRECTION that keeps Horn and fixes only the palm's tilt. ⭐ It must be
+**ANISOTROPIC**: yaw compresses the palm's WIDTH and pitch its LENGTH, so a gain
+depending on the compression direction ψ treats them oppositely where no scalar can
+(measured need: **1.15 yaw-like vs 1.55 pitch-like**). Fitted per recording: **PITCH
+drift 76.4° → 23.6°**, YAW scatter 9.5° → 7.4°.
+⭐ `debug_snap.bat` now opens a slider panel; `t` toggles the rebuild and **OFF is
+measured byte-identical to shipped Horn** (975/975 replayed frames), so it is a true
+one-variable A/B. ⚠ **Production is untouched** and nothing here has been through
+A10 yet. ⛔⛔ **RUN IT WITH `--record`**: `b`/`c` are unconstrained because each sweep
+exercises only its own ψ (yaw takes measure ψ≈0/180, pitch takes ψ≈90), so **the
+session IS the missing measurement** — the take needs time spent at INTERMEDIATE ψ,
+turning and tipping together.
 
 ⛔⛔ **T6 (the estimator replacements) WAS BUILT AND A10-REJECTED ON 2026-08-24 — the
 yaw lean is STILL OPEN and still the owner's show-stopper.** Read T6's row and
@@ -372,6 +377,7 @@ ownership should follow the *physical* hand — today the cube the pipeline call
 |---|---|
 | production | `launch.bat` (or `PythonApp_Main.py`) |
 | debug, one window mirroring production | `debug_snap.bat` / `LiveSnapDebug.py` |
+| ⭐ the **T6d anisotropic rebuild**, live, with sliders | `LiveSnapDebug.py` — a second window carries `r0/a/b/c` + the toggle; `t` toggles, `0/1/2` load identity / fitted yaw / fitted pitch. `--aniso-start r0,a,b,c[,on]`, `--no-aniso-sliders`. ⭐ Toggle OFF is measured byte-identical to shipped Horn |
 | debug + record (cube visible, writes a session) | `LiveSnapDebug.py --record` |
 | record a scripted take | `record_perception_sequence.bat <sequence>` |
 | ⚠ wake the capture drive first | `wake_e_drive.py` |

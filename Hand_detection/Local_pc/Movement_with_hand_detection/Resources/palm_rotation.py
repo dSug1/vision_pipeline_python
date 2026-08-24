@@ -766,19 +766,54 @@ def _shape_map(px, indices, model):
             (syy * tvx - sxy * tvy) / det, (-sxy * tvx + sxx * tvy) / det)
 
 
-def _compression_ratio(m):
-    """sigma2/sigma1 of a 2x2 map = cos(tilt). None if degenerate."""
+def _shape_axes(m):
+    """(sigma2/sigma1, psi) of a 2x2 map -- the compression MAGNITUDE and the
+    compression DIRECTION. None if degenerate.
+
+    ⭐⭐ PSI IS TAKEN IN THE **MODEL** FRAME, NOT THE IMAGE FRAME, and that is not a
+    detail -- it is the whole reason the anisotropic gain works. `M` carries the
+    canonical palm ONTO the pixels, so its RIGHT-singular vectors live in the
+    canonical palm's own coordinates: psi=0 is "the palm's WIDTH is compressed"
+    (a YAW, whatever way up the hand is held) and psi=90 deg is "its LENGTH is
+    compressed" (a PITCH). Taken in the image frame instead, the same physical yaw
+    would report a different psi for every in-plane hand rotation, and a gain
+    indexed on it would drift with how the operator holds the hand.
+
+    ⚠ psi is defined mod 180 deg (a compression direction has no sign), which is
+    exactly why the gain that indexes on it is `a + b*cos2psi + c*sin2psi` -- see
+    `AnisoParams`.
+    """
     m00, m01, m10, m11 = m
+    # M^T M, symmetric 2x2 [[a, b], [b, c]] -- its eigenvectors ARE the right
+    # singular vectors of M, and its eigenvalues the squared singular values.
     a = m00 * m00 + m10 * m10
     b = m00 * m01 + m10 * m11
     c = m01 * m01 + m11 * m11
     tr = a + c
     disc = max(0.0, tr * tr / 4.0 - (a * c - b * b))
-    l1 = tr / 2.0 + math.sqrt(disc)
-    l2 = max(0.0, tr / 2.0 - math.sqrt(disc))
+    root = math.sqrt(disc)
+    l1 = tr / 2.0 + root
+    l2 = max(0.0, tr / 2.0 - root)
     if l1 < 1e-18:
         return None
-    return math.sqrt(l2 / l1)
+    # ⛔⛔ THE EIGENVECTOR MUST COME FROM THE CLOSED FORM, NOT FROM SOLVING A ROW.
+    # The textbook `v = (b, l2 - a)` is EXACT and USELESS here: whenever the
+    # compression aligns with the model axes -- i.e. for a pure yaw or a pure
+    # pitch, the two cases this whole model exists to separate -- BOTH components
+    # collapse to rounding error and the direction is noise. Measured on synthetic
+    # input: a pure 60 deg yaw reported psi = 163 deg instead of 0.
+    # ⭐ The principal-axis angle `0.5*atan2(2b, a-c)` has no such cancellation; it
+    # gives the LARGE singular direction, and the compressed one is 90 deg from it.
+    # ⚠ Face-on (a ~ c, b ~ 0) leaves psi genuinely undefined -- there is no
+    # compression direction when there is no compression. That band is gated out.
+    psi = (0.5 * math.atan2(2.0 * b, a - c) + math.pi / 2.0) % math.pi
+    return math.sqrt(l2 / l1), psi
+
+
+def _compression_ratio(m):
+    """sigma2/sigma1 of a 2x2 map = cos(tilt). None if degenerate."""
+    axes = _shape_axes(m)
+    return None if axes is None else axes[0]
 
 
 def _palm_normal(world, indices):
@@ -796,7 +831,154 @@ def _palm_normal(world, indices):
     return None if ln < 1e-12 else (n[0] / ln, n[1] / ln, n[2] / ln)
 
 
-def rebuild_world_normal(px, world, indices=PALM_LANDMARKS, model=None):
+# --------------------------------------------------------------------------
+# T6d -- THE ANISOTROPIC GAIN: one 2x2 that treats yaw and pitch OPPOSITELY
+# --------------------------------------------------------------------------
+# ⭐⭐ THE STRUCTURAL ARGUMENT, AND IT IS THE OWNER'S (handoff §2.0.16). Yaw and
+# pitch have always demanded OPPOSITE corrections -- that is exactly what closed
+# the whole "weight z less" family ("yaw and pitch need opposite things from the
+# same coordinate"). But they foreshorten along PERPENDICULAR directions: a yaw
+# compresses the palm's WIDTH, a pitch its LENGTH. So a gain that depends on the
+# COMPRESSION DIRECTION psi can treat them differently with ONE model, which no
+# scalar can. psi is defined mod 180 deg, so its natural function is
+#
+#       g(psi) = a + b*cos(2*psi) + c*sin(2*psi)
+#
+# -- which is precisely the quadratic form of a SYMMETRIC 2x2 evaluated on that
+# direction. "Sinusoidal regression" and "a 2x2" are ONE object here, not two.
+#
+# ⭐ MEASURED NEED (per-recording fits, no cross-take contamination): the gain each
+# take wants AT THE PSI IT ACTUALLY EXERCISES is 1.15 yaw-like (psi~0) against 1.55
+# pitch-like (psi~90 deg). They genuinely differ.
+# ⭐ Fitted per recording: PITCH drift 76.4 -> 23.6 deg, YAW scatter 9.5 -> 7.4 deg.
+#
+# ⛔⛔ THE CAVEAT THAT MUST TRAVEL WITH IT: **b AND c ARE FITTED BUT UNCONSTRAINED.**
+# A yaw sweep never visits psi~90 and a pitch sweep never visits psi~0, so the corpus
+# pins the gain only at the two ENDPOINTS -- the pitch fit happily puts gain 0.15 at
+# a psi its recording never enters. Closing that needs a take exercising INTERMEDIATE
+# psi, which is why the live slider session is recorded: it IS the missing
+# measurement, not only a feel test.
+class AnisoParams:
+    """Live-tunable `(r0, a, b, c)` for the anisotropic normal rebuild.
+
+    A mutable holder ON PURPOSE: the debug tool's trackbars write into one of
+    these and the estimator reads it per frame, so what is on screen and what was
+    applied cannot disagree. Defaults are the IDENTITY (`r0=1, a=1, b=c=0`), which
+    reproduces T6c's parameter-free rebuild exactly -- so every existing caller
+    (`analysis/t5i_zscale_sweep.py`, `analysis/t5j_roll_axis.py`) is unaffected.
+
+    `enabled=False` bypasses the rebuild entirely, leaving the SHIPPED `Horn` on
+    raw world landmarks -- today's behaviour, byte for byte.
+    """
+
+    __slots__ = ("r0", "a", "b", "c", "enabled", "max_ratio")
+
+    def __init__(self, r0=1.0, a=1.0, b=0.0, c=0.0, enabled=True,
+                 max_ratio=REBUILD_MAX_RATIO):
+        self.r0 = float(r0)
+        self.a = float(a)
+        self.b = float(b)
+        self.c = float(c)
+        self.enabled = bool(enabled)
+        self.max_ratio = float(max_ratio)
+
+    def gain(self, psi):
+        """g(psi) = a + b*cos2psi + c*sin2psi."""
+        return self.a + self.b * math.cos(2.0 * psi) + self.c * math.sin(2.0 * psi)
+
+    def as_dict(self):
+        return {"r0": self.r0, "a": self.a, "b": self.b, "c": self.c,
+                "enabled": self.enabled, "max_ratio": self.max_ratio}
+
+    def key(self):
+        """Hashable snapshot -- for detecting that the operator moved a slider."""
+        return (self.r0, self.a, self.b, self.c, self.enabled, self.max_ratio)
+
+
+DEFAULT_ANISO = AnisoParams()
+
+
+# ⛔⛔ `c` (the sin2psi term) IS CHIRALITY-ODD, AND NOTHING ELSE HERE IS. psi is read
+# in the canonical model's frame; a LEFT palm is that model REFLECTED, so the shape
+# map absorbs the reflection and the same physical diagonal compression reports
+# `180 - psi`. cos2psi survives that (so `a` and `b` are chirality-blind) but sin2psi
+# CHANGES SIGN -- i.e. without folding, the diagonal term acts OPPOSITELY on the two
+# hands and a session that switches hands feels inconsistent for no visible reason.
+# ⚠ That is precisely the U7 class of defect ("every chirality-sensitive rule inverts
+# on a label MediaPipe gets confidently wrong"), so psi is folded into ONE convention
+# -- the apparent-RIGHT palm frame -- using U7's GEOMETRIC chirality, never the label.
+# ⚠⚠ WHICH hand is the reference is a CONVENTION, and its only effect is the SIGN OF
+# `c`. §2.0.16's per-recording fits predate this fold, and BOTH of its takes measure
+# as apparent-LEFT (973/975 and 1030/1075 frames) -- so **their published `c` must be
+# NEGATED** to be used here. `a`, `b` and `r0` are unaffected either way, and there is
+# a free check that they came across intact: psi = 0 and psi = 90 deg are the FIXED
+# POINTS of the fold, and the gains there reproduce §2.0.16's two measured endpoints
+# exactly (yaw g(0) = a+b = 1.15, pitch g(90) = a-b = 1.55).
+ANISO_FOLD_CHIRALITY = True
+
+
+def rebuild_terms(px, indices=PALM_LANDMARKS, model=None, params=None,
+                  mirrored=False):
+    """Everything the rebuild derives from the PIXELS, in one dict, or None.
+
+    ⭐ ONE implementation, read by both the estimator and the HUD. The project has
+    been bitten twice by a display (or a harness) RECOMPUTING what the pipeline
+    ran and silently disagreeing with it; `RebuiltNormalHorn` stores the dict it
+    actually used rather than inviting a second derivation.
+
+    Keys: `ratio` (sigma2/sigma1), `psi_deg` (compression direction, MODEL frame),
+    `tilt_raw_deg` (acos of the renormalised ratio), `gain` (g(psi)),
+    `tilt_deg` (what the normal is rebuilt to), `gated` (suppressed near face-on).
+    """
+    if model is None:
+        model = canonical_palm()
+    if params is None:
+        params = DEFAULT_ANISO
+    m = _shape_map(px, indices, model)
+    if m is None:
+        return None
+    axes = _shape_axes(m)
+    if axes is None:
+        return None
+    ratio, psi = axes
+    if mirrored:                       # into the apparent-RIGHT frame (see above)
+        psi = (math.pi - psi) % math.pi
+    # ⭐ r0 -- THE FACE-ON RENORMALISATION. `ratio` is NOT 1 on a physically face-on
+    # palm: the 2x2 must also absorb the difference between the OPERATOR's palm and
+    # the canonical model, and that shape difference is indistinguishable from
+    # compression. Measured on a roll take (palm face-on throughout): ratio 0.889.
+    # ⚠ §2.0.15 RETRACTED the mechanism (polar decomposition says the corpus-wide
+    # anisotropic shape error is ~0, so 0.889 was cancelling that take's OWN average
+    # tilt, not a shape mismatch) -- but the EFFECT survived re-testing, so r0 stays
+    # a knob and is not quoted as a shape constant.
+    r0 = params.r0 if abs(params.r0) > 1e-9 else 1.0
+    u = ratio / r0
+    gated = u > params.max_ratio
+    tilt_raw = math.acos(max(0.0, min(1.0, u)))
+    g = params.gain(psi)
+    tilt = max(0.0, min(math.pi / 2.0, g * tilt_raw))
+    return {"ratio": ratio, "psi_deg": math.degrees(psi),
+            "tilt_raw_deg": math.degrees(tilt_raw), "gain": g,
+            "tilt_deg": math.degrees(tilt), "gated": gated,
+            "mirrored": bool(mirrored)}
+
+
+def aniso_mirrored(world):
+    """True when this hand's psi must be folded -- U7's GEOMETRY, never the label.
+
+    `None` chirality (an exactly degenerate volume) means DO NOT FOLD rather than
+    guess, so the worst case is the unfolded behaviour and never a coin toss.
+    """
+    if not ANISO_FOLD_CHIRALITY:
+        return False
+    try:
+        return PG.geometric_chirality(world) == "Left"
+    except (IndexError, TypeError, ValueError):
+        return False
+
+
+def rebuild_world_normal(px, world, indices=PALM_LANDMARKS, model=None,
+                         params=None, _terms=None):
     """World landmarks with the palm plate rotated to the REBUILT normal.
 
     Returns `world` unchanged when the geometry is unusable, so the caller degrades
@@ -804,28 +986,37 @@ def rebuild_world_normal(px, world, indices=PALM_LANDMARKS, model=None):
     """
     if model is None:
         model = canonical_palm()
-    m = _shape_map(px, indices, model)
-    if m is None:
+    if params is None:
+        params = DEFAULT_ANISO
+    if not params.enabled:
         return world
-    ratio = _compression_ratio(m)
-    if ratio is None:
+    terms = (_terms if _terms is not None else
+             rebuild_terms(px, indices, model, params, aniso_mirrored(world)))
+    if terms is None:
         return world
     # ⛔⛔ REFUSE TO REBUILD NEAR FACE-ON, AND THE FIRST VERSION DID NOT -- it cost the
-    # ROLL bar (median 9.4 -> 21.9 deg). `theta = acos(ratio)` has UNBOUNDED
-    # sensitivity as ratio -> 1: `dtheta/dratio = -1/sqrt(1-ratio^2)`, which is 7.1 at
-    # ratio 0.99 against 1.4 at 0.70. A roll take holds the palm face-on THROUGHOUT,
+    # ROLL bar (median 9.4 -> 21.9 deg). `theta = acos(u)` has UNBOUNDED
+    # sensitivity as u -> 1: `dtheta/du = -1/sqrt(1-u^2)`, which is 7.1 at
+    # u 0.99 against 1.4 at 0.70. A roll take holds the palm face-on THROUGHOUT,
     # so the rebuild was recomputing a normal that should be STATIC from the noisiest
     # possible input. ⭐ Gating at 0.90 caps the amplification at ~2.3x and leaves the
     # normal alone where foreshortening cannot resolve it -- the house rule again:
     # SUPPRESS, DO NOT GUESS (DR-2, U8, 4.2 decision 1).
-    if ratio > REBUILD_MAX_RATIO:
+    # ⚠ T6d: the gate now reads the RENORMALISED ratio `u = ratio/r0`, not the raw
+    # one, because the amplification lives in `u` -- that is the quantity `acos` is
+    # applied to. At r0 = 1 (the slider's start value) this IS the shipped test, so
+    # nothing already measured moves; at r0 != 1 the gate follows the renormalisation
+    # instead of drifting away from it.
+    if terms["gated"]:
         return world
     n_meas = _palm_normal(world, indices)
     if n_meas is None:
         return world
-    # ⭐ magnitude from foreshortening; bearing AND SIGN from the measured normal
-    cos_t = max(0.0, min(1.0, ratio))
-    sin_t = math.sqrt(max(0.0, 1.0 - cos_t * cos_t))
+    # ⭐ magnitude from foreshortening (via the anisotropic gain); bearing AND SIGN
+    # from the measured normal -- the one half MediaPipe gets right (median 10.6 deg).
+    th_t = math.radians(terms["tilt_deg"])
+    cos_t = math.cos(th_t)
+    sin_t = math.sin(th_t)
     bx, by = n_meas[0], n_meas[1]
     bl = math.hypot(bx, by)
     if bl < 1e-9:
@@ -872,14 +1063,26 @@ class RebuiltNormalHorn:
     normal rebuild alone.
     """
 
-    def __init__(self, indices=PALM_LANDMARKS, mode="ref"):
+    def __init__(self, indices=PALM_LANDMARKS, mode="ref", params=None):
         self.indices = tuple(indices)
         self.inner = Horn(indices, mode)
         self.name = f"rebuilt_normal_{mode}"
         self.model = canonical_palm()
+        # ⭐ T6d: a LIVE parameter holder, not a copy of its values. The debug
+        # tool's trackbars mutate this object, so the estimator and the HUD read
+        # the same numbers by construction.
+        self.params = params if params is not None else AnisoParams()
+        # ⭐ WHAT WAS ACTUALLY APPLIED, stored rather than recomputed -- production
+        # learned this the hard way on 2026-08-22 (a recomputation is a second
+        # implementation that can silently disagree, and twice in one night it did).
+        self.last_terms = None
 
     def _c(self, px, world):
-        return rebuild_world_normal(px, world, self.indices, self.model)
+        terms = rebuild_terms(px, self.indices, self.model, self.params,
+                              aniso_mirrored(world))
+        self.last_terms = terms
+        return rebuild_world_normal(px, world, self.indices, self.model,
+                                    self.params, _terms=terms)
 
     def freeze(self, px, world):
         return self.inner.freeze(px, self._c(px, world))

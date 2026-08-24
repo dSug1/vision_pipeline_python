@@ -12,19 +12,23 @@ handoff, not a source of record: the record is `GESTURE_PIPELINE_SPEC.md`
 
 ---
 
-# ⭐⭐⭐ NEXT BUILD (2026-08-24) — T6d: THE ANISOTROPIC FIT, LIVE, WITH SLIDERS
+# ✅⭐⭐⭐ T6d IS BUILT (2026-08-24) — RUN IT. THE NEXT STEP IS A LIVE SESSION, NOT CODE.
 
 > **Owner:** *"The immediate next build will be a debug run which implements this
 > anisotropic fit, so I can feel the behaviour during run time. In this debug run,
 > add sliders to modify the anisotropic fit parameters, so I can modify them during
 > runtime and feel the resulting changes in behaviour."*
 
-⛔ **DO NOT start by re-deriving the theory. Read §2.0.16 first (the fit and its
-numbers), then §2.0.9/§2.0.12 (why it is shaped this way), then build.** Everything
-below already exists and is green.
+**HOW TO RUN IT.**
 
-**WHAT TO BUILD.** In `LiveSnapDebug.py`, run the **anisotropic normal rebuild** in
-place of raw `Horn`, with **four live sliders** and a toggle:
+```
+debug_snap.bat                                  # feel it, no capture
+LiveSnapDebug.py --record --tag t6d_psi_sweep   # ⭐ the one that MATTERS -- see below
+```
+
+A second window, **"T6d anisotropic fit -- sliders"**, carries the four parameters
+and the toggle. Keys in the video window: **`t`** toggles the rebuild, **`0` / `1` /
+`2`** load identity / the fitted yaw params / the fitted pitch params.
 
 | slider | meaning | range | start |
 |---|---|---|---|
@@ -34,42 +38,49 @@ place of raw `Horn`, with **four live sliders** and a toggle:
 | `c` | `sin 2ψ` term — the diagonal component | −0.80 – +0.80 | **0.00** |
 | toggle | rebuild ON / OFF, to A/B against shipped Horn live | — | **OFF** |
 
-⭐ **Start at identity (`r0=1, a=1, b=c=0`, toggle OFF) so the owner feels TODAY's
-behaviour first**, then dials. The fitted optima to try are in §2.0.16: the yaw
-recording wanted ≈ `r0 1.04, a 1.25, b −0.10, c +0.10`; the pitch recording wanted
-≈ `r0 1.04, a 0.85, b −0.70, c +0.40`.
+⭐ **The toggle starts OFF, and OFF is MEASURED to be the shipped estimator, not
+merely intended to be**: replaying `2026-08-23_203307_yaw_card_axis_check_b` through
+both gives **byte-identical cube orientations on 975/975 frames**, and 953/975 frames
+differ once it is switched on. So `t` is a true one-variable A/B.
 
-**THE MATHS IS ALREADY WRITTEN.** `palm_rotation.py` has `_shape_map`,
-`_compression_ratio`, `_palm_normal`, `rebuild_world_normal` and the
-`RebuiltNormalHorn` wrapper. Only two things are missing:
-1. `rebuild_world_normal` must take `(r0, a, b, c)` and use the **anisotropic** gain
-   `g(ψ) = a + b·cos2ψ + c·sin2ψ`, where **ψ is the compression direction in the
-   CANONICAL PALM frame** — the small right-singular direction of the shape map. ⚠ ψ
-   must be taken in the MODEL frame, not the image frame, or it drifts with how the
-   hand is held.
-2. the wrapper must read those four values live rather than from constants.
+⚠⚠ **CHANGING A PARAMETER WHILE A CUBE IS HELD GIVES THE CUBE A ONE-OFF OFFSET** and
+the HUD says so for two seconds. The grab reference was frozen under the old
+parameters and is not re-derived. **Release and re-grab after each change** — after
+that the behaviour is the new parameters', cleanly.
 
-**PUT ON THE HUD** (all of it is needed to interpret what the hand is doing):
-`ratio` (σ₂/σ₁), `ψ` in degrees, the raw tilt `acos(ratio/r₀)`, the applied gain
-`g(ψ)`, and the resulting tilt. Without ψ on screen the owner cannot tell which part
-of the 2×2 a given hand pose is exercising.
+⭐⭐ **THIS RUN IS NOT ONLY A FEEL TEST — IT IS THE MISSING MEASUREMENT, so use
+`--record`.** §2.0.16's gap is that a yaw sweep only exercises ψ≈0 and a pitch sweep
+only ψ≈90°, so `b` and `c` are **fitted but unconstrained**. ⭐ **Recording now stores
+per frame, per hand, the whole rebuild — `ratio`, `ψ`, raw tilt, gain, applied tilt,
+gated, mirrored — plus the parameters in force on that frame**, and `meta.json` gets
+`aniso_changes`, a stamped log of every slider move, so the take can be cut into
+per-setting segments. **What the corpus needs from the session is TIME SPENT AT
+INTERMEDIATE ψ**: hold the hand so the palm compresses along a DIAGONAL (turn *and*
+tip together) and sweep through it slowly.
+⭐ Measured coverage of the existing corpus, for comparison — this is the hole:
 
-⭐⭐ **AND THIS RUN IS NOT ONLY A FEEL TEST — IT IS THE MISSING MEASUREMENT.** §2.0.16
-closes with the one real gap: a yaw sweep only exercises ψ≈0 and a pitch sweep only
-ψ≈90°, so `b` and `c` are **fitted but unconstrained** (the pitch fit puts gain 0.15
-at a ψ its recording never visits). **Live hand exploration covers the intermediate
-ψ that no recording does.** ⭐ So **RECORD the session with the slider values in
-`meta.json`** — that take becomes the diagonal-ψ data the corpus lacks, and it is
-what would let the 2×2 be fitted as ONE object instead of inferred from two
-endpoints.
+| take | ψ 0–30° | 30–60° | 60–90° | 90–120° | 120–150° | 150–180° |
+|---|---|---|---|---|---|---|
+| yaw card b | 28.4% | 18.9% | 6.7% | 4.1% | 8.9% | **33.0%** |
+| pitch sweep slow | 0.7% | 13.2% | **39.8%** | **45.0%** | 1.0% | 0.2% |
 
-⚠ **KEEP IN SCOPE**: production is untouched, and this stays in `LiveSnapDebug.py`
-until the owner has felt it. ⚠ **Jitter is deliberately deferred** (owner) — and
-note it has only ever been measured RAW, bypassing the shipped `orientation_filter`,
-so the recorded 25.5 → 31–34° regressions are measured at the wrong point in the
-pipeline. ⚠ **Roll is not a target** (owner: *"roll is not an issue"*) — guard it
-only against blowing up via the palm-facing degeneracy or a division by zero, both
-of which `rebuild_world_normal` already returns unchanged on.
+⭐⭐ **AND THAT TABLE IS ALSO THE PROOF THAT ψ IS DEFINED CORRECTLY.** It is not a
+plausibility argument: a yaw take piles up at ψ≈0/180 and a pitch take at ψ≈90, from
+the pixels alone, exactly as the model-frame definition predicts. ψ is also verified
+**invariant under in-plane roll** on synthetic input (0.0° drift across 0/35/95° of
+roll), which is what a MODEL-frame reading buys and an image-frame one would not.
+
+**WHAT TO JUDGE.** The complaint is that the object **LEANS as it turns** (§1). So
+the question is *"does the cube stay upright through a 60–90° turn?"*, on `t`,
+against the same turn a second earlier. ⚠ Not jitter (out of scope, owner), not roll
+(*"roll is not an issue"*), and not the rotation AMOUNT, which was already fine
+(gain 1.13).
+
+⚠ **PRODUCTION IS UNTOUCHED.** `HandsTriggeredActions.py` still builds a plain
+`Horn`; every one of the 23 golden-vector suites passes and `parity_replay` reports
+no divergence.
+
+⭐ **What was built, and the three decisions inside it, are recorded in §2.0.17.**
 
 ---
 
@@ -918,6 +929,160 @@ at ψ=0, a region that recording never enters. ⚠ **So these are two valid
 single-direction calibrations, NOT yet one validated 2×2.** ⭐ What is needed to close
 it is a take that exercises INTERMEDIATE ψ — a diagonal tilt sweep — or a joint fit
 that constrains each take only at its own ψ. **That is the next recording to make.**
+
+### 2.0.17 ✅ T6d BUILT — what it is, and the four decisions that are NOT in §2.0.16
+
+**WHERE IT LIVES.** `Resources/palm_rotation.py` — `_shape_axes` (ratio **and** ψ),
+`AnisoParams` (the live `r0, a, b, c` holder), `rebuild_terms` (one function, read by
+the estimator, the HUD and the recorder alike), `rebuild_world_normal(..., params)`,
+and `RebuiltNormalHorn(params=...)`. `LiveSnapDebug.py` — the slider window, the two
+HUD rows, the keys, and the recording fields. **Production imports none of it.**
+
+⭐⭐ **DECISION 1 — ψ COMES FROM THE PRINCIPAL-AXIS CLOSED FORM, NOT FROM SOLVING AN
+EIGENVECTOR ROW, and the obvious way is silently wrong.** The textbook
+`v = (b, λ₂ − a)` is exact and useless here: whenever the compression aligns with the
+model axes — i.e. for a **pure yaw or a pure pitch, the two cases this whole model
+exists to separate** — both components collapse to rounding error and the direction
+is noise. Measured on synthetic input: a pure 60° yaw reported **ψ = 163° instead of
+0°**. `ψ = ½·atan2(2b, a−c) + 90°` has no such cancellation. ⚠ **A future port must
+carry the closed form, not "simplify" it back** — the failure is invisible except at
+exactly the poses that matter.
+
+⭐⭐ **DECISION 2 — ψ IS FOLDED BY CHIRALITY, BECAUSE `c` IS CHIRALITY-ODD AND NOTHING
+ELSE IS.** A left palm is the canonical model REFLECTED, so the shape map absorbs the
+reflection and the same physical diagonal reports `180 − ψ`. `cos2ψ` survives that
+(`a`, `b`, `r₀` are chirality-blind) but **`sin2ψ` CHANGES SIGN** — so without
+folding the diagonal term acts **oppositely on the two hands**, and a session that
+switches hands feels inconsistent with nothing on screen to explain it. That is the
+U7 class of defect exactly, so ψ is folded into one convention (the apparent-RIGHT
+palm frame) using U7's **geometric** chirality, never the label
+(`palm_rotation.ANISO_FOLD_CHIRALITY`, and `aniso_mirrored` returns *do not fold*
+rather than guessing when the volume is degenerate).
+
+⚠⚠ **AND THAT MEANS §2.0.16's PUBLISHED `c` MUST BE NEGATED, WHICH IS WHY THE PRESETS
+DO NOT MATCH THE NUMBERS ABOVE.** Its fits predate the fold, and **both of its takes
+measure as apparent-LEFT on 973/975 and 1030/1075 frames** — so their `c` is stated
+in the opposite convention. Presets carry `yaw c = −0.10`, `pitch c = −0.40`.
+⭐ **`a`, `b`, `r₀` need no translation, and there is a clean check that they came
+across intact**: ψ = 0 and ψ = 90° are the **fixed points of the fold**, so the gains
+there are chirality-blind — and the presets reproduce §2.0.16's two measured
+endpoints exactly, `yaw g(0) = a+b = 1.15` and `pitch g(90) = a−b = 1.55`.
+⭐ `c` is also the parameter §2.0.16 calls least constrained, so of the four its sign
+matters least — **and pinning it is what the slider session is for.**
+
+⭐ **DECISION 3 — THE FACE-ON GATE NOW READS THE RENORMALISED RATIO `u = ratio/r₀`,
+not the raw one.** The unbounded sensitivity `dθ/du = −1/√(1−u²)` lives in `u`, since
+`u` is what `acos` is applied to; gating the raw ratio while renormalising by `r₀`
+would leave the gate drifting away from the region it exists to protect. ⭐ At
+`r₀ = 1` (the slider's start) this **is** the shipped test, so nothing already
+measured moves.
+
+⚠ **DECISION 4 — `recorder_schema` STAYS 3.** The schema marker is a contract
+*between the two recorders* (`verify_recorder_parity` asserts both stamp the same
+number) and production does not run T6d at all, so bumping it in one tool would claim
+a shared format that does not exist. The T6d fields are additive and marked by
+`aniso_debug: 1`; every existing `t5*`/`verify` harness reads these takes unchanged.
+
+**WHAT IS GREEN.** All 23 golden-vector suites pass (`verify_palm_rotation`,
+`verify_planar_pnp`, `verify_recorder_parity` among them); `parity_replay` reports no
+divergence; and the toggle-OFF path is measured byte-identical to shipped `Horn` over
+975 frames.
+
+⚠ **WHAT IS NOT MEASURED, and must not be claimed**: nothing here has been through
+A10. The slider run is a **feel test plus a data capture**; the numbers that would
+accept or reject the anisotropic correction come afterwards, from the recording it
+produces.
+
+### 2.0.18 ⚠ FIRST LIVE SESSIONS (2026-08-24) — four takes, and the INSTRUMENT was the finding
+
+**Takes, all on E:, all schema 3 + `aniso_debug`:** `2026-08-24_202454_t6d_psi_sweep`
+(3665 f), `_203927_t6d_ab_before_after` (3396 f), `_204928_t6d_ab_before_after_b`
+(3779 f), `_205729_t6d_ab_ghost` (3683 f). ⛔ **No A10 verdict was reached** — the
+sessions were spent finding out that the rig could not be read.
+
+⛔⛔ **FINDING 1 — THE TOGGLE IS THE WRONG CONTROL, AND THE FIRST TAKE PROVES IT.**
+The owner made **150 logged slider moves — r0, then a, then b, then c,
+methodically — with the rebuild OFF the entire time**, so not one of them changed
+the cube; only **227 of 3665 frames** ever ran the rebuild. A grey "rebuild off"
+caption was not enough. ⭐ **A control that silently does nothing must SAY SO at the
+moment it is touched** — there is now a red on-panel banner and a console line. ⭐⭐
+And the real remedy is the **`--aniso-ab` rig**: two panels off one camera, panel 1
+= shipped Horn, panel 2 = the rebuild, sliders driving panel 2 only. **Separating
+two behaviours in TIME asks the operator to remember a feeling; separating them in
+SPACE does not.**
+
+⛔⛔ **FINDING 2 — "I CAN'T SEE ANY DIFFERENCE" WAS CORRECT, AND THE NUMBER EXPLAINS
+IT.** On `_204928`, both panels holding the same cube for 3553 frames:
+
+| | |
+|---|---|
+| cube **position** difference between panels | **0.000 px** (max 0.000) |
+| cube **orientation** difference | median **4.83°**, p90 17.4°, max 28.4° |
+| frames differing by < 1° | **1.6%** |
+
+⭐ And it is **FLAT across palm tilt** — median 5.3 / 4.9 / 5.9 / 4.5 / 4.2 / 4.3°
+over the 0–15 … 75–90° bands. There is no regime where it becomes obvious.
+⚠⚠ **~5° of rotation on a 40–80 px cube, split across two windows, is below what an
+eye can resolve.** The estimator was diverging the whole time and the instrument
+could not show it.
+⭐⭐ **THE FIX RIDES ON THE POSITION PARITY**: because both cubes sit in bit-identical
+places, they can be **SUPERIMPOSED** — panel 2 now draws panel 1's cube as a yellow
+**wireframe cage** over its own solid one, plus a live `cage vs solid` angle. Any
+gap between cage and solid IS the estimator difference, since position, depth, size
+and translation are identical by construction. ⭐ **Report the number as well as
+drawing it**: "no visible difference" and "no difference" are different claims, and
+this project has already been burned four times from the other direction (a harness
+reporting CLEAN on a take the owner had watched fail).
+
+⚠ **FINDING 3 — THE GRAB-REFERENCE CANCELLATION, which is why 4.83° is small.** Horn
+is grab-REFERENCED and each arm freezes its own reference *through its own
+estimator*, so a constant tilt bias largely cancels between reference and current
+frame. **The rebuild can only show up in what does NOT cancel** — the pose-dependent
+part. That is consistent with the defect being a DRIFT, and it means an A/B judged
+at small turns will always look like a null.
+
+⚠ **FINDING 4 — TOGGLING OFF DOES NOT UNDO.** On `_202454` the cube first differed
+from shipped Horn at frame 2663 (the toggle going on) and **stayed different to the
+end of the take**, though the toggle went back off at 2890: the cube's orientation
+is integrated, so an applied offset persists until it is re-grabbed. Do not read a
+panel straight after a toggle.
+
+### 2.0.19 ⛔ THE "STRONGER SLERP" — IT IS THE CAMERA'S FRAME RATE, NOT THE CODE
+
+The owner reported the cube lagging more than on branch `1.7.-24-Z-axis-depth`.
+Measured from each recording's own capture clock:
+
+| take | frame gap | fps | gap, NO hand | gap, hand present |
+|---|---|---|---|---|
+| `..._211528_roll_card_axis_check_b` (23rd) | **48.0 ms** | 20.8 | — | 48.0 |
+| `..._203307_yaw_card_axis_check_b` (23rd) | **64.0 ms** | 15.6 | — | 64.0 |
+| `..._202454_t6d_psi_sweep` (24th) | 64.1 ms | 15.6 | 64.1 | 64.1 |
+| `..._203927_t6d_ab_before_after` (24th) | 64.0 ms | 15.6 | 64.1 | 64.0 |
+
+⭐⭐ **TWO THINGS SETTLE IT.** (1) **The gap is the same with and without a hand**
+(64.1 vs 64.0) — MediaPipe's landmark pass and the whole gesture path only run when
+a hand is present, so if computation were the limit those columns would differ. The
+loop is waiting on the CAMERA. (2) **`yaw_card_axis_check_b` already ran at 64.0 ms**
+and it predates all of T6d — the slower feel reproduces on the old branch.
+⭐ The values are exact and quantised, the signature of a DSHOW webcam stepping its
+frame interval under **auto-exposure** (darker room → longer exposure → 15.6 fps).
+
+⛔⛔ **AND THE REASON IT READS AS "MORE SLERP" IS A REAL DEFECT, JUST NOT THIS ONE.**
+`cube.orientation = _quat_slerp(..., ROTATION_SLERP_FACTOR)` uses a fixed **PER-FRAME**
+factor with **no `dt`**, so the time constant is 2.32 *frames* — whatever the camera
+makes it: **111 ms at 48 ms/frame, 149 ms at 64 ms/frame. +34% of lag from lighting.**
+⚠ For a game targeting phones and desktops ([[target-cross-platform-app-deployment]])
+this is first-order: the feel constant the owner tuned is only valid at the frame
+rate it was tuned at. ⭐ The fix is `factor = 1 − exp(−dt/τ)` with τ ≈ 111 ms (to
+reproduce the 20.8 fps feel) or ≈ 149 ms (the 15.6 fps one). **NOT BUILT — it
+re-tunes a by-feel constant, which is the owner's call, and changing it mid-A/B
+would confound the comparison.**
+
+⚠ Also fixed here: `meta.json` recorded `"arms": args.arms` — the FLAG, not the
+panels built — so a two-panel T6d take claimed one arm while `cubes` was keyed by
+arm index. A reader trusting it would have stopped at panel 1 and never seen the arm
+the session existed to test. It now stores the real count, the rig name and each
+panel's estimator.
 
 ### 2.1 ⚠ PARTLY SUPERSEDED BY §2.0 — the earlier "camera tilt is not a cause" test
 
