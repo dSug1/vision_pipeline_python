@@ -139,10 +139,10 @@ def main():
     print(f"     {'arm':>12s}  {'MEAN':>7s}  {'MEDIAN':>7s}  {'gain':>6s}  {'n':>5s}")
     print("     " + "-" * 44)
     arms = [("horn", PR.Horn(PR.PALM_LANDMARKS, "ref")),
+            ("REBUILT", PR.RebuiltNormalHorn()),
+            ("gated", PR.GatedHorn()),
             ("pnp", PR.PlanarPnP()),
-            ("pnp+reref", PR.PlanarPnP(reref=True)),
-            ("pnp+T60", PR.PlanarPnP(with_thumb=True, thumb_z_m=0.060)),
-            ("pnp+T60+rr", PR.PlanarPnP(with_thumb=True, thumb_z_m=0.060, reref=True))]
+            ("pnp+T60", PR.PlanarPnP(with_thumb=True, thumb_z_m=0.060))]
     for label, horn in arms:
         st = horn.freeze(*frames[ref])
         if st is None:

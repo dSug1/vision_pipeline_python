@@ -177,6 +177,10 @@ def main():
         # ⭐⭐ T6b: Horn UNCHANGED, fed geometrically gated world z. Keeps the
         # five-point averaging that makes Horn stable, removes only the bias.
         arms.append((" GATE", PR.GatedHorn(), None))
+        # ⭐⭐ T6c: Horn UNCHANGED, fed a palm normal rebuilt from the two halves
+        # measured to be reliable -- bearing+sign from MediaPipe, MAGNITUDE from
+        # depth-free foreshortening.
+        arms.append((" REBLD", PR.RebuiltNormalHorn(), None))
         # ⭐⭐ THE 6-POINT ARMS. A PLANAR model is degenerate for depth-from-2D by
         # construction; THUMB_CMC sits off that plane and breaks it. Its OFF-PLANE
         # depth is the one quantity face-on 2D cannot reveal, so it is SWEPT rather

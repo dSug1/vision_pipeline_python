@@ -426,6 +426,333 @@ well-conditioned frame, never from migrating to one.
 ⚠ Both trade a managed, brief discontinuity for a correct axis. Which is acceptable
 is a FEEL question and therefore the owner's, not a measurement's.
 
+⭐⭐ **OWNER DECISION 2026-08-24: option 2 (RE-REFERENCE WITH A BLEND) IS THE FAVOURED
+FALLBACK.** ⚠⚠ **WITH A CAVEAT THAT MUST BE DESIGNED FOR NOW, NOT DISCOVERED LATER**:
+*"currently we grab with open hand in proximity of the cube, but the re-reference
+with a blend method may be impacted if we change the method of grab later on (for
+example, if we grab by closing the fingers, we need a re-reference with a blend which
+is compatible with fingers positions changing during the grab frames)."*
+⭐ **Why that bites specifically**: the blend assumes the constellation it references
+is RIGID across the blend window. That holds for `PALM_LANDMARKS` today — the palm is
+rigid to 2.76 mm and the grab is an open-hand proximity trigger, so nothing moves.
+⛔ **It stops holding the moment the grab gesture itself deforms the hand** — a
+close-the-fingers grab changes finger landmarks *during* exactly the frames the
+re-reference would run in. ⭐ Two consequences to carry into **4.4 + B5** (the
+grab/release-from-arcs project, which is where a finger-based grab would arrive):
+**(a)** the re-reference must key on the **rigid palm plate only**, never on anything
+finger-derived, so that a deforming grab cannot corrupt it; **(b)** the blend window
+must not overlap the grab transient — either delay it until the fingers settle, or
+gate it on the arcs being stable. ⚠ Note this is also why `PALM_AND_TIPS` was
+rejected (B4: finger motion fitted as rotation) — the same failure mode arriving
+through a different door.
+
+### 2.0.9 ⭐⭐⭐ THE BIAS **IS** A REPEATABLE FUNCTION OF POSE — but only within one recording
+
+⭐⭐ **THE OWNER'S EXPERIMENT, AND IT IS THE RIGHT DESIGN.** The camera is FIXED for
+the duration of one take, so any camera pitch/roll is a CONSTANT there and cannot
+explain variation *inside* it. That converts an unanswerable cross-take question into
+an answerable within-take one. Sweep takes revisit the same poses 9–12 times, so
+"does the same pose give the same bias every time it recurs?" is directly measurable.
+
+**YAW clean — the cleanest case:**
+
+| pose bin | bias | within-bin scatter | 1st half | 2nd half | out vs return |
+|---|---|---|---|---|---|
+| 40–60° | 27.0° | 3.5° | 27.1 | 27.1 | 3.0 |
+| 60–80° | 22.6° | 5.0° | 24.4 | 19.2 | 0.9 |
+| 80–100° | 17.0° | 2.7° | 17.4 | 15.7 | 1.5 |
+| 120–140° | 11.2° | 1.9° | 13.8 | 10.0 | 0.4 |
+
+⭐ Between-bin spread **15.8°** against a within-bin scatter of **3.1°** — ratio
+**5.17**. The bias is repeatable at a fixed pose, varies systematically with pose,
+agrees across the first and second halves of the recording, and shows **no
+hysteresis** (outbound vs return 0.4–3.0°). ⭐ Same verdict on YAW-cube (**4.32**),
+PITCH-validated (**4.08**) and PITCH-suspect (**5.19**).
+⛔ The lone failure is **YAW-card (1.44)** — the take the owner had to contort for,
+and whose halves disagree by 14–25°. Consistent with everything else known about it.
+⚠ Note the bias *falls* as the turn grows (27° → 11°); the within-bin scatter of
+1.9–3.5° rules out the axis noise floor as the explanation.
+
+⛔⛔ **BUT THE OBVIOUS EXPLOITATION DOES NOT WORK — the SHAPE does not transfer.**
+The natural model is `bias(pose) = f(pose) + C_session`, with `f` a property of
+MediaPipe (learnable offline from scripted takes, where the true axis IS known) and
+`C_session` the unmeasurable camera tilt (one number, estimable per session). Tested
+by removing each take's own mean and comparing only the shape:
+
+| | YAW | PITCH |
+|---|---|---|
+| shape amplitude | 21.7° | 14.5° |
+| worst disagreement | **13.4°** | **13.4°** |
+
+**Refuted in both groups.** ⚠ The YAW comparison rests on only **3 shared pose bins**,
+so it is thin — but PITCH has 6 and fails just as clearly.
+⭐ A plausible reading: MediaPipe's depth error is a function of the hand's pose
+**relative to the CAMERA**, so moving the camera does not merely offset the curve, it
+**re-indexes** it. That would explain both results at once.
+
+⭐⭐⭐ **THE CONSEQUENCE, AND IT IS THE MOST ACTIONABLE THING IN THIS FILE.** The bias
+is real, systematic and pose-indexed — but its map is **per-session** and therefore
+**cannot be learned offline and shipped**. Correcting it requires ground truth *in
+that session*, i.e. frames where the INTENDED axis is known. **That is a calibration
+motion** — "turn your hand about the vertical" at the start — which is exactly
+**U12**, and it now carries a **hard technical justification instead of a playability
+one**. ⚠ It is also the one thing the owner's progressive-enrolment idea cannot do
+unaided: enrolment can measure hand SHAPE from ordinary play, but a bias map needs a
+known intended axis, and only a deliberate motion supplies that.
+
+### 2.0.10 ⛔ REGRESSION ON THE BIAS — the k family STAYS dead, and a harness bias was found
+
+**FAMILY A — the physical model.** The mechanism is that MediaPipe inflates the
+palm's out-of-plane extent, so `z_measured = k·z_true` is the one-parameter model
+that folds the session constant into `f`. Swept finely, every take, optimum per take:
+
+| take | k=1 (ships) | best k | best dev |
+|---|---|---|---|
+| YAW clean | 15.3° | 0.35 | 7.5° |
+| YAW cube | 42.1° | 0.00 | 15.7° |
+| YAW old | 35.7° | 0.00 | 14.4° |
+| **PITCH valid** | 13.8° | **1.15** | 12.2° |
+| PITCH suspect | 26.2° | 1.15 | 25.6° |
+
+⛔ **Optima span 0.00 – 1.95, and yaw wants k < 1 while pitch wants k > 1.** The best
+compromise (k=0.85) buys −2.0/−0.9/−3.1 on the yaw takes and **costs +2.3 on the
+validated pitch take**. ⭐⭐ **So the recorded rejection of the "weight z less" family
+STANDS, now on six takes and a fine sweep rather than two takes and six k values.**
+
+⛔⛔ **AND A SELECTION BIAS IN THE HARNESS WAS FOUND ALONG THE WAY — IT NEARLY
+PRODUCED A FALSE RE-OPENING.** The first pass gated frames on the **FITTED** rotation
+magnitude. **Scaling z SHRINKS the fitted angle**, so a fixed fitted-angle floor
+admits a *different subset of frames at every k* — the arms are not scored on like
+with like. Under that biased gate k=0.40 looked like a triumph (**YAW clean
+14.9 → 4.6**). Re-gated on the depth-free **TRUE** foreshortening angle, which does
+not move with k, the same take reads **15.3 → 13.4** and the effect evaporates.
+⚠ **`analysis/t5i_zscale_sweep.py` HAS THIS BIAS** (`MIN_ANGLE_DEG` is applied to the
+fitted angle). ⭐ The *conclusion* is unaffected — both gates reject the k family —
+but the *numbers* are not comparable, and the validated pitch take's k=1 baseline
+moves **5.4° → 13.8°** purely with the gate. That is trap #3 again: **print the
+aggregation, and never compare figures produced under different gates.**
+
+**FAMILY B — the empirical model.** `bias(pose)` regressed on
+`[1, cos p, sin p, cos 2p, sin 2p]`, with the constant absorbing the unknown camera
+term. ⛔ **Own-fit RMS (0.5–1.8°) is not evidence** — five free parameters on six to
+nine binned points will always fit. On the transfer test that matters, using another
+take's SHAPE and refitting only the constant, the residual runs **25–46% of the
+take's own spread** among the trusted takes (e.g. PITCH-valid shape → YAW-clean,
+7.2° against a 15.8° spread) and **exceeds the spread** wherever an anomalous take is
+involved. ⭐ **Partial and real, not universal** — the shape explains perhaps half the
+pose dependence. ⚠ Family B has NOT yet been re-run under the corrected gate; given
+how much the gate moved Family A, it must be before anything is built on it.
+
+### 2.0.11 ⭐⭐ THE DISTORTION MEASURED AT SOURCE — and why a scalar model cannot hold it
+
+⭐⭐⭐ **THE MEASUREMENT TRICK THAT SHOULD HAVE COME FIRST.** Instead of fitting the
+rotation-axis bias (which needs a known true axis, only exists above the axis noise
+floor, and is polluted by the unknown camera pose), measure the distortion at its
+source: `theta_measured = f(theta_true)`, where
+* `theta_true` is the palm's tilt from face-on, **depth-free**, from the projected
+  palm AREA (a planar patch projects as `area_faceon · cos θ`) — pixels only, works
+  for tilt about ANY axis, needs no scripted motion;
+* `theta_measured` is the angle between MediaPipe's world palm normal and the camera
+  axis.
+⭐⭐ **BOTH ARE CAMERA-RELATIVE, SO THE UNKNOWN CAMERA TILT CANCELS EXACTLY** — the
+thing that wrecked every cross-session comparison simply drops out. **58 sessions,
+21 761 frames**, versus the handful of scripted takes everything else used.
+
+| true tilt | measured (median) | IQR |
+|---|---|---|
+| 0–5° | **28.0°** | 22.5° |
+| 10–15° | **42.9°** | 24.7° |
+| 30–35° | 23.7° | 20.3° |
+| 60–65° | 53.5° | 22.0° |
+| 85–90° | 74.5° | 24.3° |
+
+⭐ **The face-on defect is confirmed at corpus scale**: a palm that is physically
+square to the lens is reported tilted **28°**. ⛔ **But the curve is NON-MONOTONIC**
+(rises to 42.9° by 15°, falls to 23.7° by 35°, climbs again to 74.5°).
+
+**Model fits to the binned medians** (the owner asked for a sinusoidal combined with
+the `z = k·z_true` inflation):
+
+| model | RMS |
+|---|---|
+| A `tan θm = 0.236·tan θt + 0.535` — the mechanistic z-inflation-plus-offset | 7.34° |
+| B `θm = 0.471·θt + 19.8` — affine | 8.47° |
+| **C `θm = −21.0·sin(2.60·θt + 0.40) + 46.9`** — ⭐ the owner's sinusoidal | **5.33°** |
+| D `θm = 35.1·sin θt + 18.6` | 10.24° |
+
+⭐ **The sinusoidal form does fit best** — but on **4 parameters against A's 2**, and
+what it is fitting is the U-shape, not a saturation.
+
+⛔⛔ **AND IT IS NOT A LAW, FOR TWO REASONS THAT MATTER MORE THAN THE RMS.**
+**(1)** The per-frame **IQR is 16–41°** at every true tilt — the fits are to binned
+MEDIANS, and the underlying data scatters several times wider than the model spans.
+**(2)** Refitting A per session gives **k: p10 0.00, median 0.48, p90 0.94** — the
+"constant" spans nearly its whole plausible range across sessions.
+
+⭐⭐⭐ **THE DIAGNOSIS, AND IT TIES EVERY PREVIOUS RESULT TOGETHER: THE MODEL IS
+UNDER-PARAMETERISED, NOT NECESSARILY WRONG.** `theta_true` is a SCALAR — tilt
+magnitude — and it throws away the tilt **DIRECTION** (which way the palm leans).
+That single omission explains all three standing observations at once:
+* **within a scripted sweep the bias is highly repeatable** (§2.0.9, ratio 5.17)
+  — because a single-axis sweep holds the tilt DIRECTION fixed;
+* **across recordings nothing transfers** (§2.0.9, §2.0.10) — because the direction
+  differs;
+* **the per-frame scatter here is enormous** — because pooling all directions into
+  one scalar bin mixes systematically different distortions.
+⭐ **NEXT MODEL: treat the tilt as a 2-VECTOR** (the palm normal's projection in the
+image plane — magnitude *and* direction) and fit `normal_measured = F(normal_true)`
+as a 2D→2D map. That is the smallest model that can hold what the scalar cannot, and
+it remains camera-cancelling.
+⚠ **NOT YET RUN: Family B (§2.0.10) under the corrected gate.** This measurement was
+prioritised over it as strictly more informative; the re-run is still owed.
+
+### 2.0.12 ⭐⭐⭐ THE DISTORTION AS A 2-VECTOR — one big finding, and the regression line closed
+
+Tilt taken as a 2-vector (magnitude **and** direction), both recovered depth-free from
+the 2×2 shape map that carries the canonical palm onto the observed pixels: the
+compression RATIO `σ₂/σ₁ = cos θ_true` and the small singular direction `φ_true`.
+⭐ Using the ratio rather than the projected area removes the per-session face-on
+reference the previous pass needed — area conflates compression with distance.
+**19 064 frames, 62 sessions.**
+
+⭐⭐⭐ **THE FINDING WORTH KEEPING, AND IT IS NEW: MEDIAPIPE GETS THE TILT *DIRECTION*
+RIGHT.** `|φ_measured − φ_true| mod 180` is **median 10.6°** (p25 4.6°) against 45°
+for chance. **So the palm normal's BEARING is trustworthy and only its out-of-plane
+MAGNITUDE is corrupt.** That collapses the defect from "3D orientation is wrong" to
+**one scalar per frame**, which is a far smaller problem than anything assumed so far.
+
+⛔⛔ **BUT MY DIAGNOSIS THAT DIRECTION WAS THE MISSING VARIABLE IS REFUTED.** Binning
+by direction reduces the magnitude IQR by a mean of **1.3°**, and in the 50–60° band
+it makes it *worse* (10.8° pooled → 16.4° within-band).
+
+| model | params | RMS | variance explained |
+|---|---|---|---|
+| predict the mean | 1 | 19.6° | — |
+| θ only, affine | 2 | 11.5° | 41.2% |
+| θ only + sin θ | 3 | 11.5° | 41.6% |
+| + direction, linear | 4 | 10.0° | 49.1% |
+| **sinusoidal in both** | 7 | **9.6°** | **51.1%** |
+
+⚠ **The sinusoidal terms buy almost nothing** over affine (41.6 vs 41.2 alone; 51.1
+vs 50.2 with direction) for triple the parameters. The best model leaves **RMS 9.6°**
+— about half the scatter — which is far too coarse to invert into a rotation fix.
+
+⛔⛔ **AND PER-SESSION CALIBRATION CANNOT RESCUE IT EITHER.** Removing each session's
+own mean residual takes 9.6° → **8.5°**: session constants explain only **12%** of
+what is left, offsets spanning −12.8..+8.1°. **The residual is WITHIN-session**, so no
+calibration gesture, however good, can reach it.
+
+⭐⭐ **CONCLUSION: THE REGRESSION LINE IS CLOSED for these features.** The distortion
+is not a law of (tilt, direction) — roughly half of it is, and the rest is not
+predictable from the palm geometry we can observe. ⚠ Untested features that could
+hold the remainder: hand distance, in-plane rotation, finger configuration, detector
+confidence. None is obviously promising.
+
+⭐⭐⭐ **WHAT THE DIRECTION FINDING OPENS INSTEAD — a narrow, well-posed fix that no
+previous attempt tried.** If the normal's **bearing is reliable** and its **magnitude
+is not**, then rebuild the palm's orientation from two trustworthy halves:
+* **bearing** — from MediaPipe's world normal (median 10.6° error);
+* **magnitude** — from the **foreshortening ratio** `θ = acos(σ₂/σ₁)`, which is
+  depth-free and never touches the corrupt coordinate.
+⭐ That is a **two-line correction to the normal**, not a new estimator, and it keeps
+Horn's five-point averaging intact — the property §2.0.2 identified as the reason
+Horn is stable and every PnP variant is not. ⚠ It is the first candidate that uses
+only quantities now *measured* to be reliable.
+
+### 2.0.13 ⛔ T6c — THE "TRUSTWORTHY HALVES" REBUILD: best yaw yet, still an A10 reject
+
+`palm_rotation.rebuild_world_normal` + `RebuiltNormalHorn`. Horn untouched; the palm
+plate's WORLD points are rotated so the normal matches one rebuilt from the two
+halves measured reliable in §2.0.12 — **bearing and SIGN from MediaPipe** (median
+10.6° error), **MAGNITUDE from depth-free foreshortening** (`θ = acos(σ₂/σ₁)`).
+⭐ The halves are genuinely complementary: foreshortening cannot give the sign
+(±θ project identically), and only the measured normal can.
+
+| bar | Horn (ships) | REBUILT (gated) |
+|---|---|---|
+| **YAW mean / median** | 14.5 / 13.0 | ⭐ **10.5 / 10.3** |
+| PITCH (08-02) mean / median | **5.5** / 20.2 | 6.3 / **19.5** |
+| **ROLL mean / median** | **6.7 / 9.4** | ⛔ 12.5 / 21.8 |
+| **JITTER p95 (production)** | **25.51** | ⛔ 31.48 |
+
+⭐ **The best yaw result of any arm tried** — and yaw is the show-stopper. ⛔ **But
+roll and jitter regress, so it is a reject.**
+
+⚠ **AN INTERMEDIATE FIX THAT WORKED, worth keeping**: the ungated first version cost
+pitch (5.5 → 10.1) and roll (9.4 → 21.9) because `θ = acos(ratio)` has UNBOUNDED
+sensitivity as ratio → 1 (`dθ/dratio` is 7.1 at 0.99 vs 1.4 at 0.70) — it was
+recomputing a normal that should be static from the noisiest possible input. Gating
+at ratio > 0.90 recovered **pitch to 6.3°**. ⭐ Suppress-don't-guess, again.
+
+⛔⛔ **BUT ROLL DID NOT RECOVER, AND THE REASON IS THE REAL FINDING: THE COMPRESSION
+RATIO IS CONTAMINATED BY SHAPE MISMATCH.** Measured ratio distributions:
+
+| take | ratio median | implied tilt | gate blocks |
+|---|---|---|---|
+| **roll — palm FACE-ON throughout** | **0.889** | **27°** | only 36% |
+| yaw sweep | 0.659 | 49° | 3% |
+| production | 0.753 | 41° | 12% |
+
+`t5j` independently measures that roll take at width collapse **0.904** and length
+collapse **0.891** — i.e. almost no foreshortening. **A physically face-on palm reads
+as 27° tilted**, because the 2×2 map must absorb the difference between the
+OPERATOR'S palm and the CANONICAL model, and that shape difference is
+indistinguishable from compression. The gate then barely fires, and the rebuild
+injects a tilt that does not exist.
+
+⭐⭐⭐ **SO THE METHOD IS NOT REFUTED — ITS REFERENCE IS.** The correction needs
+`σ₂/σ₁` measured against **that operator's own face-on palm**, not against a corpus
+median. That is precisely the owner's progressive-enrolment idea, and for this method
+it is **not an optimisation but a precondition**: enrolment measured feasible
+earlier — usable samples at ~10% of real-play frames, converging in 40–860 frames,
+and between-session signal 2.8× within-session. ⚠ **Next step: re-run T6c with a
+per-session face-on reference shape** before judging the approach.
+
+### 2.0.14 ⭐⭐⭐ PARAMETERISING THE INVERSION — §2.0.13's REJECT IS OVERTURNED
+
+⚠⚠ **§2.0.13 REJECTED T6c ON A PARAMETER-FREE INVERSION AND THAT WAS TOO HASTY.**
+It used `θ = acos(σ₂/σ₁)` — a rigid choice with no freedom — and then judged the
+METHOD by it. Owner's objection, and it was correct. Fitting the inversion against
+the A10 bars themselves (there is no independent ground truth for θ, so any proxy
+would be circular) changes the outcome.
+
+⭐⭐⭐ **THE WINNER IS PURE RENORMALISATION — one parameter, no damping.**
+`θ = acos(min(1, ratio/r₀))` with **r₀ = 0.889**, the measured face-on baseline that
+§2.0.13 identified as the shape-contamination offset:
+
+| bar | Horn (ships) | renorm r₀=0.889 |
+|---|---|---|
+| YAW median / gain | 13.0° / 1.13 | ⭐ **8.3° / 1.13** |
+| PITCH median / **gain** | 20.2° / **0.74** | ⭐ **12.5° / 1.00** |
+| **ROLL median** | 9.4° | ⭐⭐ **0.8°** |
+| JITTER p95 | **25.5°** | ⛔ 34.3° |
+
+⭐ **Three axes improve, ROLL nearly perfectly (9.4 → 0.8), and PITCH GAIN is FIXED
+(0.74 → 1.00)** — the under-turning that has been open since the beginning. **Only
+jitter regresses.** ⚠ That is a far better position than "reject": accuracy is solved
+on every axis and what remains is NOISE, the one failure mode with standard remedies
+(the shipped `orientation_filter`, which this harness bypasses entirely, and B8's
+hold-the-last-value).
+
+⛔⛔ **AND A TRAP THAT MY OWN FIRST SEARCH WALKED INTO — KEEP THIS.** The sinusoidal
+response the owner suggested **wins every ERROR metric outright**:
+`SIN a=30, b=0.5` gives YAW **3.4°**, PITCH **9.5°**, ROLL **3.3°**, JITTER
+**14.0°** — better than Horn on all four. ⛔ **It is an artefact: its PITCH GAIN is
+0.48.** The map `30·sin(0.5·θ)` sends a 90° tilt to 21°, so it DAMPS the rotation —
+and damping buys every error metric for free while the cube stops following the hand.
+**My first grid omitted gain and would have reported it as a clean win.** ⭐ Every
+damped arm shows the same signature (gain 0.48–0.79); the renormalised arm does not
+(1.00–1.13), which is exactly what distinguishes a fix from a sedative. ⚠ B8 recorded
+the general form of this trap already ("every fit loses to holding the last value").
+
+⭐ **NEXT, AND BOTH ARE CONCRETE**: (1) **jitter** — re-score the renormalised arm
+through the shipped `orientation_filter` rather than raw, since raw per-frame jitter
+is not what reaches the cube; (2) **r₀ = 0.889 is currently a FITTED CONSTANT** taken
+from one take. Its principled form is the **per-session observed face-on ratio**
+(the p95/p99 of that session's own ratio distribution) — i.e. the owner's
+progressive enrolment, which for this method supplies exactly the one number it
+needs.
+
 ### 2.1 ⚠ PARTLY SUPERSEDED BY §2.0 — the earlier "camera tilt is not a cause" test
 
 ⭐⭐ **THE TWO SECTIONS LOOK CONTRADICTORY AND ARE NOT — the reconciliation is the

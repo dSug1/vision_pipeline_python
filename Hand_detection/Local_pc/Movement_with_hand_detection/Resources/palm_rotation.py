@@ -445,6 +445,10 @@ BACK_TO_CAMERA_NZ_POSITIVE = False
 _REREF_TARGET_NZ = 0.55
 _REREF_MARGIN = 0.05
 
+# ⭐ T6c's conditioning gate: rebuild the palm normal only when the palm is tilted
+# enough for foreshortening to resolve the tilt. 0.90 = about 26 deg of tilt.
+REBUILD_MAX_RATIO = 0.90
+
 
 class PlanarPnP:
     """T6: the pose that best PROJECTS the canonical palm onto the PIXEL landmarks.
@@ -704,6 +708,187 @@ def gate_world_z(px, world, indices=PALM_LANDMARKS, model=None):
         clamped = zmax if zrel >= 0 else -zmax
         out[lm] = (world[lm][0], world[lm][1], wrist_w[2] + clamped)
     return out
+
+
+# --------------------------------------------------------------------------
+# T6c -- REBUILD THE PALM NORMAL FROM TWO TRUSTWORTHY HALVES
+# --------------------------------------------------------------------------
+# ⭐⭐ WHAT WAS MEASURED, over 19 064 frames and 62 sessions, and why this is the
+# first correction built ONLY from quantities shown to be reliable:
+#   * MediaPipe gets the palm normal's BEARING RIGHT -- |phi_measured - phi_true|
+#     is median 10.6 deg (p25 4.6) against 45 deg for chance;
+#   * it gets the normal's out-of-plane MAGNITUDE WRONG -- a physically face-on palm
+#     is reported tilted 28 deg, and no regression on (tilt, direction) recovers more
+#     than ~51% of the scatter.
+# So the defect is ONE SCALAR PER FRAME, and the fix is to keep the half that works
+# and replace the half that does not.
+#
+# ⭐ THE TWO HALVES ARE GENUINELY COMPLEMENTARY, WHICH IS WHY NEITHER ALONE WOULD DO:
+#   * FORESHORTENING gives the tilt MAGNITUDE, depth-free -- a plane tilted by theta
+#     compresses by cos(theta) along one direction, so `theta = acos(sigma2/sigma1)`
+#     of the 2x2 map carrying the canonical palm onto the observed pixels. ⛔ It
+#     CANNOT give the sign: +theta and -theta project identically (the same two-fold
+#     ambiguity as ever).
+#   * MEDIAPIPE'S NORMAL gives the BEARING **and the SIGN** -- which side the palm
+#     leans toward -- which pixels alone can never supply.
+# ⭐ Neither half touches the other's weakness, and the corrupt quantity is used only
+# for a direction, never for a magnitude.
+#
+# ⛔ NOT a new estimator: this rotates the palm's WORLD points so their normal matches
+# the rebuilt one, then hands them to the SHIPPED `Horn`. The five-point averaging
+# that makes Horn stable (production step() p95 25.51 deg, against 62.79 for every
+# PnP variant) is preserved exactly.
+def _shape_map(px, indices, model):
+    """2x2 M with (observed pixels) ~= M * (canonical palm), both centred."""
+    n = len(indices)
+    cx = sum(model[i][0] for i in range(n)) / n
+    cy = sum(model[i][1] for i in range(n)) / n
+    try:
+        ox = sum(px[i][0] for i in indices) / n
+        oy = sum(px[i][1] for i in indices) / n
+    except (IndexError, TypeError):
+        return None
+    sxx = sxy = syy = tux = tuy = tvx = tvy = 0.0
+    for j, lm in enumerate(indices):
+        a, b = model[j][0] - cx, model[j][1] - cy
+        u, v = px[lm][0] - ox, px[lm][1] - oy
+        sxx += a * a
+        sxy += a * b
+        syy += b * b
+        tux += a * u
+        tuy += b * u
+        tvx += a * v
+        tvy += b * v
+    det = sxx * syy - sxy * sxy
+    if abs(det) < 1e-12:
+        return None
+    return ((syy * tux - sxy * tuy) / det, (-sxy * tux + sxx * tuy) / det,
+            (syy * tvx - sxy * tvy) / det, (-sxy * tvx + sxx * tvy) / det)
+
+
+def _compression_ratio(m):
+    """sigma2/sigma1 of a 2x2 map = cos(tilt). None if degenerate."""
+    m00, m01, m10, m11 = m
+    a = m00 * m00 + m10 * m10
+    b = m00 * m01 + m10 * m11
+    c = m01 * m01 + m11 * m11
+    tr = a + c
+    disc = max(0.0, tr * tr / 4.0 - (a * c - b * b))
+    l1 = tr / 2.0 + math.sqrt(disc)
+    l2 = max(0.0, tr / 2.0 - math.sqrt(disc))
+    if l1 < 1e-18:
+        return None
+    return math.sqrt(l2 / l1)
+
+
+def _palm_normal(world, indices):
+    """Unit normal of the palm plate, from world landmarks."""
+    try:
+        o = world[indices[0]]
+        p1 = world[indices[1]]
+        p2 = world[indices[-1]]
+    except (IndexError, TypeError):
+        return None
+    ax, ay, az = p1[0] - o[0], p1[1] - o[1], p1[2] - o[2]
+    bx, by, bz = p2[0] - o[0], p2[1] - o[1], p2[2] - o[2]
+    n = (ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx)
+    ln = math.sqrt(sum(c * c for c in n))
+    return None if ln < 1e-12 else (n[0] / ln, n[1] / ln, n[2] / ln)
+
+
+def rebuild_world_normal(px, world, indices=PALM_LANDMARKS, model=None):
+    """World landmarks with the palm plate rotated to the REBUILT normal.
+
+    Returns `world` unchanged when the geometry is unusable, so the caller degrades
+    to today's behaviour rather than to a guess.
+    """
+    if model is None:
+        model = canonical_palm()
+    m = _shape_map(px, indices, model)
+    if m is None:
+        return world
+    ratio = _compression_ratio(m)
+    if ratio is None:
+        return world
+    # ⛔⛔ REFUSE TO REBUILD NEAR FACE-ON, AND THE FIRST VERSION DID NOT -- it cost the
+    # ROLL bar (median 9.4 -> 21.9 deg). `theta = acos(ratio)` has UNBOUNDED
+    # sensitivity as ratio -> 1: `dtheta/dratio = -1/sqrt(1-ratio^2)`, which is 7.1 at
+    # ratio 0.99 against 1.4 at 0.70. A roll take holds the palm face-on THROUGHOUT,
+    # so the rebuild was recomputing a normal that should be STATIC from the noisiest
+    # possible input. ⭐ Gating at 0.90 caps the amplification at ~2.3x and leaves the
+    # normal alone where foreshortening cannot resolve it -- the house rule again:
+    # SUPPRESS, DO NOT GUESS (DR-2, U8, 4.2 decision 1).
+    if ratio > REBUILD_MAX_RATIO:
+        return world
+    n_meas = _palm_normal(world, indices)
+    if n_meas is None:
+        return world
+    # ⭐ magnitude from foreshortening; bearing AND SIGN from the measured normal
+    cos_t = max(0.0, min(1.0, ratio))
+    sin_t = math.sqrt(max(0.0, 1.0 - cos_t * cos_t))
+    bx, by = n_meas[0], n_meas[1]
+    bl = math.hypot(bx, by)
+    if bl < 1e-9:
+        # the measured normal points straight at the lens: no bearing to borrow, so
+        # there is nothing to rebuild. SUPPRESS, do not guess.
+        return world
+    sgn = 1.0 if n_meas[2] >= 0.0 else -1.0
+    n_new = (sin_t * bx / bl, sin_t * by / bl, sgn * cos_t)
+    # rotate the palm points about their centroid so the normal becomes n_new
+    d = max(-1.0, min(1.0, sum(a * b for a, b in zip(n_meas, n_new))))
+    if d > 1.0 - 1e-12:
+        return world
+    ax = (n_meas[1] * n_new[2] - n_meas[2] * n_new[1],
+          n_meas[2] * n_new[0] - n_meas[0] * n_new[2],
+          n_meas[0] * n_new[1] - n_meas[1] * n_new[0])
+    al = math.sqrt(sum(c * c for c in ax))
+    if al < 1e-12:
+        return world
+    ax = (ax[0] / al, ax[1] / al, ax[2] / al)
+    th = math.acos(d)
+    ct, st_, t = math.cos(th), math.sin(th), 1.0 - math.cos(th)
+    x, y, z = ax
+    R = ((t * x * x + ct, t * x * y - st_ * z, t * x * z + st_ * y),
+         (t * x * y + st_ * z, t * y * y + ct, t * y * z - st_ * x),
+         (t * x * z - st_ * y, t * y * z + st_ * x, t * z * z + ct))
+    n = len(indices)
+    cx = sum(world[i][0] for i in indices) / n
+    cy = sum(world[i][1] for i in indices) / n
+    cz = sum(world[i][2] for i in indices) / n
+    out = list(world)
+    for lm in indices:
+        v = (world[lm][0] - cx, world[lm][1] - cy, world[lm][2] - cz)
+        out[lm] = (cx + R[0][0] * v[0] + R[0][1] * v[1] + R[0][2] * v[2],
+                   cy + R[1][0] * v[0] + R[1][1] * v[1] + R[1][2] * v[2],
+                   cz + R[2][0] * v[0] + R[2][1] * v[1] + R[2][2] * v[2])
+    return out
+
+
+class RebuiltNormalHorn:
+    """Horn, unchanged, fed world landmarks whose palm normal has been rebuilt.
+
+    ⭐ A WRAPPER, deliberately: the fit, the quaternion maths and the five-point
+    averaging are the shipped ones, so anything that moves is attributable to the
+    normal rebuild alone.
+    """
+
+    def __init__(self, indices=PALM_LANDMARKS, mode="ref"):
+        self.indices = tuple(indices)
+        self.inner = Horn(indices, mode)
+        self.name = f"rebuilt_normal_{mode}"
+        self.model = canonical_palm()
+
+    def _c(self, px, world):
+        return rebuild_world_normal(px, world, self.indices, self.model)
+
+    def freeze(self, px, world):
+        return self.inner.freeze(px, self._c(px, world))
+
+    def delta(self, state, px, world):
+        return self.inner.delta(state, px, self._c(px, world))
+
+    def step(self, state, px, world):
+        return self.inner.step(state, px, self._c(px, world))
 
 
 class GatedHorn:
