@@ -62,6 +62,29 @@ TRACKING = "TRACKING"
 BRIDGING = "BRIDGING"
 SUSTAINED_LOST = "SUSTAINED_LOST"
 
+# ⭐⭐ ROTATION SMOOTHING -- OWNER-SETTLED LIVE ON 2026-08-24 AT **20 ms**.
+#
+# ⚠⚠ IT LIVES HERE BECAUSE IT IS SHARED, AND N6 IS EXPLICIT: a module both tools
+# need is IMPORTED, never copied. `LiveSnapDebug.py` cannot import
+# `HandsTriggeredActions` (that module opens a pygame window at import time), so a
+# constant defined in production would have had to be duplicated in the debug tool
+# -- and a duplicated TUNING constant is precisely how the two drift. `hand_state`
+# is already imported by both, and already hosts `BRIDGE_WINDOW_MS` for the same
+# reason.
+#
+# The blend is `factor = 1 - exp(-dt / tau)`, so the cube's settling time is `tau`
+# in real milliseconds whatever the frame rate. ⛔ It REPLACES a fixed per-frame
+# 0.35, whose settling was 2.32 FRAMES and therefore moved with the camera:
+# measured 111 ms at 48.0 ms/frame and 149 ms at 64.0 ms/frame, i.e. 34% laggier
+# in a darker room. Full measurements and the tuning history are in
+# `HandsTriggeredActions.ROTATION_SLERP_TAU_MS`'s comment.
+ROTATION_SLERP_TAU_MS = 20.0
+
+# ⚠ A HITCH MUST NOT BECOME A POP: dt is clamped before the exponential, or a cube
+# teleports onto the hand on the first frame after a dropout -- undoing D3's
+# resync blend, a fix the owner has already accepted.
+ROTATION_SLERP_MAX_DT_MS = 200.0
+
 # ⭐ D2, 2026-08-21: 150 ms, chosen from `analysis/d2_bridge_ab.py`, which
 # classifies every held-cube dropout rather than counting the ones removed.
 #

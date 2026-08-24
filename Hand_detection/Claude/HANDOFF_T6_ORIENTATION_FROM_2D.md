@@ -12,75 +12,57 @@ handoff, not a source of record: the record is `GESTURE_PIPELINE_SPEC.md`
 
 ---
 
-# ✅⭐⭐⭐ T6d IS BUILT (2026-08-24) — RUN IT. THE NEXT STEP IS A LIVE SESSION, NOT CODE.
+# ⛔⛔⛔ CLOSED (2026-08-24) — T6 IS REJECTED. KEEP THIS FILE FOR ITS **DIAGNOSIS**, NOT ITS REMEDY.
 
-> **Owner:** *"The immediate next build will be a debug run which implements this
-> anisotropic fit, so I can feel the behaviour during run time. In this debug run,
-> add sliders to modify the anisotropic fit parameters, so I can modify them during
-> runtime and feel the resulting changes in behaviour."*
+> **Owner, after four live T6d sessions:** *"the anisotropic fit bring very minor
+> improvement and I don't want to ship it."*
 
-**HOW TO RUN IT.**
+**FIVE ARMS WERE BUILT AND ALL FIVE FAILED**: planar PnP, the 6-point thumb model,
+the world-z gate, the trustworthy-halves rebuild, and T6d's anisotropic 2×2 (the
+first four on A10, the fifth on the owner's feel test).
 
-```
-debug_snap.bat                                  # feel it, no capture
-LiveSnapDebug.py --record --tag t6d_psi_sweep   # ⭐ the one that MATTERS -- see below
-```
+⭐⭐ **NOTHING HAD TO BE REVERTED, AND THAT IS THE PROCESS RESULT WORTH CARRYING.**
+Every arm lived in `palm_rotation.estimators()` and in the debug tool behind a toggle
+that was **measured byte-identical to shipped Horn** (975/975 and 1084/1084 replayed
+frames). Production never ran a line of it. **A rejected experiment cost one flag
+flip, not a revert** — compare `POSTMORTEM_4_1_IDENTITY_MIGRATION.md`, where the same
+volume of work had to be unpicked from live code.
 
-A second window, **"T6d anisotropic fit -- sliders"**, carries the four parameters
-and the toggle. Keys in the video window: **`t`** toggles the rebuild, **`0` / `1` /
-`2`** load identity / the fitted yaw params / the fitted pitch params.
+⭐ **WHAT SURVIVES AND IS STILL THE BEST ACCOUNT OF THE DEFECT** — §2.0 through
+§2.0.16. MediaPipe reports a physically face-on palm as **24.9° tilted** (61 sessions,
+3131 pixel-verified frames); its world **x,y are faithful** (1.1° against the pixels'
+1.2°) and only **z is fabricated**; it gets the tilt **BEARING** right (median 10.6°
+vs 45° for chance) and only the **MAGNITUDE** wrong. That is a fact about the
+detector, not about any of the five remedies.
 
-| slider | meaning | range | start |
-|---|---|---|---|
-| `r0` | face-on renormalisation of the compression ratio | 0.80 – 1.10 | **1.00** |
-| `a` | isotropic gain on the rebuilt tilt | 0.40 – 1.60 | **1.00** |
-| `b` | `cos 2ψ` term — separates **yaw-like** from **pitch-like** | −0.80 – +0.80 | **0.00** |
-| `c` | `sin 2ψ` term — the diagonal component | −0.80 – +0.80 | **0.00** |
-| toggle | rebuild ON / OFF, to A/B against shipped Horn live | — | **OFF** |
+⭐ **AND ONE MEASUREMENT WORTH REUSING**: ψ, the compression direction read in the
+canonical palm's own frame, cleanly separates the two motions from pixels alone — a
+yaw take piles up at ψ≈0/180 (61% of frames) and a pitch take at ψ≈90 (85%). ⛔ Two
+port traps recorded with it: the textbook eigenvector row collapses to noise at
+exactly pure yaw and pure pitch (use `½·atan2(2b, a−c)`), and `sin2ψ` is
+chirality-ODD while `cos2ψ` is not.
 
-⭐ **The toggle starts OFF, and OFF is MEASURED to be the shipped estimator, not
-merely intended to be**: replaying `2026-08-23_203307_yaw_card_axis_check_b` through
-both gives **byte-identical cube orientations on 975/975 frames**, and 953/975 frames
-differ once it is switched on. So `t` is a true one-variable A/B.
+⛔ **WHY IT WAS INVISIBLE, MEASURED**: across 3553 frames of a two-panel A/B the
+shipped and rebuilt cubes differ by a median of **4.83°** (p90 17.4°), and that is
+**flat across every palm-tilt band**. ~5° on a 40–80 px cube is below what an eye
+resolves. ⭐⭐ **The instrument lesson is the transferable part: "I can't see a
+difference" and "there is no difference" are different claims, and only a number
+separates them.**
 
-⚠⚠ **CHANGING A PARAMETER WHILE A CUBE IS HELD GIVES THE CUBE A ONE-OFF OFFSET** and
-the HUD says so for two seconds. The grab reference was frozen under the old
-parameters and is not re-derived. **Release and re-grab after each change** — after
-that the behaviour is the new parameters', cleanly.
+⚠⚠ **THE DIRECTION IS SUPERSEDED, NOT MERELY REJECTED.** The owner's next build
+(`F1`) drives the cube's whole transform from the **fingertips**, with the palm
+demoted to a support role — so the question T6 was answering ("how do we make the
+palm-only estimator's tilt correct?") is no longer the question being asked.
 
-⭐⭐ **THIS RUN IS NOT ONLY A FEEL TEST — IT IS THE MISSING MEASUREMENT, so use
-`--record`.** §2.0.16's gap is that a yaw sweep only exercises ψ≈0 and a pitch sweep
-only ψ≈90°, so `b` and `c` are **fitted but unconstrained**. ⭐ **Recording now stores
-per frame, per hand, the whole rebuild — `ratio`, `ψ`, raw tilt, gain, applied tilt,
-gated, mirrored — plus the parameters in force on that frame**, and `meta.json` gets
-`aniso_changes`, a stamped log of every slider move, so the take can be cut into
-per-setting segments. **What the corpus needs from the session is TIME SPENT AT
-INTERMEDIATE ψ**: hold the hand so the palm compresses along a DIAGONAL (turn *and*
-tip together) and sweep through it slowly.
-⭐ Measured coverage of the existing corpus, for comparison — this is the hole:
+⚠ **T6d IS REMOVED FROM `LiveSnapDebug.py`** — sliders, HUD, presets, A/B rig,
+recorder fields and the wireframe ghost. The estimator survives in
+`palm_rotation.py` only because `analysis/t5i_zscale_sweep.py` and `t5j_roll_axis.py`
+drive it. **Nothing live reads it.**
 
-| take | ψ 0–30° | 30–60° | 60–90° | 90–120° | 120–150° | 150–180° |
-|---|---|---|---|---|---|---|
-| yaw card b | 28.4% | 18.9% | 6.7% | 4.1% | 8.9% | **33.0%** |
-| pitch sweep slow | 0.7% | 13.2% | **39.8%** | **45.0%** | 1.0% | 0.2% |
-
-⭐⭐ **AND THAT TABLE IS ALSO THE PROOF THAT ψ IS DEFINED CORRECTLY.** It is not a
-plausibility argument: a yaw take piles up at ψ≈0/180 and a pitch take at ψ≈90, from
-the pixels alone, exactly as the model-frame definition predicts. ψ is also verified
-**invariant under in-plane roll** on synthetic input (0.0° drift across 0/35/95° of
-roll), which is what a MODEL-frame reading buys and an image-frame one would not.
-
-**WHAT TO JUDGE.** The complaint is that the object **LEANS as it turns** (§1). So
-the question is *"does the cube stay upright through a 60–90° turn?"*, on `t`,
-against the same turn a second earlier. ⚠ Not jitter (out of scope, owner), not roll
-(*"roll is not an issue"*), and not the rotation AMOUNT, which was already fine
-(gain 1.13).
-
-⚠ **PRODUCTION IS UNTOUCHED.** `HandsTriggeredActions.py` still builds a plain
-`Horn`; every one of the 23 golden-vector suites passes and `parity_replay` reports
-no divergence.
-
-⭐ **What was built, and the three decisions inside it, are recorded in §2.0.17.**
+⭐ **The four live sessions are on E:** `2026-08-24_202454_t6d_psi_sweep`,
+`_203927_t6d_ab_before_after`, `_204928_..._b`, `_205729_t6d_ab_ghost`. Their
+per-frame ψ/ratio data is still the only intermediate-ψ coverage the corpus has, if
+that question is ever reopened.
 
 ---
 

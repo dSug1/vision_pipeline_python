@@ -111,7 +111,10 @@ SLIDERS = (
 
 # ⭐ OWNER'S CHOICE, 2026-08-24, settled live: **20 ms**. Reached by sweeping the
 # whole range (down to 0, up through 149 = today, back), and returned to twice.
-SLERP_TAU_MS = 20.0
+# ⚠ Imported HERE rather than relying on the later `from Resources import
+# hand_state`: this block sits above it, and N6 matters more than import order.
+from Resources import hand_state as _HS_const  # noqa: E402
+SLERP_TAU_MS = _HS_const.ROTATION_SLERP_TAU_MS
 
 
 
@@ -1412,7 +1415,7 @@ def _draw_slider_panel(open_: bool):
 # hand on the first frame back. That is precisely what D3's resync blend exists to
 # prevent, and letting the smoothing undo it would re-open a defect the owner has
 # already accepted a fix for. Three frame-times of catch-up is plenty.
-_SLERP_MAX_DT_MS = 200.0
+_SLERP_MAX_DT_MS = _HS_const.ROTATION_SLERP_MAX_DT_MS
 
 
 def _slerp_factor_for(state: CubeState, now_ms) -> float:

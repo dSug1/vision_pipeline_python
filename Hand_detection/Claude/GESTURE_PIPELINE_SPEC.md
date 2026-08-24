@@ -5203,6 +5203,132 @@ result exactly (`schema2_production_check`: 1018 cube-frames, 0 outside, closest
 approach 0.0 px), which is what says the harness reads real files correctly
 rather than merely agreeing with itself.
 
+### 14.3.6 ✅ THE ROTATION LAG — one constant, a dead filter above it, and the retune (2026-08-24)
+
+> **Owner:** *"there is a slerp introduced somewhere during the development of our
+> grab and rotate: I don't recall if it was extrapolation and waiting several ms or
+> during the work on steal or a gate we have introduced to avoid jitter. I need to
+> find where we introduced this slerp during development, because as it is now, the
+> cube is lagging the hand and this feels very uncomfortable."*
+
+⭐ **ALL THREE GUESSES WERE WRONG, and they are recorded so they are not re-searched.**
+It is not the coast, not extrapolation, not a jitter gate. `git log -S` puts it in
+**`b0035a4` (2026-08-01, "building the rotation")** at 0.25, raised to **0.35** in
+`b003cfe` the same day — it has been there since rotation first existed.
+
+#### The chain, and where the time actually goes
+
+1. the camera delivers a frame — **64.0 ms** apart in poor light, **48.0 ms** in good;
+2. MediaPipe → landmarks;
+3. **Horn** fits the palm against the frozen grab reference → `target_quat`.
+   **This step has no history and no filter: it is instantaneous.**
+4. `cube.orientation = _quat_slerp(cube.orientation, target_quat, 0.35)`.
+
+**Step 4 is the whole of it.** Measured end-to-end at **128 ms** by shift-aligning
+the shipped cube against an UNSMOOTHED replay of the same take — not inferred from
+the constant, measured against a control.
+
+#### ⛔⛔ TWO INDEPENDENT DEFECTS ON ONE LINE
+
+**(a) THE UNITS.** A fixed per-FRAME factor is a settling time of `1/−ln(1−f)` =
+**2.32 FRAMES**, so the feel is whatever the camera is doing:
+
+| frame interval | settling |
+|---|---|
+| 48.0 ms (good light) | **111 ms** |
+| 64.0 ms (poor light) | **149 ms** |
+
+**The same code feels 34% laggier in a darker room.** ⭐⭐ **And the frame rate was
+proved CAMERA-bound, not compute-bound, by a test that costs nothing: the inter-frame
+gap is IDENTICAL with and without a hand in frame (64.1 vs 64.0 ms).** MediaPipe's
+landmark pass and the entire gesture path only run when a hand is present, so if
+computation were the limit those two numbers would differ. The exact, quantised
+values (64.0 / 48.0) are the signature of a DSHOW webcam stepping its interval under
+**auto-exposure**. ⚠ On a phone, where frame rates vary far more, this is first-order.
+
+**(b) THE MAGNITUDE, and the reason is dated.** 0.35 was tuned on 2026-08-01 against
+the **Gram-Schmidt** frame — p50 1.59, p95 21.91, **max 144.19°** of single-frame
+excursion. Horn shipped 2026-08-17 at p95 11.71, max 25.07 (§16.13). **The smoothing
+was never revisited after the signal it smooths improved that much.** Measured, every
+arm replaying identical input:
+
+| smoothing | lag | cube step p95 |
+|---|---|---|
+| per-frame 0.25 | 192 ms | 10.20° |
+| **per-frame 0.35 — what shipped** | **128 ms** | **11.29°** |
+| τ 149 ms (== the old feel, new unit) | 128 ms | 11.44° |
+| τ 80 ms | 64 ms | 12.76° |
+| τ 40 ms | 0 ms | 13.93° |
+| **τ 20 ms — SHIPPED** | **0 ms** | **14.64°** |
+| τ 0 (none at all) | 0 ms | 15.17° |
+
+**All 128 ms of lag bought a 26% jitter reduction.** ⚠ "step p95" includes genuine
+hand motion, so it overstates jitter in absolute terms; it is a fair RELATIVE
+comparison because every arm replays one take, and it must not be quoted as an
+absolute jitter figure.
+
+#### ⭐ THE FIX, AND WHAT IT GUARANTEES
+
+`factor = 1 − exp(−dt / τ)` with **τ = 20 ms**. Settling is then constant in real
+time — verified **20.0 ms at 48, 64 and 16.7 ms/frame**, a 4× frame-rate range.
+
+⚠ **`dt` IS CLAMPED AT 200 ms.** After a dropout, a coast or a stalled frame `now_ms`
+can jump by hundreds of ms, and an unclamped dt drives the factor to 1.0 — the cube
+teleports onto the hand on the first frame back, undoing D3's resync blend, a defect
+the owner has already accepted a fix for.
+
+⚠ **STAMP THE CLOCK ONCE PER FRAME, NEVER PER HAND.** Stamping inside the per-hand
+loop gives the second hand a dt of zero, a blend factor of zero, and a cube that
+never moves.
+
+⭐ **N6 — τ LIVES IN EXACTLY ONE PLACE**, `hand_state.py`, beside `BRIDGE_WINDOW_MS`.
+`LiveSnapDebug` cannot import `HandsTriggeredActions` (that module opens a pygame
+window at import time), so production could not be the source, and a duplicated
+TUNING constant is precisely how the two tools drift.
+
+#### ⭐⭐ THE PREDICTIVE ORIENTATION FILTER WAS DEAD, AND THAT IS MEASURED
+
+§13.7's predictive/reliability-weighted filter still ran every frame, but Horn
+**replaced its output whenever it succeeded** — so its value survived only on frames
+where Horn FAILED:
+
+    Horn returned None on 0 of 9091 hand-frames, across four recordings.
+
+**It reached the cube on none of them.** Removed from BOTH tools on 2026-08-24 and
+archived whole, with its rationale and this measurement, in
+`Resources/_archived_predictive_orientation_filter.py`.
+⭐ **Consequence worth carrying: the slerp onto the cube is now the ONLY smoothing in
+the rotation path**, which is what makes its time constant the entire felt lag.
+⚠ `_reliability_alpha` was KEPT — it is a conditioning measure, not part of that
+filter, and it still drives the operator-facing `reliability` readout.
+⚠ Also removed as orphaned: `_make_continuous` (only the filter used it) and
+production's dead private `_edge_on_measure` (a second copy of
+`palm_geometry.edge_on_measure`). ⭐ `_is_thumb_outward` and
+`configure_source_resolution` LOOKED dead to an AST scan and were **kept** —
+`guard_sensitivity.py` inspects the first by name and `PythonApp_Main.py` calls the
+second. **An in-file usage scan is not a repo-wide one.**
+
+#### ⚠⚠ TWO GUARDS CAUGHT THE REMOVAL, WHICH IS WHAT THEY EXIST FOR
+
+`verify_d1_wiring` and `verify_dead_track_reset_parity` both asserted on the deleted
+state. They were **repointed at state that still exists**, not deleted.
+⛔⛔ **AND THE FIRST REPOINT WAS WRONG IN THE MOST DANGEROUS WAY**: `verify_d1_wiring`
+was aimed at Horn's frozen reference, and **passed vacuously** — that harness feeds
+pixel landmarks only, so no `hands_world` packet arrives, Horn never freezes, and the
+assertion was `None is None`. A green check measuring nothing is the exact failure
+this repository keeps paying for. It now watches DR-2's `frozen` sign, which the
+harness genuinely exercises.
+
+#### ⚠ METHOD NOTE — how the removal itself went wrong, three times
+
+The T6d strip-out was done by cutting text REGIONS, and three launches failed in a
+row on pieces the cuts took with them: a CLI flag, a rig builder, and a module global
+that `main()` assigned and thereby made function-local. **`import` and `py_compile`
+pass on all three.** Static checks for undefined names in `main()` and for module
+globals shadowed by assignment were added afterwards and catch all three classes.
+⭐ **For a removal this wide, delete by symbol and re-verify by running, not by
+region and re-verify by compiling.**
+
 ## 15. Perception-layer spec integrated (2026-08-02) — the current direction
 
 A design spec for the **hand-perception stack below the gesture layer** was

@@ -28,7 +28,7 @@ start a second list, do not "helpfully" reorder it. This file points at it.
 
 | you want to… | read |
 |---|---|
-| ⭐⭐ **RUN THE T6d SLIDER SESSION (the next step)** | **`HANDOFF_T6_ORIENTATION_FROM_2D.md`** — its top block is how to run it, §2.0.17 is what was built |
+| ⭐⭐ **START THE NEXT BUILD (`F1` — the cube's transform from the FINGERTIPS)** | `PART_ONE.md` §3.1's `F1` row. ⛔ Read its trap first: a rigid palm+tips fit is A10-dead twice |
 | **start any other build session** | this file → `PART_ONE.md` §3.1's "YOU ARE HERE" block → that item's row |
 | know **why** something failed | `GESTURE_PIPELINE_SPEC.md` — the authoritative record of what failed and why |
 | know the **forward design** below the gesture layer | `PERCEPTION_LAYER_SPEC.md` (⚠ read its §0.1 amendment log BEFORE any module body) |
@@ -39,7 +39,7 @@ start a second list, do not "helpfully" reorder it. This file points at it.
 order is historical — **the queue superseded it.** Keep it for the goal,
 constraints and prior-art scan; do not take build order from it.
 
-⚠ `HANDOFF_*.md` are per-session briefs. ⭐ **`HANDOFF_T6_ORIENTATION_FROM_2D.md` is OPEN — T6d is built and awaiting the owner's live session**; the others are closed. `_archived_old_*` is dead.
+⚠ `HANDOFF_*.md` are per-session briefs and **all of them are now CLOSED**, including `HANDOFF_T6_ORIENTATION_FROM_2D.md` (T6 rejected 2026-08-24 — keep it for its DIAGNOSIS, which still stands, not for its remedy). `_archived_old_*` is dead.
 
 ---
 
@@ -141,24 +141,28 @@ production now RECORDS what it ran instead of forcing a recomputation, and why
 the recorders have their own parity guard. See `PART_ONE.md` §3.1's YOU-ARE-HERE
 block for all four.
 
-✅⭐⭐⭐ **`T6d` IS BUILT (2026-08-24) — THE NEXT STEP IS THE OWNER'S LIVE SESSION, NOT
-CODE.** How to run it: the **block at the TOP of
-`HANDOFF_T6_ORIENTATION_FROM_2D.md`**; what was built and the four decisions inside
-it: **§2.0.17**; the fit and its numbers: §2.0.16. In one line: four estimator
-REPLACEMENTS were built and all four A10-rejected, but they mapped the problem —
-**Horn's flaw is BIAS, every per-frame replacement's flaw is VARIANCE** — and the
-survivor is a CORRECTION that keeps Horn and fixes only the palm's tilt. ⭐ It must be
-**ANISOTROPIC**: yaw compresses the palm's WIDTH and pitch its LENGTH, so a gain
-depending on the compression direction ψ treats them oppositely where no scalar can
-(measured need: **1.15 yaw-like vs 1.55 pitch-like**). Fitted per recording: **PITCH
-drift 76.4° → 23.6°**, YAW scatter 9.5° → 7.4°.
-⭐ `debug_snap.bat` now opens a slider panel; `t` toggles the rebuild and **OFF is
-measured byte-identical to shipped Horn** (975/975 replayed frames), so it is a true
-one-variable A/B. ⚠ **Production is untouched** and nothing here has been through
-A10 yet. ⛔⛔ **RUN IT WITH `--record`**: `b`/`c` are unconstrained because each sweep
-exercises only its own ψ (yaw takes measure ψ≈0/180, pitch takes ψ≈90), so **the
-session IS the missing measurement** — the take needs time spent at INTERMEDIATE ψ,
-turning and tipping together.
+⭐⭐⭐ **NEXT BUILD IS `F1` — THE CUBE'S TRANSFORM (Vector3 POSITION *and* ROTATION
+QUATERNION) DRIVEN BY THE FINGERTIPS** (owner, 2026-08-24; to be specified in its own
+conversation). The palm + knuckle-arc anchor is **too coarse BY DESIGN**, not
+mis-tuned: it cannot express the small fingertip motions that rotate a real object
+held in the hand, which is what assembly-style alignment needs. ⭐ The palm is KEPT,
+demoted to a SUPPORT role — reference frame, sign, chirality. ⛔⛔ **The one trap: do
+NOT build it as a rigid-body fit over palm+tips.** That arm is A10-dead twice
+(B4's `PALM_AND_TIPS`, and the 9-point constellation on 2026-08-23) because finger
+motion gets fitted as whole-object rotation — **which is the same physical fact this
+build wants to exploit, from the other side**. Full row and the open design
+questions: `PART_ONE.md` §3.1, row **F1**.
+
+✅✅ **AND THE LAG IS FIXED AND SHIPPED FIRST (row `L1`, spec §14.3.6)** — the owner
+called it *"very uncomfortable"*, and subtle fingertip control would have been
+unjudgeable under it. **One constant**: the cube's slerp, a fixed **0.35 per FRAME**
+since 2026-08-01, measured at **128 ms** of lag. It is now **τ = 20 ms** with
+`1 − exp(−dt/τ)`, so settling is constant in real time (verified 20.0 ms across a 4×
+frame-rate range) instead of moving with the room's lighting — the old form ran
+111 ms in good light and 149 ms in poor. ⭐ **And the predictive orientation filter
+above it was DEAD**: Horn replaced its output on **9091/9091** measured frames. It is
+removed from both tools and archived in
+`Resources/_archived_predictive_orientation_filter.py`.
 
 ⛔⛔ **T6 (the estimator replacements) WAS BUILT AND A10-REJECTED ON 2026-08-24 — the
 yaw lean is STILL OPEN and still the owner's show-stopper.** Read T6's row and
@@ -292,6 +296,9 @@ This is the section that saves the most time. Each was measured, not guessed.
 | **The 9-point palm+tips constellation for rotation** | ⛔ **A10 REJECT 2026-08-23** — +1.4° of axis fidelity for +4.9° of p95 jitter in real handling. Its "wins in every take" reputation rested on the axis-CONTAMINATED 2026-08-04 yaw take |
 | **A physical card held in the hand to remove yaw wobble** | ⚠ **the method controls the SWEEP well** (best contamination score ever measured) **but reads the TILT HIGHER** (17–19° vs the card-free 12.6–13.0°). Keep it for cleanliness, never for axis magnitude |
 | **A depth calibration screen** (min/max reach) | **not needed** — absolute scale is unobservable AND cancels in the ratio form; `d0` is per-grab; the envelope is already 3.59x |
+| **T6d — the ANISOTROPIC 2×2 fit** (`g(ψ) = a + b·cos2ψ + c·sin2ψ`) | ⛔⛔ **BUILT, LIVE-TESTED OVER FOUR SESSIONS, REJECTED BY THE OWNER 2026-08-24** — *"very minor improvement and I don't want to ship it"*. ⭐ **Nothing to revert: production never ran it**, every arm sat behind a toggle measured byte-identical to shipped Horn (975/975 frames). ⭐ The measured reason it was invisible: the two A/B panels' cube orientations differ by a median of **4.83°** (p90 17.4), **flat across every palm-tilt band** — below what an eye resolves on a 40–80 px cube. ⚠ The ψ finding survives as a fact about MediaPipe, not as a fix: from pixels alone a yaw take piles up at ψ≈0/180 and a pitch take at ψ≈90 |
+| **The predictive / reliability-weighted orientation filter** (§13.7) | ⛔ **REMOVED 2026-08-24 as DEAD CODE, not as a failure** — it was a real fix for the Gram-Schmidt estimator it was built against (max 144° single-frame excursions), but Horn has replaced its output since 2026-08-17 on **9091/9091** measured hand-frames. Archived whole in `Resources/_archived_predictive_orientation_filter.py`. ⚠ `_reliability_alpha` was KEPT — different thing, still drives the on-screen conditioning readout |
+| **A fixed PER-FRAME rotation smoothing factor** | ⛔ **REPLACED 2026-08-24 by a time constant.** 0.35/frame = 2.32 frames of settling, so the feel moved with the camera: **111 ms in good light, 149 ms in poor** (webcam auto-exposure). ⭐ The frame rate was proved camera-bound, not compute-bound, because the inter-frame gap is identical with and without a hand in view |
 | **T6 — orientation from 2D (planar PnP)** | ⛔⛔ **BUILT AND A10-REJECTED 2026-08-24.** Yaw, the defect it existed to fix, gets WORSE (median/frame **13.0° → 29.8°**); pitch **gain is fixed** (0.74 → 0.99). Four explanations tested and all refuted — the edge-on planar degeneracy, twin-branch flips, model shape, and the assumed FOV. ⭐ **It amends the project's own diagnosis**: *"the 2D landmarks are good"* was an INFERENCE from roll, and roll was measured with Horn over WORLD landmarks — T6 is the first direct test of 2D-only pose and it is worse. Code stays in `estimators()`; call sites unchanged |
 
 ⚠ **Retractions are kept on purpose.** A claim that was overturned is more useful
@@ -377,7 +384,8 @@ ownership should follow the *physical* hand — today the cube the pipeline call
 |---|---|
 | production | `launch.bat` (or `PythonApp_Main.py`) |
 | debug, one window mirroring production | `debug_snap.bat` / `LiveSnapDebug.py` |
-| ⭐ the **T6d anisotropic rebuild**, live, with sliders | `LiveSnapDebug.py` — a second window carries `r0/a/b/c` + the toggle; `t` toggles, `0/1/2` load identity / fitted yaw / fitted pitch. `--aniso-start r0,a,b,c[,on]`, `--no-aniso-sliders`. ⭐ Toggle OFF is measured byte-identical to shipped Horn |
+| ⭐ tune the **rotation smoothing** by feel | `LiveSnapDebug.py` — a second window carries one slider, `SMOOTH ms` (0–150, and its integer IS τ in ms). `--smooth-ms N`, `--no-sliders` |
+| ⭐ the **lag A/B** — same estimator, smoothing the only difference | `LiveSnapDebug.py --slerp-ab` — panel 1 = the old per-frame 0.35, panel 2 = the τ slider |
 | debug + record (cube visible, writes a session) | `LiveSnapDebug.py --record` |
 | record a scripted take | `record_perception_sequence.bat <sequence>` |
 | ⚠ wake the capture drive first | `wake_e_drive.py` |

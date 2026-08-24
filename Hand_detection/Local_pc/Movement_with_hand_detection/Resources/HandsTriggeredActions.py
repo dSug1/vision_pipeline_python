@@ -271,17 +271,6 @@ def _is_thumb_outward(landmarks: List[Tuple[float, float]], handedness: str) -> 
     return palm_geometry.is_thumb_outward(landmarks, handedness)
 
 
-def _edge_on_measure(landmarks: List[Tuple[float, float]]) -> float:
-    """0..1, how far the palm is from edge-on — the magnitude `_is_thumb_outward`
-    used to discard (M5a, queue item 1.2). 0 = edge-on, where the palm/back sign is
-    a coin flip; 1 = knuckle row square to the camera.
-
-    Not yet consumed by any gesture rule: DR-2 (item 2.2) is what will gate on it.
-    Exposed now because it is the observability signal M4/M6 need, and because
-    recovering it costs one division."""
-    return palm_geometry.edge_on_measure(landmarks)
-
-
 # ⚠ `_top_left_for_center` lived here until 4.2 and is deliberately GONE. It
 # converted with the object's NOMINAL size, which is only its on-screen extent at
 # the reference depth; once depth is driven that conversion is wrong everywhere
@@ -597,7 +586,51 @@ IDENTITY_QUATERNION: Tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)  #
 # Rotation is UNGATED (confirmed 2026-08-01) — active for any snapped hand
 # regardless of pose; Open_Palm detection has no working implementation
 # (§13.5), gating can be added later.
-ROTATION_SLERP_FACTOR = 0.35  # tune by feel; time-constant math in LiveSnapDebug.py's comment
+# ⭐⭐ SMOOTHING IS A TIME CONSTANT IN MILLISECONDS, NOT A PER-FRAME FACTOR
+# (owner-settled live, 2026-08-24: **20 ms**). The blend is
+# `factor = 1 - exp(-dt / tau)`, so the cube's settling time is `tau` in real
+# milliseconds whatever the camera is doing.
+#
+# ⛔⛔ WHY THE OLD FORM WAS A DEFECT AND NOT A STYLE CHOICE. It was a fixed 0.35 per
+# FRAME = a settling time of 2.32 FRAMES, so the feel was whatever the webcam's
+# auto-exposure decided: measured **111 ms at 48.0 ms/frame** in good light and
+# **149 ms at 64.0 ms/frame** in poor -- the same code feeling 34% laggier in a
+# darker room. On a phone, where frame rates vary far more, that is first-order.
+#
+# ⭐ AND IT WAS OVER-DAMPED, FOR A DATED REASON. 0.35 was tuned on 2026-08-01
+# against the GRAM-SCHMIDT frame (p50 1.59, p95 21.91, **max 144.19 deg** of
+# single-frame excursion). Horn shipped 2026-08-17 and is far cleaner (p95 11.71,
+# max 25.07). **The smoothing was never revisited after the signal it smooths
+# improved.** Measured on `2026-08-24_205729_t6d_ab_ghost`, identical input to
+# every arm, lag read by shift-aligning against an unsmoothed replay:
+#     per-frame 0.35 -> 128 ms lag, cube step p95 11.29 deg   (what this replaces)
+#     tau 149 ms     -> 128 ms lag, p95 11.44   (== the old feel, in the new unit)
+#     tau  80 ms     ->  64 ms lag, p95 12.76
+#     tau  40 ms     ->   0 ms lag, p95 13.93
+#     tau  20 ms     ->   0 ms lag, p95 14.64   <-- SHIPPED
+#     tau   0 ms     ->   0 ms lag, p95 15.17   (no smoothing at all)
+# ⚠ "step p95" includes genuine hand motion, so it overstates jitter in absolute
+# terms; it is a fair RELATIVE comparison because every arm replays one take.
+#
+# ⚠ N6: `LiveSnapDebug.py` runs the same form and keeps the OLD per-frame path as
+# the control arm of its `--slerp-ab` rig. Do not delete that; it is what makes
+# the comparison a comparison.
+# ⭐ N6: IMPORTED from the shared module, never redefined here -- see
+# `hand_state.ROTATION_SLERP_TAU_MS` for why it lives there.
+ROTATION_SLERP_TAU_MS = hand_state.ROTATION_SLERP_TAU_MS
+
+# ⚠ A HITCH MUST NOT BECOME A POP. dt is clamped before it reaches the exponential:
+# after a dropout, a coast or a stalled frame `now_ms` can jump by hundreds of ms,
+# and an unclamped dt drives the factor to 1.0 -- the cube teleports onto the hand
+# on the first frame back. That is exactly what D3's resync blend exists to
+# prevent, and letting the smoothing undo it would re-open a fix the owner has
+# already accepted. Three frame-times of catch-up is plenty.
+ROTATION_SLERP_MAX_DT_MS = hand_state.ROTATION_SLERP_MAX_DT_MS
+
+# Previous frame's clock, for the dt the time-based form needs. ⚠ Stamped ONCE per
+# FRAME (at the end of `on_hands_frame`), never per hand: stamping it inside the
+# per-hand loop would give the second hand a dt of zero and freeze its cube.
+_last_frame_ms: Optional[float] = None
 
 # Geometric confidence signal thresholds for the predictive filter's
 # reliability weighting (see _reliability_alpha) — data-derived in
@@ -740,15 +773,6 @@ def _quat_slerp(q0: Quat, q1: Quat, t: float) -> Quat:
     q2 = _quat_normalize(tuple(b - a * d for a, b in zip(q0, q1)))
     sin_theta, cos_theta = math.sin(theta), math.cos(theta)
     return tuple(a * cos_theta + b * sin_theta for a, b in zip(q0, q2))
-
-
-def _make_continuous(q: Quat, reference: Quat) -> Quat:
-    """Flip q's sign if needed so it's on the same hemisphere as reference
-    (quaternion double-cover) -- must be resolved before quaternion
-    ARITHMETIC (multiply/subtract), unlike _quat_slerp which handles this
-    internally for its own use."""
-    d = q[0] * reference[0] + q[1] * reference[1] + q[2] * reference[2] + q[3] * reference[3]
-    return tuple(-c for c in q) if d < 0 else q
 
 
 # ⛔⛔ THE PREDICTIVE ORIENTATION FILTER WAS REMOVED HERE (owner, 2026-08-24).
@@ -1124,6 +1148,19 @@ def on_hands_world_frame(left_world: List[Tuple[float, float, float]], right_wor
     _latest_world_landmarks["Right"] = right_world
 
 
+def _rotation_slerp_factor(now_ms: Optional[float]) -> float:
+    """This frame's blend factor from the elapsed time since the last frame.
+
+    ⚠ Falls back to the equivalent of the old fixed factor on the FIRST frame,
+    where there is no dt yet -- a guess would be the one thing worse than the
+    behaviour being replaced.
+    """
+    if now_ms is None or _last_frame_ms is None:
+        return 1.0 - math.exp(-1.0)          # one time constant's worth, ~0.632
+    dt = min(max(0.0, now_ms - _last_frame_ms), ROTATION_SLERP_MAX_DT_MS)
+    return 1.0 - math.exp(-dt / max(1.0, ROTATION_SLERP_TAU_MS))
+
+
 def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: List[Tuple[float, float]],
                    now_ms: Optional[float] = None) -> None:
     """Called once per received "hands" packet with both hands' full
@@ -1475,7 +1512,14 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                     cube.grab_cube_orientation = cube.orientation
                 delta = _quat_multiply(hand_quat_now, _quat_conjugate(cube.grab_hand_orientation))
                 target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
-                cube.orientation = _quat_slerp(cube.orientation, target_quat, ROTATION_SLERP_FACTOR)
+                cube.orientation = _quat_slerp(cube.orientation, target_quat,
+                                               _rotation_slerp_factor(now_ms))
+
+    # ⚠ AFTER the per-hand loop, never inside it: `_rotation_slerp_factor` needs
+    # the PREVIOUS frame's clock, and stamping it per hand would hand the second
+    # hand a dt of zero -- a blend factor of zero, i.e. a cube that never moves.
+    global _last_frame_ms
+    _last_frame_ms = now_ms
 
     # ⚠ WRITE BACK LAST, after every mutation this frame. Skipping it would make
     # the whole rebinding a no-op that silently reset each hand every frame.
