@@ -48,7 +48,399 @@ on synthetic input), the quaternion maths, the frame conventions, the mirror, th
 renderer. Roll exercises all of them and comes out right. **MediaPipe's 2D
 landmarks are good; its predicted depth breaks the rotation.**
 
-### 2.1 ⭐⭐ AND A TILTED CAMERA WAS TESTED AS AN ALTERNATIVE CAUSE — IT IS NOT ONE
+### 2.0 ⭐⭐⭐ ROOT CAUSE, 2026-08-24 — IT IS **TWO** CAUSES, AND §2.1 BELOW IS PARTLY SUPERSEDED
+
+⚠⚠ **Read this before §2.1 and §2.2.** A re-analysis of the CARD takes, requested by
+the owner, found the yaw lean has **two independent contributors of similar size**.
+T6 attacked only one of them — and by a route that made things worse — which is why
+it failed.
+
+**CAUSE 1 — MEDIAPIPE FABRICATES THE PALM'S DEPTH. Corpus-wide, 61 sessions,
+3131 frames that are FACE-ON BY PIXEL EVIDENCE** (projected palm area ≥95% of that
+session's own p99, so the test never assumes what it measures):
+
+| quantity | should be | measured |
+|---|---|---|
+| world palm normal vs the camera axis | ~0° | **median 24.9°** (p75 43.9°, p95 50.4°) |
+| \|world z\| / \|world xy\|, wrist→middle_MCP | ~0 | **median 0.40** (p75 0.99, p95 1.18) |
+
+⭐ **And the x,y are FINE** — on the checked face-on frame the long axis reads
+**1.2° from vertical in pixels and 1.1° in world x,y**, then **47.3°** once z is
+included. So Horn's **GRAB REFERENCE is already tilted ~25° out of plane before the
+hand rotates at all**, and a subsequent turn about the true vertical is fitted as a
+turn about a tilted axis. ⭐ This finally explains, in one mechanism, why roll is
+accurate (gain 1.02 — it lives in the image plane where x,y are good), why yaw and
+pitch err in OPPOSITE directions (both consume the bad z), and why scaling z slides
+the tilt 14.5°→0.6° (it shrinks exactly this fabricated component).
+
+**CAUSE 2 — THE CAMERA IS ROLLED ~11°, AND THE CARD TAKES ARE WHAT REVEAL IT.**
+In a card take the operator clamped a card with its **long edge vertical**, so the
+hand's long axis was held at **true world vertical by a physical reference** — the
+only gravity datum a landmark-only corpus can offer. Its residual **image** tilt is
+therefore the camera's roll. Measured from pixels only:
+
+| take | long-axis image tilt | IQR |
+|---|---|---|
+| `..._203307_yaw_card_axis_check_b` | **−10.8°** | 7.0° |
+| `..._202153_yaw_card_axis_check` | **−11.1°** | 2.4° |
+| no-card yaw takes | **+2.5° / +5.8° / −4.0°** | — |
+
+⭐⭐ **The two card takes agree to 0.3°**, which is the signature of something
+systematic rather than operator noise. ⭐ **And the no-card takes sit near ZERO** —
+with no physical reference the operator aligned the hand to what *looked* vertical,
+i.e. to the IMAGE.
+
+⛔⛔ **BUT "CAMERA ROLL" IS THE WRONG READING OF IT — OWNER, 2026-08-24: *"Camera
+roll is not the issue. Camera pitch is the issue, and cannot be measured at the
+moment (portable webcam)."*** The −11° is a real, reproducible measurement; its
+INTERPRETATION was wrong, and the owner knows the physical rig. With no camera roll,
+image-vertical **is** world-vertical projected, so the −11° means **the hand/card was
+consistently held ~11° off vertical** — operator posture, not optics. ⭐ That is
+corroborated by the owner's own earlier remark about the card takes: *"I had to tilt
+the hand and arm to keep the card straight up."* ⚠ **So the card takes are NOT a
+usable gravity datum after all**, and the "camera roll" line is retracted rather than
+deleted, because the *measurement* stands even though the inference did not.
+
+⭐⭐ **AND THE ACTUAL CAMERA CONCERN — PITCH — IS CONFOUNDED WITH CAUSE 1, WHICH IS
+THE REAL OBSTACLE.** A pitched camera tilts the world vertical **toward or away from
+the lens**, so it appears as a **z-component** in the rotation axis — and z is
+exactly the coordinate MediaPipe fabricates (cause 1). **With a landmarks-only
+corpus the two are not separable, even in principle**: there is no gravity datum and
+no pixels were ever recorded. ⚠ Note also that the documented lean signature is
+**95% IN THE SCREEN PLANE** (axis x 0.212 / y 0.974 / z 0.064), which is an
+x-component — *not* what a pure camera pitch produces. So camera pitch is real,
+matters for the world-referenced requirement (**T7**), and is **not** what the
+existing measurements are seeing.
+
+⭐ **WHAT WOULD SETTLE IT — and it is small.** The project has never captured a
+single pixel by design. **One photo** from the webcam containing a plumb line or a
+known-vertical edge (a door frame) measures camera pitch AND roll directly; a printed
+checkerboard in one frame gives full intrinsics too, which would also retire the
+assumed-FOV cost measured at **~2–4° of axis error per 10° of FOV error**. That is a
+one-off calibration capture, not a change to the landmark-only recording policy.
+
+⚠ Excluded from the −11° estimate: `roll_card_axis_check_b`, whose long axis rotates
+by design (IQR 131°). ⚠ The owner also moves the camera between recordings, so no
+per-session extrinsic generalises.
+
+⭐ **HOW THEY COMBINE, and it matches the observations**: on the no-card take the
+hand sat at +2.5° in the image and the fitted axis came out 14.5° → ~12° from
+cause 1. On the card take the hand sat at true vertical and the fitted axis came out
+21.2° → ~11° of camera roll plus ~10° from cause 1. **The two add or partly cancel
+depending on posture, which is why the "same" defect measured 13° on one take and
+21° on another.**
+
+⛔⛔ **TWO HYPOTHESES THE OWNER RAISED WERE TESTED AND ARE NOT SUPPORTED**, recorded
+so they are not re-run: **(a) the palm rotating about a different axis than the
+card** — the hand IS upright in the image (−1.2° on the reference frame), so posture
+is not the estimator's problem; **(b) the WRIST landmark dragging the axis** because
+the card tracked only the knuckles — a knuckles-only fit `(5,9,13,17)` is *better* on
+two takes (21.2→20.7, 39.5→27.6) and *worse* on two (14.5→23.5, 49.5→59.2). Not a
+consistent contaminator.
+
+### 2.0.1 ⭐⭐ LITERATURE, SECOND PASS (2026-08-24) — and it says T6 failed for a NAMEABLE reason
+
+⚠ The FIRST literature pass produced T6 (PnP / IPPE / EPro-PnP). This pass was run
+deliberately along **different axes** — MediaPipe's own depth defect, algebraic 2D→3D
+lifting, and multi-frame rigid reconstruction — at the owner's instruction.
+
+⭐⭐ **THE OWNER'S PROPOSAL IS A PUBLISHED METHOD, AND IT IS GOOGLE'S OWN.**
+*Fast Lifting for 3D Hand Pose Estimation in AR/VR* (Google Research) treats 2D→3D
+lifting as an **algebraic** problem: generate 3D keypoints that satisfy hand skeleton
+**bone-length constraints** and perspective-project back onto the observed 2D. ⭐ **No
+3D training data**, super real-time on **one core** (so the port contract survives),
+and it **estimates bone lengths automatically when unknown** — which would also
+retire the per-user hand-shape worry. ⚠ It explicitly notes some parts of the hand
+lift accurately and others are **ambiguous**, and proposes remedies. No code or
+licence stated; we would implement from the paper (same posture as T6's stdlib IPPE).
+
+⭐⭐ **A GENUINELY NEW AXIS: USE TIME, NOT JUST THE FRAME.** *Structure from
+Articulated Motion* (SfAM, Sensors 2019, **CC BY**) recovers 3D joints **and**
+bone proportions from 2D tracks across a window (~200 frames) by alternating a linear
+3D update with a nonlinear bone-length-consistency solve. **No training data.**
+⭐ **Why it fits here better than it fits its own paper**: during a grab-and-rotate the
+hand presents **many viewpoints of a rigid body** — that is a stereo baseline in
+TIME, and the palm's rigidity is already measured at **2.76 mm** (§0.2). ⛔ **This is
+NOT another 2.3/B8.** Those SMOOTHED a bad signal; this **triangulates** a new one
+from geometry the pipeline currently throws away.
+
+⛔⛔ **AND THE FINDING THAT EXPLAINS T6's FAILURE — READ THIS BEFORE THE NEXT
+ATTEMPT.** A **planar** rigid body is degenerate for depth-from-2D **by any method**:
+PnP, homography or SfM alike inherit the two-fold / bas-relief ambiguity, and it is
+worst exactly when the plane faces the camera. That is not a T6 implementation bug —
+`verify_planar_pnp.py` §2.4 measured it as **7.0° of out-of-plane error at face-on
+against 0.6° at 75° of tilt**. ⭐⭐ **So the fix is to STOP MODELLING THE PALM AS
+PLANAR: add `THUMB_CMC` (landmark 1), which sits ~15 mm OFF the palm plane** and
+breaks the degeneracy. The project already relies on exactly that fact elsewhere —
+U7's chirality works **because the thumb is off-plane**, and the README records that
+*"3D alone does not remove the chirality dependence; the **thumb** is what does."*
+⚠ Do not confuse this with B4's rejected `PALM_AND_TIPS`: that added **finger TIPS**,
+which move and were fitted as rotation (p95 9.85→27.79). The thumb **CMC** is a base
+joint on the rigid plate, not a tip.
+
+⭐ Corroboration for cause 1, though weaker than our own data: MediaPipe issues
+**#5571** (*"Hand 2D landmarks are accurate, but hand world landmarks are bad"*,
+**still awaiting a Google response**), **#3156** (world-landmark width shrinkage) and
+the already-cited **#5156** (palm/MCP world landmarks collapse on back-of-hand).
+⚠⚠ **None of them quantifies anything. Our measurement — median 24.9° of normal tilt
+over 3131 pixel-verified face-on frames — is more quantitative than anything public,
+so DO NOT WAIT FOR AN UPSTREAM FIX.**
+
+### 2.0.2 ⛔⛔ THE 6-POINT (THUMB) MODEL WAS BUILT AND IS **ALSO** AN A10 REJECT — 2026-08-24
+
+The planarity diagnosis in §2.0.1 was acted on immediately: `THUMB_CMC` added to the
+model (in-plane x,y **measured** from 43 sessions / 2792 face-on frames at
+`(−0.5394, −0.1834)` breadths, x IQR 0.040), `planar_pnp.solve` generalised to
+non-planar models (homography still initialises from the coplanar palm subset; the
+refinement and both reprojection errors use every point), and the off-plane depth
+**swept** because face-on 2D cannot reveal it.
+
+⭐ **AND ON AXIS FIDELITY IT WORKED — genuinely, on all three axes:**
+
+| arm | YAW mean / med / gain | PITCH (08-02) | ROLL mean / med / gain |
+|---|---|---|---|
+| Horn (ships) | 14.5 / 13.0 / 1.13 | 5.5 / 20.2 / 0.74 | 6.7 / 9.4 / 1.02 |
+| **pnp+T60** | **4.0 / 9.1 / 1.07** | 7.0 / 7.8 / 0.92 | **6.3 / 4.4 / 1.02** |
+
+⛔⛔ **AND THE JITTER BAR KILLED IT, EXACTLY AS THE ANATOMY PREDICTED.** On the
+production take, `step()` p95: **Horn 25.51° → pnp+T60 62.79°** — **2.5× worse**, on
+the very criterion that rejected the 9-point constellation for a mere **+4.9°**.
+Same on the yaw take (14.32 → 35.52). ⚠ `pnp planar` and `pnp+T20` additionally
+**REFUSED to freeze** on the production take's first frame.
+
+⚠⚠ **THE TELL WAS VISIBLE BEFORE THE MEASUREMENT AND IS THE REUSABLE LESSON.** The
+axis error fell **monotonically** as the thumb was pushed to **60–110 mm** off the
+palm plane — but the real `THUMB_CMC` offset is **~10–20 mm**, and 60 mm is most of a
+palm width. **A winning parameter that is anatomically impossible is not modelling
+the hand; it is a free parameter absorbing error.** Axis fidelity on a scripted sweep
+is cheap. Jitter in real handling is what it costs.
+
+⭐⭐⭐ **THE STRUCTURAL CONCLUSION THAT SHOULD DIRECT THE NEXT ATTEMPT — and it is the
+most useful thing to come out of T6.** Two rejects now point the same way:
+
+* **Horn's problem is BIAS.** It consumes a fabricated z, so its grab reference is
+  tilted ~25° before the hand moves — but it averages five 3D points and is
+  therefore **stable** (p95 25.51°).
+* **Every PnP variant's problem is VARIANCE.** A per-frame algebraic solve from five
+  or six noisy 2D points has no such averaging, so it wins the bias and loses the
+  jitter by 2.5×.
+
+⛔ **So STOP REPLACING THE FIT.** The remedy has to keep Horn's averaging and attack
+only its bias — which is precisely the owner's own **GATE** proposal.
+
+### 2.0.3 ⛔ THE GATE WAS BUILT TOO, AND IS THE **THIRD** A10 REJECT — 2026-08-24
+
+`palm_rotation.gate_world_z` + `GatedHorn`: Horn untouched, fed world landmarks whose
+z is clamped to `sqrt(L² − inplane²)` — the right-triangle bound from the hand's own
+proportions. Scale is recovered parameter-free (foreshortening only shortens, so the
+largest observed-per-true span ratio is the un-foreshortened one). ⭐ **It may only
+ever REDUCE |z|, never invent it**, so it cannot manufacture a new defect.
+
+| arm | YAW mean / med / gain | PITCH (08-02) | jitter p95 (production) |
+|---|---|---|---|
+| Horn (ships) | **14.5 / 13.0** / 1.13 | **5.5 / 20.2** / 0.74 | **25.51°** |
+| GatedHorn | 18.1 / 16.2 / **1.02** | 25.8 / 33.6 / 0.82 | 29.78° |
+
+⭐⭐ **THE BIAS/VARIANCE READING WAS CONFIRMED — the gate DID keep Horn's stability**
+(jitter 25.51 → 29.78, versus PnP's 62.79). ⛔ **But its correction is not accurate
+enough**: worse than Horn on yaw AND pitch, so it is a reject on accuracy rather than
+on jitter. The mechanism was right; this particular correction is not.
+
+⚠⚠ **AND A REAL BUG WAS CAUGHT AND FIXED MID-BUILD, worth keeping**: the first scale
+estimator ranged only over **wrist→MCP** spans. Every one of those carries a length
+component, so a PITCH foreshortens **all of them at once**, leaving no
+un-foreshortened reference — the scale came out low, z was over-clamped, and pitch
+mean-axis went **5.5 → 43.0°**. Ranging over **all pairs** (the knuckle row 5↔17 is
+untouched by pitch) recovered it to 25.8°. ⛔ Still not enough, and the reason is
+structural: **under pitch the true z is near its geometric maximum, so the clamp
+bites hardest exactly where z is largest and any scale error becomes an error in the
+answer.** A bound is fragile precisely where the quantity it bounds is extreme.
+
+### 2.0.4 ⭐⭐⭐ WHERE THREE REJECTS LEAVE IT — read this before attempt four
+
+| attempt | fixes bias? | keeps stability? | verdict |
+|---|---|---|---|
+| planar PnP | no (worse) | **no** (62.79) | reject |
+| PnP + thumb | **yes** (yaw 4.0) | **no** (62.79) | reject |
+| z gate | no (worse) | **yes** (29.78) | reject |
+
+⭐ **All three are PER-FRAME corrections**, and that is the common thread: each frame's
+estimate is derived independently, so landmark noise enters the answer directly.
+Horn only escapes it by averaging five points, which buys stability at the cost of
+consuming a biased z.
+
+⭐⭐ **The one approach that is NOT per-frame is the multi-frame rigid reconstruction
+flagged in §2.0.1** (SfAM-style): the palm is rigid to **2.76 mm**, a grab-and-rotate
+presents **many viewpoints of it**, and that is a stereo baseline in TIME. It
+averages over hundreds of frames — so it should have **low variance like Horn** while
+**removing the bias like PnP**, which is exactly the gap the table above describes.
+⭐ It also **composes with the owner's enrolment idea**: the reconstruction *is* the
+progressive harvest (measured feasible — real play yields usable samples at ~10% of
+frames, converging in 40–860 frames).
+⚠ It is the biggest build of the four and it may also fail. Price it before starting.
+
+### 2.0.5 ⛔⛔ PATENTS — GOOGLE HOLDS TWO, ACTIVE TO 2038/2039, AND THEY BITE HERE
+
+⚠⚠ **N13 IS BINDING (the game will be commercialised), SO READ THIS BEFORE ANY
+FURTHER WORK IN THE LIFTING FAMILY.** The Fast Lifting paper is by Onur Guleryuz
+(Google Daydream) and Google patented it under the same inventor:
+
+| | US **11544871** B2 | US **12353637** B2 |
+|---|---|---|
+| title | Hand skeleton learning, lifting, and denoising from 2D images | *(same)* |
+| assignee | **Google LLC** | **Google LLC** |
+| priority | 2017-12-13 | 2017-12-13 |
+| granted | 2023-01-03 | **2025-07-08** |
+| expires | ~2038-08-24 | ~2039-02-10 |
+| status | **Active** | **Active**, continuation of '871 |
+
+⛔⛔ **THE CONTINUATION'S CLAIM 1 IS THE BROADER AND MORE DANGEROUS ONE, because it
+DROPS the lookup tables.** As granted it recites, in substance: identify keypoints on
+a hand in a 2D image; identify a **thumb triangle** (wrist, thumb palm knuckle, index
+palm knuckle) and a **palm triangle** (a vertex at the wrist, a side connecting
+palm knuckles); determine the **3D pose from the orientations of those triangles**.
+⚠ **That reads onto a very large part of "lift a hand to 3D from 2D using a wrist +
+knuckle-row triangle"** — which is what T6's `PlanarPnP` does, and what any Fast
+Lifting implementation would do. '871 adds the LUT and the training-image step.
+
+⚠ **The paper being published grants nothing.** Publication is not a licence, and
+these expire ~2038/2039 — beyond any plausible ship date.
+
+⭐ **What is probably NOT affected, though a lawyer must say so, not this file**: the
+SHIPPED `Horn` path consumes MediaPipe's **3D world landmarks** and fits a rotation
+to them. It does not *lift* 2D keypoints into 3D, which is the operation both claims
+are built around. ⭐ Note also that MediaPipe itself is Apache-2.0, whose §3 grants an
+express patent licence **for MediaPipe** — that does not extend to implementing a
+separate patented algorithm.
+⛔ **ACTION: this is the N13 "check the licence before proposing any model" rule
+arriving as a PATENT question rather than a licence one. Professional advice is
+needed before the lifting family is built, not after.**
+
+### 2.0.6 ⭐⭐⭐ THE PAPER, READ IN FULL — AND T6 GOT THE GEOMETRY BACKWARDS
+
+⚠⚠ **CORRECTION TO §2.0.1 AND TO T6 ITSELF.** With the full paper in hand, **T6's
+`PlanarPnP` is NOT an implementation of Fast Lifting, and its failure does NOT
+indict the method.** They are different mathematics with **opposite degeneracies**.
+
+⭐⭐ **THE INVERSION, which is the single most useful thing in the paper.** Fast
+Lifting models the four MCP knuckles as **COLLINEAR** — eq. (2),
+`x₃ = λx₂ + (1−λ)x₅`, `x₄ = ρx₂ + (1−ρ)x₅` — and then leans on **Proposition 2.2:
+"three or more points on a line can be unambiguously lifted whenever the line does
+not project to a single point."** Collinearity is the **SOURCE of unambiguity**.
+⛔ **T6 assumed the exact opposite.** `palm_rotation` models the knuckle row as
+**BOWED** (10.55 mm) and `verify_planar_pnp.py` §7 asserts that bow, on the
+reasoning that four collinear points are degenerate **for a homography**. That is
+true for a homography — and irrelevant to a method that never computes one.
+
+| | T6 `PlanarPnP` | Fast Lifting |
+|---|---|---|
+| mechanism | rigid-body pose fit minimising reprojection (homography → Zhang → twin → Gauss-Newton) | **algebraic lift along projection rays** with known lengths; collinear row first, then the wrist by a **circle** constraint (Fig. 6 iii/iv) |
+| knuckle row | must be **non-collinear** | must be **collinear** |
+| **worst case** | **FACE-ON** — the two-fold ambiguity merges (measured 7.0° vs 0.6° at 75°) | **row projecting to a POINT** — i.e. pointing at the lens, an extreme pose |
+| ambiguity | two candidates, needs U7 to choose | singular cases **enumerated and detectable**, remedies proposed |
+
+⭐⭐ **So the degeneracy that killed T6 — worst exactly face-on, the commonest pose —
+does not exist in Fast Lifting, whose palm lift is WELL conditioned face-on and
+fails only when the knuckle row points at the camera.** That is the opposite regime.
+⭐ Their noise robustness is also measured and graceful: AUC 0.96 clean → **0.92 at
+σ=3 px → 0.88 at σ=5 px**, and our own reprojection residual is **2.1–2.6 px**, i.e.
+inside their tested band. T6 blew up at that noise level; they do not.
+⚠ Other details worth carrying: they use **true perspective, explicitly rejecting
+weak perspective**; output is **up to overall scale** (footnote 2 — matches our own
+scale-free finding); bone lengths are estimated by **quadratic programming**
+iterated with the lift (Algorithm 1), which is the owner's enrolment idea in its
+published form; **>300 fps on one core**, so the port contract would survive.
+
+### 2.0.7 ⭐⭐⭐ T6's REAL DEFECT WAS THE **REFERENCE FRAME**, NOT THE SOLVER (2026-08-24)
+
+⚠⚠ **THIS OVERTURNS §2.0.2's DIAGNOSIS. The A10 REJECT of the planar arm was scored
+against a reference frame chosen the worst possible way for it.**
+
+⭐⭐ **THE MIRROR-REVERSE ARGUMENT, TURNED ON OURSELVES.** Fast Lifting is WELL
+conditioned face-on and degenerate only when its structure projects to a point.
+Planar PnP is the exact mirror — **degenerate FACE-ON** (the twins merge; 7.0° of
+out-of-plane error at 0° tilt against 0.6° at 75°, branch pick a coin flip) and well
+conditioned at TILT. ⛔ **And T6 freezes its reference at the MOST FACE-ON frame.**
+That rule is measurement trap #2, derived for **HORN**, where it is correct. For a
+planar PnP it is **exactly backwards**: the grab pose is frozen at the noisiest,
+most ambiguous frame available and **every later delta inherits that error** —
+which is the otherwise-unexplained finding that T6 lost in *every* rotation band.
+
+**Sweeping the reference frame's foreshortening, clean yaw take:**
+
+| reference at | HORN mean / med | **PnP mean / med** |
+|---|---|---|
+| 0° tilt (face-on — **what T6 used**) | 16.2 / 14.8 | 20.1 / 30.9 |
+| 18° | 9.9 / 8.9 | 15.5 / 26.1 |
+| **46°** | 11.2 / 11.6 | **2.2 / 10.9** |
+| **57°** | 11.4 / 12.3 | **4.8 / 10.2** |
+| **66°** | 13.9 / 13.8 | **6.6 / 10.1** |
+
+⭐⭐ **PnP goes from 20.1° to 2.2° mean-axis, and beats Horn at EVERY tilted
+reference.** The solver was never the problem.
+
+⚠⚠ **BUT IT DOES NOT REPRODUCE ON THE CARD TAKE** — 69.8 → 26.5 as the reference
+tilts, an improvement, yet still worse than Horn's 15.9 there (and the 32° reference
+failed to freeze at all). ⛔ **One take is not a result.** The card take is the one
+the owner had to contort to shoot (*"I had to tilt the hand and arm"*), and Horn is
+also worse on it — but this must be settled before anything is claimed.
+
+⭐⭐ **AND THERE IS A PRACTICAL WRINKLE THAT MATTERS MORE THAN THE NUMBER: IN THE
+GAME THE REFERENCE IS THE **GRAB** FRAME, WHICH THE PLAYER CHOOSES.** We cannot ask
+for a grab at 46° of tilt. So the fix cannot be "pick a tilted reference"; it has to
+be either **re-referencing opportunistically when a well-conditioned frame arrives**,
+or **refining the reference pose over the first frames of the hold** — which is the
+owner's own progressive-enrolment idea arriving for the third time, now as the
+mechanism that makes T6 viable rather than as a convenience.
+
+⭐ **NEXT: re-run the FULL A/B with a conditioning-aware reference** — pitch, roll and
+the jitter bar, on both yaw takes. ⛔ Until then §2.0.2's reject stands as recorded;
+this is a reason to re-open it, not a result that replaces it.
+
+### 2.0.8 ⛔⛔ CONTINUITY AND ERROR-CORRECTION ARE IN TENSION — the re-reference no-op
+
+The conditioning-aware reference of §2.0.7 was built as **opportunistic
+re-referencing**: migrate to a better-conditioned reference mid-hold, carrying the
+accumulated rotation across so the output stays continuous. ⛔ **It produced
+BIT-IDENTICAL numbers to the un-referenced arm on every take** (yaw 19.6/29.8 both;
+T60 4.0/9.1 both), which is proof rather than a weak effect.
+
+⭐⭐ **AND THE ALGEBRA SAYS IT HAD TO.** Carrying the accumulation means
+`base = R_switch · R₀ᵀ`, so the emitted delta becomes
+`(R · R_switchᵀ) · (R_switch · R₀ᵀ) = R · R₀ᵀ` — **exactly what it was before.**
+Preserving continuity preserves the ERROR along with it.
+
+⛔ **SO THE LESSON IS GENERAL AND WORTH KEEPING: a re-reference can only improve
+accuracy by DISCARDING the bad reference's contribution, and discarding it is
+precisely what creates a discontinuity.** The two goals are the same quantity with
+opposite signs. §2.0.7's measured 20.1° → 2.2° came from *starting* at a
+well-conditioned frame, never from migrating to one.
+
+⭐ **TWO DESIGNS SURVIVE THAT, AND BOTH ARE PRECEDENTED HERE**:
+1. **Delay the reference** — at grab, emit identity and refuse to rotate until a
+   well-conditioned frame arrives, then reference there. Pure suppress-don't-guess
+   (DR-2, U8, 4.2 decision 1). ⚠ Risk: a hold may never reach 46–66° of tilt.
+2. **Re-reference WITH a blend** — take the correction and absorb the step over a few
+   frames. ⭐ **Phase D already ships exactly this machinery** (the 150 ms coast +
+   **3-frame resync blend**), so it is a reuse, not a new mechanism.
+⚠ Both trade a managed, brief discontinuity for a correct axis. Which is acceptable
+is a FEEL question and therefore the owner's, not a measurement's.
+
+### 2.1 ⚠ PARTLY SUPERSEDED BY §2.0 — the earlier "camera tilt is not a cause" test
+
+⭐⭐ **THE TWO SECTIONS LOOK CONTRADICTORY AND ARE NOT — the reconciliation is the
+useful part, so do not "fix" either one.** §2.1's k-sweep says the axis error on the
+clean take collapses with world z, therefore it is depth-induced and not a fixed
+camera tilt. §2.0 says the camera is rolled ~11°. **Both are true, because of WHICH
+TAKE each used.** The k-sweep ran on `2026-08-22_134553`, a **no-card** take, where
+the operator had no gravity reference and aligned the hand to what *looked* vertical
+— **measured at +2.5° in the image.** On that take the hand's rotation axis was
+essentially the IMAGE vertical, so camera roll contributed ~nothing to the measured
+deviation and the whole 14.5° really was cause 1. ⛔ **The camera roll only bites
+when the motion is referenced to the WORLD** — which is what the card enforced
+(fitted axis 21.2° there), and what a player naturally does. ⚠ So §2.1's conclusion
+is correct *for its take* and must not be generalised to "the camera does not
+matter".
 
 Asked by the owner, 2026-08-24, and worth keeping because the confound is **real
 and sharp**: `t5i` scores YAW against the *assumed* vertical `(0,1,0)`, but
@@ -361,13 +753,100 @@ hard; with it they held 0.65–0.71 across a whole take.
    it PEAKS under length-foreshortening — a genuinely face-on palm scores ~**0.72**
    — and selecting on it reported the palm **45 mm too short**. Use "both spans
    within 5% of that session's own p99" instead: foreshortening only ever shortens.
-3. Implement planar PnP (IPPE-style) in **stdlib**, returning **both** pose
-   candidates plus reprojection errors.
-4. Disambiguate with `palm_geometry` chirality; fall back to temporal continuity.
-5. Register as `palm_rotation.PlanarPnP`, add to `estimators()`.
-6. A/B against Horn with `t5i` / `t5j` / `t5h` on the takes in §8 — all three
-   axes plus jitter.
-7. Sweep the assumed FOV to measure intrinsics sensitivity; feed the result into
-   the **U12** row.
-8. Swap the two call sites only if §5's targets are met. Then a live take in
-   **both** tools.
+3. ✅ **DONE 2026-08-24 — `Resources/planar_pnp.py`, stdlib and numpy-free;
+   `verify_planar_pnp.py` §2 all green.** Recovers a known pose to **1e-6°** and
+   **0 mm** across nine poses (face-on, yaw 30/60/75, pitch ±, roll, compound),
+   returns **both** candidates sorted by reprojection error, and refuses degenerate
+   input rather than guessing.
+   ⭐ **THE ALGORITHM IS DELIBERATELY THE OLD, UNENCUMBERED ONE**: normalised DLT
+   homography (Abdel-Aziz & Karara 1971; Hartley 1997) → Zhang-style decomposition
+   (2000) → the classical planar twin `S·R·S` → Gauss-Newton on reprojection error.
+   ⛔ **Not IPPE and not OpenCV** — decades-old prior art reaches the same two
+   minima and keeps N13's licence question from ever arising. The Jacobi
+   eigen-solver `palm_rotation` already needed was generalised to n×n and reused.
+   ⭐⭐ **AND IT PRODUCED THE NUMBER STEP 6 WILL BE JUDGED ON. Conditioning vs tilt,
+   400 draws at ±1 px** (medians):
+
+   | palm tilt | out-of-plane err | in-plane (roll) err |
+   |---|---|---|
+   | 0° (face-on) | **7.0°** | 0.37° |
+   | 10° | 4.6° | 0.43° |
+   | 30° | 1.4° | 0.41° |
+   | 60° | **0.71°** | 0.32° |
+   | 75° | **0.60°** | 0.33° |
+
+   ⭐ **Two pieces of good news for A10**: the defect T6 exists to fix lives at
+   **60–90° of hand turn**, exactly where this is most accurate; and **ROLL is the
+   in-plane component, flat-excellent at every tilt** — which is the axis Horn
+   already gets right (gain 1.02) and A10 forbids regressing. ⚠ **The open risk is
+   NEAR-FACE-ON handling** (p95 10–21° below ~30° of tilt) — that is the genuinely
+   unobservable component there, not a defect, but it is **exactly what the jitter
+   bar will measure**, and jitter is what killed the 9-point constellation. ⭐ If it
+   bites, the house answer is already known: **suppress, do not guess** (DR-2, U8,
+   4.2's decision 1), and B8 measured that **holding the last value beats every
+   fit** — so hold the tilt at low tilt rather than inventing a better solver.
+   ⛔⛔ **A MEASUREMENT-INSTRUMENT TRAP CAUGHT HERE, kept because it will recur**: an
+   LCG (`1103515245·s+12345 mod 2^31`) was used as the noise source "for
+   determinism". Its consecutive tuples lie on a lattice (Marsaglia) and this draws
+   **ten values per frame**, so the noise was structured — reporting a p95 of
+   **72°** at 60° tilt against a 0.67° median. **The tell was NON-MONOTONICITY**
+   (fine at 45°, catastrophic at 60°, fine at 75°). Seeded Mersenne Twister is
+   equally reproducible and actually distributed; the 72° became **1.6°**.
+4. ✅ **DONE** — chirality at grab, temporal continuity through the hold.
+   ⛔⛔ **THE CONVENTION CONSTANT WAS INVERTED, AND ONLY MEASUREMENT CAUGHT IT.**
+   `BACK_TO_CAMERA_NZ_POSITIVE` reasoned out from the canonical model's own
+   construction was **True**; the corpus says **False** — 9403 frames over 61
+   sessions split **81.2% / 18.8%** the other way. Shipping the derived value would
+   have inverted every rotation. This is §13.6.1's exact shape, caught this time.
+   ⭐ **AND ONE PIECE OF MACHINERY TURNED OUT UNNECESSARY**: for a PLANAR model,
+   mirroring the model is the same operation as flipping the pose, so `solve()`'s
+   two candidates ALREADY span both hand chiralities. There is one binary, not two.
+5. ✅ **DONE** — `palm_rotation.PlanarPnP`, in `estimators()`. Registering it
+   immediately broke `verify_palm_rotation.py` §5b, and **the fixture was at fault,
+   not the estimator**: it had an ORTHOGRAPHIC `px`, THUMB_CMC left at the ORIGIN
+   (so chirality read garbage), and an invented palm shape. Every prior estimator
+   ignored `px`, so none of it had ever been exercised. Fixture fixed; suite green.
+6. ⛔⛔ **DONE — AND IT IS AN A10 REJECT. DO NOT PROCEED TO STEP 8.**
+
+   | take | metric | Horn (ships) | PlanarPnP |
+   |---|---|---|---|
+   | yaw | mean-axis | **14.5°** | 19.6° |
+   | yaw | **median/frame** | **13.0°** | **29.8°** |
+   | yaw | gain | 1.13 | 1.15 |
+   | pitch (2026-08-02) | mean-axis | **5.5°** | 12.7° |
+   | pitch | median/frame | 20.2° | **11.0°** |
+   | pitch | **gain** | 0.74 | **0.99** |
+
+   ⭐ **THE ONE REAL WIN: pitch GAIN 0.74 → 0.99.** Pitch under-turning by 26% was
+   a genuine defect and a 2D fit removes it. ⛔ **But yaw — the show-stopper — gets
+   WORSE, and A10 requires all three axes.**
+
+   ⚠⚠ **FOUR EXPLANATIONS WERE TESTED AND ALL FOUR ARE REFUTED.** Recorded so no
+   one re-runs them:
+   * **the planar degeneracy near edge-on** — no: PnP loses in **every** rotation
+     band (40-60: 52.3 vs 27.6; 120-145: 29.5 vs 10.2), not just near 90°;
+   * **twin-branch flips** — no: **12 flips in 508 frames**, and the error on a
+     flip frame (27.9°) matches the error while held (29.9°);
+   * **model shape mismatch** — no: this session measures **1.228** against the
+     model's 1.280, and forcing the session's own shape moves 29.3° → **27.5°**;
+   * **the assumed 60° FOV** — no: swept 30–120°, the best is **16.3° at 100°**
+     (implausible for this webcam) and still loses to Horn's 13.0°.
+
+   ⭐⭐ **AND THE PREMISE ITSELF NEEDS AN AMENDMENT, WHICH IS THE FINDING WORTH
+   CARRYING.** T6 rested on *"the 2D landmarks are good; the predicted depth breaks
+   the rotation."* The first half was an INFERENCE from roll being accurate — but
+   roll was measured with **Horn over world landmarks**, so it never tested 2D
+   alone. **T6 is the first direct test of a 2D-only pose, and it is worse.** The
+   planar model is not the problem: reprojection RMS is **2.1–2.6 px median** on
+   every take, which is the palm's own documented 2.76 mm rigidity (~3.1 px at
+   0.5 m). So the model FITS — the residual is simply at the scale that, per §2.4's
+   conditioning table, corrupts the out-of-plane component, and it is very likely
+   **systematic** (the palm flexes with pose) rather than random.
+7. ✅ **DONE — and it is the number owed to U12.** FOV sensitivity on the yaw take:
+   **~2–4° of axis error per 10° of assumed-FOV error** in the 60–80° range
+   (60°→29.8°, 70°→20.0°, 80°→18.2°). ⚠ That is large, and it is the **U3 port
+   risk** in one figure: a phone front camera near 70–80° would read materially
+   differently from this 60° assumption. Feed it into **U12**.
+8. ⛔ **NOT REACHED — the call sites are UNCHANGED and production is untouched.**
+   `PlanarPnP` stays in `estimators()` only, where it costs nothing and changes no
+   behaviour, so a future attempt starts from working code rather than a rewrite.

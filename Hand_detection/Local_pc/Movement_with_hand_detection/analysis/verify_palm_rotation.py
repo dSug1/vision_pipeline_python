@@ -64,8 +64,9 @@ def det3(M):
 
 
 # A realistic palm constellation (metres), plus the four arc tips
-PALM = [(0.00, 0.045, 0.0), (-0.040, -0.020, 0.0), (-0.013, -0.030, 0.0),
-        (0.013, -0.028, 0.0), (0.040, -0.018, 0.0)]
+# ⭐ THE PALM IS THE MEASURED CANONICAL ONE, not an invented constellation -- see
+# the fixture note above `hand()` in §5 for why that turned out to be load-bearing.
+PALM = [(p[0], p[1], p[2]) for p in PR.canonical_palm()]
 TIPS = [(-0.045, -0.115, 0.008), (-0.015, -0.125, 0.006),
         (0.015, -0.120, 0.006), (0.042, -0.100, 0.008)]
 
@@ -160,14 +161,40 @@ check("holds on MIRRORED input (§0.9: a right hand is labelled 'Left')",
 print("\n5. THE ESTIMATOR INTERFACE")
 
 
+# ⚠⚠ THIS FIXTURE WAS NOT A HAND, AND T6 IS WHAT EXPOSED IT (2026-08-24). Until
+# `PlanarPnP` arrived, every estimator here read only `world`, so THREE defects in
+# the synthetic frame were never exercised and all three broke the new one:
+#   1. `px` was ORTHOGRAPHIC -- `320 + 1400*w.x`, with w.z simply dropped, and the
+#      hand sitting at world z ~ 0. A perspective estimator handed that sees a hand
+#      that moved sideways WITHOUT changing size, which under perspective can only
+#      be explained as a rotation. Now a real pinhole projection at a real depth.
+#   2. THUMB_CMC was left at the ORIGIN, so `palm_geometry.geometric_chirality`
+#      read a garbage thumb and the twin-branch choice was arbitrary. A hand needs
+#      a thumb, and it must sit OFF the palm plane or chirality is undefined.
+#   3. the palm constellation was an invented shape (length/width 0.951) rather
+#      than the measured canonical palm (1.280). ⭐ That mismatch is not cosmetic:
+#      a wrong model SHAPE converts pure TRANSLATION into rotation -- measured at
+#      ~15 deg here -- because the pose error depends on WHERE the hand is instead
+#      of being a constant that cancels in the grab-referenced delta.
+# ⭐ `world` stays a rigid constellation, so Horn and GramSchmidt are unaffected in
+# kind; only the numbers move, and every assertion in §1-§3 is a comparison or an
+# exact-recovery claim, not a hard-coded magnitude.
+CAM_DEPTH_M = 0.50
+CAM_FOCAL_PX = 554.3                    # 640 px at the documented 60 deg HFOV
+THUMB_CMC = 1
+THUMB = (-0.045, -0.030, 0.015)         # off the palm plane -- chirality needs that
+
+
 def hand(M=None, t=(0.0, 0.0, 0.0)):
     world = [(0.0, 0.0, 0.0)] * 21
     src = dict(zip(PR.PALM_LANDMARKS, PALM))
     src.update(dict(zip(PR.ARC_TIPS, TIPS)))
+    src[THUMB_CMC] = THUMB
     for i, p in src.items():
         v = apply_m(M, p) if M else p
         world[i] = tuple(a + b for a, b in zip(v, t))
-    px = [(320.0 + 1400.0 * w[0], 240.0 + 1400.0 * w[1]) for w in world]
+    px = [(CAM_FOCAL_PX * w[0] / (w[2] + CAM_DEPTH_M) + 320.0,
+           CAM_FOCAL_PX * w[1] / (w[2] + CAM_DEPTH_M) + 240.0) for w in world]
     return px, world
 
 

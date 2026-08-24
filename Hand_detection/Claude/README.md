@@ -141,7 +141,17 @@ production now RECORDS what it ran instead of forcing a recomputation, and why
 the recorders have their own parity guard. See `PART_ONE.md` §3.1's YOU-ARE-HERE
 block for all four.
 
-⭐⭐ **NEXT BUILD IS T6 — ORIENTATION FROM 2D, AND THE OWNER WANTS IT BEFORE ANYTHING
+⛔⛔ **T6 WAS BUILT AND A10-REJECTED ON 2026-08-24 — the yaw lean is STILL OPEN and
+still the owner's show-stopper.** Read T6's row and
+`HANDOFF_T6_ORIENTATION_FROM_2D.md` §9 before proposing anything here: four
+explanations for its failure were measured and refuted, and the project's own
+premise (*"the 2D landmarks are good"*) is now amended — that was an inference from
+roll, which was measured with Horn over WORLD landmarks and never tested 2D alone.
+⭐ Production is untouched; `PlanarPnP` lives in `estimators()` only. The section
+below is the ORIGINAL brief, kept because its diagnosis of the DEFECT (as opposed
+to its proposed remedy) still stands.
+
+⭐⭐ **NEXT BUILD WAS T6 — ORIENTATION FROM 2D, AND THE OWNER WANTED IT BEFORE ANYTHING
 ELSE** (*"I want to implement the fix before anything else is built"*). The object
 does not turn purely about the vertical — **it LEANS up to ~27°** at a 60–90° hand
 turn, which the owner calls a show-stopper. ⭐ **The cause is PROVEN twice over**
@@ -263,6 +273,7 @@ This is the section that saves the most time. Each was measured, not guessed.
 | **The 9-point palm+tips constellation for rotation** | ⛔ **A10 REJECT 2026-08-23** — +1.4° of axis fidelity for +4.9° of p95 jitter in real handling. Its "wins in every take" reputation rested on the axis-CONTAMINATED 2026-08-04 yaw take |
 | **A physical card held in the hand to remove yaw wobble** | ⚠ **the method controls the SWEEP well** (best contamination score ever measured) **but reads the TILT HIGHER** (17–19° vs the card-free 12.6–13.0°). Keep it for cleanliness, never for axis magnitude |
 | **A depth calibration screen** (min/max reach) | **not needed** — absolute scale is unobservable AND cancels in the ratio form; `d0` is per-grab; the envelope is already 3.59x |
+| **T6 — orientation from 2D (planar PnP)** | ⛔⛔ **BUILT AND A10-REJECTED 2026-08-24.** Yaw, the defect it existed to fix, gets WORSE (median/frame **13.0° → 29.8°**); pitch **gain is fixed** (0.74 → 0.99). Four explanations tested and all refuted — the edge-on planar degeneracy, twin-branch flips, model shape, and the assumed FOV. ⭐ **It amends the project's own diagnosis**: *"the 2D landmarks are good"* was an INFERENCE from roll, and roll was measured with Horn over WORLD landmarks — T6 is the first direct test of 2D-only pose and it is worse. Code stays in `estimators()`; call sites unchanged |
 
 ⚠ **Retractions are kept on purpose.** A claim that was overturned is more useful
 than one silently deleted — several were overturned *twice*. When a spec section

@@ -50,6 +50,7 @@ Run from the parent directory:
 
 import math
 import os
+import random
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -176,6 +177,222 @@ rowspread = max(abs(-(palm[idx[m]][0] - p5[0]) * ex[1] + (palm[idx[m]][1] - p5[1
 check("the knuckle row BOWS (9 and 13 off the 5-17 line), as anatomy requires",
       rowspread > 1e-4, f"{rowspread*1000:.2f} mm of bow")
 
+
+# ==========================================================================
+# §2  THE PLANAR PnP SOLVE
+# ==========================================================================
+import planar_pnp as PP               # noqa: E402
+
+FOCAL, CX, CY = PG.focal_px((640, 480)), 320.0, 240.0
+MODEL = [(p[0], p[1]) for p in palm]
+
+
+def rot(axis, deg):
+    a = math.radians(deg)
+    c, s = math.cos(a), math.sin(a)
+    if axis == "x":
+        return [[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]]
+    if axis == "y":
+        return [[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]]
+    return [[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]]
+
+
+def mul(a, bb):
+    return [[sum(a[r][k] * bb[k][c] for k in range(3)) for c in range(3)] for r in range(3)]
+
+
+def project(r, t, model, focal=None, cx=CX, cy=CY):
+    focal = FOCAL if focal is None else focal
+    out = []
+    for mx, my in model:
+        x = r[0][0] * mx + r[0][1] * my + t[0]
+        y = r[1][0] * mx + r[1][1] * my + t[1]
+        z = r[2][0] * mx + r[2][1] * my + t[2]
+        out.append((focal * x / z + cx, focal * y / z + cy))
+    return out
+
+
+def angle_between(a, bb):
+    tr = sum(a[k][0] * bb[k][0] + a[k][1] * bb[k][1] + a[k][2] * bb[k][2] for k in range(3))
+    return math.degrees(math.acos(max(-1.0, min(1.0, (tr - 1.0) / 2.0))))
+
+
+print("\n" + "=" * 78)
+print("verify_planar_pnp -- §2  THE PLANAR PnP SOLVE")
+print("=" * 78)
+
+# -- 2.1 exact round-trip ---------------------------------------------------
+# ⭐ THE CORE CLAIM. Project a known pose, hand the pixels back, demand the pose
+# returns. ⚠ Poses stop at 75 deg deliberately: at 90 deg the palm is edge-on, its
+# projection collapses to a LINE and the homography is singular -- that is a
+# genuine property of one RGB camera (DR-2 suppresses there), not a solver bug.
+print("\n  2.1 exact recovery of a known pose (noise-free)")
+T0 = (0.02, -0.01, 0.50)
+CASES = [
+    ("face-on", [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+    ("yaw 30", rot("y", 30)),
+    ("yaw 60", rot("y", 60)),
+    ("yaw 75", rot("y", 75)),
+    ("pitch 40", rot("x", 40)),
+    ("pitch -55", rot("x", -55)),
+    ("roll 50", rot("z", 50)),
+    ("yaw 45 + pitch 25", mul(rot("y", 45), rot("x", 25))),
+    ("all three", mul(mul(rot("y", 35), rot("x", -20)), rot("z", 15))),
+]
+print(f"       {'case':>18s}  {'axis err':>9s}  {'t err (mm)':>11s}  {'rms px':>9s}")
+worst_ang, worst_t = 0.0, 0.0
+for name, R in CASES:
+    px = project(R, T0, MODEL)
+    sol = PP.solve(MODEL, px, FOCAL, CX, CY)
+    if not sol:
+        check(f"2.1 {name}: a solution exists", False)
+        continue
+    Rr, tr, err = sol[0]
+    ang = angle_between(R, Rr)
+    dt = math.sqrt(sum((tr[i] - T0[i]) ** 2 for i in range(3))) * 1000.0
+    print(f"       {name:>18s}  {ang:8.5f}d  {dt:11.5f}  {err:9.2e}")
+    worst_ang, worst_t = max(worst_ang, ang), max(worst_t, dt)
+check("every pose recovered to < 0.01 deg", worst_ang < 0.01, f"worst {worst_ang:.6f} deg")
+check("every translation recovered to < 0.01 mm", worst_t < 0.01, f"worst {worst_t:.6f} mm")
+
+# -- 2.2 both solutions, and the mirror relation ----------------------------
+# ⭐⭐ THE TWO-FOLD AMBIGUITY IS THE CONTRACT, not an artefact -- step 4 needs both
+# to hand to U7's chirality. Assert the twin is a proper ROTATION: a reflection
+# here would invert chirality silently, which is exactly §13.6.1.
+print("\n  2.2 the planar two-fold ambiguity")
+R = rot("y", 45)
+px = project(R, T0, MODEL)
+sol = PP.solve(MODEL, px, FOCAL, CX, CY)
+check("two candidate poses are returned", len(sol) == 2, f"{len(sol)}")
+check("they are sorted by reprojection error",
+      len(sol) == 2 and sol[0][2] <= sol[1][2],
+      f"{sol[0][2]:.3e} <= {sol[1][2]:.3e}" if len(sol) == 2 else "")
+check("the true pose is the better one", angle_between(R, sol[0][0]) < 0.01,
+      f"{angle_between(R, sol[0][0]):.6f} deg")
+if len(sol) == 2:
+    check("the twin is genuinely different", angle_between(R, sol[1][0]) > 1.0,
+          f"{angle_between(R, sol[1][0]):.2f} deg away")
+tw = PP._twin(R)
+det = (tw[0][0] * (tw[1][1] * tw[2][2] - tw[1][2] * tw[2][1])
+       - tw[0][1] * (tw[1][0] * tw[2][2] - tw[1][2] * tw[2][0])
+       + tw[0][2] * (tw[1][0] * tw[2][1] - tw[1][1] * tw[2][0]))
+check("_twin returns a PROPER rotation (det = +1), never a reflection",
+      close(det, 1.0, 1e-12), f"det {det:.12f}")
+check("_twin is an involution", all(close(PP._twin(tw)[i][j], R[i][j], 1e-12)
+                                    for i in range(3) for j in range(3)))
+check("a face-on pose is its own twin (the ambiguity vanishes at zero tilt)",
+      all(close(PP._twin([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])[i][j],
+                1.0 if i == j else 0.0, 1e-12) for i in range(3) for j in range(3)))
+
+# -- 2.3 scale invariance of the ROTATION -----------------------------------
+# ⭐⭐ THE PROPERTY THAT MAKES §1's 10 mm ANCHOR DISAGREEMENT HARMLESS. Scale the
+# model, and the rotation must not move at all -- only the translation scales.
+print("\n  2.3 rotation is scale-free; only translation carries the anchor")
+big = [(x * 2.0, y * 2.0) for x, y in MODEL]
+R = mul(rot("y", 50), rot("x", -15))
+s1 = PP.solve(MODEL, project(R, T0, MODEL), FOCAL, CX, CY)
+s2 = PP.solve(big, project(R, (T0[0] * 2, T0[1] * 2, T0[2] * 2), big), FOCAL, CX, CY)
+check("a 2x model gives the SAME rotation",
+      bool(s1) and bool(s2) and angle_between(s1[0][0], s2[0][0]) < 1e-6,
+      f"{angle_between(s1[0][0], s2[0][0]):.3e} deg")
+check("...and exactly 2x the translation",
+      bool(s1) and bool(s2) and all(close(s2[0][1][i], 2.0 * s1[0][1][i], 1e-6)
+                                    for i in range(3)))
+
+# -- 2.4 noise and CONDITIONING vs TILT --------------------------------------
+# ⭐⭐ THE MOST DECISION-RELEVANT BLOCK IN THIS FILE: it predicts whether T6 can pass
+# A10's JITTER bar, the criterion that killed the 9-point constellation. A planar
+# target's OUT-OF-PLANE tilt is weakly observable when the plane is nearly parallel
+# to the image (the two ambiguous poses merge there); the IN-PLANE component stays
+# well determined. Measured, 400 draws at +/-1 px, medians:
+#
+#     tilt |  out-of-plane  |  in-plane
+#       0d |     4.27d      |    0.24d
+#      10d |     4.38d      |    0.49d
+#      30d |     1.48d      |    0.41d
+#      75d |     0.56d      |    0.36d
+#
+# ⭐ TWO CONSEQUENCES TO CARRY INTO STEP 6:
+#   * the defect T6 exists to fix lives at **60-90 deg of hand turn**, which is
+#     exactly where this is most accurate (p95 ~1.5 deg);
+#   * ROLL is the in-plane component, flat-excellent at every tilt -- and it is the
+#     axis Horn already gets RIGHT (gain 1.02) and A10 forbids regressing.
+# ⚠ THE OPEN RISK IS NEAR-FACE-ON HANDLING, where p95 reaches 10-21 deg. Horn's own
+# jitter p95 is 25.41 deg on a real take, so this is not obviously worse -- but it
+# is what the A/B must actually check, not assume.
+#
+# ⛔⛔ AN LCG WAS USED HERE FIRST AND WAS THE WRONG INSTRUMENT -- kept so it is not
+# reintroduced "for determinism". `(1103515245*s+12345) mod 2^31` has consecutive
+# tuples on a lattice (Marsaglia) and this draws TEN values per frame, so the
+# "noise" was structured. **The tell was a NON-MONOTONIC tail**: p95 fine at 45 deg,
+# **72 deg** at 60 deg, fine again at 75 deg. Mersenne Twister with a fixed seed is
+# equally reproducible and actually distributed -- the 72 deg became 1.6.
+print("\n  2.4 pixel noise, and conditioning vs TILT (seeded MT, +/- 1.0 px)")
+rng = random.Random(987654321)
+DRAWS = 200
+print(f"       {'tilt':>6s}  {'out-of-plane':>13s}  {'in-plane':>9s}")
+oop_by_tilt, inp_by_tilt = {}, {}
+for tilt in (0, 10, 30, 60, 75):
+    R = rot("y", tilt)
+    oops, inps = [], []
+    for _ in range(DRAWS):
+        px = [(u + rng.uniform(-1.0, 1.0), v + rng.uniform(-1.0, 1.0))
+              for u, v in project(R, T0, MODEL)]
+        sol = PP.solve(MODEL, px, FOCAL, CX, CY)
+        if not sol:
+            continue
+        m = [[sum(R[k][i] * sol[0][0][k][j] for k in range(3)) for j in range(3)]
+             for i in range(3)]
+        q = PP.quat_from_matrix(m)
+        w = max(-1.0, min(1.0, abs(q[0])))
+        d = math.degrees(2.0 * math.acos(w))
+        s = math.sqrt(max(0.0, 1.0 - w * w))
+        if s < 1e-12:
+            oops.append(0.0)
+            inps.append(0.0)
+            continue
+        oops.append(d * math.hypot(q[1] / s, q[2] / s))
+        inps.append(d * abs(q[3] / s))
+    oop_by_tilt[tilt] = sorted(oops)[len(oops) // 2]
+    inp_by_tilt[tilt] = sorted(inps)[len(inps) // 2]
+    print(f"       {tilt:5d}d  {oop_by_tilt[tilt]:12.2f}d  {inp_by_tilt[tilt]:8.2f}d")
+
+check("IN-PLANE (roll) stays under 1 deg at EVERY tilt -- the axis A10 protects",
+      max(inp_by_tilt.values()) < 1.0, f"worst {max(inp_by_tilt.values()):.2f} deg")
+check("OUT-OF-PLANE is accurate where the defect lives (60-90 deg of turn)",
+      oop_by_tilt[60] < 1.5 and oop_by_tilt[75] < 1.5,
+      f"{oop_by_tilt[60]:.2f}d at 60, {oop_by_tilt[75]:.2f}d at 75")
+check("...and DEGRADES toward face-on, as the planar geometry REQUIRES",
+      oop_by_tilt[0] > 2.0 * oop_by_tilt[60],
+      f"{oop_by_tilt[0]:.2f}d at 0 vs {oop_by_tilt[60]:.2f}d at 60")
+
+# -- 2.5 refusals ------------------------------------------------------------
+# ⭐ REFUSING IS A FEATURE HERE. The house rule from DR-2, U8 and 4.2's decision 1
+# is SUPPRESS, DO NOT GUESS -- a confidently wrong pose is the failure mode this
+# project keeps paying for.
+print("\n  2.5 degenerate input is REFUSED, not guessed")
+check("fewer than 4 points -> []", PP.solve(MODEL[:3], [(0.0, 0.0)] * 3, FOCAL, CX, CY) == [])
+check("mismatched lengths -> []", PP.solve(MODEL, [(0.0, 0.0)] * 3, FOCAL, CX, CY) == [])
+check("a null focal -> []", PP.solve(MODEL, project(rot("y", 20), T0, MODEL), None, CX, CY) == [])
+collinear = [(0.0, 0.0), (1.0, 1.0), (2.0, 2.0), (3.0, 3.0), (4.0, 4.0)]
+check("collinear MODEL points -> [] (the homography is singular)",
+      PP.solve(collinear, project(rot("y", 20), T0, MODEL), FOCAL, CX, CY) == [])
+allsame = [(300.0, 200.0)] * 5
+check("collapsed IMAGE points -> []", PP.solve(MODEL, allsame, FOCAL, CX, CY) == [])
+
+# -- 2.6 the quaternion bridge ----------------------------------------------
+print("\n  2.6 quat_from_matrix, including the near-180 deg branch")
+worst_q = 0.0
+for axis in ("x", "y", "z"):
+    for deg in (5, 90, 179, 179.9):
+        R = rot(axis, deg)
+        q = PP.quat_from_matrix(R)
+        check_ang = 2.0 * math.degrees(math.acos(min(1.0, abs(q[0]))))
+        worst_q = max(worst_q, abs(check_ang - deg))
+        check(f"{axis} {deg} deg -> quaternion angle", abs(check_ang - deg) < 1e-6, "")
+check("unit norm everywhere",
+      close(sum(c * c for c in PP.quat_from_matrix(rot("y", 179.9))), 1.0, 1e-12))
+
 print()
 print("=" * 78)
 if FAILURES:
@@ -183,5 +400,5 @@ if FAILURES:
     for f in FAILURES:
         print("  -", f)
     sys.exit(1)
-print("ALL GOLDEN VECTORS PASS  (§1 canonical palm)")
-print("⚠ §2 (the IPPE solve itself) lands with step 3 -- this file is written to grow.")
+print("ALL GOLDEN VECTORS PASS  (§1 canonical palm, §2 the planar PnP solve)")
+print("⚠ §3 (chirality disambiguation) lands with step 4 -- this file is written to grow.")

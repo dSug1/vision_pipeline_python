@@ -86,6 +86,19 @@ def axis_angle(q):
     return (x / s, y / s, z / s), math.degrees(ang)
 
 
+def _resolution(session):
+    """⚠ PnP needs the CAPTURE resolution -- a wrong focal lands on exactly the
+    out-of-plane component T6 exists to fix, so read it, never assume it."""
+    try:
+        with open(os.path.join(CAPTURE, session, "meta.json"), encoding="utf-8") as fh:
+            r = json.load(fh).get("resolution")
+        if r and len(r) == 2 and r[0] and r[1]:
+            return (int(r[0]), int(r[1]))
+    except (OSError, ValueError, TypeError):
+        pass
+    return (640, 480)
+
+
 def load(key):
     m = [d for d in sorted(os.listdir(CAPTURE)) if key in d]
     if not m:
@@ -152,14 +165,40 @@ def main():
 
         print(f"\n  {axis_name}  {name}   ({len(seq)} frames, true rotation reaches "
               f"{max(truth):.0f} deg)")
-        print(f"    {'k':>5s}  {'MEAN-axis':>9s}  {'MEDIAN/fr':>9s}  {'gain':>7s}  {'n':>5s}")
+        print(f"    {'arm':>5s}  {'MEAN-axis':>9s}  {'MEDIAN/fr':>9s}  {'gain':>7s}  {'n':>5s}")
         print("    " + "-" * 48)
-        for k in K_SWEEP:
-            s2 = [(px, [(x, y, z * k) for x, y, z in wl]) for px, wl in seq]
-            horn = PR.Horn(PR.PALM_LANDMARKS, "ref")
+        # ⭐ T6's arm is scored by the SAME code as the k sweep, deliberately.
+        # Trap #3 (two harnesses aggregating differently under one name) reported
+        # pitch as "45-55 deg, broken" once; a separate A/B script would risk it
+        # again, so `planar_pnp` is just another row here.
+        arms = [(f"{k:5.2f}", PR.Horn(PR.PALM_LANDMARKS, "ref"), k) for k in K_SWEEP]
+        res = _resolution(name)
+        arms.append(("  PnP", PR.PlanarPnP(frame_size=res), None))
+        # ⭐⭐ T6b: Horn UNCHANGED, fed geometrically gated world z. Keeps the
+        # five-point averaging that makes Horn stable, removes only the bias.
+        arms.append((" GATE", PR.GatedHorn(), None))
+        # ⭐⭐ THE 6-POINT ARMS. A PLANAR model is degenerate for depth-from-2D by
+        # construction; THUMB_CMC sits off that plane and breaks it. Its OFF-PLANE
+        # depth is the one quantity face-on 2D cannot reveal, so it is SWEPT rather
+        # than assumed -- if the result is flat across the sweep, the thumb is not
+        # doing the work and the idea is dead; if it peaks, that peak is a measured
+        # constant and a candidate for the owner's per-user harvest.
+        # ⭐⭐ THE CONDITIONING-AWARE REFERENCE. T6 froze its reference at the MOST
+        # FACE-ON frame -- trap #2's rule, correct for Horn and exactly backwards for
+        # a planar PnP, whose degeneracy IS face-on. This arm migrates to a
+        # better-conditioned reference as soon as the hand offers one.
+        arms.append(("PnPRR", PR.PlanarPnP(frame_size=res, reref=True), None))
+        arms.append(("T60RR", PR.PlanarPnP(frame_size=res, with_thumb=True,
+                                           thumb_z_m=0.060, reref=True), None))
+        for label, est, k in arms:
+            if k is None:
+                s2 = seq          # ⭐ PnP never reads world z; nothing to scale
+            else:
+                s2 = [(px, [(x, y, z * k) for x, y, z in wl]) for px, wl in seq]
+            horn = est
             st = horn.freeze(*s2[ref])
             if st is None:
-                print(f"    {k:5.2f}  REFUSED -- degenerate reference")
+                print(f"    {label}  REFUSED -- degenerate reference")
                 continue
             # ⚠⚠ TWO DIFFERENT QUESTIONS, AND CONFLATING THEM COST A FALSE ALARM.
             # `t5_rotation_axis_fidelity.py` averages the per-frame axes FIRST and
@@ -197,7 +236,7 @@ def main():
                 n = math.sqrt(mx * mx + my * my + mz * mz) or 1.0
                 mdot = abs((mx * exp[0] + my * exp[1] + mz * exp[2]) / n)
                 mdev = math.degrees(math.acos(max(-1.0, min(1.0, mdot))))
-            print(f"    {k:5.2f}  {mdev:9.1f}  {pct(devs,50):9.1f}  "
+            print(f"    {label}  {mdev:9.1f}  {pct(devs,50):9.1f}  "
                   f"{pct(gains,50):7.2f}  {len(devs):5d}")
 
     print()

@@ -131,44 +131,51 @@ def main():
     print(f"\n     reference = squarest frame (edge_on {eo[ref]:.2f})")
     print(f"     true roll reaches {max(truth):.0f} deg, median {pct(truth,50):.0f} deg")
 
-    # ---- the fit
-    horn = PR.Horn(PR.PALM_LANDMARKS, "ref")
-    st = horn.freeze(*frames[ref])
-    if st is None:
-        print("\n  degenerate reference -- REFUSED")
-        return 1
-    devs, gains, axes = [], [], []
-    for i, (px, wl) in enumerate(frames):
-        d = horn.delta(st, px, wl)
-        if d is None:
-            continue
-        ax, ang = axis_angle(d)
-        if ax is None:
-            continue
-        if ang >= MIN_ANGLE_DEG:
-            dot = abs(sum(a * b for a, b in zip(ax, VIEW_AXIS)))
-            devs.append(math.degrees(math.acos(max(-1.0, min(1.0, dot)))))
-            a = ax
-            if axes and sum(p * q for p, q in zip(a, axes[0])) < 0.0:
-                a = (-a[0], -a[1], -a[2])
-            axes.append(a)
-        if truth[i] >= 30.0:
-            gains.append(ang / truth[i])
-
+    # ---- the fit. ⭐ T6's arms are scored by the SAME code as Horn, deliberately:
+    # trap #3 (two harnesses aggregating differently under one name) already cost a
+    # false alarm once, so a candidate is a ROW here, never a separate script.
     print()
     print("  2. THE FIT vs the depth-free ground truth")
-    if not devs:
-        print("     ! nothing above the noise floor -- the roll never got large enough")
-        return 1
-    mx = sum(a[0] for a in axes) / len(axes)
-    my = sum(a[1] for a in axes) / len(axes)
-    mz = sum(a[2] for a in axes) / len(axes)
-    n = math.sqrt(mx * mx + my * my + mz * mz) or 1.0
-    mdev = math.degrees(math.acos(max(-1.0, min(1.0,
-                        abs((mx * VIEW_AXIS[0] + my * VIEW_AXIS[1] + mz * VIEW_AXIS[2]) / n)))))
-    print(f"     axis off the VIEW axis -- MEAN   : {mdev:5.1f} deg   (bias)")
-    print(f"     axis off the VIEW axis -- MEDIAN : {pct(devs,50):5.1f} deg   (bias + scatter, n={len(devs)})")
-    print(f"     gain (fitted / true)             : {pct(gains,50):5.2f}   (n={len(gains)})")
+    print(f"     {'arm':>12s}  {'MEAN':>7s}  {'MEDIAN':>7s}  {'gain':>6s}  {'n':>5s}")
+    print("     " + "-" * 44)
+    arms = [("horn", PR.Horn(PR.PALM_LANDMARKS, "ref")),
+            ("pnp", PR.PlanarPnP()),
+            ("pnp+reref", PR.PlanarPnP(reref=True)),
+            ("pnp+T60", PR.PlanarPnP(with_thumb=True, thumb_z_m=0.060)),
+            ("pnp+T60+rr", PR.PlanarPnP(with_thumb=True, thumb_z_m=0.060, reref=True))]
+    for label, horn in arms:
+        st = horn.freeze(*frames[ref])
+        if st is None:
+            print(f"     {label:>12s}  REFUSED -- degenerate reference")
+            continue
+        devs, gains, axes = [], [], []
+        for i, (px, wl) in enumerate(frames):
+            d = horn.delta(st, px, wl)
+            if d is None:
+                continue
+            ax, ang = axis_angle(d)
+            if ax is None:
+                continue
+            if ang >= MIN_ANGLE_DEG:
+                dot = abs(sum(a * b for a, b in zip(ax, VIEW_AXIS)))
+                devs.append(math.degrees(math.acos(max(-1.0, min(1.0, dot)))))
+                a = ax
+                if axes and sum(p * q for p, q in zip(a, axes[0])) < 0.0:
+                    a = (-a[0], -a[1], -a[2])
+                axes.append(a)
+            if truth[i] >= 30.0:
+                gains.append(ang / truth[i])
+        if not devs:
+            print(f"     {label:>12s}  ! nothing above the noise floor")
+            continue
+        mx = sum(a[0] for a in axes) / len(axes)
+        my = sum(a[1] for a in axes) / len(axes)
+        mz = sum(a[2] for a in axes) / len(axes)
+        n = math.sqrt(mx * mx + my * my + mz * mz) or 1.0
+        dot = abs((mx * VIEW_AXIS[0] + my * VIEW_AXIS[1] + mz * VIEW_AXIS[2]) / n)
+        mdev = math.degrees(math.acos(max(-1.0, min(1.0, dot))))
+        print(f"     {label:>12s}  {mdev:6.1f}d  {pct(devs,50):6.1f}d  "
+              f"{pct(gains,50):6.2f}  {len(devs):5d}")
     print()
     print("     compare: YAW 14.5 mean / 13.0 median, gain 1.13")
     print("              PITCH 5.5 mean / 20.2 median, gain 0.74   (validated take)")
