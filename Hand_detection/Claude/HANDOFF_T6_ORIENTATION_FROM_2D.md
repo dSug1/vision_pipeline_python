@@ -48,6 +48,61 @@ on synthetic input), the quaternion maths, the frame conventions, the mirror, th
 renderer. Roll exercises all of them and comes out right. **MediaPipe's 2D
 landmarks are good; its predicted depth breaks the rotation.**
 
+### 2.1 ⭐⭐ AND A TILTED CAMERA WAS TESTED AS AN ALTERNATIVE CAUSE — IT IS NOT ONE
+
+Asked by the owner, 2026-08-24, and worth keeping because the confound is **real
+and sharp**: `t5i` scores YAW against the *assumed* vertical `(0,1,0)`, but
+`world_landmarks` are **camera-aligned** — so a camera mounting tilt would be
+scored as estimator error. ⚠ Note the asymmetry that makes it plausible: the PITCH
+take's expected axis is **measured from the image** (the knuckle row) and therefore
+**absorbs** any tilt, while yaw's is assumed. That alone predicts *"yaw axis bad,
+pitch axis good"* — which is exactly what is measured (14.5° vs 5.5°).
+
+⭐⭐ **THE k-SWEEP ALREADY SETTLES IT, AT ZERO EXTRA COST.** A fixed camera tilt is a
+**rigid rotation of the whole scene**, and scaling world z **cannot rotate an axis
+that lies in the image plane** — so a tilt-induced component must SURVIVE `k → 0`.
+Decomposing the fitted yaw axis against `k`:
+
+| k | axis x (⇒ camera ROLL) | axis z (⇒ camera PITCH) | total dev |
+|---|---|---|---|
+| **1.00** | 0.241 (14.0°) | 0.072 (4.2°) | 14.5° |
+| 0.60 | 0.135 (7.8°) | 0.022 (1.3°) | 7.9° |
+| 0.20 | 0.013 (0.7°) | −0.031 (−1.8°) | 1.9° |
+| **0.00** | **−0.011 (−0.6°)** | **0.000 (0.0°)** | **0.6°** |
+
+**Both components collapse. So both are depth-induced, T6 owns them, and the
+diagnosis stands.** ⭐ It also *bounds this rig*: implied camera pitch **≤ 4.2°**,
+and that is an upper bound still contaminated by the depth error.
+
+⚠⚠ **BUT THE OWNER'S UNDERLYING REQUIREMENT IS REAL AND IS NOW QUEUE ROW `T7`.**
+A phone propped on a desk is routinely pitched **20–40°**, and a tilt θ produces a
+lean of `acos(cos φ + cos²θ·(1−cos φ))` at hand-turn φ — **27.9° at θ=20°, φ=90°,
+i.e. the whole show-stopper again, with a perfect T6 underneath.** ⛔ **T6 does NOT
+fix that**: a planar PnP recovers pose in **camera** coordinates exactly as Horn
+does, and neither knows where the world vertical is. **T7 is one conjugation**
+(`ΔR_world = C·ΔR_cam·C⁻¹`) — read its row before assuming T6 covers it.
+
+⭐ **BUT T7 DOES NOT BLOCK T6, AND IT IS NOT NEXT EITHER.** Owner, 2026-08-24: the
+IMU was offered as gravity's source and **declined** — *"i don't want to introduce
+a different behavior between desktop and mobile for the moment ... I would prefer
+we later work on an initial calibration sequence"* — so `C` comes from **U12's
+calibration**, identically on every platform, and **defaults to identity (level
+camera) = today's behaviour** until U12 is built. **T7 therefore ships WITH U12,
+not after T6**, because with `C` = identity it is a no-op. ⭐ It is also the better
+architecture: an IMU is a **platform-conditional input into the estimator layer**,
+which is exactly what the port contract and N6 exist to prevent.
+⚠ **Nothing in T6 should anticipate T7** — do not add a `C` parameter, a world
+frame, or a gravity hook to `PlanarPnP`. T7 is a conjugation applied to the
+quaternion T6 already returns, and it belongs outside the estimator.
+
+⚠⚠ **AND THE CAMERA MOVED BETWEEN CORPUS RECORDINGS** (owner, 2026-08-24: *"I move
+my camera to capture the recordings"*). ⭐ **A/B on the SAME take is still sound** —
+both arms carry the identical offset — **so §5's acceptance protocol is
+unaffected**. ⛔ But **cross-take absolute axis numbers are not comparable**, which
+is a live candidate for the unexplained pitch-take gap in §8, and it **cannot be
+recovered retroactively** (gravity leaves no trace in landmarks; the corpus holds
+no images). **Record the camera tilt in `meta.json` from now on.**
+
 ---
 
 ## 3. The fix
@@ -133,6 +188,21 @@ assumption shipped with 4.2.
   technical reason for queue U12** (the start-of-game calibration step), which
   until now was only about grab reach. Measure the sensitivity: sweep the assumed
   FOV and see how much the axis error moves.
+  ⭐⭐ **OWNER DECISION 2026-08-23 — NO CALIBRATION NOW, ANYWHERE, AND T6 MUST NOT
+  INTRODUCE ONE**: *"make sure I do not need to recalibrate each time I run the
+  debug or the production for the moment, nor on local pc nor on future web
+  build. We will build the calibration by user at the beginning of the game later
+  on."* So `CAMERA_HFOV_DEG = 60.0` stays a **compile-time constant** in
+  `palm_geometry.py`, T6 reads the focal length **only** through
+  `palm_geometry.focal_px()` (one source), and nothing prompts, persists, gates or
+  blocks on a calibration in either tool or in the port. U12 will later *override*
+  the default with one stored per-player number; it must never become required.
+  ⭐ **AND THE SWEEP'S NUMBER IS OWED TO U12** (§9 step 7): a phone or laptop
+  camera is **not** 60°, so the FOV sensitivity is exactly the **port risk for
+  U3** — measuring it converts "the web build might read rotation wrong" from a
+  worry into a figure, and tells U12 what a calibration step actually buys. Write
+  the measured degrees-of-axis-error-per-degree-of-FOV-error into the **U12 row**
+  when step 7 produces it.
 * ⚠ **THIS IS NOT A RERUN OF 2.3.** Those five null attempts re-weighted the
   **fusion** of a bad signal. T6 replaces the **input**. Say so in any write-up so
   the history is not misread as a sixth attempt at the same thing.
@@ -217,6 +287,47 @@ passing an "end-to-end confirmed" claim. Both tools, back to back.
 | `2026-08-22_154426_production_4_1` | real handling, for **jitter** |
 | `2026-08-23_203307_yaw_card_axis_check_b` | the card yaw take — good sweep, but ⚠ **do not use for tilt magnitude** |
 | `2026-08-23_211203_roll_card_axis_check` | ⛔ **DISCARDED** by the operator, marked in its `meta.json` |
+| `2026-08-04_054702_pitch_sweep_slow` | ⚠⚠ **A SECOND PITCH TAKE `t5i` ALSO PRINTS — DO NOT USE IT AS THE PITCH BAR, AND DO NOT DISMISS IT EITHER (classified 2026-08-23)** — see below |
+
+⚠⚠ **THE SECOND PITCH TAKE, CLASSIFIED — because "just use the validated one" was
+about to be done for the wrong reason.** `t5i` prints
+`2026-08-04_054702_pitch_sweep_slow` at **30.0° mean / 55.3° median / gain 0.64**,
+against the validated 2026-08-02 take's 5.5° / 20.2° / 0.74. Since A10 requires
+"must not regress pitch", *which take is the bar* had to be settled first.
+
+* ⛔ **IT IS NOT CONTAMINATED, so the easy explanation is wrong.** By trap #5's own
+  rule (for a PITCH sweep, **WIDTH** collapse is the contamination channel and
+  LENGTH is the sweep), it measures **width collapse 0.892** — *cleaner than the
+  validated take's 0.808* — and its knuckle-row spread is **18.4°**, so posture
+  holds and the reference frame's expected axis stays valid. **Yaw did not leak
+  in.**
+* ⛔ **NOR IS IT THE NOISE FLOOR OR THE `acos` FOLD.** Stratified by rotation
+  magnitude (trap #4), it is elevated in **every** band — and worst of all in the
+  *best-conditioned* one: at **110–140°** it reads **64.9°** where the validated
+  pitch take reads **10.9°** and the clean yaw take **11.0°**.
+* ⭐ **THE ONE CONCRETE ANOMALY**: its chirality signal flips **41 times**, where
+  the operator's own `meta.json` reports **12 full cycles** and explicitly warns to
+  expect only *"slightly more than 24"* sign changes. The validated take flips 10.
+  ~17 flips are unaccounted for, and the `acos` unwrap depends on that signal — so
+  its **gain (0.64) and any band-stratified figure are not trustworthy**. ⚠ The
+  MEDIAN AXIS DEVIATION does **not** depend on chirality, so *that* number is real.
+* ⛔⛔ **A T1 / issue-5156 "back-of-hand collapse" explanation was TESTED AND IS NOT
+  SUPPORTED — retracted rather than quietly dropped.** Splitting the deviation by
+  palm facing makes back-facing frames **better**, not worse, on both control takes
+  (16.8° vs 23.5°, and 11.8° vs 24.5°). ⚠ The split also returns 75%/81% "back" on
+  palm→back→palm sweeps, which is not credible — it keys off the reference frame's
+  own sign — **so the split is not measuring palm facing and is discarded, not
+  interpreted.** The cause of this take's 3× axis error is **UNEXPLAINED**.
+
+⭐ **WHAT TO DO WITH IT, AND WHY NOT SIMPLY DROP IT.** Use **2026-08-02** as the
+pitch bar (5.5° / 20.2° / 0.74), as §5 already says — but **run T6's A/B on BOTH
+pitch takes.** Planar PnP never consumes world z, so the 08-04 take is a free
+discriminator: if its error collapses too, that is a bonus finding; if it does
+**not**, then that defect is not depth and it belongs to **T1/T2's landmark-layer
+row** (§16.17: *a jump both estimators reproduce is already in the landmarks*).
+⚠ **Do not score T6 against it**, and do not let "the harness prints a bad number"
+become a silent exclusion — this project has four instances in one session of a
+harness being wrong about a take, in both directions.
 
 ⚠ Wake the capture drive first: `.venv/Scripts/python.exe wake_e_drive.py`.
 
@@ -230,10 +341,26 @@ hard; with it they held 0.65–0.71 across a whole take.
 
 ## 9. Suggested order of work
 
-1. Reproduce the baseline table in §5. **If it does not reproduce, stop** — the
-   instrument is the suspect, and that has been true five times this session.
-2. Build the canonical 3D palm from `palm_depth.NOMINAL_SPAN_M`. Write golden
-   vectors for it first.
+1. ✅ **DONE 2026-08-24 — the baseline reproduces to the digit** (14.5 / 1.13 /
+   12.6 / 5.5 / 0.74 / 6.7 / 1.02 / 25.41). The instrument is trustworthy and this
+   step's stop condition is cleared.
+2. ✅ **DONE 2026-08-24 — `palm_rotation.canonical_palm()` + `analysis/verify_planar_pnp.py`
+   §1, all green.** ⚠⚠ **BUT THIS STEP AS WRITTEN WAS UNDER-SPECIFIED, and a fresh
+   session must not re-derive it the naive way**: `NOMINAL_SPAN_M` gives **four**
+   distances while a planar 5-point model has **seven** shape DOF — 9 is
+   under-constrained and **13 is not constrained at all** — and the tempting patch
+   ("the MCPs lie on the 5→17 line") is provably inconsistent with |0-9| = |0-5|.
+   ⭐ **Resolved by MEASURING the shape from the 2D pixel corpus** (59 sessions,
+   2792 face-on frames) and keeping `NOMINAL_SPAN_M` as the **metric anchor plus an
+   independent cross-check** — only the (5,17) breadth is shared, and the other
+   three spans **agree to 10 mm**. ⭐ That 10 mm is comfortable rather than a defect
+   because **a planar PnP's rotation is scale-free** (scale moves only the
+   translation), which §5 of the golden vectors now pins.
+   ⛔ **A face-on filter that is the exact opposite of one, kept so it is not
+   re-tried**: `edge_on_measure >= 0.90` is |sin θ| *between the palm vectors*, so
+   it PEAKS under length-foreshortening — a genuinely face-on palm scores ~**0.72**
+   — and selecting on it reported the palm **45 mm too short**. Use "both spans
+   within 5% of that session's own p99" instead: foreshortening only ever shortens.
 3. Implement planar PnP (IPPE-style) in **stdlib**, returning **both** pose
    candidates plus reprojection errors.
 4. Disambiguate with `palm_geometry` chirality; fall back to temporal continuity.

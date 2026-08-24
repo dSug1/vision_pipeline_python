@@ -150,6 +150,29 @@ measures gain 1.02 while yaw and pitch err in opposite directions), and the fix 
 a **2D↔3D planar PnP** replacing the 3D↔3D Horn fit. ⛔ No MANO needed. ⭐ Full
 brief: **`HANDOFF_T6_ORIENTATION_FROM_2D.md`**; design: §14.3.4.11; row: **T6**.
 
+⭐⭐ **NEW ROW `T7`, OWNER-REQUESTED 2026-08-24 — WORLD-REFERENCED ROTATION, AND IT
+IS NOT WHAT T6 FIXES.** A tilted camera makes the cube lean too, and **T6 cannot
+correct it**: a planar PnP recovers pose in *camera* coordinates exactly as Horn
+does. ⛔ **It was tested as an alternative cause of the current 27° lean and
+REJECTED by measurement** — a fixed tilt cannot be undone by scaling world z, yet
+both the in-image and out-of-plane components of the yaw axis **collapse** with k
+(0.241→−0.011 and 0.072→0.000), which also bounds this rig at **≤4.2° of camera
+pitch**. ⚠ **But on a phone (routinely pitched 20–40°) it is first-order: 20° of
+tilt alone reproduces the entire show-stopper.** The fix is **one conjugation**,
+`ΔR_world = C·ΔR_cam·C⁻¹`, and `C` is only **two DOF** (camera pitch and roll —
+camera yaw is irrelevant). ⭐⭐ **OWNER DECIDED WHERE `C` COMES FROM, 2026-08-24: the
+IMU was offered and DECLINED** (*"i don't want to introduce a different behavior
+between desktop and mobile"*) — `C` comes from **U12's start-of-game calibration**,
+identically on every platform, and **defaults to identity (level) = today's
+behaviour** until then. ⛔ **So T7 ships WITH U12, not after T6** (with `C` =
+identity it is a no-op), and **T6 must not anticipate it** — no `C`, no world
+frame, no gravity hook inside `PlanarPnP`. ⚠ The IMU stays a recorded second-order
+fallback whose trigger is specific: **a camera that MOVES DURING PLAY** (a
+hand-held phone), which no start-of-game calibration can track. ⚠ Also new: **the
+camera MOVED between corpus recordings**, so same-take A/B stays valid but
+cross-take absolute axis numbers do not — record the tilt in `meta.json` from now
+on. Rows: **T7**, and **U12** now owns the tilt alongside the FOV.
+
 ✅✅ **4.2 IS SHIPPED AND OWNER-CONFIRMED LIVE IN BOTH TOOLS (2026-08-23)** —
 debug *"yes. this is working properly"*, production *"this is working fine"*.
 Z-axis translation, the 3D snap gate and the world-space play volume are live; 23

@@ -69,6 +69,16 @@ try:                                        # imported, never copied (N6)
 except ImportError:
     import hand_blocks as HB
 
+try:                                        # T6's metric anchor -- see canonical_palm
+    from . import palm_depth as _PD
+except ImportError:
+    import palm_depth as _PD
+
+# ⚠ IMPORTED, NEVER COPIED (N6). The hand breadth lives in ONE place; a second
+# literal here is how the two tools drift, and 4.2 paid for exactly that class of
+# error when a constant was carried across from another row's derivation.
+_NOMINAL_BREADTH_M = _PD.NOMINAL_SPAN_M[(5, 17)]
+
 PALM_LANDMARKS = HB.PALM_LANDMARKS               # (0, 5, 9, 13, 17)
 ARC_TIPS = (8, 12, 16, 20)                       # the 4 tips that HAVE an arc;
                                                  # the thumb is unmodelled (§16)
@@ -280,6 +290,81 @@ class Horn:
         state["sstep"] = q
         state["prev"] = p
         return quat_angle_deg(_IDENTITY, q)
+
+
+# --------------------------------------------------------------------------
+# T6 -- THE CANONICAL PLANAR PALM (the model the 2D<->3D fit projects)
+# --------------------------------------------------------------------------
+# ⚠⚠ THE HANDOFF SAYS "build the 3D model from `palm_depth.NOMINAL_SPAN_M`" AND
+# THAT IS NOT ENOUGH. `NOMINAL_SPAN_M` carries FOUR distances -- (5,17), (0,9),
+# (0,5), (0,17) -- while a planar 5-point model has 2*5-3 = 7 shape DOF:
+#   * (0, 5, 17) is fully determined -- three points, three distances;
+#   * 9 gets ONE constraint and needs two;
+#   * 13 gets NONE -- no span in `NOMINAL_SPAN_M` touches the ring MCP.
+# ⛔ And "9 and 13 lie on the segment 5->17" is provably wrong: |0-9| = |0-5| =
+# 0.100 with 9 laterally BETWEEN 5 and 17 forces 9 OFF that line. The knuckle row
+# BOWS away from the wrist, and `verify_planar_pnp.py` §7 asserts that it does --
+# the bow is 10.6 mm and it is also what CONDITIONS the homography, since the four
+# MCPs alone are nearly collinear.
+#
+# ⭐ SO THE SHAPE IS MEASURED AND `NOMINAL_SPAN_M` IS THE METRIC ANCHOR PLUS AN
+# INDEPENDENT CHECK -- 59 corpus sessions, 2792 face-on frames, from the 2D PIXEL
+# landmarks.
+#   ⛔ NOT from `world_landmarks`: M2 established they carry no pose-consistent
+#      skeleton (0/21 bones inside target), so a length taken from them measures
+#      the ESTIMATOR, not a hand -- which is `NOMINAL_SPAN_M`'s own stated reason
+#      for using anthropometry in the first place.
+#   ⭐ 2D pixels are the one signal T6's premise says is GOOD.
+#   ⭐ Only the (5,17) breadth is shared between the two sources, so the other
+#      three spans are a real cross-validation. **They agree to 10 mm.**
+#
+# ⭐⭐ AND THE SCALE BARELY MATTERS, WHICH IS WHY 10 MM IS COMFORTABLE RATHER THAN A
+# DEFECT: for a planar target, scaling the model scales the recovered TRANSLATION
+# and leaves the ROTATION untouched, and T6 consumes only the rotation. It is the
+# SHAPE that must be right. `verify_planar_pnp.py` §5 pins the scale linearity so
+# the port cannot quietly break that property.
+#
+# ⛔⛔ A SELECTION RULE THAT WAS TRIED AND IS THE OPPOSITE OF CORRECT, kept so it is
+# not re-tried: `edge_on_measure >= 0.90` reads like a face-on filter but is
+# |sin(theta)| BETWEEN THE TWO PALM VECTORS, so it PEAKS when the palm is
+# foreshortened along its length. A genuinely face-on palm scores ~0.72 there.
+# Selecting on it reported the palm 45 mm too short.
+#
+# Units: hand breadths, wrist at the origin, knuckle row along +x, fingers at
+# negative y (image convention: y is DOWN, so the MCPs sit ABOVE the wrist).
+_CANONICAL_PALM_SHAPE = {
+    0:  (0.0000, 0.0000),
+    5:  (-0.6531, -1.1172),
+    9:  (-0.3126, -1.2413),
+    13: (0.0274, -1.2270),
+    17: (0.3469, -1.1172),
+}
+
+
+def canonical_palm(breadth_m=None, mirrored=False):
+    """The rigid 5-point palm as coplanar 3-vectors, in `PALM_LANDMARKS` order.
+
+    `breadth_m` scales the model; it defaults to the (5,17) hand breadth in
+    `palm_depth.NOMINAL_SPAN_M`. ⭐ The ROTATION a planar PnP recovers does not
+    depend on it -- only the translation does -- so this is an anchor, not a
+    tuning knob.
+
+    ⚠ `mirrored` IS A REAL DEGREE OF FREEDOM, NOT A CONVENIENCE. A left palm is
+    the mirror of a right one, and a planar target has a two-fold pose ambiguity
+    that IPPE returns both halves of. **U7's `palm_geometry.geometric_chirality`
+    is the disambiguator** (89.7% even at track age 0, vs the handedness label's
+    76.8%). The convention is pinned by golden vector: the default model has a
+    POSITIVE `signed_palm_area`, the mirrored one negative. ⛔ Do not "simplify"
+    by dropping one -- a chirality convention that lives in only one of the two
+    tools is exactly how §13.6.1 shipped inverted.
+    """
+    if breadth_m is None:
+        breadth_m = _NOMINAL_BREADTH_M
+    sx = -1.0 if mirrored else 1.0
+    return [(sx * _CANONICAL_PALM_SHAPE[lm][0] * breadth_m,
+             _CANONICAL_PALM_SHAPE[lm][1] * breadth_m,
+             0.0)
+            for lm in PALM_LANDMARKS]
 
 
 def estimators():
