@@ -36,7 +36,11 @@ FAILURES = []
 
 # What each tool must clear when a track is properly gone. Matched loosely on the
 # state's NAME so either tool's spelling (module dict vs per-arm field) counts.
-REQUIRED = ("hand_orientation_filters", "hand_rotation_states",
+# ⚠ `hand_orientation_filters` was in this list until 2026-08-24, when the
+# predictive filter was removed from BOTH tools as dead code. Dropped rather than
+# kept-and-skipped: this list is a CONTRACT about state that exists, and a name in
+# it that neither tool has any more asserts nothing while looking like coverage.
+REQUIRED = ("hand_rotation_states",
             "palm_facing_trackers", "resync_blend_left")
 
 

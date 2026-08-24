@@ -751,43 +751,25 @@ def _make_continuous(q: Quat, reference: Quat) -> Quat:
     return tuple(-c for c in q) if d < 0 else q
 
 
-class HandOrientationFilter:
-    """Per-hand predictive/reliability-weighted orientation filter state.
-    `last_fused` is the filter's own running orientation estimate (this
-    frame's output, next frame's prediction base); `omega` is the most
-    recently observed per-frame rotation delta among accepted/fused frames
-    (constant-angular-velocity model). Reset to a fresh instance whenever
-    the hand isn't detected, so reacquiring tracking after a gap never
-    predicts from a stale reference."""
-
-    def __init__(self):
-        self.last_fused: Optional[Quat] = None
-        self.omega: Quat = IDENTITY_QUATERNION
-
-
-def _predictive_filter_step(filt: "HandOrientationFilter", raw_quat: Quat, conditioning_norm: float) -> Quat:
-    """Advances `filt` by one frame and returns the fused orientation to
-    use as this frame's hand orientation. See GESTURE_PIPELINE_SPEC.md
-    §13.7 for the full design rationale and live-test results (a real but
-    incomplete improvement — TODO remains open for the back-of-hand pose)."""
-    if filt.last_fused is None:
-        filt.last_fused = raw_quat
-        return raw_quat
-    raw_quat = _make_continuous(raw_quat, filt.last_fused)
-    predicted = _make_continuous(_quat_multiply(filt.omega, filt.last_fused), filt.last_fused)
-    alpha = _reliability_alpha(conditioning_norm)
-    fused = _quat_slerp(predicted, raw_quat, alpha)
-    filt.omega = _quat_multiply(fused, _quat_conjugate(filt.last_fused))
-    filt.last_fused = fused
-    return fused
-
+# ⛔⛔ THE PREDICTIVE ORIENTATION FILTER WAS REMOVED HERE (owner, 2026-08-24).
+# Archived whole, with its rationale and the measurement that retired it, in
+# `Resources/_archived_predictive_orientation_filter.py`.
+#
+# ⭐ IT HAD BECOME DEAD CODE AND THAT IS MEASURED, NOT ASSUMED. Horn's fit replaced
+# its output whenever it succeeded, so the filter's value survived only on frames
+# where Horn FAILED -- and Horn returned None on **0 of 9091 hand-frames** across
+# four recordings. It contributed nothing to the cube on any recorded frame while
+# making the rotation path read as two stacked filters when only one was real (the
+# `ROTATION_SLERP_FACTOR` blend on the cube).
+#
+# ⚠ `_reliability_alpha` STAYS: it is a conditioning measure, not part of that
+# filter, and it still drives the operator-facing `reliability` readout.
 
 # Per-hand predictive-filter state and the latest world_landmarks received
 # via the "hands_world" wire packet (sent BEFORE "hands" each frame, see
 # Server.py's SendHandsWorldPacket — so by the time on_hands_frame runs for
 # a given frame, that same frame's world landmarks are already stored
 # here). None until the first "hands_world" packet arrives after connect.
-_hand_orientation_filters: Dict[str, HandOrientationFilter] = {h: HandOrientationFilter() for h in TRACKED_HANDS}
 _last_hand_reliability_alpha: Dict[str, float] = {h: 1.0 for h in TRACKED_HANDS}
 _latest_world_landmarks: Dict[str, Optional[List[Vec3]]] = {h: None for h in TRACKED_HANDS}
 
@@ -846,7 +828,7 @@ class _HandBundle:
     # ⭐ INERT TODAY (`TRACK_OWNERSHIP = False` short-circuits every binder
     # below); present so re-enabling the migration does not leave a Z-shaped
     # hole in it.
-    __slots__ = ("palm_facing", "tracking", "orientation_filter", "rotation_state",
+    __slots__ = ("palm_facing", "tracking", "rotation_state",
                  "last_known_thumb_outward", "thumb_outward_snap_allowed",
                  "resync_blend_left", "reliability_alpha",
                  "depth_ratio_tracker", "hand_depth_tracker")
@@ -854,7 +836,6 @@ class _HandBundle:
     def __init__(self):
         self.palm_facing = palm_geometry.PalmFacingTracker()
         self.tracking = hand_state.HandStateTracker()
-        self.orientation_filter = HandOrientationFilter()
         self.rotation_state = None
         self.last_known_thumb_outward = False
         self.thumb_outward_snap_allowed = False
@@ -896,7 +877,6 @@ def _new_bundle_for(slot: str) -> "_HandBundle":
     template = _hand_state_trackers.get(slot)
     window = getattr(template, "bridge_window_ms", hand_state.BRIDGE_WINDOW_MS)
     b.tracking = hand_state.HandStateTracker(bridge_window_ms=window)
-    b.orientation_filter = HandOrientationFilter()
     b.rotation_state = None
     b.last_known_thumb_outward = False
     b.thumb_outward_snap_allowed = False
@@ -936,7 +916,6 @@ def _bind_track_state(now_ms: float) -> None:
         _bound_bundles[slot] = bundle
         _palm_facing_trackers[slot] = bundle.palm_facing
         _hand_state_trackers[slot] = bundle.tracking
-        _hand_orientation_filters[slot] = bundle.orientation_filter
         _hand_rotation_states[slot] = bundle.rotation_state
         _last_known_thumb_outward[slot] = bundle.last_known_thumb_outward
         _thumb_outward_snap_allowed[slot] = bundle.thumb_outward_snap_allowed
@@ -952,7 +931,6 @@ def _writeback_track_state(now_ms: float) -> None:
         return
 
     for slot, bundle in _bound_bundles.items():
-        bundle.orientation_filter = _hand_orientation_filters[slot]
         bundle.rotation_state = _hand_rotation_states[slot]
         bundle.last_known_thumb_outward = _last_known_thumb_outward[slot]
         bundle.thumb_outward_snap_allowed = _thumb_outward_snap_allowed[slot]
@@ -1176,15 +1154,15 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     verification there — GESTURE_PIPELINE_SPEC.md §13.7 has the full
     account): RELATIVE to the hand's orientation at grab time (a cube
     keeps its own orientation at grab, then rotates by however much the
-    hand's orientation changes afterward — no pop), fed through a
-    predictive/reliability-weighted filter (per-hand `HandOrientationFilter`
-    in `_hand_orientation_filters`) before the relative-delta math, then
-    slerped into the cube's displayed orientation. The filter runs for
-    EVERY detected hand every frame, regardless of whether it currently
-    holds a cube (matching LiveSnapDebug.py exactly) -- this keeps its
-    angular-velocity estimate warm, so a grab that happens to land right
-    before a noisy stretch still has a useful prediction to fall back on,
-    rather than starting cold. Skipped for a hand this frame if its world
+    hand's orientation changes afterward — no pop), taken from Horn's
+    least-squares fit over the five palm landmarks and then slerped into the
+    cube's displayed orientation. ⚠ The predictive/reliability-weighted filter
+    that used to sit between those two steps was REMOVED on 2026-08-24 -- Horn
+    replaced its output on 9091 of 9091 measured hand-frames, so it reached the
+    cube on none of them. See `Resources/_archived_predictive_orientation_filter.py`.
+    ⭐ SO THE SLERP ONTO THE CUBE IS NOW THE ONLY SMOOTHING IN THE ROTATION PATH,
+    which is what makes its time constant the whole of the felt lag.
+    Skipped for a hand this frame if its world
     landmarks haven't arrived yet (only expected very briefly after
     connecting, since "hands_world" is sent every frame)."""
     hands = (("Left", left_landmarks), ("Right", right_landmarks))
@@ -1287,7 +1265,6 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             # two conditions coincide exactly, so this is a no-op now and
             # load-bearing the moment the window opens.
             if tracking.tracking_state == hand_state.SUSTAINED_LOST:
-                _hand_orientation_filters[handedness] = HandOrientationFilter()  # avoid predicting from a stale reference on reacquire
                 _hand_rotation_states[handedness] = None                         # §16.15: never fit against a dead track
                 # Same reasoning for DR-2's frozen sign: a value held from before the
                 # hand vanished is stale, and the hand may reappear in a different
@@ -1353,7 +1330,6 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             #     consumed by the translation update below, which runs only for a
             #     held cube, so arming it on an empty hand would leave it armed
             #     until the NEXT grab and then blend a grab that never bridged.
-            _hand_orientation_filters[handedness].omega = IDENTITY_QUATERNION
             if _cube_for_hand(handedness, now_ms) is not None:
                 _resync_blend_left[handedness] = RESYNC_BLEND_FRAMES
 
@@ -1362,9 +1338,13 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
         if world_landmarks is not None:
             raw_quat, conditioning_norm = _hand_orientation_quaternion(world_landmarks)
             _last_hand_reliability_alpha[handedness] = _reliability_alpha(conditioning_norm)
-            hand_quat_now = _predictive_filter_step(
-                _hand_orientation_filters[handedness], raw_quat, conditioning_norm
-            )
+            # ⭐ THE RAW PER-FRAME ORIENTATION, straight through. Horn replaces it
+            # below on every frame it succeeds -- measured 9091/9091 -- so this is
+            # the fallback path only, and the raw value is the honest fallback: the
+            # filter that used to sit here predicted from a constant-angular-velocity
+            # model, and B8 measured every velocity fit in this project LOSING to
+            # holding the last value.
+            hand_quat_now = raw_quat
             # §16.15. The filter step above still RUNS -- it keeps its own
             # angular-velocity state warm -- but Horn's fit replaces its output
             # when it succeeds. That is exactly what LiveBlockPredictionDebug

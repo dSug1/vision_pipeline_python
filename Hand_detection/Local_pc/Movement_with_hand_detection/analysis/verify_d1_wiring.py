@@ -122,26 +122,38 @@ print("       that script's question, and finally the owner's -- not this one's.
 
 print("\n3. THE COASTING STATE SURVIVES A BRIDGE (what D2 coasts on)")
 run([True] * 5)
-before = HTA._hand_orientation_filters["Right"]
+# ⚠ This used to watch the predictive orientation filter, removed 2026-08-24 as
+# dead code (Horn replaced its output on 9091/9091 measured frames -- see
+# `Resources/_archived_predictive_orientation_filter.py`). The rule it checks is NOT
+# about that filter: it is that per-hand estimator state survives a BRIDGED frame
+# and is cleared on a real loss.
+# ⛔ HORN'S FROZEN REFERENCE WAS THE OBVIOUS SUBSTITUTE AND IS THE WRONG ONE:
+# `run()` feeds pixel landmarks only, so no "hands_world" packet ever arrives, Horn
+# never freezes anything here, and the check passed VACUOUSLY on None-is-None --
+# a green assertion measuring nothing, which is the failure this repo keeps paying
+# for. ⭐ DR-2's held palm sign IS exercised by this harness and obeys the same
+# rule, so that is what the section watches instead.
+# ⚠ `frozen` is DR-2's real held value (`PalmFacingTracker.reset` clears exactly
+# it). An invented attribute name would be set, never cleared, and the check would
+# fail for a reason that has nothing to do with the rule -- which is how the first
+# attempt at this replacement failed.
+_pf = HTA._palm_facing_trackers["Right"]
+_pf.frozen = True                       # a held palm/back sign, as a live hand has
+check("  (precondition: DR-2 is holding a frozen sign)", _pf.frozen is not None)
 HTA.on_hands_frame(MISS, MISS, now_ms=5 * 42.0)
-check("orientation filter is NOT wiped on a bridged frame",
-      HTA._hand_orientation_filters["Right"] is before)
+check("DR-2's frozen sign is NOT dropped on a bridged frame", _pf.frozen is not None)
 HTA.on_hands_frame(MISS, MISS, now_ms=400.0)          # past the window
-check("and IS wiped once the track is SUSTAINED_LOST",
-      HTA._hand_orientation_filters["Right"] is not before)
+check("and IS dropped once the track is SUSTAINED_LOST", _pf.frozen is None)
 
 print("\n4. ⭐ D2's RESUME RULE and D3's BLEND")
-# Rotate omega away from identity, bridge, and confirm the resume zeroes it: an
-# angular velocity measured before the gap must not be replayed across a gap the
-# filter never saw (B8 -- hold beats extrapolate, at every horizon).
+# ⚠ The omega-zeroing half of this section went with the predictive filter on
+# 2026-08-24. ⭐ THE RULE IT ENCODED SURVIVES AND IS NOW STRUCTURAL RATHER THAN
+# ENFORCED: with no velocity state left anywhere in the rotation path, there is
+# nothing that COULD extrapolate across a gap (B8 -- hold beats extrapolate, at
+# every horizon). What still needs enforcing is D3's blend, which is what follows.
 run([True] * 5)
-HTA._hand_orientation_filters["Right"].omega = (0.9, 0.1, 0.2, 0.3)
 HTA.on_hands_frame(MISS, MISS, now_ms=5 * 42.0)                 # bridged
-check("omega survives the bridged frame itself",
-      HTA._hand_orientation_filters["Right"].omega != HTA.IDENTITY_QUATERNION)
 HTA.on_hands_frame(MISS, HAND, now_ms=6 * 42.0)                 # resume
-check("⭐ and is zeroed on the RESUME frame -- no extrapolation across the gap",
-      HTA._hand_orientation_filters["Right"].omega == HTA.IDENTITY_QUATERNION)
 check("  the resume also arms D3's blend",
       HTA._resync_blend_left["Right"] == HTA.RESYNC_BLEND_FRAMES - 1,
       str(HTA._resync_blend_left["Right"]))

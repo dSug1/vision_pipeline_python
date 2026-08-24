@@ -126,8 +126,14 @@ def main():
     check("!! its palm/back reading is fresh", HTA._last_known_thumb_outward["Left"], False)
     check("!! it does NOT alias the old HandStateTracker", new.tracking is old.tracking, False)
     check("...nor the PalmFacingTracker", new.palm_facing is old.palm_facing, False)
-    check("...nor the orientation filter",
-          new.orientation_filter is old.orientation_filter, False)
+    # ⚠ The orientation-filter slot was checked here until 2026-08-24, when the
+    # predictive filter was removed as dead code (Horn replaced its output on
+    # 9091/9091 measured hand-frames). `rotation_state` is now the per-hand
+    # estimator state a returning hand must NOT inherit, so it takes its place --
+    # dropping the check entirely would have quietly reduced this guard's coverage.
+    check("...nor the rotation estimator state",
+          new.rotation_state is old.rotation_state and new.rotation_state is not None,
+          False)
 
     print("")
     print("--- 7. CONFIG is still carried, so a tuned coast is not silently lost ---")

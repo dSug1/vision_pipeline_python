@@ -274,7 +274,48 @@ to follow — no S-item lives outside it.**
 
 ---
 
-### ⭐⭐⭐ YOU ARE HERE (2026-08-24, LATEST) — **T6d IS BUILT. THE NEXT STEP IS A LIVE SESSION, NOT CODE.**
+### ⭐⭐⭐ YOU ARE HERE (2026-08-24, LATEST) — **THREE OWNER DECISIONS: T6d REJECTED, FINGERTIPS ARE THE NEW DIRECTION, AND THE LAG IS FOUND.**
+
+> **Owner, 2026-08-24, after four live sessions:**
+> 1. *"the anisotropic fit bring very minor improvement and I don't want to ship it."*
+> 2. *"the grab and rotations with the anchor to the palm and limited knuckles arc as
+>    it is currently designed is too coarse: it does not render subtle movements of
+>    the fingertips ... If I want to mimick grabbing and rotating small objects, I
+>    need to use fingertips to be able to rotate them subtely to align them for
+>    assembly ... I want to keep it, but as an indication (for orientation, for sign,
+>    for chirality, etc.) in support to the fingertips which we will build now."*
+> 3. *"there is a slerp introduced somewhere ... the cube is lagging the hand and
+>    this feels very uncomfortable."*
+
+⛔⛔ **1. T6d / THE WHOLE T6 LINE IS CLOSED — NOT SHIPPING.** Nothing to revert:
+every arm lived in `estimators()` and the debug tool, production never ran any of
+it. ⭐ The **diagnosis** stands and stays on the record (§2.0–§2.0.16): MediaPipe
+reports a face-on palm as 24.9° tilted, x/y faithful, z fabricated, bearing right
+and magnitude wrong. ⚠ **It is superseded, not merely rejected** — decision 2
+changes what the estimator is even supposed to do.
+
+⭐⭐⭐ **2. NEW DIRECTION — FINGERTIP-DRIVEN ROTATION (queue `F1`).** The palm +
+knuckle-arc anchor is **too coarse by design**, not mis-tuned: it cannot express the
+small fingertip motions that rotate a real object held in the hand, which is what
+assembly-style alignment needs. ⭐ **The palm is KEPT, demoted to a SUPPORT role** —
+orientation reference, sign, chirality — with the fingertips carrying the fine
+rotation. ⚠⚠ **READ B4's REJECTION BEFORE BUILDING AND UNDERSTAND WHY IT DOES NOT
+APPLY**: `PALM_AND_TIPS` was rejected because tips were added to a **RIGID-BODY fit**,
+where finger motion is fitted as whole-object rotation (p95 9.85 → 27.79 in real
+play; and the 9-point constellation was A10-rejected again on 2026-08-23). **That is
+the same physical fact from the other side** — the tips move relative to the palm,
+which is exactly the signal now wanted. ⛔ **So the new design must NOT be a rigid
+fit over palm+tips.** That arm is measured and dead; the tips have to enter as a
+DEFORMATION relative to the palm frame, not as extra rigid points.
+
+✅ **3. THE LAG IS FOUND, MEASURED, AND IT IS ONE CONSTANT** — see the block below
+and handoff §2.0.19/§2.0.20. Introduced `b0035a4` (2026-08-01, *"building the
+rotation"*) at 0.25 and raised to 0.35 in `b003cfe` the same day: **the original
+rotation build, not the steal work, not extrapolation, not a jitter gate.**
+
+---
+
+### ⚠ Superseded: YOU ARE HERE (2026-08-24) — **T6d IS BUILT. THE NEXT STEP IS A LIVE SESSION, NOT CODE.**
 
 > **Owner:** *"The immediate next build will be a debug run which implements this
 > anisotropic fit, so I can feel the behaviour during run time. In this debug run,

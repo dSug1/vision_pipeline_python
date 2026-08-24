@@ -66,78 +66,54 @@ from Resources import palm_depth as _PDepth  # noqa: E402  (4.1/M9, read-only)
 PRODUCTION_ROTATION = _PRot.Horn(_PRot.PALM_LANDMARKS, "ref")
 
 # --------------------------------------------------------------------------
-# T6d -- THE ANISOTROPIC FIT, LIVE, WITH SLIDERS (owner, 2026-08-24)
+# THE SMOOTHING SLIDER -- the only live knob this tool carries
 # --------------------------------------------------------------------------
-# ⭐⭐ WHY IT IS WIRED HERE AND NOWHERE ELSE. Four estimator REPLACEMENTS were built
-# and all four A10-rejected, but together they mapped the problem: Horn's flaw is
-# BIAS (it consumes a fabricated z, so its grab reference is tilted ~25 deg before
-# the hand moves) while every per-frame replacement's flaw is VARIANCE (up to
-# 62.8 deg of jitter against Horn's 25.5). So the survivor is a CORRECTION that
-# KEEPS Horn and fixes only the palm's tilt -- `RebuiltNormalHorn`, which rebuilds
-# the normal from the two halves measured reliable (bearing from MediaPipe,
-# magnitude from depth-free foreshortening) and hands the SHIPPED Horn the result.
+# ⛔⛔ T6d (the anisotropic normal rebuild and its four sliders) WAS REMOVED FROM
+# THIS TOOL on 2026-08-24 (owner: *"remove the anisotropic fit : I will not use
+# it"*). It was measured over four live sessions and never shipped; production
+# never ran it. The estimator itself still exists in `Resources/palm_rotation.py`
+# (`AnisoParams`, `rebuild_terms`, `RebuiltNormalHorn`) because `analysis/
+# t5i_zscale_sweep.py` and `t5j_roll_axis.py` drive it and because the T6 line's
+# measurements are the record of a rejected arm -- but NOTHING LIVE reads it.
+# The whole account is `Claude/HANDOFF_T6_ORIENTATION_FROM_2D.md`.
 #
-# ⭐ THE TOGGLE STARTS **OFF**, so the first thing the owner feels is TODAY'S
-# behaviour. With `enabled=False` the wrapper returns the world landmarks
-# untouched and the estimator is bit-for-bit the shipped `Horn`.
-#
-# ⚠ PRODUCTION IS UNTOUCHED. This lives in the debug tool until the owner has felt
-# it; `HandsTriggeredActions.py` still constructs its own plain `Horn`.
-#
-# ⚠ JITTER IS DELIBERATELY OUT OF SCOPE for this run (owner) -- and note it has
-# only ever been measured RAW, bypassing the shipped `orientation_filter`, so the
-# recorded 25.5 -> 31-34 deg regressions are measured at the wrong point in the
-# pipeline. This tool runs the filter, so what the owner feels here is not what
-# those numbers describe.
-ANISO = _PRot.AnisoParams(r0=1.0, a=1.0, b=0.0, c=0.0, enabled=False)
-T6D_ROTATION = _PRot.RebuiltNormalHorn(_PRot.PALM_LANDMARKS, "ref", params=ANISO)
+# ⭐ WHAT REPLACED IT AS THE THING TO TUNE: the rotation smoothing. It is the only
+# filter left in the rotation path (the predictive orientation filter was removed
+# the same day as dead code) and it is therefore the whole of the felt lag.
+SLIDER_WIN = "Rotation smoothing"
 
-# ⭐ Built ONCE: `canonical_palm()` is deterministic, and rebuilding it per hand per
-# frame would be the same numbers at 30 Hz.
-_ANISO_MODEL = _PRot.canonical_palm()
+# ⭐ Measured on `2026-08-24_205729_t6d_ab_ghost`, every arm fed identical input,
+# lag read by shift-aligning against an unsmoothed replay of the same take:
+#     tau 149 ms -> 128 ms lag, cube step p95 11.44 deg   (== the shipped 0.35)
+#     tau  80 ms ->  64 ms lag, p95 12.76
+#     tau  60 ms ->   0 ms lag, p95 13.09
+#     tau  40 ms ->   0 ms lag, p95 13.93
+#     tau  20 ms ->   0 ms lag, p95 14.64
+#     tau   0 ms ->   0 ms lag, p95 15.17   (no smoothing at all)
+# ⚠ "step p95" includes GENUINE hand motion, so it overstates jitter in absolute
+# terms. It is a fair RELATIVE comparison because every arm replays the identical
+# take; do not quote it as an absolute jitter figure.
+# ⛔⛔ THE SLIDER IS CONTINUOUS IN MILLISECONDS, AND THE DISCRETE LADDER THAT CAME
+# BEFORE IT WAS A REAL DEFECT. It was an INDEX into a tuple of choices -- but
+# OpenCV draws a trackbar's own integer POSITION beside its name, so a control
+# labelled "SMOOTH ms" displayed "3" while applying 20 ms. The owner read the take
+# off it as "3 ms". ⭐ A slider whose displayed number is not the applied value is
+# worse than an unlabelled one, because it invites a confident wrong reading. Now
+# the trackbar's number IS tau in ms, and it can be trusted from a screenshot.
+# ⚠ 150 is the top because 149 ms == the shipped per-frame 0.35 at a 64 ms frame
+# time, so today's behaviour stays reachable and this stays an A/B.
+SLERP_TAU_MAX_MS = 150
 
-# This frame's rebuild terms per hand, for the HUD and the recorder. ⚠ Produced by
-# `palm_rotation.rebuild_terms` -- THE SAME function the estimator runs, not a
-# second derivation of it (production paid for that distinction twice on
-# 2026-08-22, when a recomputed cue silently disagreed with the one that ran).
-_aniso_terms = {}
-
-# The slider window and its five trackbars. Kept OUT of the video windows so the
-# owner can move or hide it, and so a rig panel's layout does not change.
-ANISO_WIN = "T6d anisotropic fit -- sliders"
-# (trackbar name, max int, start int, decode) -- ranges are the handoff's.
-ANISO_SLIDERS = (
-    ("r0 x1000-800", 300, 200, lambda n: 0.80 + n / 1000.0),          # 0.80..1.10
-    ("a  x100-40",   120,  60, lambda n: 0.40 + n / 100.0),           # 0.40..1.60
-    ("b  x100+80",   160,  80, lambda n: (n - 80) / 100.0),           # -0.80..0.80
-    ("c  x100+80",   160,  80, lambda n: (n - 80) / 100.0),           # -0.80..0.80
-    ("REBUILD on",     1,   0, lambda n: bool(n)),
+SLIDERS = (
+    # ⛔ 0 = NO smoothing: the cube goes exactly where Horn says, every frame.
+    ("SMOOTH ms", SLERP_TAU_MAX_MS, 20, lambda n: float(n)),
 )
-# ⭐ The two per-recording optima from the handoff §2.0.16, on keys 1 and 2 so the
-# owner can jump straight to them instead of dialling four sliders by hand.
-# ⛔ They are TWO SINGLE-DIRECTION CALIBRATIONS, NOT one validated 2x2: a yaw sweep
-# only ever visits psi~0 and a pitch sweep only psi~90, so `b` and `c` are fitted
-# but UNCONSTRAINED between them -- the pitch fit puts gain 0.15 at a psi its own
-# recording never enters. Exploring the psi in between is what this session is for.
-#
-# ⚠⚠ `c` IS CARRIED HERE WITH ITS SIGN NEGATED, AND THAT IS DELIBERATE. psi is now
-# folded into the apparent-RIGHT palm frame (palm_rotation's ANISO_FOLD_CHIRALITY),
-# and folding sends `sin2psi -> -sin2psi`, i.e. `c -> -c`. §2.0.16's fits predate the
-# fold, and BOTH of its takes measure as apparent-LEFT on 973/975 and 1030/1075
-# frames -- so their published `c` is stated in the folded frame's OPPOSITE
-# convention. Published: yaw c=+0.10, pitch c=+0.40.
-# ⭐⭐ `a`, `b` and `r0` need NO such translation, and there is a clean check that
-# they came across correctly: psi = 0 and psi = 90 are the FIXED POINTS of the fold,
-# so the gains there are chirality-blind, and they reproduce the handoff's two
-# measured endpoints exactly -- yaw g(0) = a+b = 1.15, pitch g(90) = a-b = 1.55,
-# against §2.0.16's "1.15 yaw-like vs 1.55 pitch-like".
-# ⭐ `c` is also the parameter the handoff says is LEAST constrained, so of the four
-# it is the one whose sign matters least -- and the one this session exists to pin.
-ANISO_PRESETS = {
-    ord("0"): ("identity",  1.00, 1.00,  0.00,  0.00),
-    ord("1"): ("yaw fit",   1.04, 1.25, -0.10, -0.10),
-    ord("2"): ("pitch fit", 1.04, 0.85, -0.70, -0.40),
-}
+
+# ⭐ OWNER'S CHOICE, 2026-08-24, settled live: **20 ms**. Reached by sweeping the
+# whole range (down to 0, up through 149 = today, back), and returned to twice.
+SLERP_TAU_MS = 20.0
+
+
 
 
 # Palm chirality geometry -- SHARED with production's HandsTriggeredActions.py
@@ -232,7 +208,6 @@ def _new_bundle_for(state, slot):
     template = state.hand_state_trackers.get(slot)
     window = getattr(template, "bridge_window_ms", state.bridge_window_ms)
     b.tracking = hand_state.HandStateTracker(bridge_window_ms=window)
-    b.orientation_filter = HandOrientationFilter()
     b.rotation_state = None
     b.last_known_thumb_outward = False
     b.thumb_outward_snap_allowed = False
@@ -259,7 +234,6 @@ def _bind_track_state(state, now_ms):
             continue
         bound[slot] = b
         state.hand_state_trackers[slot] = b.tracking
-        state.hand_orientation_filters[slot] = b.orientation_filter
         state.hand_rotation_states[slot] = b.rotation_state
         state.last_known_thumb_outward[slot] = b.last_known_thumb_outward
         state.thumb_outward_snap_allowed[slot] = b.thumb_outward_snap_allowed
@@ -273,7 +247,6 @@ def _writeback_track_state(state, bound, now_ms):
         return
 
     for slot, b in bound.items():
-        b.orientation_filter = state.hand_orientation_filters[slot]
         b.rotation_state = state.hand_rotation_states[slot]
         b.last_known_thumb_outward = state.last_known_thumb_outward[slot]
         b.thumb_outward_snap_allowed = state.thumb_outward_snap_allowed[slot]
@@ -525,35 +498,29 @@ def _arm_title(state):
 COAST_MS_ARMS = (150.0, 300.0, 450.0)
 
 
-def _make_aniso_ab_arms(width, height):
-    """T6d rig: panel 1 = the build BEFORE the fit, panel 2 = the fit. Two arms.
+def _make_slerp_ab_arms(width, height):
+    """The LAG rig: identical estimators, smoothing the ONLY difference.
 
-    ⭐⭐ WHY THIS BEATS THE TOGGLE, and the first live session proved it. With one
-    panel and a toggle the two behaviours are separated in TIME, so judging them
-    means remembering how the cube felt fifteen seconds ago — and the recorded
-    session shows the cost: **every slider was moved with the rebuild OFF**, so
-    227 of 3665 frames actually exercised it and the other 94% changed nothing.
-    Side by side, the same hand drives both cubes in the same frame and the
-    comparison is simultaneous.
-
-    ⚠ ONE CAMERA, ONE DETECTION, ONE IDENTITY RESOLUTION feed both arms, so a
-    difference between the panels has exactly one cause: the estimator.
-    ⚠ Each arm keeps its OWN `hand_rotation_states`, which is required, not
-    incidental: the grab reference is frozen through that arm's own estimator, and
-    sharing one would make panel 2 measure panel 1's reference.
+    ⭐ Panel 1 keeps the shipped fixed-per-frame 0.35 and panel 2 runs the
+    time-based constant, so this isolates exactly the thing being judged.
+    ⚠ Both arms get their OWN plain `Horn`: one estimator object shared between
+    them would share its frozen grab reference, and panel 2 would then be
+    measuring panel 1's grab.
     """
     before = _make_arm("blend", width, height)
-    before.rotation = _PRot.Horn(_PRot.PALM_LANDMARKS, "ref")   # what ships today
+    before.rotation = _PRot.Horn(_PRot.PALM_LANDMARKS, "ref")
+    before.slerp_mode = "frame"
     after = _make_arm("blend", width, height)
-    after.rotation = _PRot.RebuiltNormalHorn(_PRot.PALM_LANDMARKS, "ref", params=ANISO)
+    after.rotation = _PRot.Horn(_PRot.PALM_LANDMARKS, "ref")
+    after.slerp_mode = "time"
     return [before, after]
 
 
 def _arm_layout(n, width, height, ownership_ab=False, coast_ab=False,
-                aniso_ab=False):
+                slerp_ab=False):
     """The comparison rig, or None for the ordinary single-arm view."""
-    if aniso_ab:
-        return _make_aniso_ab_arms(width, height)
+    if slerp_ab:
+        return _make_slerp_ab_arms(width, height)
     if coast_ab:
         # ⭐ QUEUE ITEM U5's RECORDING TEST. Three coast windows, everything else
         # identical, one camera and one detection -- so a difference between
@@ -801,24 +768,13 @@ class Cube:
     grab_depth_m: Optional[float] = None
 
 
-@dataclass
-class HandOrientationFilter:
-    """Per-hand predictive/reliability-weighted orientation filter state
-    (see the "Attempt 3" comment above `CONDITIONING_ALPHA_LOW`, further
-    down this file). A property of the HAND's own signal, not of whichever
-    cube it holds (if any), so it lives on CubeState rather than on Cube.
-    `last_fused` is the filter's own running orientation estimate (this
-    frame's output, next frame's prediction base); `omega` is the most
-    recently observed per-frame rotation delta among accepted/fused frames
-    (the constant-angular-velocity model's state). Reset to a fresh
-    instance whenever the hand isn't detected (see update_hands), so
-    reacquiring tracking after a gap never predicts from a stale
-    reference. Uses raw tuples, not the `Quat` alias, because this class is
-    defined before that alias exists further down the file (same reason
-    `Cube.orientation` above does the same)."""
-    last_fused: Optional[Tuple[float, float, float, float]] = None
-    omega: Tuple[float, float, float, float] = IDENTITY_QUATERNION
-
+# ⛔⛔ `HandOrientationFilter` WAS REMOVED HERE (owner, 2026-08-24). Archived whole
+# in `Resources/_archived_predictive_orientation_filter.py`, together with the
+# measurement that retired it: Horn replaced its output whenever it succeeded, and
+# Horn returned None on **0 of 9091 hand-frames** across four recordings -- so the
+# filter reached the cube on none of them. ⚠ `_reliability_alpha` STAYS (a
+# conditioning measure, and the operator-facing `reliability` readout).
+# ⭐ N6: production dropped it in the same commit, in the same place.
 
 @dataclass
 class CubeState:
@@ -827,22 +783,16 @@ class CubeState:
     # Thumb-outward snap rule state (§13.6) — see update_hands' docstring.
     last_known_thumb_outward: Dict[str, bool] = field(default_factory=lambda: {h: False for h in TRACKED_HANDS})
     thumb_outward_snap_allowed: Dict[str, bool] = field(default_factory=lambda: {h: False for h in TRACKED_HANDS})
-    # Predictive/reliability-weighted orientation filter (see "Attempt 3"
-    # above CONDITIONING_ALPHA_LOW) — a property of the HAND's own signal,
-    # not of whichever cube it holds, so it lives here rather than on Cube.
-    # Reset to a fresh HandOrientationFilter() whenever the hand isn't
-    # detected (see update_hands), so reacquiring tracking after a gap
-    # never predicts from a stale reference.
-    hand_orientation_filters: Dict[str, HandOrientationFilter] = field(
-        default_factory=lambda: {h: HandOrientationFilter() for h in TRACKED_HANDS}
-    )
-    # Reliability weight (0-1) the filter used most recently for each hand,
-    # exposed purely for the on-screen diagnostic (_draw_hand) — 1.0 means
-    # fully trusting the raw reading, 0.0 means fully coasting on the
-    # predicted/extrapolated orientation.
+    # ⭐ Palm CONDITIONING (0-1) per hand, for the on-screen diagnostic
+    # (`_draw_hand`) — 1.0 = the palm's two vectors are well separated and the
+    # frame's orientation is trustworthy, 0.0 = they are nearly parallel and it is
+    # not. ⚠ It no longer WEIGHTS anything: the predictive filter it used to feed
+    # was removed 2026-08-24 (see the note where the class used to live). It is
+    # kept because it tells the operator when a degenerate palm is the reason the
+    # cube is misbehaving, which nothing else on screen says.
     last_hand_reliability_alpha: Dict[str, float] = field(default_factory=lambda: {h: 1.0 for h in TRACKED_HANDS})
     # §16.15: per-hand state for an optional least-squares rotation estimator.
-    # Reset on tracking loss, same contract as hand_orientation_filters.
+    # Reset on tracking loss -- never fit against a dead track.
     hand_rotation_states: Dict[str, object] = field(default_factory=lambda: {h: None for h in TRACKED_HANDS})
     # ⭐ D1/D2/D3 (queue Phase D). These live on CubeState rather than at module
     # level SO THAT SEVERAL ARMS CAN RUN AT ONCE off one camera: `--arms 3` gives
@@ -868,6 +818,23 @@ class CubeState:
     # two estimators on ONE camera and ONE detection -- a per-call estimator can
     # only ever compare a panel against itself.
     rotation: object = None
+    # ⭐⭐ THE LAG A/B (owner, 2026-08-24: *"the cube is lagging the hand and this
+    # feels very uncomfortable"*). "frame" = today's FIXED PER-FRAME factor; "time"
+    # = a real exponential with a time constant in MILLISECONDS.
+    #
+    # ⛔⛔ WHY THE PER-FRAME FORM IS A DEFECT AND NOT A STYLE CHOICE. `0.35` per frame
+    # is a settling time of 2.32 FRAMES, so the feel is whatever the camera is doing:
+    # measured 111 ms at 48.0 ms/frame (good light) and 149 ms at 64.0 ms/frame
+    # (poor light) -- **the same code feels 34% laggier in a darker room**, because
+    # the webcam drops its rate under auto-exposure. On a phone, where frame rates
+    # vary far more, that is first-order.
+    # ⭐ `tau_ms` is the SAME quantity the owner can actually reason about: "how long
+    # the cube takes to catch up". At a steady 64 ms frame time, tau = 149 ms
+    # reproduces today's 0.35 EXACTLY, which is what makes the A/B honest.
+    slerp_mode: str = "frame"
+    slerp_tau_ms: float = 149.0
+    # Previous frame's clock for this arm, for the dt the time-based form needs.
+    last_frame_ms: Optional[float] = None
     # Cube name -> the handedness slot whose tracker governs it. See production's
     # `_owner_hand_of_cube`: release must follow the owning TRACK across a
     # relabel, and must keep the last known hand while the track is absent so
@@ -1269,25 +1236,6 @@ def _make_continuous(q: Quat, reference: Quat) -> Quat:
     return tuple(-c for c in q) if d < 0 else q
 
 
-def _predictive_filter_step(filt: HandOrientationFilter, raw_quat: Quat, conditioning_norm: float) -> Quat:
-    """Advances `filt` by one frame and returns the fused orientation to
-    use as `hand_quat_now`. See the "Attempt 3" comment above
-    CONDITIONING_ALPHA_LOW for the full design rationale; verified against
-    recorded data before being wired in here (GESTURE_PIPELINE_SPEC.md
-    §13.7)."""
-    if filt.last_fused is None:
-        # First sighting since the last reset -- nothing to predict from yet.
-        filt.last_fused = raw_quat
-        return raw_quat
-    raw_quat = _make_continuous(raw_quat, filt.last_fused)
-    predicted = _make_continuous(_quat_multiply(filt.omega, filt.last_fused), filt.last_fused)
-    alpha = _reliability_alpha(conditioning_norm)
-    fused = _quat_slerp(predicted, raw_quat, alpha)
-    filt.omega = _quat_multiply(fused, _quat_conjugate(filt.last_fused))
-    filt.last_fused = fused
-    return fused
-
-
 def _try_snap(state: CubeState, handedness: str, hand_pos: Tuple[float, float],
               hand_depth_m=None, exclude=frozenset()) -> Optional[str]:
     """Grab radius scales to EACH candidate cube's OWN size (2026-08-01,
@@ -1332,7 +1280,7 @@ def update_hands_all(arms, hand_data_by_hand, now_ms=None, **kw):
         now_ms = time.perf_counter() * 1000.0
     for arm in arms:
         # ⭐ T6d: an arm may carry its OWN rotation estimator (the shipped-Horn vs
-        # anisotropic-rebuild rig). Absent one, every arm gets the caller's, which
+        # smoothing rig). Absent one, every arm gets the caller's, which
         # is exactly what the D2/D3, U5 and ownership rigs already do.
         per_arm = getattr(arm, "rotation", None)
         update_hands(arm, hand_data_by_hand, now_ms=now_ms,
@@ -1406,94 +1354,81 @@ def _draw_bridge_hud(frame, state, height):
                 (10, height - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (220, 220, 220), 1, cv2.LINE_AA)
 
 
-def _create_aniso_sliders():
-    """The five trackbars, in their own window.
+def _create_sliders():
+    """The smoothing trackbar, in its own window.
 
-    ⚠ OpenCV trackbars are INTEGER only, so each carries its decode in
-    `ANISO_SLIDERS` and its name states it -- a slider whose units are invisible is
-    a slider whose session cannot be reproduced from a screenshot.
+    ⭐ The trackbar's integer IS tau in milliseconds. That is deliberate and it
+    was learned the hard way: an earlier version made it an INDEX into a ladder of
+    choices, and OpenCV drew that index beside the name "SMOOTH ms" -- so the panel
+    read "3" while applying 20 ms, and the take was reported as "3 ms is good".
+    A slider whose displayed number is not the applied value is worse than an
+    unlabelled one, because it invites a confident wrong reading.
     """
-    cv2.namedWindow(ANISO_WIN, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(ANISO_WIN, 560, 300)
-    for name, maxv, start, _ in ANISO_SLIDERS:
-        cv2.createTrackbar(name, ANISO_WIN, start, maxv, lambda _v: None)
+    cv2.namedWindow(SLIDER_WIN, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(SLIDER_WIN, 520, 170)
+    for name, maxv, start, _ in SLIDERS:
+        cv2.createTrackbar(name, SLIDER_WIN, start, maxv, lambda _v: None)
 
 
-def _read_aniso_sliders(params) -> None:
-    """Copy the trackbars into `params`, in place.
+def _read_sliders() -> None:
+    """Copy the trackbar into `SLERP_TAU_MS`.
 
     ⚠ Swallows the window-gone error rather than letting it end a live take: the
-    owner may close the slider panel mid-session, and the last values are the right
-    thing to keep running with.
+    owner may close the panel mid-session, and the last value is the right thing
+    to carry on with.
     """
+    global SLERP_TAU_MS
     try:
-        vals = [dec(cv2.getTrackbarPos(name, ANISO_WIN))
-                for name, _m, _s, dec in ANISO_SLIDERS]
+        SLERP_TAU_MS = SLIDERS[0][3](cv2.getTrackbarPos(SLIDERS[0][0], SLIDER_WIN))
     except cv2.error:
         return
-    params.r0, params.a, params.b, params.c, params.enabled = vals
 
 
-def _apply_aniso_preset(preset) -> None:
-    """Drive the TRACKBARS, not the params, so the panel and the maths agree.
-
-    Writing `params` directly would leave the sliders showing the old values and
-    `_read_aniso_sliders` would undo the preset on the very next frame.
-    """
-    _name, r0, a, b, c = preset
+def _draw_slider_panel(open_: bool):
+    """The panel's own canvas: the value in the unit the owner reasons about."""
+    if not open_ or cv2.getWindowProperty(SLIDER_WIN, cv2.WND_PROP_VISIBLE) < 1:
+        return
+    canvas = np.zeros((110, 520, 3), dtype=np.uint8)
+    cv2.putText(canvas, f"smoothing tau = {SLERP_TAU_MS:.0f} ms", (10, 34),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (120, 255, 255), 2, cv2.LINE_AA)
+    note = ("no smoothing -- the cube goes exactly where Horn says"
+            if SLERP_TAU_MS <= 0 else
+            "TODAY's behaviour (== the shipped per-frame 0.35)"
+            if SLERP_TAU_MS >= 149 else
+            "below one frame (64 ms): the lag is gone, this trades jitter only")
+    cv2.putText(canvas, note, (10, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
+                (170, 170, 170), 1, cv2.LINE_AA)
+    cv2.putText(canvas, "0 = none    20 = owner's setting    149 = today",
+                (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1, cv2.LINE_AA)
     try:
-        cv2.setTrackbarPos(ANISO_SLIDERS[0][0], ANISO_WIN, int(round((r0 - 0.80) * 1000)))
-        cv2.setTrackbarPos(ANISO_SLIDERS[1][0], ANISO_WIN, int(round((a - 0.40) * 100)))
-        cv2.setTrackbarPos(ANISO_SLIDERS[2][0], ANISO_WIN, int(round(b * 100 + 80)))
-        cv2.setTrackbarPos(ANISO_SLIDERS[3][0], ANISO_WIN, int(round(c * 100 + 80)))
+        cv2.imshow(SLIDER_WIN, canvas)
     except cv2.error:
         pass
 
 
-def _draw_aniso_panel(params, sliders_open: bool):
-    """The slider window's own canvas: the decoded values and this frame's terms.
+# ⚠ A HITCH MUST NOT BECOME A POP. dt is clamped before it reaches the exponential:
+# after a dropout, a coast or a stalled frame, `now_ms` can jump by hundreds of ms,
+# and an unclamped dt drives the factor to 1.0 -- i.e. the cube teleports onto the
+# hand on the first frame back. That is precisely what D3's resync blend exists to
+# prevent, and letting the smoothing undo it would re-open a defect the owner has
+# already accepted a fix for. Three frame-times of catch-up is plenty.
+_SLERP_MAX_DT_MS = 200.0
 
-    ⭐ psi is the reading that makes the rest interpretable -- it says WHICH PART of
-    the 2x2 the current hand pose is exercising. Without it the owner is turning
-    `b` and `c` blind, since a pose at psi ~ 0 cannot feel a change to `c` at all.
+
+def _slerp_factor_for(state: CubeState, now_ms) -> float:
+    """This frame's blend factor for `state` -- fixed per-frame, or time-based.
+
+    ⭐ `mode == "frame"` returns the module constant untouched, so every existing
+    caller, harness and the whole production mirror keep today's behaviour exactly.
     """
-    # ⚠ If the owner CLOSED the panel, do not draw -- `imshow` would re-create the
-    # window WITHOUT its trackbars, leaving a blank box and no way back. Closing it
-    # freezes the parameters at their last values, which is the safe degradation:
-    # `_read_aniso_sliders` then keeps them and the take carries on.
-    if not sliders_open or cv2.getWindowProperty(ANISO_WIN, cv2.WND_PROP_VISIBLE) < 1:
-        return
-    canvas = np.zeros((150, 560, 3), dtype=np.uint8)
-    on = bool(params.enabled)
-    cv2.putText(canvas, "REBUILD " + ("ON" if on else "OFF (shipped Horn)"),
-                (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                (80, 255, 120) if on else (140, 140, 140), 1, cv2.LINE_AA)
-    cv2.putText(canvas,
-                f"r0 {params.r0:.3f}   a {params.a:+.2f}   b {params.b:+.2f}   c {params.c:+.2f}",
-                (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 220, 255), 1, cv2.LINE_AA)
-    cv2.putText(canvas, "g(psi) = a + b*cos2psi + c*sin2psi     psi 0 = YAW-like,"
-                        " 90 = PITCH-like",
-                (10, 72), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (170, 170, 170), 1, cv2.LINE_AA)
-    y = 96
-    for hand in TRACKED_HANDS:
-        t = _aniso_terms.get(hand)
-        if t is None:
-            continue
-        cv2.putText(canvas,
-                    f"{hand[0]}  ratio {t['ratio']:.3f}  psi {t['psi_deg']:5.1f}"
-                    f"  raw {t['tilt_raw_deg']:5.1f}  g {t['gain']:+.2f}"
-                    f"  tilt {t['tilt_deg']:5.1f}"
-                    + ("  GATED" if t["gated"] else "")
-                    + ("  [mirrored]" if t["mirrored"] else ""),
-                    (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
-                    (120, 120, 255) if t["gated"] else (230, 230, 230), 1, cv2.LINE_AA)
-        y += 22
-    cv2.putText(canvas, "t = toggle rebuild   0/1/2 = identity / yaw fit / pitch fit",
-                (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (170, 170, 170), 1, cv2.LINE_AA)
-    try:
-        cv2.imshow(ANISO_WIN, canvas)
-    except cv2.error:
-        pass
+    if getattr(state, "slerp_mode", "frame") != "time" or now_ms is None:
+        return ROTATION_SLERP_FACTOR
+    prev = state.last_frame_ms
+    tau = max(1.0, state.slerp_tau_ms)
+    if prev is None:
+        return ROTATION_SLERP_FACTOR      # no dt yet: today's value, never a guess
+    dt = min(max(0.0, now_ms - prev), _SLERP_MAX_DT_MS)
+    return 1.0 - math.exp(-dt / tau)
 
 
 def _draw_ab_divergence(frame, before: CubeState, after: CubeState, height):
@@ -1517,45 +1452,7 @@ def _draw_ab_divergence(frame, before: CubeState, after: CubeState, height):
     if parts:
         cv2.putText(frame, "cage(BEFORE) vs solid(AFTER):  " + "   ".join(parts),
                     (10, height - 120), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                    GHOST_COLOR, 1, cv2.LINE_AA)
-
-
-def _draw_aniso_hud(frame, params, height, regrab_hint: bool, just_moved: bool = False):
-    """The same four numbers on the VIDEO panel, where the owner is actually looking.
-
-    ⚠ Rows sit at height-84/-68/-52. The depth readout draws at -36 and the counters
-    at -14, and this file has already lost one readout to a row collision that made
-    it render every frame and be visible in none. Keep the rows apart.
-    """
-    on = bool(params.enabled)
-    # ⛔⛔ THE LOUD WARNING, AND THE FIRST LIVE SESSION IS WHY IT EXISTS. The owner
-    # swept r0, then a, then b, then c -- 150 logged moves, methodically -- with the
-    # rebuild OFF the whole time, so **not one of them changed the cube**. Only 227
-    # of 3665 frames ever ran the rebuild. A grey "rebuild off" caption was not
-    # enough: a control that silently does nothing has to SAY SO at the moment it
-    # is touched, which is the only moment the operator is looking for feedback.
-    if just_moved and not on:
-        cv2.putText(frame, "!! REBUILD IS OFF -- THIS SLIDER IS DOING NOTHING."
-                           "  PRESS 't'", (10, height - 104),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (60, 60, 255), 2, cv2.LINE_AA)
-    cv2.putText(frame,
-                ("T6d REBUILD ON " if on else "T6d rebuild off ")
-                + f" r0 {params.r0:.3f}  a {params.a:+.2f}  b {params.b:+.2f}  c {params.c:+.2f}"
-                + ("   << RE-GRAB to re-reference" if regrab_hint else ""),
-                (10, height - 84), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
-                (80, 255, 120) if on else (150, 150, 150), 1, cv2.LINE_AA)
-    y = height - 68
-    for hand in TRACKED_HANDS:
-        t = _aniso_terms.get(hand)
-        if t is None:
-            continue
-        cv2.putText(frame,
-                    f"{hand[0]} ratio {t['ratio']:.3f}  psi {t['psi_deg']:5.1f}"
-                    f"  raw {t['tilt_raw_deg']:5.1f}  g {t['gain']:+.2f}"
-                    f"  tilt {t['tilt_deg']:5.1f}" + ("  GATED" if t["gated"] else ""),
-                    (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
-                    (120, 120, 255) if t["gated"] else (0, 220, 255), 1, cv2.LINE_AA)
-        y += 16
+                    (0, 220, 255), 1, cv2.LINE_AA)
 
 
 def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
@@ -1623,15 +1520,15 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
     cube's current orientation exactly (no pop); slerp still eases toward
     it each frame afterward for jitter smoothing, not to bridge a gap.
 
-    Predictive, reliability-weighted orientation filtering (see "Attempt 3"
-    above CONDITIONING_ALPHA_LOW, 2026-08-01): each hand's raw orientation
-    reading is passed through `_predictive_filter_step` (per-hand state in
-    `state.hand_orientation_filters`) BEFORE being fed into the grab-delta
-    math above. That filter maintains a running angular-velocity estimate
-    and blends the raw reading with a one-step extrapolation of it,
-    weighted by `_reliability_alpha(conditioning_norm)` — never a hard
-    accept/reject, always a continuous blend. This replaced two earlier
-    binary-filter attempts (see the module-level comment above
+    ⛔ THE PREDICTIVE, RELIABILITY-WEIGHTED FILTER THAT USED TO SIT HERE WAS
+    REMOVED ON 2026-08-24 (owner). It ran between the raw reading and the
+    grab-delta math, blending a constant-angular-velocity extrapolation with the
+    raw frame. ⭐ It had become dead code: Horn's fit replaced its output whenever
+    it succeeded, measured on **9091 of 9091 hand-frames**. Archived with its full
+    rationale in `Resources/_archived_predictive_orientation_filter.py`.
+    ⭐⭐ CONSEQUENCE WORTH KNOWING: the slerp onto the cube is now the ONLY smoothing
+    in the rotation path, so its time constant IS the felt lag. It superseded two
+    earlier binary-filter attempts (see the module-level comment above
     CONDITIONING_ALPHA_LOW for the full history of why) and is verified
     against recorded data to eliminate the large (>30/>60 degree)
     per-frame jumps at the pitch crossing without changing already-healthy
@@ -1745,7 +1642,6 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
             # Under D2's open window these no longer coincide, and clearing here
             # would discard exactly what the bridge coasts on.
             if state.hand_state_trackers[handedness].tracking_state == hand_state.SUSTAINED_LOST:
-                state.hand_orientation_filters[handedness] = HandOrientationFilter()  # avoid predicting from a stale reference on reacquire
                 state.hand_rotation_states[handedness] = None                         # §16.15: never fit against a dead track
                 # ⛔⛔ MISSING UNTIL 2026-08-22 -- production always did this and
                 # this tool never did. Owner, live: "when the palm exits and comes
@@ -1772,7 +1668,6 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
             # the filter did not observe (B8), and arm the resync blend -- only
             # for a hand that is actually holding, or it would stay armed until
             # the next grab and blend one that never bridged.
-            state.hand_orientation_filters[handedness].omega = IDENTITY_QUATERNION
             if _cube_for_hand(state, handedness, now_ms) is not None:
                 state.resync_blend_left[handedness] = state.resync_blend_frames
         thumb_outward = data["thumb_outward"]
@@ -1783,9 +1678,11 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
         hand_pos = _hand_position(data["pixel_landmarks"])
         raw_quat, conditioning_norm = _hand_orientation_quaternion(data["world_landmarks"])
         state.last_hand_reliability_alpha[handedness] = _reliability_alpha(conditioning_norm)
-        hand_quat_now = _predictive_filter_step(
-            state.hand_orientation_filters[handedness], raw_quat, conditioning_norm
-        )
+        # ⭐ RAW straight through -- Horn replaces it below on every frame it
+        # succeeds (measured 9091/9091), so this is the fallback path only, and raw
+        # is the honest fallback (B8: every velocity fit lost to holding the last
+        # value). N6: production does exactly this, in the same place.
+        hand_quat_now = raw_quat
         if rotation is not None:
             # §16.15: the orientation DELTA comes from a least-squares fit over
             # the palm constellation. Its own frozen reference is per hand, so a
@@ -1917,8 +1814,13 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
             # geometric confidence gate) -- data-confirmed improvement
             # (back-pose >30deg-jump frames dropped ~4-5x, >60deg ~2-3x
             # across matched recordings), re-enabled.
-            cube.orientation = _quat_slerp(cube.orientation, target_quat, ROTATION_SLERP_FACTOR)
+            cube.orientation = _quat_slerp(cube.orientation, target_quat,
+                                           _slerp_factor_for(state, now_ms))
 
+    # ⚠ AFTER the slerp, never before it: `_slerp_factor_for` needs the PREVIOUS
+    # frame's clock to form dt, and stamping it earlier would make dt zero and the
+    # blend factor zero -- i.e. a cube that never moves at all.
+    state.last_frame_ms = now_ms
     # ⚠ WRITE BACK LAST, after every mutation this frame. Without it the whole
     # rebinding is a no-op that silently resets each hand every frame.
     _writeback_track_state(state, _bound, now_ms)
@@ -2005,49 +1907,7 @@ def _draw_cube_3d(overlay, cube: Cube, screen_center: Tuple[float, float]):
         cv2.polylines(overlay, [int_pts], True, CUBE_EDGE_COLOR, 1, cv2.LINE_AA)
 
 
-GHOST_COLOR = (0, 255, 255)          # yellow -- the BEFORE estimator's cube
-
-
-def _draw_cube_ghost(frame, cube: Cube, screen_center: Tuple[float, float]):
-    """The other estimator's cube as a bright WIREFRAME, superimposed.
-
-    ⭐⭐ WHY THIS EXISTS, AND IT IS THE MEASUREMENT THAT DEMANDED IT. Two panels
-    side by side were not enough: the owner reported seeing NO difference, and the
-    recording says why -- the two panels' cube orientations differ by a **median of
-    only 4.83 deg** (p90 17.4), and that is flat across every palm-tilt band. A 5
-    deg rotation of a 40-80 px cube is invisible when the comparison is between two
-    windows and the eye has to hold one of them in memory.
-    ⭐ But the two cubes' POSITIONS are bit-identical -- measured 0.000 px, max
-    0.000, because both arms take the same hand data through the same grab-relative
-    translation. So they can be SUPERIMPOSED, and then the only thing that can
-    separate the wireframe from the solid is ORIENTATION. A 5 deg mismatch between
-    two overlaid boxes is obvious where the same 5 deg across two windows is not.
-
-    ⚠ NO fill and NO backface cull: every edge is drawn, so the ghost reads as a
-    cage around the solid cube rather than as a second object competing with it.
-    """
-    size = palm_geometry.projected_size_px(cube.size, cube.depth_m)
-    half = size / 2.0
-    camera_distance = size * CUBE_PERSPECTIVE_DISTANCE_RATIO
-    cx, cy = screen_center
-    projected = []
-    for v in cube.mesh.vertices:
-        rx, ry, rz = _quat_rotate_vector(
-            cube.orientation, (v[0] * half, v[1] * half, v[2] * half))
-        scale = camera_distance / (camera_distance + rz)
-        projected.append((int(cx + rx * scale), int(cy + ry * scale)))
-    drawn = set()
-    for face in cube.mesh.faces:
-        idx = face.vertex_indices
-        for a, b in zip(idx, idx[1:] + idx[:1]):
-            edge = (min(a, b), max(a, b))
-            if edge in drawn:
-                continue
-            drawn.add(edge)
-            cv2.line(frame, projected[a], projected[b], GHOST_COLOR, 1, cv2.LINE_AA)
-
-
-def _draw_cubes(frame, state: CubeState, ghost_of: CubeState = None):
+def _draw_cubes(frame, state: CubeState):
     """Draws both 3D cubes onto a copy of the frame, alpha-blends once (per
     direction: 'the overlay has to have some transparency'), then draws a
     bright snap-highlight outline on the now-blended frame for whichever
@@ -2062,22 +1922,6 @@ def _draw_cubes(frame, state: CubeState, ghost_of: CubeState = None):
         screen_center = (cube.position[0] + size / 2, cube.position[1] + size / 2)
         _draw_cube_3d(overlay, cube, screen_center)
     cv2.addWeighted(overlay, CUBE_ALPHA, frame, 1 - CUBE_ALPHA, 0, frame)
-    # ⭐ The ghost goes on AFTER the blend, deliberately: alpha-blending a 1 px
-    # wireframe at 0.55 would wash out the very thing it exists to make visible.
-    if ghost_of is not None:
-        for name, cube in ghost_of.cubes.items():
-            mine = state.cubes.get(name)
-            if cube.owner is None and (mine is None or mine.owner is None):
-                continue                     # nothing held: no comparison to draw
-            size = ghost_of.projected_size_of(cube)
-            _draw_cube_ghost(frame, cube,
-                             (cube.position[0] + size / 2, cube.position[1] + size / 2))
-    for cube in state.cubes.values():
-        if cube.owner is not None:
-            size = int(round(state.projected_size_of(cube)))
-            x, y = int(cube.position[0]), int(cube.position[1])
-            cv2.rectangle(frame, (x, y), (x + size, y + size), SNAP_BORDER_COLOR, SNAP_BORDER_WIDTH)
-
 
 def build_detector():
     base_options = python.BaseOptions(model_asset_path=HAND_LANDMARKER_MODEL_PATH)
@@ -2088,6 +1932,11 @@ def build_detector():
 
 
 def main():
+    # ⚠ `--smooth-ms` ASSIGNS this below, which without the declaration makes it a
+    # LOCAL for the whole function -- every later read then raises UnboundLocalError
+    # before a single frame is captured. Cost three launches to find, because it is
+    # invisible to import, to py_compile and to a static name check.
+    global SLERP_TAU_MS
     parser = argparse.ArgumentParser(description="Combined snap/translate debug view (video + landmarks + cube overlay).")
     parser.add_argument("--camera-index", type=int, default=0)
     parser.add_argument("--bridge", choices=BRIDGE_MODES, default="blend",
@@ -2127,46 +1976,33 @@ def main():
                         help="session folder suffix (use with --record)")
     parser.add_argument("--duration", type=float, default=None,
                         help="auto-stop after N seconds (use with --record)")
-    # --- T6d: the anisotropic normal rebuild, live ---------------------------
-    parser.add_argument("--aniso-ab", action="store_true",
-                        help="T6d rig: TWO panels side by side off one camera -- "
-                             "1 = the build BEFORE the anisotropic fit (shipped "
-                             "Horn), 2 = the fit. The sliders drive panel 2 only, "
-                             "so panel 1 is a live control rather than a memory.")
-    parser.add_argument("--no-aniso-sliders", dest="aniso_sliders",
-                        action="store_false",
-                        help="do not open the T6d slider panel. The rebuild is "
-                             "then locked to whatever --aniso-start sets and "
-                             "cannot be changed mid-session.")
-    parser.add_argument("--aniso-start", type=str, default=None,
-                        metavar="r0,a,b,c[,on]",
-                        help="start the T6d sliders somewhere other than identity, "
-                             "e.g. '1.04,1.25,-0.10,-0.10,on' (the fitted YAW take, "
-                             "with c in the folded convention -- see ANISO_PRESETS). "
-                             "The toggle still defaults to OFF unless 'on' is given.")
+    parser.add_argument("--slerp-ab", action="store_true",
+                        help="LAG rig: two panels, SAME Horn estimator, differing "
+                             "only in smoothing -- 1 = today's fixed per-frame "
+                             "0.35, 2 = the time-based constant on the SMOOTH ms "
+                             "slider. One camera and one detection feed both, so a "
+                             "difference between the panels has exactly one cause.")
+    parser.add_argument("--no-sliders", dest="sliders", action="store_false",
+                        help="do not open the smoothing slider panel. The smoothing "
+                             "is then locked to whatever --smooth-ms sets.")
+    parser.add_argument("--smooth-ms", type=float, default=None,
+                        help="start the smoothing at this time constant in ms "
+                             "instead of the default 20 (the owner's live-settled "
+                             "value). Range 0..150; 149 == today's shipped feel.")
     args = parser.parse_args()
 
-    # ⚠ PARSED BEFORE THE CAMERA IS OPENED. A bad string must fail in the first
+    # ⚠ VALIDATED BEFORE THE CAMERA IS OPENED. A bad value must fail in the first
     # second, not after the operator has held a pose for a minute -- the same
     # preflight rule the record path already follows below.
-    if args.aniso_start:
-        try:
-            bits = [b.strip() for b in args.aniso_start.split(",")]
-            r0, a, b, c = (float(x) for x in bits[:4])
-        except (ValueError, IndexError):
-            raise SystemExit(f"[LiveSnapDebug] --aniso-start must be 'r0,a,b,c[,on]', "
-                             f"got {args.aniso_start!r}")
-        # ⚠ REFUSE out-of-range instead of clamping. With the sliders open a
-        # clamped value is silently overwritten on the first frame, so the run
-        # would use numbers the operator never chose and meta.json would record
-        # THOSE -- a take that cannot be reproduced from its own command line.
-        for label, val, lo, hi in (("r0", r0, 0.80, 1.10), ("a", a, 0.40, 1.60),
-                                   ("b", b, -0.80, 0.80), ("c", c, -0.80, 0.80)):
-            if not lo <= val <= hi:
-                raise SystemExit(f"[LiveSnapDebug] --aniso-start {label}={val} is "
-                                 f"outside the slider range [{lo}, {hi}].")
-        ANISO.r0, ANISO.a, ANISO.b, ANISO.c = r0, a, b, c
-        ANISO.enabled = len(bits) > 4 and bits[4].lower() in ("on", "1", "true")
+    if args.smooth_ms is not None:
+        # ⚠ Refused rather than clamped: with the slider open, a value it cannot
+        # represent is silently overwritten on the first frame, so the run would
+        # use a number the operator never chose -- and meta.json would record THAT.
+        if not 0 <= args.smooth_ms <= SLERP_TAU_MAX_MS:
+            raise SystemExit(
+                f"[LiveSnapDebug] --smooth-ms {args.smooth_ms} is outside "
+                f"[0, {SLERP_TAU_MAX_MS}].")
+        SLERP_TAU_MS = args.smooth_ms
 
     detector = build_detector()
     cap = cv2.VideoCapture(args.camera_index, cv2.CAP_DSHOW)
@@ -2177,15 +2013,20 @@ def main():
     if not ret:
         raise RuntimeError("Could not read an initial frame from the webcam.")
     height, width = frame.shape[:2]
-    # ⭐ T6d: in the A/B rig the rebuild must be ON, or both panels run the same
-    # estimator and the rig compares a thing against itself (§16.14's failure
-    # mode). The toggle then means "is panel 2 live", and it still starts ON so
-    # the difference is visible from the first frame.
-    if args.aniso_ab:
-        ANISO.enabled = True
     arms = (_arm_layout(args.arms, width, height, args.ownership_ab, args.coast_ab,
-                        args.aniso_ab)
+                        args.slerp_ab)
             or [_make_arm(args.bridge, width, height)])
+    # ⭐⭐ THE UNIT CHANGE (owner, 2026-08-24: *"change the unit first"*). Every LIVE
+    # arm smooths on a time constant in milliseconds instead of a fixed per-frame
+    # factor, so the feel no longer moves with the camera's frame rate.
+    # ⚠ `CubeState` still DEFAULTS to "frame": the analysis harnesses are
+    # regressions against shipped behaviour and must not silently change units
+    # underneath themselves. Only the live tool opts in, here, explicitly.
+    # ⛔ EXCEPT panel 1 of `--slerp-ab`, which is deliberately left on the old form
+    # -- it is the control.
+    for _i, _a in enumerate(arms):
+        if not (args.slerp_ab and _i == 0):
+            _a.slerp_mode = "time"
     arms_first_panel[0] = arms[0]
     _coast_rig[0] = bool(args.coast_ab)
     state = arms[0]        # the single-arm path's state, and arm 1 of a rig
@@ -2203,11 +2044,9 @@ def main():
                     (i + 1, arm.bridge_window_ms,
                      "  (SHIPPED)" if abs(arm.bridge_window_ms - hand_state.BRIDGE_WINDOW_MS) < 1e-6
                      else "  (candidate)"))
-        elif multi and args.aniso_ab:
-            name = ("%d. BEFORE -- shipped Horn (today's behaviour)" % (i + 1)
-                    if i == 0 else
-                    "%d. AFTER -- T6d anisotropic rebuild  (the sliders drive THIS panel)"
-                    % (i + 1))
+        elif multi and args.slerp_ab:
+            name = ("%d. BEFORE -- per-frame 0.35 (today's lag)" % (i + 1) if i == 0
+                    else "%d. AFTER -- time-based smoothing (SMOOTH ms slider)" % (i + 1))
         elif multi and args.ownership_ab:
             # Name the panels by the VARIABLE under test, not "arm 1 / arm 2":
             # both arms share a bridge config here, so the arm label alone left
@@ -2226,36 +2065,16 @@ def main():
             cv2.moveWindow(name, i * (disp_w + args.gap), 0)
     window_name = windows[0]
 
-    # ⭐ T6d. The panel is a SEPARATE window, so no video panel's layout moves and
-    # the owner can drag it onto a second screen while turning their hand.
-    if args.aniso_sliders:
-        _create_aniso_sliders()
-        _apply_aniso_preset(("start", ANISO.r0, ANISO.a, ANISO.b, ANISO.c))
-        cv2.setTrackbarPos(ANISO_SLIDERS[4][0], ANISO_WIN, 1 if ANISO.enabled else 0)
-
-    # The panel the sliders drive: panel 2 in the A/B rig, the only panel otherwise.
-    _aniso_hud_arm = arms[1] if args.aniso_ab and len(arms) > 1 else arms[0]
+    # ⭐ A SEPARATE window, so no video panel's layout moves and the owner can drag
+    # it onto a second screen while turning their hand.
+    if args.sliders:
+        _create_sliders()
+        cv2.setTrackbarPos(SLIDERS[0][0], SLIDER_WIN, int(round(SLERP_TAU_MS)))
 
     timestamp_ms = 0
     print("[LiveSnapDebug] Running -- press 'q' or close a window to stop.")
-    if args.aniso_ab:
-        print("[LiveSnapDebug] T6d A/B: window 1 = BEFORE (shipped Horn), "
-              "window 2 = AFTER (anisotropic rebuild).")
-        print("[LiveSnapDebug]   The sliders drive window 2 ONLY. Both panels run "
-              "off the same camera, detection and identity, so a difference "
-              "between them has exactly one cause.")
-        print("[LiveSnapDebug]   ⚠ Grab a cube in EACH window -- they own separate "
-              "cubes; an empty panel compares nothing.")
-    print("[LiveSnapDebug] T6d: 't' toggles the anisotropic rebuild, "
-          "'0'/'1'/'2' load identity / the fitted yaw / the fitted pitch params.")
-    print("[LiveSnapDebug] !! The rebuild starts ON in this rig -- panel 1 IS the "
-          "shipped Horn, so there is nothing to toggle to see it."
-          if args.aniso_ab else
-          "[LiveSnapDebug] !! The rebuild starts OFF -- that is the SHIPPED Horn, "
-          "so feel today's behaviour first, then turn it on.")
-    print("[LiveSnapDebug] !! Changing a parameter while a cube is HELD leaves the "
-          "grab reference in the old frame: the cube takes a one-off offset. "
-          "Release and re-grab after each change.")
+    print(f"[LiveSnapDebug] smoothing tau starts at {SLERP_TAU_MS:.0f} ms "
+          f"(149 = today's behaviour, 0 = none). Slider window: '{SLIDER_WIN}'.")
     if multi:
         for i, arm in enumerate(arms):
             print(f"[LiveSnapDebug]   window {i + 1}: {_arm_title(arm)}")
@@ -2281,7 +2100,7 @@ def main():
     # only exercises psi~0 and a pitch sweep only psi~90, so `b` and `c` are
     # currently fitted from two endpoints and unconstrained in between. Live hand
     # exploration is what visits the psi no recording does.
-    _aniso_changes, _aniso_key_last, _aniso_changed_at = [], None, 0.0
+    _tau_changes, _tau_last = [], None
     if args.record:
         stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
         session_dir = os.path.join(RECORD_ROOT, "sessions", f"{stamp}_{args.tag}")
@@ -2427,39 +2246,30 @@ def main():
             # ⭐ T6d: read the sliders, then derive this frame's rebuild terms per
             # hand -- BEFORE the arms run, so the HUD, the recorder and the
             # estimator all describe the same frame under the same parameters.
-            if args.aniso_sliders:
-                _read_aniso_sliders(ANISO)
-            _aniso_key_now = ANISO.key()
-            if _aniso_key_now != _aniso_key_last:
-                _aniso_changes.append({"frame": len(records) if args.record else -1,
-                                       "t_capture_ms": round(t_capture_ms, 2),
-                                       **ANISO.as_dict()})
-                # ⛔ Say it on the console too, once per move: the first session
-                # logged 150 slider moves with the rebuild OFF and none of them
-                # did anything.
-                if not ANISO.enabled and _aniso_key_last is not None:
-                    print("[LiveSnapDebug] !! slider moved while the rebuild is "
-                          "OFF -- this changes NOTHING. Press 't' to turn it on.")
-                _aniso_key_last = _aniso_key_now
-                _aniso_changed_at = time.perf_counter()
-            _aniso_terms.clear()
-            for _h in TRACKED_HANDS:
-                _d = hand_data_by_hand.get(_h)
-                if _d is None:
-                    continue
-                _t = _PRot.rebuild_terms(
-                    _d["pixel_landmarks"], _PRot.PALM_LANDMARKS, _ANISO_MODEL, ANISO,
-                    _PRot.aniso_mirrored(_d["world_landmarks"]))
-                if _t is not None:
-                    _aniso_terms[_h] = _t
+            if args.sliders:
+                _read_sliders()
+            # ⭐ One global, pushed onto every arm running the time-based form, so
+            # the slider and the maths cannot disagree about which tau ran.
+            for _a in arms:
+                if _a.slerp_mode == "time":
+                    _a.slerp_tau_ms = SLERP_TAU_MS
+            # ⛔ THE SETTING MUST BE ON THE RECORD, PER FRAME. The first lag take
+            # recorded 1191 frames with NO record of which smoothing it ran, so it
+            # could not be attributed to a setting at all -- and the whole reason
+            # this log exists is that the knob moves DURING the take.
+            if SLERP_TAU_MS != _tau_last:
+                _tau_changes.append({"frame": len(records) if args.record else -1,
+                                     "t_capture_ms": round(t_capture_ms, 2),
+                                     "slerp_tau_ms": SLERP_TAU_MS})
+                _tau_last = SLERP_TAU_MS
 
             # ⭐ ONE update per arm, all fed the SAME `hand_data_by_hand`. The
             # arms differ only in their own Phase D configuration, so a
             # divergence between panels has exactly one cause.
-            # ⚠ T6d: `T6D_ROTATION` wraps the SHIPPED Horn and, while the toggle is
-            # off, passes the world landmarks through untouched -- so this is still
-            # exactly `PRODUCTION_ROTATION` until the owner turns the rebuild on.
-            update_hands_all(arms, hand_data_by_hand, rotation=T6D_ROTATION)
+            # ⚠ In the lag rig each arm carries its OWN Horn (see
+            # `_make_slerp_ab_arms`) and overrides this; a single shared estimator
+            # would share its frozen reference between the panels.
+            update_hands_all(arms, hand_data_by_hand, rotation=PRODUCTION_ROTATION)
 
             if args.record:
                 # Schema is DELIBERATELY identical to RecordPerceptionSequence.py's
@@ -2506,17 +2316,6 @@ def main():
                                          else round(d["hand_depth"][0], 4)),
                         "depth_valid": bool(d.get("hand_depth")
                                             and d["hand_depth"][1]),
-                        # ⭐ T6d: the rebuild's own terms, STORED rather
-                        # than left to be re-derived. `psi` is the field the corpus
-                        # has never carried and the whole reason to record this
-                        # session -- it says which part of the 2x2 each frame
-                        # exercises, so the diagonal coverage of the take can be
-                        # read straight off the file. ⚠ `psi` is folded into the
-                        # apparent-RIGHT palm frame (see palm_rotation's
-                        # ANISO_FOLD_CHIRALITY); `mirrored` says whether it was.
-                        "aniso": (None if handedness not in _aniso_terms else {
-                            k: (v if isinstance(v, bool) else round(v, 4))
-                            for k, v in _aniso_terms[handedness].items()}),
                     })
                 records.append({
                     "tCapture": round(t_capture_ms, 2),
@@ -2567,7 +2366,12 @@ def main():
                     # ⚠ PER FRAME, not once in meta.json. The sliders move during
                     # the take, so a frame that does not carry its own parameters
                     # cannot be attributed to a setting.
-                    "aniso_params": ANISO.as_dict(),
+
+                    # ⚠ PER FRAME: the smoothing is on a slider and moves DURING
+                    # the take, so a frame that does not carry its own value cannot
+                    # be attributed to a setting.
+                    "slerp_tau_ms": SLERP_TAU_MS,
+                    "slerp_mode": [a.slerp_mode for a in arms],
                 })
 
             for i, arm in enumerate(arms):
@@ -2582,54 +2386,20 @@ def main():
                 # ⭐ In the A/B rig, panel 2 also carries panel 1's cube as a
                 # wireframe. Positions are bit-identical between the arms, so any
                 # visible gap between cage and solid IS the estimator difference.
-                _draw_cubes(panel, arm,
-                            ghost_of=arms[0] if (args.aniso_ab and i == 1) else None)
+                _draw_cubes(panel, arm)
                 _draw_bridge_hud(panel, arm, height)
-                if args.aniso_ab and i == 1:
+                if args.slerp_ab and i == 1:
                     _draw_ab_divergence(panel, arms[0], arm, height)
                 # ⭐ T6d: the readout belongs on the panel the sliders DRIVE. In the
                 # A/B rig that is panel 2; in the single-arm view it is the only
                 # panel. Putting it on the control panel would invite reading
                 # panel 1's cube against panel 2's numbers.
-                if arm is _aniso_hud_arm:
-                    _draw_aniso_hud(panel, ANISO, height,
-                                    (time.perf_counter() - _aniso_changed_at) < 2.0
-                                    and any(c.owner is not None
-                                            for c in arm.cubes.values()),
-                                    (time.perf_counter() - _aniso_changed_at) < 3.0)
                 cv2.imshow(windows[i], panel)
-            _draw_aniso_panel(ANISO, args.aniso_sliders)
+            _draw_slider_panel(args.sliders)
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 break
-            if key == ord("t"):
-                # ⭐ The A/B the whole session is for, on one key: OFF is the
-                # SHIPPED estimator, ON is the rebuild, nothing else differs.
-                ANISO.enabled = not ANISO.enabled
-                if args.aniso_sliders:
-                    try:
-                        cv2.setTrackbarPos(ANISO_SLIDERS[4][0], ANISO_WIN,
-                                           1 if ANISO.enabled else 0)
-                    except cv2.error:
-                        pass
-                print(f"[LiveSnapDebug] T6d rebuild {'ON' if ANISO.enabled else 'OFF'}")
-            if key in ANISO_PRESETS:
-                preset = ANISO_PRESETS[key]
-                if args.aniso_sliders:
-                    _apply_aniso_preset(preset)
-                else:
-                    ANISO.r0, ANISO.a, ANISO.b, ANISO.c = preset[1:]
-                print(f"[LiveSnapDebug] T6d preset '{preset[0]}': "
-                      f"r0 {preset[1]} a {preset[2]} b {preset[3]} c {preset[4]}")
-            if key == ord("r"):
-                # Reset every arm's counters together, so a fresh comparison can
-                # start without restarting the session. ⚠ Resets counters ONLY --
-                # the cubes stay where they are.
-                for arm in arms:
-                    for k in arm.stats:
-                        arm.stats[k] = 0
-                print("[LiveSnapDebug] counters reset on all arms")
             if any(cv2.getWindowProperty(n, cv2.WND_PROP_VISIBLE) < 1 for n in windows):
                 break
             if args.duration and (time.perf_counter() - t0) >= args.duration:
@@ -2676,7 +2446,7 @@ def main():
                     # collisions the `cubes` key comment already records.
                     "arms": len(arms),
                     "arms_flag": args.arms,
-                    "rig": ("aniso_ab" if args.aniso_ab else
+                    "rig": ("slerp_ab" if args.slerp_ab else
                             "ownership_ab" if args.ownership_ab else
                             "coast_ab" if args.coast_ab else
                             "three_arm" if args.arms == 3 else "single"),
@@ -2689,22 +2459,14 @@ def main():
                     # suspicion -- and the corpus has no images (N14) to fall
                     # back on. Declared by the operator, not inferred.
                     "known_hand": args.known_hand,
-                    # ⭐⭐ T6d. `aniso_changes` is the take's INDEX: every slider
-                    # move, with the frame it happened on, so the recording can be
-                    # cut into per-setting segments. `aniso_final` is only where
-                    # the knobs were left.
-                    # ⛔ recorder_schema stays 3 ON PURPOSE. The schema marker is a
-                    # CONTRACT BETWEEN THE TWO RECORDERS (`verify_recorder_parity`
-                    # asserts both stamp the same number), and production does not
-                    # run T6d at all -- bumping it here alone would claim a shared
-                    # format that does not exist. `aniso_debug` marks the extension
-                    # instead: the per-hand `aniso` block and the per-frame
-                    # `aniso_params` are ADDITIVE, so every existing t5*/verify
-                    # harness reads these takes unchanged.
-                    "aniso_debug": 1,
-                    "aniso_final": ANISO.as_dict(),
-                    "aniso_changes": _aniso_changes,
-                    "aniso_fold_chirality": _PRot.ANISO_FOLD_CHIRALITY,
+                    # ⭐⭐ `tau_changes` is the take's INDEX: every smoothing change
+                    # with the frame it happened on, so the recording can be cut
+                    # into per-setting segments. A knob that moves during a take and
+                    # is recorded only once describes just its last few seconds.
+                    "slerp_tau_ms_final": SLERP_TAU_MS,
+                    "slerp_tau_max_ms": SLERP_TAU_MAX_MS,
+                    "tau_changes": _tau_changes,
+                    "slerp_mode": [a.slerp_mode for a in arms],
                 }, fh, indent=2)
             with_hand = sum(1 for r in records if r["hands"])
             print(f"[LiveSnapDebug] Saved {len(records)} frames "
