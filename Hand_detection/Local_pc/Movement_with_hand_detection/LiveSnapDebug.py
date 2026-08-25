@@ -53,6 +53,7 @@ import capture_policy  # noqa: E402  (same directory; shared with production, N6
 from Resources import palm_rotation as _PRot
 from Resources import palm_depth as _PDepth  # noqa: E402  (4.1/M9, read-only)
 from Resources import session_paths  # noqa: E402  (tag sanitising, shared with production)
+from Resources import capture_drive  # noqa: E402  (drive wake/retry, shared with production)
 
 # ⭐⭐ WHAT PRODUCTION ACTUALLY RUNS, since 2026-08-17.
 # `Resources/HandsTriggeredActions.py` now drives cube orientation with Horn
@@ -2205,6 +2206,11 @@ def main():
         args.tag = _tag
         stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
         session_dir = os.path.join(RECORD_ROOT, "sessions", f"{stamp}_{args.tag}")
+        # ⛔ Wake the drive before the preflight, or the preflight refuses a take
+        # merely because E: is asleep. Same one copy production uses (N6) --
+        # `Resources/capture_drive.py`. ⚠ The operator waking it beforehand is not
+        # enough: it sleeps again during whatever ran before.
+        capture_drive.ensure_awake(os.path.join(RECORD_ROOT, "sessions"))
         try:
             os.makedirs(session_dir, exist_ok=True)
             probe = os.path.join(session_dir, ".writable")
@@ -2217,8 +2223,11 @@ def main():
                 f"[LiveSnapDebug] Capture root is not writable, refusing to record.\n"
                 f"                path : {session_dir}\n"
                 f"                error: {e}\n"
-                f"                If this is the external drive it may be asleep -- "
-                f"touch it once and retry.")
+                f"                The drive did not come back after "
+                f"{capture_drive.ATTEMPTS} wake attempts -- check the cable or "
+                f"enclosure.\n"
+                f"                ⛔ Do NOT fall back to a local path; "
+                f"recordings belong on E:.")
         print(f"[LiveSnapDebug] RECORDING -> {session_dir}")
         if args.duration:
             print(f"[LiveSnapDebug] auto-stop after {args.duration:.0f}s")

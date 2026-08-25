@@ -16,30 +16,27 @@ recording corpus.
 """
 import os
 import sys
-import time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from Resources import capture_drive          # noqa: E402
 
 ROOT = r"E:\Python\Recordings for vision_pipeline\Recordings_perception_layer\sessions"
-ATTEMPTS = 8
+ATTEMPTS = capture_drive.ATTEMPTS
 
 
 def wake(root=ROOT, attempts=ATTEMPTS):
-    probe = os.path.join(root, ".wake")
-    for i in range(1, attempts + 1):
-        try:
-            os.makedirs(probe, exist_ok=True)
-            f = os.path.join(probe, "w")
-            with open(f, "w", encoding="utf-8") as fh:
-                fh.write("ok")
-            os.remove(f)
-            os.rmdir(probe)
-            print(f"[wake] drive awake and writable (attempt {i})")
-            return True
-        except OSError as e:
-            print(f"[wake] attempt {i}/{attempts} failed: {e.__class__.__name__} {e}")
-            time.sleep(1.5)
-    print("[wake] FAILED -- the drive did not come back. Do NOT fall back to --local;")
-    print("[wake] recordings belong on E:. Check the cable/enclosure and retry.")
-    return False
+    """⚠ THE RETRY ITSELF NOW LIVES IN `Resources/capture_drive.py` (N6).
+
+    It moved there on 2026-08-25 because only this TOOL had it: production's
+    recorder tried once, gave up, and a full live acceptance take recorded
+    nothing. Both recorders now call the same function, so running this by hand
+    is a convenience rather than a precondition.
+    """
+    ok = capture_drive.ensure_awake(root, attempts=attempts)
+    if ok:
+        print("[wake] drive awake and writable")
+    return ok
 
 
 if __name__ == "__main__":

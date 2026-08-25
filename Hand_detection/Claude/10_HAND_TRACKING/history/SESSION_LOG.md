@@ -12,6 +12,78 @@ block here is superseded and marked so.
 
 ---
 
+## 2026-08-25 (night) — `F1` is specified, Step 0 is measured, rule 3 is gone
+
+**The owner specified `F1`** in eight points (fingertip barycentre drives the
+transform; grab on barycentre proximity; tip plane drives the quaternion with the
+palm supporting; release unchanged; ⭐ **the back-of-hand snap restriction
+removed**; a jitter slider; and — stated mid-specification — **τ = 20 ms is not to
+be disturbed**). Design, acceptance bar and build order:
+[`../spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](../spec/F1_FINGERTIP_TRANSFORM_SPEC.md).
+
+⭐⭐ **The architecture is a palm-frame DEFORMATION feeding a bounded trim** —
+`ΔR = R_palm·R_trim·R_palm(grab)⁻¹`, tips expressed in the palm frame so whole-hand
+rotation cannot enter the tip channel **by construction**, and **gain 0 must be
+bit-identical to shipped Horn**. That is the A10-dead rigid arm respected rather
+than avoided.
+
+⭐⭐ **The coplanarity question came back with its premise inverted.** Coplanar
+tips+palm is the **safe, redundant** case and needs no handling — `R_trim → I` and
+today's behaviour is reached automatically. The dangerous geometry is
+**COLLINEARITY**, a different condition, and the remedy is the house rule:
+suppress, do not guess. ⛔ The owner's *"assume z from palm width rotated 90°"* is
+routed to `T6`'s ratio table, not built here — it is the `acos` fold plus "a
+threshold must not be computed from a quantity that is noisy where the threshold
+acts".
+
+⛔⛔ **A PATENT changed which arm to build.** `US9696795B2` (contacts → object
+rotation, filed 2015, term ~2035) was **reassigned 2026-01-16 from Ultraleap to a
+holding entity**. The contact-point arm is dropped; the chosen design reads on
+Horn 1987 / Kabsch 1976.
+
+⭐⭐⭐ **STEP 0 MEASURED** (`analysis/f1_tip_census.py`, 123 takes) — and it pushes
+back on two of the owner's four points:
+
+1. ✅ **Tip noise floor is 1.5 mm**, held only **5–10%** worse than free. The
+   feared held-state collapse did not happen; the design survives.
+   ⚠⚠ **The raw number said 21–31 mm and was nearly reported.** Splitting on
+   frames where the palm itself barely moved shows almost all of that is the
+   operator moving — a factor of ~15. State which one you mean.
+2. ⛔ **The rigid tip residual swings 75–95° inside half a second**, and the
+   short-horizon column barely differs from the long one, so it is neither drift
+   nor noise: it is **the rigid model being wrong**. The clamp must sit far below
+   the data's own spread.
+3. ⛔ **The plain barycentre drifts 1 cm median / 6 cm p95** with the palm still.
+   `g_pos = 1` — the specification taken literally — needs a clamp.
+4. ✅ Collinearity is rare; a 0.20 floor costs **1.89%** of frames.
+
+⛔ **And the recorder carries no per-landmark confidence**, so question 1 had to
+become "what did the tips do", not "what did the model claim".
+
+✅✅ **STEP 3 SHIPPED AND LIVE-CONFIRMED** — rule 3's back-of-hand snap block is
+removed from both tools, `handinput`, the recorder schema, the conformance traces,
+both record tools and the parity harness. Owner ran both: *"debug working fine"*,
+*"production working fine"*. Debug is **measured**: **9 of 15 snaps back-of-hand**,
+15 releases, nothing stranded.
+
+⚠ **Three things this removal exposed, all worth keeping:**
+* **Rule 3 had exactly one test** — the scripted conformance trace. 26 suites
+  passed *before* the removal was finished, which proves only that they never
+  covered it. The trace's rule-3 steps are kept and **inverted** as the guard.
+* **Two latent breaks**: `parity_replay` compared the deleted state, and
+  `verify_state_follows_hand` drove it — and that suite is **skipped while
+  `TRACK_OWNERSHIP=False`**, so it passed while broken and would only have failed
+  whenever `4.1` is retried.
+* ⛔ **The production take recorded nothing** (`N4`: the drive slept; production's
+  recorder disables itself on first failure instead of retrying). Production's
+  evidence is the live verdict plus `parity_replay`, **not numbers of its own**.
+
+⚠ **`N8` is re-opened and widened** — rule 3 had been suppressing part of it
+incidentally (it refused **8.3%** of free-hand frames). ⛔ Not to be answered with
+a facing gate; still routed to `B5` + `4.4`.
+
+---
+
 ## 2026-08-25 (late) — the platform decision is shaped, and the Model Card lands
 
 **Owner decisions**: ship **both** browser and native · the platform decision is

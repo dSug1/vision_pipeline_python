@@ -15,6 +15,7 @@ from . import palm_rotation
 from . import hand_state
 from . import hand_tracks
 from . import session_paths
+from . import capture_drive
 
 # ⭐⭐ THE INPUT SYSTEM (2026-08-25). `handinput` turns this frame's per-hand facts
 # into Unity-shaped ACTIONS with phases and callbacks -- the pluggable surface a
@@ -1036,11 +1037,26 @@ def _record_open():
         print(f"[record] VISION_RECORD_TAG was not filename-safe; using '{tag}'")
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     d = os.path.join(_RECORD_ROOT, "sessions", f"{stamp}_{tag}")
+    # ⛔⛔ WAKE THE DRIVE FIRST -- this cost a real take on 2026-08-25. E: sleeps
+    # (USB selective suspend) and its first access after an idle gap fails with
+    # WinError 21; the single attempt below then gave up permanently and a full
+    # live acceptance take recorded NOTHING. ⚠ The operator cannot prevent it by
+    # waking the drive beforehand: it sleeps again during whatever ran before.
+    # See `Resources/capture_drive.py` (N6: one copy, shared with the debug
+    # recorder and `tools/wake_e_drive.py`).
+    capture_drive.ensure_awake(os.path.join(_RECORD_ROOT, "sessions"))
     try:
         os.makedirs(d, exist_ok=True)
         fh = open(os.path.join(d, "raw_landmarks.jsonl"), "w", encoding="utf-8")
     except OSError as e:
-        print(f"[record] cannot record, continuing WITHOUT it: {e}")
+        # ⚠ LOUD, and repeated at close: a take the operator BELIEVES is recording
+        # and is not is worse than a refused one. Production has no UI to show a
+        # recording indicator, so the console is the only channel there is.
+        print("=" * 72)
+        print(f"[record] !! NOT RECORDING -- {e}")
+        print("[record] !! The drive did not come back after retries. This session")
+        print("[record] !! will produce NO take. Stop now if you need one.")
+        print("=" * 72)
         os.environ["VISION_RECORD"] = "0"      # do not retry every frame
         return
     _rec.update(fh=fh, dir=d, t0=time.perf_counter())

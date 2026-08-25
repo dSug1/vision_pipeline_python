@@ -39,8 +39,12 @@ floor is **1.5 mm** and the feared held-state collapse did **not** happen — bu
 two of the owner's four points need clamping, not building as written. The rigid
 tip residual swings **75–95° inside half a second** and that is the model being
 wrong, not noise; the plain barycentre drifts **1 cm median, 6 cm p95**.
-⭐ **Step 3 is SHIPPED**: the back-of-hand snap rule is gone from both tools,
-`handinput` and the traces. ⛔ **A live take is owed on it.**
+⭐ **Step 3 is SHIPPED and LIVE-CONFIRMED** in both tools (owner, 2026-08-25:
+*"debug working fine"*, *"production working fine"*). The back-of-hand snap rule
+is gone from both tools, `handinput` and the traces. Debug is also **measured**:
+**9 of 15 snaps happened back-of-hand**, 15 releases, nothing stranded.
+⚠ **Production recorded nothing** (`N4` — the drive slept); its evidence is the
+live verdict plus `parity_replay`'s NO DIVERGENCE, not numbers of its own.
 
 Last three landings: **`L1`** rotation lag fixed and shipped (τ = 20 ms);
 **`IS1`–`IS3`** the input system ✅ **SHIPPED** (`handinput/`, observes-only) —
@@ -104,7 +108,7 @@ remedy does not — [`10_HAND_TRACKING/spec/ORIENTATION_DIAGNOSIS.md`](../10_HAN
 | [T6](queue_notes/T6.md) | Orientation from 2D (planar PnP) | HAND | perception | ⛔⛔ **built and A10-rejected 2026-08-24** — yaw got worse; code in `estimators()` only. ⭐⭐ **A 2D-RATIO-TABLE correction is OPEN and NOT covered by §2.0.12** (owner 2026-08-25) — clean depth-free index, yaw/pitch kept separate, declared ground truth. §2.0.9's refutation used a *contaminated* index so it does not carry. **Protocol + tool are ready**: `spec/RATIO_TABLE_CALIBRATION_PROTOCOL.md`, `tools/RecordRatioCalibration.py`. Owner runs it after `F1` | 4.2 |
 | [T6d](queue_notes/T6d.md) | The anisotropic 2×2 fit | HAND | perception | ⛔⛔ built, 4 live sessions, **owner-rejected 2026-08-24** — production never ran it | T6 |
 | [L1](queue_notes/L1.md) | Rotation smoothing — a **time constant** | HAND | responsiveness | ✅✅ **shipped 2026-08-24**, owner-settled live at τ = 20 ms | — |
-| [F1](queue_notes/F1.md) | ⭐⭐⭐ **The cube's transform from the FINGERTIPS** | HAND | perception + gesture | ⭐⭐⭐ **SPECIFIED + STEP 0 MEASURED + STEP 3 SHIPPED 2026-08-25** (⛔ live take owed). Design = **palm-frame deformation + bounded trim**, gain 0 ⇒ bit-identical to Horn; τ = 20 ms untouched; ⛔ contact-point arm dropped on a **patent** finding. **Census (`analysis/f1_tip_census.py`)**: tip noise floor **1.5 mm** ✅ workable (held only 5–10% worse) · ⛔ rigid tip residual **75–95° inside 0.5 s** — not noise, the rigid model is wrong ⇒ clamp far below it · ⛔ plain barycentre drifts **1 cm median / 6 cm p95** ⇒ `g_pos = 1` needs a clamp · ✅ collinearity floor 0.20 costs 1.9%. **Back-of-hand snap rule REMOVED** (⚠ re-opens `N8`; it was refusing **8.3%** of free-hand frames) → [`spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](../10_HAND_TRACKING/spec/F1_FINGERTIP_TRANSFORM_SPEC.md) | L1 ✅ |
+| [F1](queue_notes/F1.md) | ⭐⭐⭐ **The cube's transform from the FINGERTIPS** | HAND | perception + gesture | ⭐⭐⭐ **SPECIFIED + STEP 0 MEASURED + STEP 3 SHIPPED 2026-08-25** (⛔ live take owed). Design = **palm-frame deformation + bounded trim**, gain 0 ⇒ bit-identical to Horn; τ = 20 ms untouched; ⛔ contact-point arm dropped on a **patent** finding. **Census (`analysis/f1_tip_census.py`)**: tip noise floor **1.5 mm** ✅ workable (held only 5–10% worse) · ⛔ rigid tip residual **75–95° inside 0.5 s** — not noise, the rigid model is wrong ⇒ clamp far below it · ⛔ plain barycentre drifts **1 cm median / 6 cm p95** ⇒ `g_pos = 1` needs a clamp · ✅ collinearity floor 0.20 costs 1.9%. **Back-of-hand snap rule REMOVED** ✅ **live-confirmed both tools 2026-08-25**; debug measured **9 of 15 snaps back-of-hand** (⚠ re-opens `N8`; the rule was refusing **8.3%** of free-hand frames; ⚠ production recorded nothing — `N4`) → [`spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](../10_HAND_TRACKING/spec/F1_FINGERTIP_TRANSFORM_SPEC.md) | L1 ✅ |
 | [T7](queue_notes/T7.md) | World-referenced rotation (tilted camera) | HAND | perception | designed 2026-08-24 — ⭐ ships **with U12**, not after T6; no-op until then | T6, U12 |
 
 ## Phase B — the block representation
@@ -165,7 +169,7 @@ remedy does not — [`10_HAND_TRACKING/spec/ORIENTATION_DIAGNOSIS.md`](../10_HAN
 | [N1](queue_notes/N1.md) | Re-express frame-count parameters in ms | HAND | perception | queued | — |
 | [N2](queue_notes/N2.md) | Pose-normalise the bone residual | HAND | perception | queued | 1.4 |
 | [N3](queue_notes/N3.md) | Speed-threshold sweep | HAND | perception | ✅ closed 2026-08-03 | — |
-| [N4](queue_notes/N4.md) | External capture drive is unreliable | CORE | infra | open — `tools/wake_e_drive.py` retries past it | — |
+| [N4](queue_notes/N4.md) | External capture drive is unreliable | CORE | infra | ⭐ **sleep half FIXED 2026-08-25** — it cost a real production acceptance take (recorded nothing). The retry now lives in `Resources/capture_drive.py` and **both recorders call it**; `wake_e_drive` delegates. Verified against the live fault. ⚠ The volume's `Full Repair Needed` flag is untouched | — |
 | [N5](queue_notes/N5.md) | DR-1 track-level hand identity | HAND | perception | ✅ done, live-confirmed 2026-08-02 | — |
 | [N6](queue_notes/N6.md) | Shared modules are imported, never copied | CORE | infra | ✅ resolved 2026-08-02 — now a binding rule | — |
 | [N7](queue_notes/N7.md) | Drive `ASSUMED_FPS` from measured timing | HAND | perception | ✅ done 2026-08-04 (DR-1); ⚠ `palm_geometry` still to do | 0.1 |
