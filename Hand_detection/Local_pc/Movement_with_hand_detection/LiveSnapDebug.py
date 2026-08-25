@@ -49,8 +49,10 @@ sys.path.insert(0, os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..", "Python_Server_MediaPipe_vision_pipeline", "Resources"))
 import hand_identity  # noqa: E402  (path set immediately above)
+import capture_policy  # noqa: E402  (same directory; shared with production, N6)
 from Resources import palm_rotation as _PRot
 from Resources import palm_depth as _PDepth  # noqa: E402  (4.1/M9, read-only)
+from Resources import session_paths  # noqa: E402  (tag sanitising, shared with production)
 
 # ⭐⭐ WHAT PRODUCTION ACTUALLY RUNS, since 2026-08-17.
 # `Resources/HandsTriggeredActions.py` now drives cube orientation with Horn
@@ -2091,7 +2093,7 @@ def main():
     if not cap.isOpened():
         raise RuntimeError(f"Could not open webcam (index {args.camera_index}). Is another program using the camera?")
 
-    ret, frame = cap.read()
+    ret, frame, _ = capture_policy.read_frame(cap)   # retries a cold-start stall
     if not ret:
         raise RuntimeError("Could not read an initial frame from the webcam.")
     height, width = frame.shape[:2]
@@ -2184,6 +2186,14 @@ def main():
     # exploration is what visits the psi no recording does.
     _tau_changes, _tau_last = [], None
     if args.record:
+        # ⚠ SANITISED (audit 2026-08-25), mirroring production's recorder exactly:
+        # the tag is interpolated into a PATH, so an unchecked one can write the
+        # session outside the capture root. `Resources/session_paths.py` holds the
+        # one definition -- imported by both recorders, never copied (N6).
+        _tag, _tag_changed = session_paths.check_tag(args.tag, "session")
+        if _tag_changed:
+            print(f"[LiveSnapDebug] --tag was not filename-safe; using '{_tag}'")
+        args.tag = _tag
         stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
         session_dir = os.path.join(RECORD_ROOT, "sessions", f"{stamp}_{args.tag}")
         try:
@@ -2206,9 +2216,15 @@ def main():
 
     try:
         while True:
-            ret, frame = cap.read()
+            # ⭐ A transient stall no longer ends the session (audit 2026-08-25),
+            # and on a RECORDED take that used to cost the whole session. Shared
+            # policy with production -- `capture_policy.py`, N6, same constants.
+            ret, frame, _retries = capture_policy.read_frame(cap)
             if not ret:
+                print(capture_policy.give_up_message("LiveSnapDebug"))
                 break
+            if _retries:
+                print(f"[LiveSnapDebug] camera recovered after {_retries} failed read(s)")
             t_capture_ms = (time.perf_counter() - t0) * 1000.0   # REAL clock (N17)
             frame = cv2.flip(frame, 1)  # mirror, matching the production pipeline's invert_x
 

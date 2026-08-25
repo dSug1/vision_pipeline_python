@@ -14,6 +14,7 @@ from . import palm_geometry
 from . import palm_rotation
 from . import hand_state
 from . import hand_tracks
+from . import session_paths
 
 # ⭐⭐ THE INPUT SYSTEM (2026-08-25). `handinput` turns this frame's per-hand facts
 # into Unity-shaped ACTIONS with phases and callbacks -- the pluggable surface a
@@ -1023,7 +1024,13 @@ _rec = {"fh": None, "dir": None, "n": 0, "t0": None, "hands": 0}
 def _record_open():
     if _rec["fh"] is not None or os.environ.get("VISION_RECORD") != "1":
         return
-    tag = os.environ.get("VISION_RECORD_TAG", "production")
+    # ⚠ SANITISED (audit 2026-08-25): the tag is interpolated into a PATH, so an
+    # unchecked one can write the session outside the capture root. Shared with
+    # the debug recorder -- `Resources/session_paths.py`, imported never copied.
+    tag, _changed = session_paths.check_tag(
+        os.environ.get("VISION_RECORD_TAG", "production"), "production")
+    if _changed:
+        print(f"[record] VISION_RECORD_TAG was not filename-safe; using '{tag}'")
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     d = os.path.join(_RECORD_ROOT, "sessions", f"{stamp}_{tag}")
     try:
@@ -1049,7 +1056,12 @@ def _record_close():
         _rec["fh"].close()
         elapsed = time.perf_counter() - (_rec["t0"] or time.perf_counter())
         with open(os.path.join(_rec["dir"], "meta.json"), "w", encoding="utf-8") as m:
-            json.dump({"sequence": os.environ.get("VISION_RECORD_TAG", "production"),
+            # ⚠ The SANITISED tag, so `sequence` names the folder the take is
+            # actually in. Recording the raw env var here would let meta.json and
+            # the directory disagree -- a harness keyed on `sequence` would then
+            # look for a session that does not exist under that name.
+            json.dump({"sequence": session_paths.safe_tag(
+                           os.environ.get("VISION_RECORD_TAG", "production"), "production"),
                        # ⭐ 2 = cubes snapshotted AFTER the frame's logic, matching
                        # the debug recorder, and carrying position + size. ABSENT
                        # (or 1) means the OLD alignment: cubes were captured

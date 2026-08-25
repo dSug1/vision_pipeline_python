@@ -1,6 +1,7 @@
 ﻿import cv2
 import argparse
 
+from Resources import capture_policy
 from Resources.inference import load_models, run_inference_on_frame
 from Resources.Server import Start_socket_server as StartServer
 from Resources.Server import SendPacket as SendPacketThroughSocket
@@ -20,16 +21,31 @@ from Resources.utils_for_remapping_coordinates_and_output_formatting import (
 parser = argparse.ArgumentParser(description="Run vision inference and socket server.")
 parser.add_argument("--host", type=str, default="127.0.0.1", help="Server host")
 parser.add_argument("--port", type=int, default=5050, help="Server port")
+# ⛔ See `Resources/Server.py`: this socket carries live hand and face landmarks,
+# and the build's privacy position depends on that stream staying on the machine.
+# Binding off-loopback is refused unless this is passed DELIBERATELY.
+parser.add_argument("--allow-remote", action="store_true",
+                    help="Permit a non-loopback --host. This TRANSMITS landmarks; "
+                         "read Server.py's header before using it.")
+# ⚠ The face detector runs every frame and NOTHING consumes its output (the
+# client's dispatch is `elif datatype == "face": pass`). Default ON preserves
+# today's behaviour; `--face off` stops loading the model, computing it and
+# putting it on the wire. Full reasoning: `Resources/inference.load_models`.
+parser.add_argument("--face", choices=("on", "off"), default="on",
+                    help="Run the (currently unconsumed) face detector. Default on.")
 args = parser.parse_args()
+FACE_ENABLED = args.face == "on"
 
 
 # Start socket server
-connection, address, server = StartServer(args.host, args.port)
+connection, address, server = StartServer(args.host, args.port, args.allow_remote)
 connection_alive = True
 
 # Load models. Dependencies (mediapipe, opencv) are managed via requirements.txt
 # and the project's .venv — no runtime pip install.
-face_detector, hand_detector = load_models()
+face_detector, hand_detector = load_models(with_face=FACE_ENABLED)
+if not FACE_ENABLED:
+    print("[Main] face detection OFF -- no face model, no face packet.")
 
 # Start webcam.
 # Use the DirectShow backend (CAP_DSHOW) explicitly: the default MSMF backend on
@@ -45,7 +61,7 @@ if not cap.isOpened():
 # value before the first frame is pulled, especially on CAP_DSHOW) and tell
 # the client, so it can size its consumer to the real resolution instead of
 # guessing (see Hand_detection/Claude/PART_ZERO.md).
-ret, frame = cap.read()
+ret, frame, _ = capture_policy.read_frame(cap)   # retries a cold-start stall
 if not ret:
     raise RuntimeError("Could not read an initial frame from the webcam.")
 # MIRROR BEFORE DETECTION (2026-08-22, spec 14.3.4.3). This frame is NOT just a
@@ -124,7 +140,8 @@ try:
         # docstring for why the order matters.
         SendHandTracksPacketThroughSocket(hand_track_ids, connection)
         SendHandsWorldPacketThroughSocket(flat_hands_world_coords, connection)
-        SendPacketThroughSocket(flat_face_coords, flat_hands_coords, connection)
+        SendPacketThroughSocket(flat_face_coords, flat_hands_coords, connection,
+                                send_face=FACE_ENABLED)
     except (BrokenPipeError, ConnectionResetError, OSError) as e:
         print(f"[Main] Socket connection lost: {e}")
         connection_alive = False
@@ -132,11 +149,15 @@ try:
 
     timestamp_ms += 33  # ~30 FPS
 
-    ret, frame = cap.read()
-    if ret:
-        frame = cv2.flip(frame, 1)   # mirror BEFORE detection -- spec 14.3.4.3
+    # ⭐ A transient stall no longer ends the session (audit 2026-08-25). Shared
+    # policy with the debug tool -- `Resources/capture_policy.py`, N6.
+    ret, frame, _retries = capture_policy.read_frame(cap)
     if not ret:
+        print(capture_policy.give_up_message("Main"))
         break
+    if _retries:
+        print(f"[Main] camera recovered after {_retries} failed read(s)")
+    frame = cv2.flip(frame, 1)   # mirror BEFORE detection -- spec 14.3.4.3
 finally:
     # Always release the camera and sockets, even on exception / interrupt,
     # so the device is never left in a stuck state for the next run.

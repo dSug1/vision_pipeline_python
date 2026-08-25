@@ -418,7 +418,8 @@ ownership should follow the *physical* hand — today the cube the pipeline call
 | the play area / volume (an object may never reach the display edge) | `analysis/verify_play_area.py` |
 | ⭐ the same invariant read STRAIGHT from a recording, schema-aware | `analysis/verify_play_volume_from_recording.py` |
 | where the operator's hand actually sits, and whether an object is reachable | `analysis/m9_working_distance.py` |
-| golden vectors | `analysis/verify_*.py` — 25 suites |
+| golden vectors | `analysis/verify_*.py` — **26 suites, all passing** |
+| ⭐ the audit's guards (tags, camera stalls, loopback, the `meta` clamp) | `analysis/verify_hardening.py` — 51 checks |
 | ⭐ the INPUT SYSTEM: boundary, contract, vectors, action trace | `analysis/verify_handinput.py` — 95 checks |
 | record live action events from either tool | `HANDINPUT_TRACE=1 HANDINPUT_TRACE_TAG=<name> …` |
 | write the input system out as a standalone folder | `handinput/export_package.py <target-dir>` |
@@ -431,3 +432,27 @@ handles inside ONE process both succeed; that is a misleading test.)
 ⚠ **Fixtures run on RECORDINGS, not the live server.** §13.6.1 shipped inverted
 while passing an "end-to-end confirmed" claim. Automated green is necessary, not
 sufficient — a live look is what closes a change.
+
+---
+
+## 8. Security posture (audited 2026-08-25 — `GESTURE_PIPELINE_SPEC.md` §18)
+
+⭐⭐ **The claims the store declarations and the COPPA/GDPR-K position rest on are
+now CHECKED, not assumed** — and the strongest one is a negative: **there is no
+network egress anywhere in the pipeline.** Not one HTTP call, so *"nothing leaves
+the device"* is verifiable **by absence**. Also: no `eval`/`exec`/`pickle`/
+`shell=True`/`yaml.load` (no deserialisation or injection surface), both
+`subprocess.Popen` calls in list form, models loaded by absolute path.
+
+| control | where |
+|---|---|
+| the landmark socket is **loopback-only**, refused otherwise | `Server.py` / `Client.py`, override `--allow-remote` **only as a deliberate transmission decision** |
+| a session tag can never escape the capture root | `Resources/session_paths.py`, shared by both recorders |
+| the wire cannot size an allocation or inject a non-number | `PythonApp_Main.receive_float_array` |
+| a camera stall does not end a take | `capture_policy.py`, shared by both capture loops |
+
+⛔ **Four open items are DECISIONS, not omissions** — queue `SEC2` (pin the
+transitive dependency tree; N13 needs it too), `SEC3` (**a face detector runs
+every frame and nothing consumes it** — switch added, default deliberately not
+flipped), `SEC4` (the debug recorder buffers where production streams), `SEC5`
+(both tools feed MediaPipe a fake 33 ms clock — an A10 A/B, not an edit).

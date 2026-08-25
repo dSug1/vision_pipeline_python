@@ -23,7 +23,26 @@ never build a context.
 import atexit
 import json
 import os
+import re
 from datetime import datetime
+
+# ⚠⚠ THE TAG IS INTERPOLATED INTO A PATH, so it is sanitised before use (audit
+# 2026-08-25): `HANDINPUT_TRACE_TAG=..\..\somewhere` would otherwise write outside
+# the trace root, and a `:` or `*` -- legal in an env var, illegal in a Windows
+# filename -- fails with an OSError that reads like a broken drive.
+#
+# ⚠ THIS IS A DELIBERATE, DOCUMENTED DUPLICATE of `Resources/session_paths.py`,
+# and the only one in the package. N6 says a shared MODULE is imported, never
+# copied -- but `handinput` must stay self-contained under
+# `export_package.py`, and importing a game-side module it does not carry would
+# break every export. Four lines, one regex, and a pointer at the original:
+# if the rule there changes, change it here too.
+_UNSAFE_TAG = re.compile(r"[^A-Za-z0-9_-]+")
+
+
+def _safe_tag(tag, fallback="trace"):
+    cleaned = _UNSAFE_TAG.sub("_", str(tag or "")).strip("_")
+    return (cleaned[:60] or fallback)
 
 # ⭐ Traces prefer the capture drive, matching where every other artifact of a
 # session goes, but they must never BLOCK a run: an unreachable E: falls back to
@@ -40,7 +59,7 @@ def enabled():
 
 
 def _open():
-    tag = os.environ.get("HANDINPUT_TRACE_TAG", "trace")
+    tag = _safe_tag(os.environ.get("HANDINPUT_TRACE_TAG", "trace"))
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     for root in (_PREFERRED_ROOT, _LOCAL_ROOT):
         try:

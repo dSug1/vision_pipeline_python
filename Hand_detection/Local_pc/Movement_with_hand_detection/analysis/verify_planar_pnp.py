@@ -53,6 +53,19 @@ import os
 import random
 import sys
 
+# ⚠⚠ THIS SUITE EXITED 1 ON EVERY RUN UNTIL 2026-08-25, and not for a reason
+# anyone would guess from the exit code: it printed `ALL GOLDEN VECTORS PASS` and
+# then died on `UnicodeEncodeError` writing a `⚠` to a cp1252 console. So a suite
+# whose vectors were entirely green reported as a FAILURE to any runner that reads
+# exit codes -- and a permanently-red suite is worse than no suite, because it
+# teaches the reader to skip the red. Every other suite here already carries this
+# guard; this one was written without it. Found by the 2026-08-25 audit.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, ValueError):
+    pass
+import sys
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "Resources"))
 import palm_rotation as PR          # noqa: E402

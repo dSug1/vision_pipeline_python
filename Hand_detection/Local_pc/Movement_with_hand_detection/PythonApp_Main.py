@@ -43,8 +43,19 @@ def receive_float_array(datatype: str, array: List[float]) -> None:
     #print(f"[MainPage] Received {datatype} data with [{', '.join(map(str, array))}]")
 
     if datatype == "meta":
+        # ⚠⚠ AN UPPER BOUND, ADDED BY AUDIT 2026-08-25, and it is not pedantry:
+        # this value goes straight to `pygame.display.set_mode()`. The lower bound
+        # was already checked; without an upper one a `meta` of [100000, 100000]
+        # asks the window manager for a 40 GB surface and the client dies on an
+        # allocation, before any of the gesture logic ever runs. The sender is our
+        # own server today -- but it is the ONE number on the wire that sizes an
+        # allocation, and 8192 is past any real webcam (8K is 7680 wide).
+        MAX_DIMENSION = 8192
         if len(array) < 2 or array[0] <= 0 or array[1] <= 0:
             print(f"[MainPage] Warning: invalid 'meta' resolution {array}.")
+        elif array[0] > MAX_DIMENSION or array[1] > MAX_DIMENSION:
+            print(f"[MainPage] Warning: implausible 'meta' resolution {array[:2]} "
+                  f"(max {MAX_DIMENSION}). Keeping the current window size.")
         else:
             configure_source_resolution(int(array[0]), int(array[1]))
 
