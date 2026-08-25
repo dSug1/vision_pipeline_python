@@ -12,6 +12,45 @@ block here is superseded and marked so.
 
 ---
 
+## 2026-08-25 (late) — ✅✅ THE INPUT SYSTEM IS SHIPPED, and the app root is tidy
+
+**Second live pass, both tools back to back, after the folder tidy-up.** Debug
+clean; production clean — server accepted the client, hands tracked at 15–23 fps,
+identity locked on both hands, four track-ends re-decided normally, socket closed
+cleanly at both ends, no errors in either log. Owner: *"ship current build"*.
+
+⭐ **`IS1`–`IS3` move BUILT → SHIPPED.** The live look they had been waiting on
+since the morning is done. The package (`handinput/`) observes and drives
+nothing, so this was always a low-risk ship; what it buys is that the hand
+pipeline can now be lifted into another game, a port or a lens behind a stable
+action/phase/callback surface. Record: `40_INPUT_SYSTEM/`.
+
+⚠ **What the SHIPPED claim rests on**, so it is not read as more than it is: two
+clean live sessions plus the owner's instruction, on top of 26/26 golden vector
+suites, 96 handinput checks, 51 hardening checks and `parity_replay` clean. **No
+harness can see the HUD** — if the green `handinput …` line misbehaved on screen,
+that status is the first thing to revert.
+
+⭐⭐ **THE APP ROOT WENT FROM 35 FILES TO 9**, in three categories: `tools/`
+(recording, troubleshooting, verification — live and runnable), `_archive/`
+(the pinch era; B7/B8's prediction gate; six stale local recordings), and the top
+level, which now holds **only what debug and production actually run**.
+
+⚠ **Reachability was traced from the four real process roots**, not guessed —
+`PythonApp_Main`, the launcher, `Client`, `VisionPipeline`, plus `LiveSnapDebug`.
+That caught two things a naive sweep would have broken: `analysis/verify_edge_on.py`
+imports `AnalyzePerceptionSequences` (the single definition of `edge_on`), and
+`analysis/b7_live_ab.py` imports `LiveBlockPredictionDebug`. Both were given the
+new path — **a harness that cannot be re-run is an assertion, not a finding**, and
+that applies to the archived directions too.
+
+⭐ Everything moved stays runnable: each `.py` that resolved paths from `__file__`
+now anchors on `_APP_ROOT` one level up, and each `.bat` `cd`s back to the app
+root. The real proof was `tools/VerifyChiralityFixture.py` — it resolves
+`Resources/` through the new anchor and still reports ALL CHECKS PASSED.
+
+---
+
 ## 2026-08-25 (evening) — the live look, and one regression it caught
 
 **Both tools were run back to back.** Production ran a full clean session: server

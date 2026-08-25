@@ -32,8 +32,8 @@ will specify it in its own conversation. ⛔ Its one trap: **not** a rigid-body
 fit over palm+tips — that arm is A10-dead twice.
 
 Last three landings: **`L1`** rotation lag fixed and shipped (τ = 20 ms);
-**`IS1`–`IS3`** the input system built (`handinput/`, observes-only) — ⛔ the
-owner's live look in both tools is **still owed**; **`SEC1`** robustness +
+**`IS1`–`IS3`** the input system ✅ **SHIPPED** (`handinput/`, observes-only) —
+owner ran both tools 2026-08-25, clean; **`SEC1`** robustness +
 security audit shipped, four items left as explicit decisions (`SEC2`–`SEC5`).
 
 ⚠ **2026-08-25 live look**: production clean; the debug tool's **white
@@ -186,9 +186,9 @@ remedy does not — [`10_HAND_TRACKING/spec/ORIENTATION_DIAGNOSIS.md`](../10_HAN
 | [U10](queue_notes/U10.md) | Camera privacy: policy + store disclosures (minors) | **SEC** | governance | open — before any store submission. Not a build | — |
 | [U11](queue_notes/U11.md) | Shipping-build hygiene; hard-disable dev capture | **SEC** | shipping | open — at package time, not now | U10 |
 | [U12](queue_notes/U12.md) | Start-of-game calibration (playability, FOV, camera tilt) | HAND | playability | open — build later, when a real game exists. ⚠ **not** the depth calibration 4.1 measured as unnecessary | 4.2, U3 |
-| [IS1](queue_notes/IS1.md) | Input system — the package boundary | **INPUT** | platform | ✅ built 2026-08-25 — ⛔ not *shipped* until the owner's live look | — |
-| [IS2](queue_notes/IS2.md) | Input system — conformance as DATA | **INPUT** | platform | ✅ built 2026-08-25 | IS1 |
-| [IS3](queue_notes/IS3.md) | Input system — the action layer, wired as an OBSERVER | **INPUT** | platform | ✅ built 2026-08-25 — ⛔ owner's live take still owed | IS1 |
+| [IS1](queue_notes/IS1.md) | Input system — the package boundary | **INPUT** | platform | ✅✅ **SHIPPED 2026-08-25** — owner ran both tools, clean | — |
+| [IS2](queue_notes/IS2.md) | Input system — conformance as DATA | **INPUT** | platform | ✅✅ **SHIPPED 2026-08-25** | IS1 |
+| [IS3](queue_notes/IS3.md) | Input system — the action layer, wired as an OBSERVER | **INPUT** | platform | ✅✅ **SHIPPED 2026-08-25** — owner ran both tools back to back, clean | IS1 |
 | [IS4](queue_notes/IS4.md) | Input system — extract the **interaction** tier | **INPUT** | platform | open, owner-deferred 2026-08-25 | IS3 |
 | [SEC1](queue_notes/SEC1.md) | Robustness + security audit of both tools | **SEC** | infra | ✅ done 2026-08-25 — 7 fixes shipped, 51-check suite | — |
 | [SEC2](queue_notes/SEC2.md) | Pin the dependency **tree** | **SEC** | infra | ⭐ half done — environment now recorded; hash-pinning is packaging work | U10, U11 |

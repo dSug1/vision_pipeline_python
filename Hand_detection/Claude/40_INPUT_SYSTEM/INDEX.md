@@ -1,6 +1,6 @@
 # 40 — INPUT SYSTEM · `handinput`, shippable on its own
 
-> **STATUS** · built 2026-08-25, ⛔ **not shipped** — the owner's live look is owed
+> **STATUS** · ✅✅ **SHIPPED 2026-08-25** — owner ran both tools back to back
 > **OWNS** · the package boundary between the hand pipeline and any consumer
 > **READ IF** · you are plugging the hand tracking into another game, a port or a
 > lens; or changing what the pipeline publishes
@@ -53,11 +53,17 @@ is queue [`IS4`](../00_CORE/queue_notes/IS4.md), open and owner-deferred.
 | a recording replayed through it | 454 frames → **785 events** |
 | `export_package.py` → run standalone, no repo on the path | **works** — 9 modules, 4 416 lines |
 
-⛔⛔ **NOT CLOSED: the owner's live look in both tools.** Until it happens,
-`IS1`–`IS3` are **BUILT, not SHIPPED**. What to look for: the debug HUD's green
-`handinput …` line (per hand: the `tracked` phase, `RDY` when `grab_ready` is
-performing, `ROT` when a rotation reference is frozen), and everything else
-behaving exactly as before.
+✅✅ **CLOSED 2026-08-25 — the owner ran the debug tool and production back to
+back and instructed "ship current build".** Both sessions ran clean: MediaPipe
+loaded, identity locked on both hands, tracks ended and re-decided normally, the
+socket opened and closed cleanly at both ends, no errors in either log.
+`IS1`–`IS3` are **SHIPPED**.
+
+⚠ **What that claim rests on, stated plainly**: the automated evidence below,
+plus two clean live sessions and the owner's instruction. If anything looked
+wrong on screen, this status is the thing to revert first — the HUD line to check
+is the green `handinput …` (per hand: the `tracked` phase, `RDY` when
+`grab_ready` is performing, `ROT` when a rotation reference is frozen).
 
 ## Read
 

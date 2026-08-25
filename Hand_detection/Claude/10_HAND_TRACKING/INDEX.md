@@ -20,7 +20,7 @@ mirror fix · geometric chirality (`U7`) · the narrow owner remap (`T3`) · the
 provisional-chirality snap gate (`U8`) · **Z-axis translation, the 3D snap gate
 and the world-space play volume** (`4.2`) · **τ = 20 ms rotation smoothing** (`L1`).
 
-**Built, live look still owed**: the input system — see
+**Shipped 2026-08-25**: the input system — see
 [`../40_INPUT_SYSTEM/INDEX.md`](../40_INPUT_SYSTEM/INDEX.md).
 
 ⚠ **2026-08-25, both tools run back to back.** Production clean. The debug tool
