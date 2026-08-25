@@ -56,6 +56,70 @@ things are already in place:
 | the package a port would target | [`../40_INPUT_SYSTEM/INDEX.md`](../40_INPUT_SYSTEM/INDEX.md) |
 | camera permissions and the store position | [`../60_SECURITY_COMPLIANCE/INDEX.md`](../60_SECURITY_COMPLIANCE/INDEX.md) |
 
+---
+
+## ⭐⭐ LICENCE & FEASIBILITY CHECK (2026-08-25) — done before the platform decision
+
+Run because the platform decision must be evidenced, not preferred, and because
+`N13` binds the **runtime's** MediaPipe binding as much as the pipeline's.
+
+### Licences — one genuine gap
+
+| what | licence | verified |
+|---|---|---|
+| **MediaPipe framework / code** | **Apache 2.0**, no commercial or field-of-use restriction | ✅ at source (`google-ai-edge/mediapipe/LICENSE`) |
+| `@mediapipe/tasks-vision` (declared `1.0.0`) | Apache 2.0, same project | ✅ |
+| `three` (declared `0.185.1`) | MIT | ✅ |
+| `mediapipe==0.10.14` (Python, in use) | Apache 2.0 | ✅ |
+| ⚠ **the `.task` MODEL BUNDLE** | **not stated at source** | ⛔ **unverified** |
+
+⛔⛔ **THE ONE REAL FINDING.** Google's own hand-landmarker page licenses its
+**code samples** Apache 2.0 and its **page content** CC-BY-4.0, and says
+**nothing about the model bundle**. Third-party write-ups assert Apache 2.0
+confidently, and the official Model Card is an **image-only PDF with no
+extractable text**. ⭐ The practical read is that it is almost certainly fine —
+but *"almost certainly"* is not the standard `N13` sets, and `SEC2` already
+records that the licence inventory is owed. **Get this in writing before a store
+submission, not before the platform decision** — it does not block the decision,
+because it is the same model on every candidate platform.
+
+### Feasibility — browser
+
+* ⛔⛔ **iOS standalone PWA + camera is the hard blocker.** `getUserMedia` is
+  long-broken/unreliable when an iOS web app runs in **standalone (home-screen)**
+  mode, and the permission is **not persisted**, so the user is re-prompted.
+  The documented workaround is to *stop being a PWA* — drop
+  `apple-mobile-web-app-capable` and run in a Safari tab — which costs the
+  app-like feel entirely.
+* ⚠ In the EU, since iOS 17.4 (DMA) PWAs open in Safari tabs regardless.
+* ⭐ The web runtime is **WebGL + Web Workers + OffscreenCanvas**, with a GPU
+  delegate; **WebGPU for vision tasks is still an open request**, not shipped.
+* ⭐ Part Zero-bis already proved the whole loop in-browser on desktop.
+
+### Feasibility — native
+
+* ⭐⭐ **MediaPipe Tasks ships FIRST-PARTY SDKs for Android, iOS, Python and Web.**
+  So native Swift/Kotlin uses **Google's own SDK** — no third-party binding, no
+  extra licence to clear.
+* ⛔ **Cross-platform native is the risky middle.** There is **no official or
+  widely adopted React Native / Flutter plugin** for live MediaPipe hand
+  tracking; community plugins exist, are largely **Android-only**, and each is a
+  separate third-party dependency that must clear `N13` on its own.
+* ⭐ **Stores only exist for native.** Apple's Kids Category and Play's Families
+  programme — both live because the audience is youth-inclusive — apply to
+  **apps**, not to a URL.
+
+### What this does NOT settle
+
+⚠ **Mobile frame rate is unmeasured.** `L1` proved the rate here is
+**camera-bound, not compute-bound** (the inter-frame gap is identical with and
+without a hand in view), so runtime speed may well not be the binding constraint
+— but that was a desktop webcam, and no mobile measurement exists.
+⚠ **A native wrapper around the web build** (Capacitor / WKWebView) is the
+obvious hybrid and is **not** evaluated here: `WKWebView` has its own
+`getUserMedia` history and needs its own check before it is treated as a way out
+of the iOS PWA problem.
+
 ## ⚠ The platform decision blocks more than itself
 
 [`U2`](../00_CORE/queue_notes/U2.md) (real 3D-file import) is postponed **on this

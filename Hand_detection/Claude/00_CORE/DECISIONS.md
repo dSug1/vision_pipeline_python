@@ -28,6 +28,8 @@ measured out live in
 | **The whole `5.x` block is an optional MENU** | 2026-08-23 | nothing scheduled, nothing waiting on it |
 | **No calibration step now, anywhere** | 2026-08-23 | `CAMERA_HFOV_DEG = 60.0` is a compile-time constant; `U12` may later override, never require |
 | **`T7`'s camera tilt comes from `U12`, not the IMU** | 2026-08-24 | *"i don't want to introduce a different behavior between desktop and mobile"* — identical on every platform, identity (level) until `U12`. ⛔ `T7` ships **with `U12`**, and `T6`-class work must not anticipate it |
+| **The PLATFORM decision is sequenced RIGHT AFTER `F1`** | 2026-08-25 | `F1` is perception-only and touches no renderer, so it accrues no throwaway work. Everything renderer-shaped (`U2`, `U12`, `T7`, the game layer) waits for it — and must not be started before it |
+| ⛔ **UNITY STAYS OUT — the original constraint is re-affirmed, not inherited** | 2026-08-25 | *"keep as it is currently. if ever we will move to Unity, we will do another project to port it to C#"*. ⭐ So Unity is **not** a candidate in the platform decision, and a future Unity build is a **separate project** that ports to C# — not a migration of this one. `U3`'s standing note that C# follows "when Unity is real" is scoped accordingly |
 | ⭐⭐ **Next build is `F1`** — the cube's transform from the **fingertips** | 2026-08-24 | palm demoted to support (frame, sign, chirality); owner will specify it in its own conversation |
 | **The hand system must be shippable as a standalone input system** | 2026-08-24 | `handinput/` built (`IS1`–`IS3`); *"for my game, or for any other purpose such as a filter on Snapchat"* |
 
