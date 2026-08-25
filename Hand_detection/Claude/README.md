@@ -55,15 +55,30 @@ Full narrative: [`10_HAND_TRACKING/history/SESSION_LOG.md`](10_HAND_TRACKING/his
 
 ---
 
-## Three rules for keeping this useful
+## ⛔ Every update must PRESERVE this tiered architecture
+
+> **Owner, 2026-08-25:** *"any update to the md files shall preserve this tiered
+> architecture."* **Binding on every doc edit from here on**, not just on the
+> session that built it.
 
 1. **State lives in `INDEX.md` and topic files; narrative lives in `history/`.**
    The old docs grew to 1.3 MB because they mixed the two. A session's story goes
-   to the session log the same day; the INDEX gets one updated line.
+   to the session log the same day; the INDEX gets **one updated line**.
 2. **Nothing in `spec/` or `history/` is ever rewritten to save space.** It is
    the record. Distil *into* a new file instead, and cite what you distilled.
 3. **Cap the front doors.** `INDEX.md` ≤ 400 lines, a topic file ≤ 800. Hitting
    the cap is the signal to push narrative down a tier, not to keep appending.
+   This file stays a router, about one screen — never a status page.
+4. ⛔ **Never edit inside `<!-- VERBATIM-BEGIN/END -->` markers.** Those blocks
+   are the byte-verified record; `_archive/migration/verify_split.py` fails if one
+   is altered.
+5. ⛔ **A queue row's status changes in TWO places or neither**: the one-line
+   status in [`00_CORE/QUEUE.md`](00_CORE/QUEUE.md) **and** an append to its
+   `00_CORE/queue_notes/<ID>.md` dossier. And **never a second queue.**
+
+⭐ **The test before calling a doc change done:** could a fresh session answer
+*"what is the state of X"* from `00_CORE/` plus one `INDEX.md` alone? If it needs
+a `history/` file to know the **current** state, the fact is in the wrong tier.
 
 ---
 
