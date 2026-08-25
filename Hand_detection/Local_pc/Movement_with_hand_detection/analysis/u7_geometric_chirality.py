@@ -133,6 +133,17 @@ def load(session):
 def declared(session, meta):
     """(physical hand, expected APPARENT label, declared facing or None)."""
     name = meta.get("sequence") or session
+    # ⛔ A RETRACTED declaration is NOT ground truth -- added 2026-08-25.
+    # `2026-08-23_172804_u7_acceptance_known_right` was recorded as a known-hand
+    # take, then retracted in its own meta.json when the operator reported BOTH
+    # hands were used (`ground_truth_valid: false`, `known_hand_RETRACTED`).
+    # This function used to fall through to the NAME, which still contains
+    # "known_right" -- so a take whose ground truth is known FALSE was scored as
+    # if it were true, and its 302 frames sat inside every corpus figure below.
+    # An instrument that cannot honour its own retraction is the B4 problem in a
+    # new place: the anchor and the metric agreeing because both are wrong.
+    if meta.get("ground_truth_valid") is False or meta.get("known_hand_RETRACTED"):
+        return None, None, None
     kh = meta.get("known_hand")
     if kh:
         phys = kh.lower()

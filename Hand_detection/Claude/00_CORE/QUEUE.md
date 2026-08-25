@@ -180,7 +180,7 @@ remedy does not — [`10_HAND_TRACKING/spec/ORIENTATION_DIAGNOSIS.md`](../10_HAN
 | [U4](queue_notes/U4.md) | Dangling §7.4 reference | CORE | docs | open | — |
 | [U5](queue_notes/U5.md) | Extend D2's coast through hand-crossing occlusion | HAND | feature | ⭐ parked for later re-opening — owner decision 2026-08-22 | D2, D3 |
 | [U6](queue_notes/U6.md) | Two pipelines are KEPT — divergence prevented mechanically | CORE | architecture | ✅ **decided 2026-08-22** — run `parity_replay.py`; do not re-propose collapsing them | — |
-| [U7](queue_notes/U7.md) | Handedness label wrong 10.8% — chirality from geometry | HAND | perception | ✅✅ shipped + accepted live 2026-08-22; ⛔ the **known-hand acceptance take is still owed** | — |
+| [U7](queue_notes/U7.md) | Handedness label wrong 10.8% — chirality from geometry | HAND | perception | ✅✅✅ **CLOSED 2026-08-25** — the declared known-hand take finally ran: geometry **98.0%** vs the label **93.2%** (n=1127) | — |
 | [U8](queue_notes/U8.md) | No snap on a **provisional** chirality | HAND | perception | ✅✅ shipped + accepted live 2026-08-22 (200 ms, elapsed-time gated) | U7 |
 | [U9](queue_notes/U9.md) | Play area — an object may never reach the edge | HAND | feature | ✅ shipped 2026-08-23; superseded by 4.2's world-space volume | — |
 | [U10](queue_notes/U10.md) | Camera privacy: policy + store disclosures (minors) | **SEC** | governance | open — before any store submission. Not a build | — |

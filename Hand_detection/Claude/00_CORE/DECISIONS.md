@@ -58,7 +58,7 @@ measured out live in
 
 * **The owner's live look at the input system, in both tools** — deferred to the
   evening of 2026-08-25. Until it happens, `IS1`–`IS3` are **BUILT, not SHIPPED**.
-* **`U7`'s declared-ground-truth acceptance take** — the attempt used both hands,
-  so its declaration was retracted in that session's `meta.json`. U7 is shipped
-  and behaviourally confirmed; the known-hand measurement still needs a take with
-  one hand throughout.
+* ~~**`U7`'s declared-ground-truth acceptance take**~~ — ✅ **DONE 2026-08-25**
+  (`2026-08-25_171814_known_right_reentry_acceptance`, right hand only, 1127
+  single-hand frames): geometry **98.0%** against the declaration, the label
+  **93.2%**. U7 is closed.

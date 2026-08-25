@@ -12,6 +12,45 @@ block here is superseded and marked so.
 
 ---
 
+## 2026-08-25 (night) — ✅ U7 IS CLOSED: the declared known-hand take finally ran
+
+**The last open item on U7 was never a code change — it was a measurement.** The
+fix shipped 2026-08-22 and was behaviourally confirmed, but the *specified*
+acceptance test had never validly run: the 08-23 attempt used both hands, so its
+declaration was retracted in its own `meta.json`.
+
+**Take**: `2026-08-25_171814_known_right_reentry_acceptance` — physical **RIGHT
+hand only, declared before the first frame**, 1925 frames / 1127 single-hand,
+18.2 fps, repeated full re-entries, both facings. Re-entries are the point: the
+label is worst at track age 0.
+
+| | MediaPipe label | geometry |
+|---|---:|---:|
+| this take (n=1127) | 93.2% | **98.0%** |
+| corpus, valid declarations only (n=3682) | 97.1% | **99.2%** |
+| inside the DR-2 edge-on band (n=20) | 80.0% | **85.0%** |
+
+⭐ **The declaration is corroborated rather than trusted.** The retracted take
+dropped **540** multi-hand frames (64% of its hand frames); this one dropped
+**8** (0.7%). Two hands versus one, readable straight off the coverage line.
+
+⭐ **And those 8 are not a second hand.** The two detections sit **0.10–1.00 palm
+widths apart** — on top of each other. MediaPipe duplicate-detected one hand and
+gave it both labels: fresh live evidence for `N9` / §0.4, on a take where the
+physical truth is known.
+
+⛔⛔ **AN INSTRUMENT DEFECT, FOUND WHILE USING IT — the reusable part of the
+night.** `u7_geometric_chirality.py` discovers sessions by matching `known_` in
+the name, and `declared()` fell through to that name whenever `meta.known_hand`
+was absent. The retracted take is called `u7_acceptance_known_right`, which
+**contains `known_right`** — so a take whose ground truth is recorded as **false**
+was scored as if it were true, and its 302 frames sat inside every corpus figure
+this row has ever quoted. Fixed; the numbers moved 95.5%/98.8% → **97.1%/99.2%**.
+⚠ **An instrument that cannot honour its own retraction is the B4 problem wearing
+a new costume** — the anchor and the metric agreeing because both are wrong.
+
+---
+
 ## 2026-08-25 (late) — ✅✅ THE INPUT SYSTEM IS SHIPPED, and the app root is tidy
 
 **Second live pass, both tools back to back, after the folder tidy-up.** Debug
