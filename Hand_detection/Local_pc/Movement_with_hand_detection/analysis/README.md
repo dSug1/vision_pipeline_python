@@ -34,6 +34,26 @@ already produced confident, wrong numbers:**
 Four self-caught errors is not evidence of rigour — it is evidence of error density.
 **Assume more survived.** These harnesses are the right place to look for them.
 
+### ⭐ AND A FIFTH THING THAT WAS NEVER RECORDED AT ALL: the environment (queue SEC2, 2026-08-25)
+
+Every number in this folder was produced by *some* set of package versions, and
+until now **nothing said which**. `requirements.txt` pins exactly two packages
+(`mediapipe==0.10.14`, `pygame==2.6.1`); the other **24 are transitive and floated
+freely** — and they have already drifted a long way: `numpy 2.4.6` and
+`opencv-contrib-python 5.0.0.93`, both a major version past what mediapipe 0.10.14
+was built against.
+
+⚠ **This folder's own standard makes that a problem, not a footnote**: *"a negative
+result that cannot be re-run is an assertion, not a finding."* An environment that
+cannot be reconstructed is the same defect one level down — re-running a harness on
+a rebuilt `.venv` is not re-running the measurement.
+
+⭐ **`../requirements.lock.txt`** now records the exact set, as a RECORD (nothing
+installs from it). ⚠ It is not hash pinning; that belongs to packaging, with the
+licence inventory N13 needs. ⭐ The reassuring half: **numpy is imported by 18 files
+and every one of them is in this folder or a sibling harness** — the shipping
+estimator layer is numpy-free by contract, so this threatens the RIG, not the game.
+
 ---
 
 ## ⚠⚠ THEY DID SURVIVE — audit of 2026-08-03. Read this before running anything here.

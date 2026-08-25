@@ -451,8 +451,16 @@ the device"* is verifiable **by absence**. Also: no `eval`/`exec`/`pickle`/
 | the wire cannot size an allocation or inject a non-number | `PythonApp_Main.receive_float_array` |
 | a camera stall does not end a take | `capture_policy.py`, shared by both capture loops |
 
-⛔ **Four open items are DECISIONS, not omissions** — queue `SEC2` (pin the
-transitive dependency tree; N13 needs it too), `SEC3` (**a face detector runs
-every frame and nothing consumes it** — switch added, default deliberately not
-flipped), `SEC4` (the debug recorder buffers where production streams), `SEC5`
-(both tools feed MediaPipe a fake 33 ms clock — an A10 A/B, not an edit).
+⛔ **Four open items are DECISIONS, not omissions.** Each has a queue row saying
+what was measured, what was deliberately not done, and what would close it:
+
+| row | state |
+|---|---|
+| **`SEC3`** | ⛔ **a face detector runs every frame and nothing consumes it** (`elif datatype == "face": pass`), and the debug tool has none at all. `--face off` exists; **the default was deliberately not flipped** — turning it off is visible in the preview, so it is the owner's call |
+| **`SEC2`** | ⭐ **half done**: `requirements.lock.txt` now RECORDS the environment, because 24 of 26 packages float and had already drifted past what mediapipe 0.10.14 was built against (numpy 2.4.6, OpenCV 5.0). Hash pinning + the licence inventory **N13** needs are packaging work (U10/U11) |
+| **`SEC5`** | ⚠ both tools feed MediaPipe a fake 33 ms clock. ⛔ **The first write-up of this overstated its effect and was retracted the same day** (§18.4) — the clock is wrong, the output effect is **unmeasured**. ⚠ The corpus cannot test it (no pixels); the test is two detectors on the same frames |
+| **`SEC4`** | the debug recorder buffers a whole session in RAM where production streams — not restructured on the eve of a live take |
+
+⚠⚠ **The reusable lesson from `SEC5` is the audit's own**: a mechanism that
+sounds right became a recorded fact for one day. **An audit is not exempt from
+A10 because its other findings are code-shaped.**

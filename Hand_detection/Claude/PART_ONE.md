@@ -296,12 +296,30 @@ permanently-red `verify_planar_pnp.py` fixed — **all 26 suites now pass, for t
 first time** (R5).
 
 ⛔ **Four things were found and deliberately NOT fixed**, each with a queue row so
-it is a decision rather than an omission: **`SEC3`** the face detector runs every
-frame and nothing consumes it (a switch was added, the default was not flipped —
-turning it off is visible, so it is the owner's call); **`SEC4`** the debug
-recorder buffers the whole session in RAM while production streams; **`SEC5`**
-both tools feed MediaPipe a fake 33 ms clock; **`SEC2`** only two direct
-dependencies are pinned and the transitive tree floats.
+it is a decision rather than an omission — read the rows, not this summary:
+
+* **`SEC3`** — the face detector runs every frame and **nothing consumes it**
+  (`elif datatype == "face": pass`), and the debug tool has none at all, so it is
+  a divergence AND a disclosure question for a youth audience. `--face off` was
+  added; **the default was deliberately not flipped**, because turning it off is
+  visible in the preview and that is the owner's call.
+* **`SEC2`** — ⭐ **half done since 2026-08-25.** Measuring it corrected the row's
+  own framing: the risk is not an attack, it is **reproducibility of the rig** —
+  24 of 26 packages float and had **already drifted past what mediapipe 0.10.14
+  was built against** (numpy 2.4.6, OpenCV 5.0), so the environment the corpus's
+  numbers came from was unrecorded. `requirements.lock.txt` now records it. Hash
+  pinning and the **licence inventory N13 requires** are packaging work (U10/U11).
+* **`SEC5`** — both tools feed MediaPipe a fake 33 ms clock. ⛔⛔ **The first
+  write-up asserted a mechanism it had not measured and was RETRACTED the same
+  day** (§18.4): the clock is wrong, the effect on the output is **unmeasured and
+  may be nil**. ⚠ The corpus cannot settle it — **no image data, nothing to
+  replay** — but two detectors on the same frames can, with no pixels stored.
+* **`SEC4`** — the debug recorder buffers a whole session in RAM where production
+  streams; not restructured on the eve of an unvalidated live take.
+
+⚠⚠ **`SEC5` carries the audit's own lesson and it is worth more than the finding:
+a mechanism that sounded right was written down as a fact for one day. An audit is
+not exempt from A10 just because its other findings are code-shaped.**
 
 ⚠ `parity_replay` reports **NO DIVERGENCE** after the mirrored edits — which is
 what says the two tools did not drift apart while being corrected.
