@@ -8,6 +8,52 @@ status lives at the top of
 [`../../00_CORE/QUEUE.md`](../../00_CORE/QUEUE.md); everything below the first
 block here is superseded and marked so.
 
+⚠ New entries go **above** the verbatim block below, never inside it.
+
+---
+
+## 2026-08-25 (evening) — the live look, and one regression it caught
+
+**Both tools were run back to back.** Production ran a full clean session: server
+accepted the client, 22–33 fps, identity locked on both hands, one `Left→Right`
+switch confirmed after 12 frames, and — worth keeping — **a transient identity
+glitch REJECTED after 7 confident mismatched frames with the lock held.** DR-1
+doing exactly what it was built to do. Clean shutdown at both ends.
+
+⛔⛔ **THE OWNER FOUND A REGRESSION NO HARNESS COULD HAVE FOUND: the debug tool
+had lost its white contour highlight on a HELD object.**
+
+* **Cause**: `febd3fa` ("debugged done") stripped T6d's anisotropic A/B rig out
+  of `LiveSnapDebug.py` — 756 lines. The snap-highlight loop sat **directly
+  under** the ghost-wireframe block that commit was deleting and **went with it
+  as collateral**. Only the ghost was meant to go.
+* **Two tells were left in the file for two days**: `_draw_cubes()`'s own
+  docstring still described *"a bright snap-highlight outline … for whichever
+  cube(s) are held"*, and `SNAP_BORDER_COLOR` / `SNAP_BORDER_WIDTH` were defined
+  but **never read**.
+* **Production was never affected** — `CubeWindow.py` kept its equivalent
+  (`edge_color` / `edge_width`). So the two tools had silently diverged on what a
+  held object **looks like**.
+* **Fixed** by restoring the five-line loop verbatim; owner confirmed live,
+  *"outline came back"*.
+
+⭐⭐ **THE LESSON, AND IT IS A GAP IN `U6` RATHER THAN A FAILURE OF IT.**
+`parity_replay` reported **NO DIVERGENCE** throughout and was **right to** — it
+compares **gesture logic**, not drawing. Every automated check was green while a
+visible difference between the two tools persisted: 26/26 suites, 96 handinput
+checks, 51 hardening checks, parity clean. **Renderer parity is unguarded**, and
+nothing in the project currently would have caught this. It took a person
+looking at the screen.
+
+⚠ This is the *inverse* of the session that produced the recording rework: there,
+four harnesses were **wrong** about takes the owner had watched fail. Here the
+harness was **right and simply not pointed at this**. Both land in the same
+place — **a live look is what closes a change.**
+
+⚠ Still owed from this session: the owner's verdict on the **input system**
+(`IS1`–`IS3`) — the green `handinput` HUD line with `RDY`/`ROT`. Until that,
+they stay **BUILT, not SHIPPED**.
+
 ---
 
 <!-- PROVENANCE — machine-extracted, NOT edited.

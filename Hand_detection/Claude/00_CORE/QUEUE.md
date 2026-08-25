@@ -36,6 +36,11 @@ Last three landings: **`L1`** rotation lag fixed and shipped (τ = 20 ms);
 owner's live look in both tools is **still owed**; **`SEC1`** robustness +
 security audit shipped, four items left as explicit decisions (`SEC2`–`SEC5`).
 
+⚠ **2026-08-25 live look**: production clean; the debug tool's **white
+snap-highlight**, removed as collateral by `febd3fa`, was restored and confirmed
+live. ⭐ It exposed that **renderer parity is unguarded** — `parity_replay`
+covers gesture logic, not drawing ([`queue_notes/U6.md`](queue_notes/U6.md)).
+
 Still open and still the owner's show-stopper: the **yaw lean** (~27° at a
 60–90° hand turn). `T6` was built and A10-rejected; the diagnosis survives, the
 remedy does not — [`10_HAND_TRACKING/spec/ORIENTATION_DIAGNOSIS.md`](../10_HAND_TRACKING/spec/ORIENTATION_DIAGNOSIS.md).

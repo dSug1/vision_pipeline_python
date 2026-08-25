@@ -23,6 +23,13 @@ and the world-space play volume** (`4.2`) · **τ = 20 ms rotation smoothing** (
 **Built, live look still owed**: the input system — see
 [`../40_INPUT_SYSTEM/INDEX.md`](../40_INPUT_SYSTEM/INDEX.md).
 
+⚠ **2026-08-25, both tools run back to back.** Production clean. The debug tool
+had **lost its white snap-highlight** on a held object — removed as collateral by
+`febd3fa` — now **restored and owner-confirmed live**. ⭐ **Renderer parity is
+unguarded**: `parity_replay` compares gesture logic, not drawing, so it was green
+throughout and correctly so. See [`../00_CORE/queue_notes/U6.md`](../00_CORE/queue_notes/U6.md)
+and the log's newest entry.
+
 ⛔⛔ **The open show-stopper is the YAW LEAN.** Turning the hand like a page does
 not turn the object purely about the vertical — **it leans, up to ~27° at a
 60–90° turn.** ⚠ Always state it that way; *"13° of axis deviation"* is the same

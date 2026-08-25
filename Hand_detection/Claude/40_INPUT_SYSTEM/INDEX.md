@@ -47,7 +47,7 @@ is queue [`IS4`](../00_CORE/queue_notes/IS4.md), open and owner-deferred.
 
 | | |
 |---|---|
-| `analysis/verify_handinput.py` | **95 checks pass** |
+| `analysis/verify_handinput.py` | **96 checks pass** |
 | the 24 pre-existing `verify_*` suites | pass |
 | `parity_replay` on a real production take | **NO DIVERGENCE**, 454 frames |
 | a recording replayed through it | 454 frames → **785 events** |

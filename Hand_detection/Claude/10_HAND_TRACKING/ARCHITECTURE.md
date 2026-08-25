@@ -105,7 +105,7 @@ capture handles inside *one* process both succeed; that is a misleading test.)
 | the two tools must still agree | `analysis/parity_replay.py` |
 | chirality guard (after ANY mirroring/handedness change) | `VerifyChiralityFixture.py` |
 | the audit's guards (tags, camera stalls, loopback, the `meta` clamp) | `analysis/verify_hardening.py` — 51 checks |
-| the INPUT SYSTEM: boundary, contract, vectors, action trace | `analysis/verify_handinput.py` — 95 checks |
+| the INPUT SYSTEM: boundary, contract, vectors, action trace | `analysis/verify_handinput.py` — 96 checks |
 | the two recorders must not drift apart | `analysis/verify_recorder_parity.py` |
 | the play area / volume | `analysis/verify_play_area.py` |
 | ⭐ the same invariant read STRAIGHT from a recording | `analysis/verify_play_volume_from_recording.py` |
