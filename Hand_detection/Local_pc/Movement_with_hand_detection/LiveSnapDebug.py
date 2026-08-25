@@ -2006,6 +2006,20 @@ def _draw_cubes(frame, state: CubeState):
         screen_center = (cube.position[0] + size / 2, cube.position[1] + size / 2)
         _draw_cube_3d(overlay, cube, screen_center)
     cv2.addWeighted(overlay, CUBE_ALPHA, frame, 1 - CUBE_ALPHA, 0, frame)
+    # ⚠ RESTORED 2026-08-25: this loop was removed as COLLATERAL by `febd3fa`,
+    # the commit that stripped T6d's A/B rig out of this tool. It sat directly
+    # under the ghost-wireframe block that commit was meant to delete, and went
+    # with it -- leaving the docstring above describing code that no longer
+    # existed and SNAP_BORDER_* defined but never read. Found by the owner in a
+    # live look, not by any harness: production's CubeWindow.py kept its
+    # equivalent (edge_color/edge_width), so the two tools had silently diverged
+    # on what a HELD object looks like. U6's parity guard does not cover drawing.
+    for cube in state.cubes.values():
+        if cube.owner is not None:
+            size = int(round(state.projected_size_of(cube)))
+            x, y = int(cube.position[0]), int(cube.position[1])
+            cv2.rectangle(frame, (x, y), (x + size, y + size), SNAP_BORDER_COLOR, SNAP_BORDER_WIDTH)
+
 
 def build_detector():
     base_options = python.BaseOptions(model_asset_path=HAND_LANDMARKER_MODEL_PATH)
