@@ -771,6 +771,28 @@ def palm_width_px(landmarks):
                       landmarks[INDEX_MCP][1] - landmarks[PINKY_MCP][1])
 
 
+# ⚠ THE FIVE LANDMARKS "HAND POSITION" HAS MEANT SINCE §13.3: wrist + the four
+# non-thumb MCPs. Their centroid is the palm centre -- more stable than the wrist
+# alone (which sits off the palm) and than any single MCP (asymmetric).
+HAND_POSITION_LANDMARKS = (WRIST, INDEX_MCP, 9, 13, PINKY_MCP)
+
+
+def palm_center_px(landmarks):
+    """The palm centre in pixels -- what "hand position" means everywhere
+    (§13.3): snap proximity, and the translation target before a grab.
+
+    ⭐ ADDED HERE 2026-08-25 so there is ONE definition. It was written out
+    identically in `HandsTriggeredActions._hand_position` and
+    `LiveSnapDebug._hand_position`, and both now delegate to this -- exactly the
+    precedent `is_thumb_outward` set below, whose duplicated copy is how the
+    palm/back convention drifted into a production-only inversion (§13.6.1).
+    ⚠ The arithmetic is unchanged: same landmarks, same order, same mean.
+    """
+    xs = [landmarks[i][0] for i in HAND_POSITION_LANDMARKS]
+    ys = [landmarks[i][1] for i in HAND_POSITION_LANDMARKS]
+    return (sum(xs) / len(xs), sum(ys) / len(ys))
+
+
 def is_thumb_outward(landmarks, handedness):
     """True when the hand shows its BACK to the camera (thumb outward) --
     GESTURE_PIPELINE_SPEC.md §13.6, GAME_RULES.md rule 3.

@@ -1,0 +1,67 @@
+{
+ "module": "hand_tracks",
+ "note": "SLOT_MEMORY_MS = 250.0, TRACK_TTL_MS = 1500.0.",
+ "cases": [
+  {
+   "t_ms": 100.0,
+   "slot_ids": {
+    "Left": 1,
+    "Right": 2
+   },
+   "resolved": {
+    "Left": 1,
+    "Right": 2
+   },
+   "live_ids": []
+  },
+  {
+   "t_ms": 200.0,
+   "slot_ids": {
+    "Left": 2,
+    "Right": 1
+   },
+   "resolved": {
+    "Left": 2,
+    "Right": 1
+   },
+   "live_ids": []
+  },
+  {
+   "t_ms": 300.0,
+   "slot_ids": {
+    "Left": -1,
+    "Right": 1
+   },
+   "resolved": {
+    "Left": 2,
+    "Right": 1
+   },
+   "live_ids": []
+  },
+  {
+   "t_ms": 400.0,
+   "slot_ids": {
+    "Left": -1,
+    "Right": -1
+   },
+   "resolved": {
+    "Left": 2,
+    "Right": 1
+   },
+   "live_ids": []
+  },
+  {
+   "t_ms": 500.0,
+   "slot_ids": {
+    "Left": 1,
+    "Right": 3
+   },
+   "resolved": {
+    "Left": 1,
+    "Right": 3
+   },
+   "live_ids": []
+  }
+ ],
+ "_tolerance": 1e-09
+}

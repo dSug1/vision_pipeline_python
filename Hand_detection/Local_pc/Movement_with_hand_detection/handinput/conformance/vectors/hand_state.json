@@ -1,0 +1,111 @@
+{
+ "module": "hand_state (D1/D2/D3)",
+ "note": "BRIDGE_WINDOW_MS = 150.0. The 60 ms steps walk the gap PAST it, so the sequence contains both a bridged recovery and a genuine SUSTAINED_LOST.",
+ "cases": [
+  {
+   "t_ms": 40.0,
+   "detected": true,
+   "state": "TRACKING",
+   "holds_track": true,
+   "frames_since_measurement": 0,
+   "reacquired_after_ms": 0.0
+  },
+  {
+   "t_ms": 80.0,
+   "detected": true,
+   "state": "TRACKING",
+   "holds_track": true,
+   "frames_since_measurement": 0,
+   "reacquired_after_ms": 0.0
+  },
+  {
+   "t_ms": 120.0,
+   "detected": true,
+   "state": "TRACKING",
+   "holds_track": true,
+   "frames_since_measurement": 0,
+   "reacquired_after_ms": 0.0
+  },
+  {
+   "t_ms": 160.0,
+   "detected": false,
+   "state": "BRIDGING",
+   "holds_track": true,
+   "frames_since_measurement": 1,
+   "reacquired_after_ms": 0.0
+  },
+  {
+   "t_ms": 200.0,
+   "detected": false,
+   "state": "BRIDGING",
+   "holds_track": true,
+   "frames_since_measurement": 2,
+   "reacquired_after_ms": 0.0
+  },
+  {
+   "t_ms": 240.0,
+   "detected": true,
+   "state": "TRACKING",
+   "holds_track": true,
+   "frames_since_measurement": 0,
+   "reacquired_after_ms": 120.0
+  },
+  {
+   "t_ms": 280.0,
+   "detected": true,
+   "state": "TRACKING",
+   "holds_track": true,
+   "frames_since_measurement": 0,
+   "reacquired_after_ms": 0.0
+  },
+  {
+   "t_ms": 340.0,
+   "detected": false,
+   "state": "BRIDGING",
+   "holds_track": true,
+   "frames_since_measurement": 1,
+   "reacquired_after_ms": 0.0
+  },
+  {
+   "t_ms": 400.0,
+   "detected": false,
+   "state": "BRIDGING",
+   "holds_track": true,
+   "frames_since_measurement": 2,
+   "reacquired_after_ms": 0.0
+  },
+  {
+   "t_ms": 460.0,
+   "detected": false,
+   "state": "SUSTAINED_LOST",
+   "holds_track": false,
+   "frames_since_measurement": 3,
+   "reacquired_after_ms": 0.0
+  },
+  {
+   "t_ms": 520.0,
+   "detected": false,
+   "state": "SUSTAINED_LOST",
+   "holds_track": false,
+   "frames_since_measurement": 4,
+   "reacquired_after_ms": 0.0
+  },
+  {
+   "t_ms": 560.0,
+   "detected": true,
+   "state": "TRACKING",
+   "holds_track": true,
+   "frames_since_measurement": 0,
+   "reacquired_after_ms": 280.0
+  },
+  {
+   "t_ms": 600.0,
+   "detected": true,
+   "state": "TRACKING",
+   "holds_track": true,
+   "frames_since_measurement": 0,
+   "reacquired_after_ms": 0.0
+  }
+ ],
+ "_tolerance": 1e-09
+}

@@ -562,6 +562,21 @@ owner still saw bugs. Offline green is necessary, not sufficient.
 | ⭐ `verify_play_volume_from_recording.py` | since `recorder_schema: 2` both recorders write cube `position` + `size`, so the invariant is checked **directly from the recording** — no replay, no re-derivation. Verified on `2026-08-23_173029_schema2_production_check`: **0 of 1018 cube-frames outside**, closest approach 0.0 px slack. ⭐ **That ad-hoc check is now a committed harness** (4.2) and reproduces those exact numbers — which is what says it reads real files rather than merely agreeing with itself |
 | `verify_recorder_parity.py` | ⭐ the two RECORDERS must write the same fields and sample them at the same point in the frame. Checked by SOURCE, no camera needed |
 | `u8_entry_settling.py` | derives U8's window from palm width / entry speed, in ms |
+| ⭐⭐ `verify_handinput.py` | **the INPUT SYSTEM** (`handinput/`, rows IS1–IS3, spec §17) — 95 checks in five sections. **§1 BOUNDARY** parses every file's imports with the **AST** and fails if the package or any of its nine manifest modules touches `CubeWindow`, `HandsTriggeredActions`, `pygame`, `cv2`, `mediapipe`, `numpy`… ⭐ *This is what replaces physically moving the estimator files into the package: the property a folder would have given, asserted directly.* ⚠ AST, not grep — this codebase is mostly comments and a text search for `pygame` hits one. **§2 CONTRACT** asserts `HandState` v2 has its fields **and still has its HOLES** (`palmFacing`, `aperture`, `joints`… stay ABSENT: a plausible number in a contract slot is indistinguishable from a measured one downstream). **§3/§4** replay `handinput/conformance/` — vectors and the action trace. **§5** asserts `palm_geometry.palm_center_px` still equals the formula both tools used inline before they delegated to it |
+
+⭐⭐ **AND `handinput/conformance/` IS A DIFFERENT KIND OF ARTIFACT FROM EVERYTHING
+ELSE IN THIS FOLDER — read this before treating it as one more suite.** Every
+`verify_*.py` here asserts in Python, so it can only ever test the Python; **a port
+cannot run one of them.** The conformance folder is the same inputs and outputs as
+**JSON** — 7 vector files (64 cases) and an 18-frame / 65-event action trace — so
+any language runs them. That is rule 6 (*golden vectors before a port exists*)
+taken one step further, and it is what makes U3's "reasoning about cross-language
+equivalence is not evidence" actionable rather than aspirational.
+⭐ The **trace** is the more valuable half: it pins **when** events fire — that a
+held button does not re-fire, that D2's coast cancels `palm_pose` but not
+`tracked`, that a dead track drops a rotation reference — none of which any
+single-frame vector can catch. ⛔ Regenerate only in a commit that names the
+behaviour that changed.
 
 **THREE DEFECTS, ONE APPEARANCE.** All three looked like *"a back-of-hand hand
 takes the cube"*, and separating them required recording each one:

@@ -1,0 +1,97 @@
+{
+ "module": "owner_remap (T3)",
+ "note": "\u2b50 `track_absent` is the case that matters: an absent track must be a NO-OP here, because releasing it belongs to the strand timer. Getting this wrong strands a cube -- the owner hit that live.",
+ "cases": [
+  {
+   "case": "no_holder",
+   "input": {
+    "owner": "Left",
+    "holder_track": null,
+    "track_ids": {
+     "Left": 3,
+     "Right": 4
+    }
+   },
+   "expect": {
+    "owner": "Left",
+    "slot_of_track": null
+   }
+  },
+  {
+   "case": "still_in_slot",
+   "input": {
+    "owner": "Left",
+    "holder_track": 3,
+    "track_ids": {
+     "Left": 3,
+     "Right": 4
+    }
+   },
+   "expect": {
+    "owner": "Left",
+    "slot_of_track": "Left"
+   }
+  },
+  {
+   "case": "slots_swapped",
+   "input": {
+    "owner": "Left",
+    "holder_track": 3,
+    "track_ids": {
+     "Left": 4,
+     "Right": 3
+    }
+   },
+   "expect": {
+    "owner": "Right",
+    "slot_of_track": "Right"
+   }
+  },
+  {
+   "case": "track_absent",
+   "input": {
+    "owner": "Left",
+    "holder_track": 3,
+    "track_ids": {
+     "Left": -1,
+     "Right": 4
+    }
+   },
+   "expect": {
+    "owner": "Left",
+    "slot_of_track": null
+   }
+  },
+  {
+   "case": "both_absent",
+   "input": {
+    "owner": "Right",
+    "holder_track": 9,
+    "track_ids": {
+     "Left": -1,
+     "Right": -1
+    }
+   },
+   "expect": {
+    "owner": "Right",
+    "slot_of_track": null
+   }
+  },
+  {
+   "case": "int_owner_untouched",
+   "input": {
+    "owner": 3,
+    "holder_track": 3,
+    "track_ids": {
+     "Left": 4,
+     "Right": 3
+    }
+   },
+   "expect": {
+    "owner": "Right",
+    "slot_of_track": "Right"
+   }
+  }
+ ],
+ "_tolerance": 1e-09
+}

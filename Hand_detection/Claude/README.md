@@ -29,6 +29,7 @@ start a second list, do not "helpfully" reorder it. This file points at it.
 | you want to… | read |
 |---|---|
 | ⭐⭐ **START THE NEXT BUILD (`F1` — the cube's transform from the FINGERTIPS)** | `PART_ONE.md` §3.1's `F1` row. ⛔ Read its trap first: a rigid palm+tips fit is A10-dead twice |
+| ⭐ **plug the hand tracking into ANOTHER game / a port / a lens** | `Local_pc/Movement_with_hand_detection/handinput/README.md` — the input-system package (built 2026-08-25). Record: `GESTURE_PIPELINE_SPEC.md` §17; rows `IS1`–`IS4` |
 | **start any other build session** | this file → `PART_ONE.md` §3.1's "YOU ARE HERE" block → that item's row |
 | know **why** something failed | `GESTURE_PIPELINE_SPEC.md` — the authoritative record of what failed and why |
 | know the **forward design** below the gesture layer | `PERCEPTION_LAYER_SPEC.md` (⚠ read its §0.1 amendment log BEFORE any module body) |
@@ -64,7 +65,11 @@ Local_pc/Movement_with_hand_detection/                              ── CLIEN
   ├─ Resources/Client.py → PythonApp_Main.py (decodes the packets)
   ├─ Resources/HandsTriggeredActions.py   ── ALL gesture logic: snap, translate,
   │                                          rotate, release, ownership
-  └─ Resources/CubeWindow.py              ── pygame renderer (mesh-generic)
+  ├─ Resources/CubeWindow.py              ── pygame renderer (mesh-generic)
+  └─ handinput/                           ── ⭐ THE INPUT SYSTEM (2026-08-25):
+                                             actions + phases + callbacks over
+                                             HandState v2. ⚠ OBSERVES ONLY —
+                                             it drives no cube. Both tools feed it.
 
 LiveSnapDebug.py — ONE window, no socket, deliberately mirrors production.
 ```
@@ -141,7 +146,21 @@ production now RECORDS what it ran instead of forcing a recomputation, and why
 the recorders have their own parity guard. See `PART_ONE.md` §3.1's YOU-ARE-HERE
 block for all four.
 
-⭐⭐⭐ **NEXT BUILD IS `F1` — THE CUBE'S TRANSFORM (Vector3 POSITION *and* ROTATION
+⭐⭐ **THE INPUT SYSTEM IS BUILT (2026-08-25, rows `IS1`–`IS3`)** —
+`Local_pc/Movement_with_hand_detection/handinput/`: five actions, Unity's five
+phases, `+=` callbacks with a context, a polling API, and `HandState` v2 as the
+serialisable contract, so the hand pipeline can be lifted into another game, a
+port or a lens. ⚠⚠ **IT OBSERVES AND DRIVES NOTHING** — every value it publishes
+was already computed by the gesture logic that frame, so behaviour cannot change
+(`parity_replay` NO DIVERGENCE, 24 existing suites pass, 95 new checks).
+⛔ **BUILT, NOT SHIPPED: the owner's live look in both tools is still owed**
+(deferred by the owner to the evening of 2026-08-25). ⭐ Scope, deliberately:
+Unity splits *Input System* from *XR Interaction Toolkit* and this is the first
+only — `grab_ready` is ELIGIBILITY, never "grab what", which needs a scene.
+Extracting the interaction tier is row **IS4**, open and owner-deferred. Full
+record: `GESTURE_PIPELINE_SPEC.md` §17; usage: `handinput/README.md`.
+
+⭐⭐⭐ **NEXT BUILD IS STILL `F1` — THE CUBE'S TRANSFORM (Vector3 POSITION *and* ROTATION
 QUATERNION) DRIVEN BY THE FINGERTIPS** (owner, 2026-08-24; to be specified in its own
 conversation). The palm + knuckle-arc anchor is **too coarse BY DESIGN**, not
 mis-tuned: it cannot express the small fingertip motions that rotate a real object
@@ -399,7 +418,11 @@ ownership should follow the *physical* hand — today the cube the pipeline call
 | the play area / volume (an object may never reach the display edge) | `analysis/verify_play_area.py` |
 | ⭐ the same invariant read STRAIGHT from a recording, schema-aware | `analysis/verify_play_volume_from_recording.py` |
 | where the operator's hand actually sits, and whether an object is reachable | `analysis/m9_working_distance.py` |
-| golden vectors | `analysis/verify_*.py` — 23 suites |
+| golden vectors | `analysis/verify_*.py` — 25 suites |
+| ⭐ the INPUT SYSTEM: boundary, contract, vectors, action trace | `analysis/verify_handinput.py` — 95 checks |
+| record live action events from either tool | `HANDINPUT_TRACE=1 HANDINPUT_TRACE_TAG=<name> …` |
+| write the input system out as a standalone folder | `handinput/export_package.py <target-dir>` |
+| ⚠ known, pre-existing and NOT from the input system | `analysis/verify_planar_pnp.py` passes all its vectors then dies printing a `⚠` under cp1252. Fails identically before the change |
 
 ⚠ **One webcam, and DSHOW is exclusive across processes** — production and the
 debug tool cannot run at the same time. Compare them back-to-back. (Two capture

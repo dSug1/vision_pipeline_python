@@ -1,0 +1,343 @@
+{
+ "module": "palm_geometry (4.2 projection + play volume)",
+ "note": "\u26a0 `clamp_to_play_volume` is fed a point OUTSIDE the boundary (5,5) on purpose -- the clamp is the behaviour, not the pass-through. `px_roundtrip` must equal (200,150) to tolerance at every depth.",
+ "cases": [
+  {
+   "case": "d0.300_s40",
+   "input": {
+    "depth_m": 0.3,
+    "nominal_size_px": 40.0,
+    "frameSize": [
+     640,
+     480
+    ]
+   },
+   "expect": {
+    "focal_px": 554.2562584220408,
+    "clamp_depth": 0.3,
+    "projected_size_px": 66.66666666666667,
+    "world_from_px": [
+     -0.06495190528383289,
+     -0.04871392896287467
+    ],
+    "px_roundtrip": [
+     200.0,
+     150.0
+    ],
+    "clamp_to_play_volume": [
+     111.85296994312247,
+     111.85296994312245
+    ]
+   }
+  },
+  {
+   "case": "d0.300_s80",
+   "input": {
+    "depth_m": 0.3,
+    "nominal_size_px": 80.0,
+    "frameSize": [
+     640,
+     480
+    ]
+   },
+   "expect": {
+    "focal_px": 554.2562584220408,
+    "clamp_depth": 0.3,
+    "projected_size_px": 133.33333333333334,
+    "world_from_px": [
+     -0.06495190528383289,
+     -0.04871392896287467
+    ],
+    "px_roundtrip": [
+     200.0,
+     150.0
+    ],
+    "clamp_to_play_volume": [
+     145.18630327645582,
+     145.18630327645582
+    ]
+   }
+  },
+  {
+   "case": "d0.400_s40",
+   "input": {
+    "depth_m": 0.4,
+    "nominal_size_px": 40.0,
+    "frameSize": [
+     640,
+     480
+    ]
+   },
+   "expect": {
+    "focal_px": 554.2562584220408,
+    "clamp_depth": 0.4,
+    "projected_size_px": 50.0,
+    "world_from_px": [
+     -0.08660254037844385,
+     -0.06495190528383289
+    ],
+    "px_roundtrip": [
+     200.0,
+     150.0
+    ],
+    "clamp_to_play_volume": [
+     83.88972745734188,
+     83.88972745734188
+    ]
+   }
+  },
+  {
+   "case": "d0.400_s80",
+   "input": {
+    "depth_m": 0.4,
+    "nominal_size_px": 80.0,
+    "frameSize": [
+     640,
+     480
+    ]
+   },
+   "expect": {
+    "focal_px": 554.2562584220408,
+    "clamp_depth": 0.4,
+    "projected_size_px": 100.0,
+    "world_from_px": [
+     -0.08660254037844385,
+     -0.06495190528383289
+    ],
+    "px_roundtrip": [
+     200.0,
+     150.0
+    ],
+    "clamp_to_play_volume": [
+     108.88972745734188,
+     108.88972745734188
+    ]
+   }
+  },
+  {
+   "case": "d0.497_s40",
+   "input": {
+    "depth_m": 0.497,
+    "nominal_size_px": 40.0,
+    "frameSize": [
+     640,
+     480
+    ]
+   },
+   "expect": {
+    "focal_px": 554.2562584220408,
+    "clamp_depth": 0.497,
+    "projected_size_px": 40.241448692152915,
+    "world_from_px": [
+     -0.10760365642021649,
+     -0.08070274231516236
+    ],
+    "px_roundtrip": [
+     200.0,
+     150.0
+    ],
+    "clamp_to_play_volume": [
+     67.51688326546625,
+     67.51688326546625
+    ]
+   }
+  },
+  {
+   "case": "d0.497_s80",
+   "input": {
+    "depth_m": 0.497,
+    "nominal_size_px": 80.0,
+    "frameSize": [
+     640,
+     480
+    ]
+   },
+   "expect": {
+    "focal_px": 554.2562584220408,
+    "clamp_depth": 0.497,
+    "projected_size_px": 80.48289738430583,
+    "world_from_px": [
+     -0.10760365642021649,
+     -0.08070274231516236
+    ],
+    "px_roundtrip": [
+     200.0,
+     150.0
+    ],
+    "clamp_to_play_volume": [
+     87.63760761154273,
+     87.63760761154273
+    ]
+   }
+  },
+  {
+   "case": "d0.500_s40",
+   "input": {
+    "depth_m": 0.5,
+    "nominal_size_px": 40.0,
+    "frameSize": [
+     640,
+     480
+    ]
+   },
+   "expect": {
+    "focal_px": 554.2562584220408,
+    "clamp_depth": 0.5,
+    "projected_size_px": 40.0,
+    "world_from_px": [
+     -0.10825317547305482,
+     -0.08118988160479111
+    ],
+    "px_roundtrip": [
+     200.0,
+     150.0
+    ],
+    "clamp_to_play_volume": [
+     67.11178196587346,
+     67.11178196587346
+    ]
+   }
+  },
+  {
+   "case": "d0.500_s80",
+   "input": {
+    "depth_m": 0.5,
+    "nominal_size_px": 80.0,
+    "frameSize": [
+     640,
+     480
+    ]
+   },
+   "expect": {
+    "focal_px": 554.2562584220408,
+    "clamp_depth": 0.5,
+    "projected_size_px": 80.0,
+    "world_from_px": [
+     -0.10825317547305482,
+     -0.08118988160479111
+    ],
+    "px_roundtrip": [
+     200.0,
+     150.0
+    ],
+    "clamp_to_play_volume": [
+     87.11178196587346,
+     87.11178196587346
+    ]
+   }
+  },
+  {
+   "case": "d0.850_s40",
+   "input": {
+    "depth_m": 0.85,
+    "nominal_size_px": 40.0,
+    "frameSize": [
+     640,
+     480
+    ]
+   },
+   "expect": {
+    "focal_px": 554.2562584220408,
+    "clamp_depth": 0.85,
+    "projected_size_px": 23.529411764705884,
+    "world_from_px": [
+     -0.18403039830419318,
+     -0.1380227987281449
+    ],
+    "px_roundtrip": [
+     200.0,
+     150.0
+    ],
+    "clamp_to_play_volume": [
+     39.477518803454984,
+     39.477518803454984
+    ]
+   }
+  },
+  {
+   "case": "d0.850_s80",
+   "input": {
+    "depth_m": 0.85,
+    "nominal_size_px": 80.0,
+    "frameSize": [
+     640,
+     480
+    ]
+   },
+   "expect": {
+    "focal_px": 554.2562584220408,
+    "clamp_depth": 0.85,
+    "projected_size_px": 47.05882352941177,
+    "world_from_px": [
+     -0.18403039830419318,
+     -0.1380227987281449
+    ],
+    "px_roundtrip": [
+     200.0,
+     150.0
+    ],
+    "clamp_to_play_volume": [
+     51.24222468580791,
+     51.242224685807884
+    ]
+   }
+  },
+  {
+   "case": "d1.200_s40",
+   "input": {
+    "depth_m": 1.2,
+    "nominal_size_px": 40.0,
+    "frameSize": [
+     640,
+     480
+    ]
+   },
+   "expect": {
+    "focal_px": 554.2562584220408,
+    "clamp_depth": 0.85,
+    "projected_size_px": 23.529411764705884,
+    "world_from_px": [
+     -0.25980762113533157,
+     -0.1948557158514987
+    ],
+    "px_roundtrip": [
+     200.0,
+     150.0
+    ],
+    "clamp_to_play_volume": [
+     39.477518803454984,
+     39.477518803454984
+    ]
+   }
+  },
+  {
+   "case": "d1.200_s80",
+   "input": {
+    "depth_m": 1.2,
+    "nominal_size_px": 80.0,
+    "frameSize": [
+     640,
+     480
+    ]
+   },
+   "expect": {
+    "focal_px": 554.2562584220408,
+    "clamp_depth": 0.85,
+    "projected_size_px": 47.05882352941177,
+    "world_from_px": [
+     -0.25980762113533157,
+     -0.1948557158514987
+    ],
+    "px_roundtrip": [
+     200.0,
+     150.0
+    ],
+    "clamp_to_play_volume": [
+     51.24222468580791,
+     51.242224685807884
+    ]
+   }
+  }
+ ],
+ "_tolerance": 1e-09
+}

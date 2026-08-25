@@ -15,6 +15,32 @@ from . import palm_rotation
 from . import hand_state
 from . import hand_tracks
 
+# ⭐⭐ THE INPUT SYSTEM (2026-08-25). `handinput` turns this frame's per-hand facts
+# into Unity-shaped ACTIONS with phases and callbacks -- the pluggable surface a
+# future game, port or lens consumes instead of landmarks. See `handinput/README.md`.
+#
+# ⚠⚠ IT DRIVES NOTHING TODAY, AND THAT IS THE POINT OF LANDING IT THIS WAY. It is a
+# read-only OBSERVER of the same values the gesture logic below already computed,
+# so shipping it cannot change behaviour: every cube is still snapped, translated,
+# rotated and released by the code in this file. What it buys now is the contract,
+# the event surface and a conformance trace of real sessions; what it buys later is
+# that moving the gesture logic onto it (the "interaction tier") is a swap of
+# consumer, not a rewrite of producer.
+#
+# ⛔ AND IT MUST NEVER BE ABLE TO BREAK THE GAME. A missing or broken package
+# disables itself with a warning rather than taking production down -- an input
+# module that can crash the host is not pluggable.
+try:
+    import handinput
+    from handinput.sources import live as _hi_live
+    from handinput import trace as _hi_trace
+    _hand_input = handinput.HandInput()
+    _hand_input.trace_sink = _hi_trace.sink("HandsTriggeredActions (PRODUCTION)")
+except Exception as _e:                      # pragma: no cover -- defensive by design
+    print("[handinput] disabled (%s)" % _e)
+    _hand_input = None
+    _hi_live = None
+
 # Gesture design: Hand_detection/Claude/GESTURE_PIPELINE_SPEC.md §13
 # (proximity snap, open-palm rotate, closed-fist release) — replaces the
 # archived pinch-grab design (`PART_ONE.md`'s original §2/§3, kept for
@@ -222,10 +248,15 @@ def _hand_position(landmarks: List[Tuple[float, float]]) -> Tuple[float, float]:
     mirrored webcam-frame pixel coordinates as the raw landmarks. Still
     used for the snap/grab-radius proximity check (unchanged) -- no longer
     used to drive translation once a cube is held, see
-    `_compute_grab_weights`/`_weighted_position` below."""
-    xs = [landmarks[i][0] for i in HAND_POSITION_LANDMARKS]
-    ys = [landmarks[i][1] for i in HAND_POSITION_LANDMARKS]
-    return (sum(xs) / len(xs), sum(ys) / len(ys))
+    `_compute_grab_weights`/`_weighted_position` below.
+
+    ⭐ **Delegates to `palm_geometry.palm_center_px` since 2026-08-25** -- same
+    five landmarks, same mean, byte-identical output (`analysis/verify_handinput.py`
+    §5 asserts it). The formula was written out identically here and in
+    `LiveSnapDebug`, and a duplicated geometric convention is exactly how the
+    palm/back sign drifted into a production-only inversion (§13.6.1). The same
+    move `_is_thumb_outward` already made. Do NOT reinline the maths here."""
+    return palm_geometry.palm_center_px(landmarks)
 
 
 def _weighted_position(weights: Dict[int, float], landmarks: List[Tuple[float, float]]) -> Tuple[float, float]:
@@ -1285,6 +1316,13 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             released_this_frame.add(owned_cube)
             _thumb_outward_snap_allowed[handedness] = _last_known_thumb_outward[handedness]
 
+    # ⭐ handinput: this frame's per-hand facts, captured AS THE LOGIC PRODUCES
+    # THEM and published after the loop. ⚠ Captured, never recomputed -- a second
+    # derivation of the same quantity is what made four harnesses report CLEAN on
+    # takes the owner had just watched fail (see `_record_flush`'s header, which
+    # exists for exactly this reason).
+    _hi_pose: Dict[str, dict] = {}
+
     for handedness, landmarks in hands:
         tracking = _hand_state_trackers[handedness]
         if tracking.tracking_state != hand_state.TRACKING:
@@ -1400,6 +1438,12 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                 _d = _hand_rotation.delta(rs, landmarks, world_landmarks)
                 if _d is not None:          # None = degenerate fit: keep the filtered value
                     hand_quat_now = _d
+
+        # ⭐ handinput: the pose this frame ACTUALLY produced, before any of it
+        # reaches a cube. `hand_quat_now` is the same quaternion the grab-delta
+        # maths uses below, so an event consumer and the cube see one reading.
+        _hi_pose[handedness] = {"position_px": hand_pos, "orientation": hand_quat_now,
+                                "landmarks_px": landmarks}
 
         owned_cube = _cube_for_hand(handedness, now_ms)
         if owned_cube is None:
@@ -1529,7 +1573,60 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     # recording row held since the top of the frame. See `_record_flush`.
     _record_flush()
 
+    _publish_hand_input(hands, _hi_pose, now_ms)
+
     cube_window.pump_and_draw()
+
+
+def _publish_hand_input(hands, poses: Dict[str, dict], now_ms: float) -> None:
+    """Hand this frame to the input system (`handinput`), for CONSUMERS ONLY.
+
+    ⚠⚠ NOTHING ABOVE THIS LINE READS THE RESULT, BY DESIGN. Every value below was
+    produced by the gesture logic that has already run this frame, so the actions
+    describe what the game did rather than a parallel opinion about it. The day the
+    interaction tier moves onto this layer, the producer does not change -- only who
+    consumes it does.
+
+    ⚠ Called AFTER `_record_flush()` so the recording and the event stream describe
+    the same instant, and after every mutation so `snap_allowed` is this frame's
+    final answer rather than a mid-frame one.
+
+    ⛔ Exceptions are swallowed HERE and only here. A subscriber's bug must not be
+    able to stop a cube from being drawn -- that is the difference between an input
+    module and a dependency.
+    """
+    if _hand_input is None:
+        return
+    try:
+        obs = []
+        for handedness, landmarks in hands:
+            pose = poses.get(handedness, {})
+            obs.append(_hi_live.observe(
+                slot=handedness,
+                tracking=_hand_state_trackers[handedness],
+                palm_facing=_palm_facing_trackers[handedness],
+                present=_is_detected(landmarks),
+                track_id=_hand_track_ids.get(handedness, -1),
+                position_px=pose.get("position_px"),
+                depth_m=_hand_depth[handedness],
+                depth_valid=_hand_depth_valid[handedness],
+                orientation=pose.get("orientation"),
+                thumb_outward=_last_known_thumb_outward[handedness],
+                snap_allowed=_thumb_outward_snap_allowed[handedness],
+                edge_on=(palm_geometry.edge_on_measure(landmarks)
+                         if pose.get("landmarks_px") else None),
+                landmarks_px=pose.get("landmarks_px"),
+                world_landmarks=_latest_world_landmarks[handedness],
+            ))
+        _hand_input.update(_hi_live.frame(now_ms, obs, cube_window.window_size))
+    except Exception as e:                   # pragma: no cover -- defensive by design
+        print("[handinput] update failed, disabling: %s" % e)
+        _disable_hand_input()
+
+
+def _disable_hand_input() -> None:
+    global _hand_input
+    _hand_input = None
 
 
 def configure_source_resolution(width: int, height: int) -> None:

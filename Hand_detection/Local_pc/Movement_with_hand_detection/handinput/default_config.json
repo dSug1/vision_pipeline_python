@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "_comment": "Action-layer policy ONLY. Estimator tuning constants live in their own modules and are imported, never copied here -- see config.py's header for why.",
+
+  "actions": {
+    "tracked": true,
+    "palm_pose": true,
+    "palm_facing": true,
+    "grab_ready": true,
+    "rotation_delta": true
+  },
+
+  "grab_ready": {
+    "_comment": "null = inherit palm_depth.SNAP_REQUIRES_VALID_DEPTH (4.2 DECISION 1). Set true/false only as a deliberate host override.",
+    "require_valid_depth": null
+  },
+
+  "include_landmarks": false,
+  "_include_landmarks_comment": "landmarksScreen is debug-overlay only per PERCEPTION_LAYER_SPEC.md 2, and it is ~90% of the bytes of a HandState."
+}

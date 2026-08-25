@@ -1,0 +1,87 @@
+{
+ "module": "palm_rotation (Horn, shipped)",
+ "note": "\u26d4 THE SIGN OF THE QUATERNION IS NOT FREE: q and -q are the same rotation, so a port comparing componentwise must resolve the double cover first (compare |dot| or the angle). \u26a0 Horn is exact on synthetic input -- these are a LOCK on the convention (axis order, frame handedness), not a measure of quality.",
+ "cases": [
+  {
+   "tilt_deg": 0.0,
+   "quat": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angle_deg": 0.0
+  },
+  {
+   "tilt_deg": 5.0,
+   "quat": [
+    0.9990482216150951,
+    0.043619386604076084,
+    -5.800805784975492e-09,
+    -3.9659736018562676e-10
+   ],
+   "angle_deg": 4.999999912682902
+  },
+  {
+   "tilt_deg": 15.0,
+   "quat": [
+    0.9914448614481046,
+    0.13052619165573087,
+    -4.532032902660867e-09,
+    -1.6632015483991914e-09
+   ],
+   "angle_deg": 14.999999934775627
+  },
+  {
+   "tilt_deg": 35.0,
+   "quat": [
+    0.9537169509401692,
+    0.3007057988955099,
+    1.938291993006964e-09,
+    -1.6880308806116455e-10
+   ],
+   "angle_deg": 34.99999992685555
+  },
+  {
+   "tilt_deg": 60.0,
+   "quat": [
+    0.8660254039335473,
+    0.4999999997417361,
+    1.5087729974312378e-09,
+    2.7512740712029503e-10
+   ],
+   "angle_deg": 59.9999999658268
+  },
+  {
+   "tilt_deg": 90.0,
+   "quat": [
+    0.7071067811865476,
+    0.7071067811865476,
+    0.0,
+    0.0
+   ],
+   "angle_deg": 90.0
+  },
+  {
+   "tilt_deg": 35.0,
+   "quat": [
+    0.9537169509401692,
+    0.3007057988955099,
+    1.938291993006964e-09,
+    -1.6880308806116455e-10
+   ],
+   "angle_deg": 34.99999992685555
+  },
+  {
+   "tilt_deg": 0.0,
+   "quat": [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "angle_deg": 0.0
+  }
+ ],
+ "_tolerance": 1e-09
+}

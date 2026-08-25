@@ -65,6 +65,59 @@ from Resources import palm_depth as _PDepth  # noqa: E402  (4.1/M9, read-only)
 # against itself -- the §16.14 failure mode, from the other direction.
 PRODUCTION_ROTATION = _PRot.Horn(_PRot.PALM_LANDMARKS, "ref")
 
+# ⭐⭐ THE INPUT SYSTEM (2026-08-25) -- the same package production imports, so the
+# two tools emit the SAME actions from the same facts (N6). It is a read-only
+# OBSERVER: no cube is snapped, moved or released by it, and the HUD line it
+# feeds (`handinput …`) is the only thing on screen that comes from it.
+# `handinput/README.md` has the design; `analysis/verify_handinput.py` guards it.
+try:
+    import handinput as _HI
+    from handinput.sources import live as _hi_live
+    from handinput import trace as _hi_trace
+    _hand_input = _HI.HandInput()
+    _hand_input.trace_sink = _hi_trace.sink("LiveSnapDebug (DEBUG)")
+except Exception as _e:                      # pragma: no cover -- defensive by design
+    print("[handinput] disabled (%s)" % _e)
+    _hand_input = None
+    _hi_live = None
+
+
+def _publish_hand_input(state, hand_data_by_hand, pose_out, now_ms):
+    """Hand this frame to `handinput`. ⚠ Mirrors production's function of the same
+    name exactly -- same fields, same order, same sources -- because two tools that
+    build the same struct differently is how §13.6.1 happened. ⛔ Errors disable the
+    observer; they never interrupt the tool."""
+    global _hand_input
+    if _hand_input is None:
+        return
+    try:
+        obs = []
+        for handedness in TRACKED_HANDS:
+            data = hand_data_by_hand.get(handedness)
+            pose = pose_out.get(handedness, {})
+            _hd = (data or {}).get("hand_depth")
+            obs.append(_hi_live.observe(
+                slot=handedness,
+                tracking=state.hand_state_trackers[handedness],
+                palm_facing=_palm_facing_trackers[handedness],
+                present=data is not None,
+                track_id=_hand_track_ids.get(handedness, -1),
+                position_px=pose.get("position_px"),
+                depth_m=_hd[0] if _hd else None,
+                depth_valid=bool(_hd[1]) if _hd else False,
+                orientation=pose.get("orientation"),
+                thumb_outward=state.last_known_thumb_outward[handedness],
+                snap_allowed=state.thumb_outward_snap_allowed[handedness],
+                edge_on=(palm_geometry.edge_on_measure(data["pixel_landmarks"])
+                         if data else None),
+                landmarks_px=(data or {}).get("pixel_landmarks"),
+                world_landmarks=(data or {}).get("world_landmarks"),
+            ))
+        _hand_input.update(_hi_live.frame(now_ms, obs))
+    except Exception as e:                   # pragma: no cover -- defensive by design
+        print("[handinput] update failed, disabling: %s" % e)
+        _hand_input = None
+
 # --------------------------------------------------------------------------
 # THE SMOOTHING SLIDER -- the only live knob this tool carries
 # --------------------------------------------------------------------------
@@ -990,9 +1043,12 @@ def _edge_on_measure(pixel_landmarks) -> float:
 
 
 def _hand_position(pixel_landmarks) -> Tuple[float, float]:
-    xs = [pixel_landmarks[i][0] for i in HAND_POSITION_LANDMARKS]
-    ys = [pixel_landmarks[i][1] for i in HAND_POSITION_LANDMARKS]
-    return (sum(xs) / len(xs), sum(ys) / len(ys))
+    """⭐ Delegates to `palm_geometry.palm_center_px` since 2026-08-25 -- the same
+    five landmarks and the same mean this held inline, now defined once and shared
+    with production (`analysis/verify_handinput.py` §5 asserts the equality). The
+    move `_is_thumb_outward` above already made, for the same reason: a geometric
+    convention that exists twice is one that eventually differs."""
+    return palm_geometry.palm_center_px(pixel_landmarks)
 
 
 def _weighted_position(weights: Dict[int, float], pixel_landmarks) -> Tuple[float, float]:
@@ -1281,13 +1337,20 @@ def update_hands_all(arms, hand_data_by_hand, now_ms=None, **kw):
     so the test and the tool cannot diverge."""
     if now_ms is None:
         now_ms = time.perf_counter() * 1000.0
-    for arm in arms:
+    for i, arm in enumerate(arms):
         # ⭐ T6d: an arm may carry its OWN rotation estimator (the shipped-Horn vs
         # smoothing rig). Absent one, every arm gets the caller's, which
         # is exactly what the D2/D3, U5 and ownership rigs already do.
         per_arm = getattr(arm, "rotation", None)
-        update_hands(arm, hand_data_by_hand, now_ms=now_ms,
+        # ⭐ handinput: only the FIRST arm feeds the input system. An A/B rig runs
+        # the same hand through several policies, and publishing all of them would
+        # emit contradictory events for one physical hand -- the arms disagree on
+        # purpose. Arm 0 is the one whose panel is the shipped behaviour.
+        pose_out = {} if i == 0 else None
+        update_hands(arm, hand_data_by_hand, now_ms=now_ms, pose_out=pose_out,
                      **({**kw, "rotation": per_arm} if per_arm is not None else kw))
+        if pose_out is not None:
+            _publish_hand_input(arms[0], hand_data_by_hand, pose_out, now_ms)
 
 
 def _draw_bridge_hud(frame, state, height):
@@ -1355,6 +1418,15 @@ def _draw_bridge_hud(frame, state, height):
                 f"   brid {state.stats['bridged_frames']}   held {held}"
                 f"   relabels {_relabel_events[0]}",
                 (10, height - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (220, 220, 220), 1, cv2.LINE_AA)
+    # ⭐ handinput: the ACTION layer's own state, so it is visible live rather than
+    # only in a trace file. Per hand: the `tracked` phase, RDY when `grab_ready` is
+    # performing, ROT when a rotation reference is frozen. ⚠ It reports the input
+    # system's view; the cube is still driven by the logic above, so a disagreement
+    # between this line and the cube is a real finding, not a display bug.
+    if _hand_input is not None:
+        cv2.putText(frame, _hand_input.summary() + f"   ev {_hand_input.event_count}",
+                    (10, height - 58), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                    (140, 255, 140), 1, cv2.LINE_AA)
 
 
 def _create_sliders():
@@ -1459,7 +1531,7 @@ def _draw_ab_divergence(frame, before: CubeState, after: CubeState, height):
 
 
 def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
-                 anchor=None, rotation=None, now_ms=None) -> None:
+                 anchor=None, rotation=None, now_ms=None, pose_out=None) -> None:
     """hand_data_by_hand: {handedness: {"pixel_landmarks": [...],
     "world_landmarks": [...], "thumb_outward": bool} or None (not detected
     this frame)}.
@@ -1705,6 +1777,13 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
         _hdepth = data.get("hand_depth")
         _hand_depth_m = _hdepth[0] if _hdepth else None
         _hand_depth_valid = bool(_hdepth[1]) if _hdepth else None
+
+        # ⭐ handinput: capture the pose this arm produced, before it reaches a
+        # cube. ⚠ `pose_out` is None for every arm but the first -- see
+        # `update_hands_all`, which explains why an A/B must not publish twice.
+        if pose_out is not None:
+            pose_out[handedness] = {"position_px": hand_pos,
+                                    "orientation": hand_quat_now}
 
         owned = _cube_for_hand(state, handedness, now_ms)
         if owned is None:

@@ -1,0 +1,1832 @@
+{
+ "trace": "scripted_lifecycle",
+ "note": "Enter -> provisional chirality -> ready -> rule 3 refusal -> armed exception -> frozen depth -> rotation reference -> coast -> sustained loss -> re-entry. Presence drives a REAL HandStateTracker, so BRIDGE_WINDOW_MS is not duplicated here.",
+ "input": [
+  {
+   "tCapture": 0.0,
+   "cmds": [],
+   "hands": {},
+   "events": 0
+  },
+  {
+   "tCapture": 40.0,
+   "cmds": [],
+   "hands": {},
+   "events": 0
+  },
+  {
+   "tCapture": 80.0,
+   "cmds": [],
+   "hands": {
+    "Left": {
+     "position_px": [
+      300.0,
+      240.0
+     ],
+     "depth_m": 0.5,
+     "depth_valid": true,
+     "orientation": [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "thumb_outward": false,
+     "chirality_confirmed": false,
+     "snap_allowed": false
+    }
+   },
+   "events": 6
+  },
+  {
+   "tCapture": 120.0,
+   "cmds": [],
+   "hands": {
+    "Left": {
+     "position_px": [
+      302.0,
+      241.0
+     ],
+     "depth_m": 0.5,
+     "depth_valid": true,
+     "orientation": [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "thumb_outward": false,
+     "chirality_confirmed": false,
+     "snap_allowed": false
+    }
+   },
+   "events": 2
+  },
+  {
+   "tCapture": 160.0,
+   "cmds": [],
+   "hands": {
+    "Left": {
+     "position_px": [
+      305.0,
+      242.0
+     ],
+     "depth_m": 0.5,
+     "depth_valid": true,
+     "orientation": [
+      0.999847695156,
+      0.0,
+      0.017452406437,
+      0.0
+     ],
+     "thumb_outward": false,
+     "chirality_confirmed": true,
+     "snap_allowed": false
+    }
+   },
+   "events": 4
+  },
+  {
+   "tCapture": 200.0,
+   "cmds": [],
+   "hands": {
+    "Left": {
+     "position_px": [
+      308.0,
+      243.0
+     ],
+     "depth_m": 0.5,
+     "depth_valid": true,
+     "orientation": [
+      0.999390827019,
+      0.0,
+      0.034899496703,
+      0.0
+     ],
+     "thumb_outward": false,
+     "chirality_confirmed": true,
+     "snap_allowed": false
+    }
+   },
+   "events": 2
+  },
+  {
+   "tCapture": 240.0,
+   "cmds": [],
+   "hands": {
+    "Left": {
+     "position_px": [
+      310.0,
+      244.0
+     ],
+     "depth_m": 0.5,
+     "depth_valid": true,
+     "orientation": [
+      0.998629534755,
+      0.0,
+      0.052335956243,
+      0.0
+     ],
+     "thumb_outward": true,
+     "chirality_confirmed": true,
+     "snap_allowed": false
+    }
+   },
+   "events": 3
+  },
+  {
+   "tCapture": 280.0,
+   "cmds": [],
+   "hands": {
+    "Left": {
+     "position_px": [
+      312.0,
+      245.0
+     ],
+     "depth_m": 0.5,
+     "depth_valid": true,
+     "orientation": [
+      0.99756405026,
+      0.0,
+      0.069756473744,
+      0.0
+     ],
+     "thumb_outward": true,
+     "chirality_confirmed": true,
+     "snap_allowed": true
+    }
+   },
+   "events": 4
+  },
+  {
+   "tCapture": 320.0,
+   "cmds": [],
+   "hands": {
+    "Left": {
+     "position_px": [
+      314.0,
+      246.0
+     ],
+     "depth_m": 0.5,
+     "depth_valid": false,
+     "orientation": [
+      0.996194698092,
+      0.0,
+      0.087155742748,
+      0.0
+     ],
+     "thumb_outward": false,
+     "chirality_confirmed": true,
+     "snap_allowed": false
+    }
+   },
+   "events": 3
+  },
+  {
+   "tCapture": 360.0,
+   "cmds": [
+    [
+     "set_rotation_reference",
+     "Left"
+    ]
+   ],
+   "hands": {
+    "Left": {
+     "position_px": [
+      316.0,
+      247.0
+     ],
+     "depth_m": 0.5,
+     "depth_valid": true,
+     "orientation": [
+      0.994521895368,
+      0.0,
+      0.104528463268,
+      0.0
+     ],
+     "thumb_outward": false,
+     "chirality_confirmed": true,
+     "snap_allowed": false
+    }
+   },
+   "events": 6
+  },
+  {
+   "tCapture": 400.0,
+   "cmds": [],
+   "hands": {
+    "Left": {
+     "position_px": [
+      318.0,
+      248.0
+     ],
+     "depth_m": 0.51,
+     "depth_valid": true,
+     "orientation": [
+      0.97629600712,
+      0.0,
+      0.216439613938,
+      0.0
+     ],
+     "thumb_outward": false,
+     "chirality_confirmed": true,
+     "snap_allowed": false
+    }
+   },
+   "events": 3
+  },
+  {
+   "tCapture": 440.0,
+   "cmds": [],
+   "hands": {
+    "Left": {
+     "position_px": [
+      320.0,
+      249.0
+     ],
+     "depth_m": 0.52,
+     "depth_valid": true,
+     "orientation": [
+      0.939692620786,
+      0.0,
+      0.342020143326,
+      0.0
+     ],
+     "thumb_outward": false,
+     "chirality_confirmed": true,
+     "snap_allowed": false
+    }
+   },
+   "events": 3
+  },
+  {
+   "tCapture": 480.0,
+   "cmds": [],
+   "hands": {},
+   "events": 4
+  },
+  {
+   "tCapture": 520.0,
+   "cmds": [],
+   "hands": {},
+   "events": 0
+  },
+  {
+   "tCapture": 560.0,
+   "cmds": [],
+   "hands": {
+    "Right": {
+     "position_px": [
+      120.0,
+      300.0
+     ],
+     "depth_m": 0.45,
+     "depth_valid": true,
+     "orientation": [
+      1.0,
+      0.0,
+      0.0,
+      0.0
+     ],
+     "thumb_outward": false,
+     "chirality_confirmed": true,
+     "snap_allowed": false
+    }
+   },
+   "events": 8
+  },
+  {
+   "tCapture": 680.0,
+   "cmds": [],
+   "hands": {
+    "Right": {
+     "position_px": [
+      124.0,
+      302.0
+     ],
+     "depth_m": 0.45,
+     "depth_valid": true,
+     "orientation": [
+      0.999657324976,
+      0.0,
+      0.026176948308,
+      0.0
+     ],
+     "thumb_outward": false,
+     "chirality_confirmed": true,
+     "snap_allowed": false
+    }
+   },
+   "events": 3
+  },
+  {
+   "tCapture": 720.0,
+   "cmds": [],
+   "hands": {
+    "Left": {
+     "position_px": [
+      400.0,
+      200.0
+     ],
+     "depth_m": 0.6,
+     "depth_valid": true,
+     "orientation": [
+      0.707106781187,
+      0.0,
+      0.707106781187,
+      0.0
+     ],
+     "thumb_outward": false,
+     "chirality_confirmed": true,
+     "snap_allowed": false
+    },
+    "Right": {
+     "position_px": [
+      126.0,
+      303.0
+     ],
+     "depth_m": 0.45,
+     "depth_valid": true,
+     "orientation": [
+      0.999048221582,
+      0.0,
+      0.043619387365,
+      0.0
+     ],
+     "thumb_outward": false,
+     "chirality_confirmed": true,
+     "snap_allowed": false
+    }
+   },
+   "events": 10
+  },
+  {
+   "tCapture": 760.0,
+   "cmds": [],
+   "hands": {
+    "Left": {
+     "position_px": [
+      402.0,
+      201.0
+     ],
+     "depth_m": 0.6,
+     "depth_valid": true,
+     "orientation": [
+      0.694658370459,
+      0.0,
+      0.719339800339,
+      0.0
+     ],
+     "thumb_outward": false,
+     "chirality_confirmed": true,
+     "snap_allowed": false
+    },
+    "Right": {
+     "position_px": [
+      128.0,
+      304.0
+     ],
+     "depth_m": 0.45,
+     "depth_valid": true,
+     "orientation": [
+      0.998629534755,
+      0.0,
+      0.052335956243,
+      0.0
+     ],
+     "thumb_outward": false,
+     "chirality_confirmed": true,
+     "snap_allowed": false
+    }
+   },
+   "events": 4
+  }
+ ],
+ "expected_events": [
+  {
+   "action": "tracked",
+   "phase": "Started",
+   "hand": "Left",
+   "trackId": 1,
+   "value": true,
+   "tCapture": 80.0,
+   "control": "hand/Left/tracked",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": false,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "tracked",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": true,
+   "tCapture": 80.0,
+   "control": "hand/Left/tracked",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": false,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Started",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "position_px": [
+     300.0,
+     240.0
+    ],
+    "depth_m": 0.5,
+    "depth_valid": true,
+    "orientation": [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   "tCapture": 80.0,
+   "control": "hand/Left/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": false,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "position_px": [
+     300.0,
+     240.0
+    ],
+    "depth_m": 0.5,
+    "depth_valid": true,
+    "orientation": [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   "tCapture": 80.0,
+   "control": "hand/Left/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": false,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Started",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": false,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 80.0,
+   "control": "hand/Left/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": false,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": false,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 80.0,
+   "control": "hand/Left/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": false,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "position_px": [
+     302.0,
+     241.0
+    ],
+    "depth_m": 0.5,
+    "depth_valid": true,
+    "orientation": [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   "tCapture": 120.0,
+   "control": "hand/Left/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": false,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": false,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 120.0,
+   "control": "hand/Left/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": false,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "position_px": [
+     305.0,
+     242.0
+    ],
+    "depth_m": 0.5,
+    "depth_valid": true,
+    "orientation": [
+     0.999847695156,
+     0.0,
+     0.017452406437,
+     0.0
+    ]
+   },
+   "tCapture": 160.0,
+   "control": "hand/Left/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 160.0,
+   "control": "hand/Left/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "grab_ready",
+   "phase": "Started",
+   "hand": "Left",
+   "trackId": 1,
+   "value": true,
+   "tCapture": 160.0,
+   "control": "hand/Left/grabReady",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "grab_ready",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": true,
+   "tCapture": 160.0,
+   "control": "hand/Left/grabReady",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "position_px": [
+     308.0,
+     243.0
+    ],
+    "depth_m": 0.5,
+    "depth_valid": true,
+    "orientation": [
+     0.999390827019,
+     0.0,
+     0.034899496703,
+     0.0
+    ]
+   },
+   "tCapture": 200.0,
+   "control": "hand/Left/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 200.0,
+   "control": "hand/Left/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "position_px": [
+     310.0,
+     244.0
+    ],
+    "depth_m": 0.5,
+    "depth_valid": true,
+    "orientation": [
+     0.998629534755,
+     0.0,
+     0.052335956243,
+     0.0
+    ]
+   },
+   "tCapture": 240.0,
+   "control": "hand/Left/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "thumb_outward": true,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 240.0,
+   "control": "hand/Left/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "grab_ready",
+   "phase": "Canceled",
+   "hand": "Left",
+   "trackId": 1,
+   "value": true,
+   "tCapture": 240.0,
+   "control": "hand/Left/grabReady",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "position_px": [
+     312.0,
+     245.0
+    ],
+    "depth_m": 0.5,
+    "depth_valid": true,
+    "orientation": [
+     0.99756405026,
+     0.0,
+     0.069756473744,
+     0.0
+    ]
+   },
+   "tCapture": 280.0,
+   "control": "hand/Left/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "thumb_outward": true,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 280.0,
+   "control": "hand/Left/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "grab_ready",
+   "phase": "Started",
+   "hand": "Left",
+   "trackId": 1,
+   "value": true,
+   "tCapture": 280.0,
+   "control": "hand/Left/grabReady",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "grab_ready",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": true,
+   "tCapture": 280.0,
+   "control": "hand/Left/grabReady",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "position_px": [
+     314.0,
+     246.0
+    ],
+    "depth_m": 0.5,
+    "depth_valid": false,
+    "orientation": [
+     0.996194698092,
+     0.0,
+     0.087155742748,
+     0.0
+    ]
+   },
+   "tCapture": 320.0,
+   "control": "hand/Left/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": false,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 320.0,
+   "control": "hand/Left/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": false,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "grab_ready",
+   "phase": "Canceled",
+   "hand": "Left",
+   "trackId": 1,
+   "value": true,
+   "tCapture": 320.0,
+   "control": "hand/Left/grabReady",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": false,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "position_px": [
+     316.0,
+     247.0
+    ],
+    "depth_m": 0.5,
+    "depth_valid": true,
+    "orientation": [
+     0.994521895368,
+     0.0,
+     0.104528463268,
+     0.0
+    ]
+   },
+   "tCapture": 360.0,
+   "control": "hand/Left/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 360.0,
+   "control": "hand/Left/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "grab_ready",
+   "phase": "Started",
+   "hand": "Left",
+   "trackId": 1,
+   "value": true,
+   "tCapture": 360.0,
+   "control": "hand/Left/grabReady",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "grab_ready",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": true,
+   "tCapture": 360.0,
+   "control": "hand/Left/grabReady",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "rotation_delta",
+   "phase": "Started",
+   "hand": "Left",
+   "trackId": 1,
+   "value": [
+    0.9999999999995287,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tCapture": 360.0,
+   "control": "hand/Left/rotation",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "rotation_delta",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": [
+    0.9999999999995287,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "tCapture": 360.0,
+   "control": "hand/Left/rotation",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "position_px": [
+     318.0,
+     248.0
+    ],
+    "depth_m": 0.51,
+    "depth_valid": true,
+    "orientation": [
+     0.97629600712,
+     0.0,
+     0.216439613938,
+     0.0
+    ]
+   },
+   "tCapture": 400.0,
+   "control": "hand/Left/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 400.0,
+   "control": "hand/Left/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "rotation_delta",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": [
+    0.993571855676451,
+    0.0,
+    0.11320321376739993,
+    0.0
+   ],
+   "tCapture": 400.0,
+   "control": "hand/Left/rotation",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "position_px": [
+     320.0,
+     249.0
+    ],
+    "depth_m": 0.52,
+    "depth_valid": true,
+    "orientation": [
+     0.939692620786,
+     0.0,
+     0.342020143326,
+     0.0
+    ]
+   },
+   "tCapture": 440.0,
+   "control": "hand/Left/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 440.0,
+   "control": "hand/Left/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "rotation_delta",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": [
+    0.9702957262759838,
+    0.0,
+    0.24192189559956848,
+    0.0
+   ],
+   "tCapture": 440.0,
+   "control": "hand/Left/rotation",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Canceled",
+   "hand": "Left",
+   "trackId": -1,
+   "value": {
+    "position_px": [
+     320.0,
+     249.0
+    ],
+    "depth_m": 0.52,
+    "depth_valid": true,
+    "orientation": [
+     0.939692620786,
+     0.0,
+     0.342020143326,
+     0.0
+    ]
+   },
+   "tCapture": 480.0,
+   "control": "hand/Left/palm",
+   "quality": {
+    "trackingState": "BRIDGING",
+    "orientationValid": false,
+    "depthValid": false,
+    "chiralityConfirmed": false,
+    "framesSinceMeasurement": 1
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Canceled",
+   "hand": "Left",
+   "trackId": -1,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 480.0,
+   "control": "hand/Left/palmFacing",
+   "quality": {
+    "trackingState": "BRIDGING",
+    "orientationValid": false,
+    "depthValid": false,
+    "chiralityConfirmed": false,
+    "framesSinceMeasurement": 1
+   }
+  },
+  {
+   "action": "grab_ready",
+   "phase": "Canceled",
+   "hand": "Left",
+   "trackId": -1,
+   "value": true,
+   "tCapture": 480.0,
+   "control": "hand/Left/grabReady",
+   "quality": {
+    "trackingState": "BRIDGING",
+    "orientationValid": false,
+    "depthValid": false,
+    "chiralityConfirmed": false,
+    "framesSinceMeasurement": 1
+   }
+  },
+  {
+   "action": "rotation_delta",
+   "phase": "Canceled",
+   "hand": "Left",
+   "trackId": -1,
+   "value": [
+    0.9702957262759838,
+    0.0,
+    0.24192189559956848,
+    0.0
+   ],
+   "tCapture": 480.0,
+   "control": "hand/Left/rotation",
+   "quality": {
+    "trackingState": "BRIDGING",
+    "orientationValid": false,
+    "depthValid": false,
+    "chiralityConfirmed": false,
+    "framesSinceMeasurement": 1
+   }
+  },
+  {
+   "action": "tracked",
+   "phase": "Started",
+   "hand": "Right",
+   "trackId": 2,
+   "value": true,
+   "tCapture": 560.0,
+   "control": "hand/Right/tracked",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "tracked",
+   "phase": "Performed",
+   "hand": "Right",
+   "trackId": 2,
+   "value": true,
+   "tCapture": 560.0,
+   "control": "hand/Right/tracked",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Started",
+   "hand": "Right",
+   "trackId": 2,
+   "value": {
+    "position_px": [
+     120.0,
+     300.0
+    ],
+    "depth_m": 0.45,
+    "depth_valid": true,
+    "orientation": [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   "tCapture": 560.0,
+   "control": "hand/Right/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Right",
+   "trackId": 2,
+   "value": {
+    "position_px": [
+     120.0,
+     300.0
+    ],
+    "depth_m": 0.45,
+    "depth_valid": true,
+    "orientation": [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   "tCapture": 560.0,
+   "control": "hand/Right/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Started",
+   "hand": "Right",
+   "trackId": 2,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 560.0,
+   "control": "hand/Right/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Right",
+   "trackId": 2,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 560.0,
+   "control": "hand/Right/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "grab_ready",
+   "phase": "Started",
+   "hand": "Right",
+   "trackId": 2,
+   "value": true,
+   "tCapture": 560.0,
+   "control": "hand/Right/grabReady",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "grab_ready",
+   "phase": "Performed",
+   "hand": "Right",
+   "trackId": 2,
+   "value": true,
+   "tCapture": 560.0,
+   "control": "hand/Right/grabReady",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "tracked",
+   "phase": "Canceled",
+   "hand": "Left",
+   "trackId": -1,
+   "value": true,
+   "tCapture": 680.0,
+   "control": "hand/Left/tracked",
+   "quality": {
+    "trackingState": "SUSTAINED_LOST",
+    "orientationValid": false,
+    "depthValid": false,
+    "chiralityConfirmed": false,
+    "framesSinceMeasurement": 4
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Right",
+   "trackId": 2,
+   "value": {
+    "position_px": [
+     124.0,
+     302.0
+    ],
+    "depth_m": 0.45,
+    "depth_valid": true,
+    "orientation": [
+     0.999657324976,
+     0.0,
+     0.026176948308,
+     0.0
+    ]
+   },
+   "tCapture": 680.0,
+   "control": "hand/Right/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Right",
+   "trackId": 2,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 680.0,
+   "control": "hand/Right/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "tracked",
+   "phase": "Started",
+   "hand": "Left",
+   "trackId": 1,
+   "value": true,
+   "tCapture": 720.0,
+   "control": "hand/Left/tracked",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "tracked",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": true,
+   "tCapture": 720.0,
+   "control": "hand/Left/tracked",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Started",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "position_px": [
+     400.0,
+     200.0
+    ],
+    "depth_m": 0.6,
+    "depth_valid": true,
+    "orientation": [
+     0.707106781187,
+     0.0,
+     0.707106781187,
+     0.0
+    ]
+   },
+   "tCapture": 720.0,
+   "control": "hand/Left/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "position_px": [
+     400.0,
+     200.0
+    ],
+    "depth_m": 0.6,
+    "depth_valid": true,
+    "orientation": [
+     0.707106781187,
+     0.0,
+     0.707106781187,
+     0.0
+    ]
+   },
+   "tCapture": 720.0,
+   "control": "hand/Left/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Started",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 720.0,
+   "control": "hand/Left/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 720.0,
+   "control": "hand/Left/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "grab_ready",
+   "phase": "Started",
+   "hand": "Left",
+   "trackId": 1,
+   "value": true,
+   "tCapture": 720.0,
+   "control": "hand/Left/grabReady",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "grab_ready",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": true,
+   "tCapture": 720.0,
+   "control": "hand/Left/grabReady",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Right",
+   "trackId": 2,
+   "value": {
+    "position_px": [
+     126.0,
+     303.0
+    ],
+    "depth_m": 0.45,
+    "depth_valid": true,
+    "orientation": [
+     0.999048221582,
+     0.0,
+     0.043619387365,
+     0.0
+    ]
+   },
+   "tCapture": 720.0,
+   "control": "hand/Right/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Right",
+   "trackId": 2,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 720.0,
+   "control": "hand/Right/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "position_px": [
+     402.0,
+     201.0
+    ],
+    "depth_m": 0.6,
+    "depth_valid": true,
+    "orientation": [
+     0.694658370459,
+     0.0,
+     0.719339800339,
+     0.0
+    ]
+   },
+   "tCapture": 760.0,
+   "control": "hand/Left/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Left",
+   "trackId": 1,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 760.0,
+   "control": "hand/Left/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_pose",
+   "phase": "Performed",
+   "hand": "Right",
+   "trackId": 2,
+   "value": {
+    "position_px": [
+     128.0,
+     304.0
+    ],
+    "depth_m": 0.45,
+    "depth_valid": true,
+    "orientation": [
+     0.998629534755,
+     0.0,
+     0.052335956243,
+     0.0
+    ]
+   },
+   "tCapture": 760.0,
+   "control": "hand/Right/palm",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  },
+  {
+   "action": "palm_facing",
+   "phase": "Performed",
+   "hand": "Right",
+   "trackId": 2,
+   "value": {
+    "thumb_outward": false,
+    "confirmed": true,
+    "orientation_valid": true,
+    "edge_on": 0.62
+   },
+   "tCapture": 760.0,
+   "control": "hand/Right/palmFacing",
+   "quality": {
+    "trackingState": "TRACKING",
+    "orientationValid": true,
+    "depthValid": true,
+    "chiralityConfirmed": true,
+    "framesSinceMeasurement": 0
+   }
+  }
+ ]
+}
