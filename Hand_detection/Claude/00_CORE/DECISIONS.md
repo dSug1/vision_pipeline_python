@@ -59,8 +59,15 @@ measured out live in
 
 ## ⛔ Owed, and not closed by anything above
 
-* **The owner's live look at the input system, in both tools** — deferred to the
-  evening of 2026-08-25. Until it happens, `IS1`–`IS3` are **BUILT, not SHIPPED**.
+⭐ **Nothing is outstanding as of 2026-08-25.** Both items below were closed the
+same evening; they are kept struck rather than deleted so the record of what was
+owed survives.
+
+* ~~**The owner's live look at the input system, in both tools**~~ — ✅ **DONE
+  2026-08-25**: the owner ran the debug tool and production back to back, both
+  clean, and instructed *"ship current build"*. `IS1`–`IS3` moved **BUILT →
+  SHIPPED** ([`queue_notes/IS3.md`](queue_notes/IS3.md), and the ✅✅ rows in
+  [`QUEUE.md`](QUEUE.md)).
 * ~~**`U7`'s declared-ground-truth acceptance take**~~ — ✅ **DONE 2026-08-25**
   (`2026-08-25_171814_known_right_reentry_acceptance`, right hand only, 1127
   single-hand frames): geometry **98.0%** against the declaration, the label
