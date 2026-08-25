@@ -13,6 +13,15 @@ worse. ⛔ Before proposing anything here, read
 [`../history/T6_INVESTIGATION_LOG.md`](../history/T6_INVESTIGATION_LOG.md)
 §2.0.4.
 
+⭐⭐ **A 2D-BENCHMARK CORRECTION PATH IS QUEUED FOR REVISIT AFTER `F1`** (owner,
+2026-08-25). It maps onto §2.0.11/§2.0.12, which closed the regression line **for
+the features they tried** — and `F1` supplies **finger configuration**, one of the
+four they left untested. Mapping, measurements and the acceptance bar:
+[`../../00_CORE/queue_notes/T6.md`](../../00_CORE/queue_notes/T6.md).
+
+⭐ **The one durable good-news finding**: MediaPipe's tilt **direction** is right
+(median 10.6° vs 45° chance) — the defect is **one corrupt scalar per frame**.
+
 ---
 
 <!-- PROVENANCE — machine-extracted, NOT edited.
