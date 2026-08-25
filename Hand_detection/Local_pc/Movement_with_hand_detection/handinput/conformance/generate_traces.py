@@ -63,14 +63,16 @@ SCRIPT = [
     # still ready: a BUTTON must NOT re-fire while held
     {"dt": 40.0, "hands": {"Left": dict(pos=(308.0, 243.0), depth=(0.50, True),
                                         quat=_yaw_quat(4.0), confirmed=True)}},
-    # back of hand, exception NOT armed -> rule 3 refuses -> grab_ready canceled
+    # ⭐⭐ BACK OF HAND -- and grab_ready must NOT be canceled. This step used to
+    # assert the opposite; rule 3's snap block was removed 2026-08-25 (queue F1),
+    # so it is kept, inverted, as the REGRESSION GUARD for that removal.
     {"dt": 40.0, "hands": {"Left": dict(pos=(310.0, 244.0), depth=(0.50, True),
                                         quat=_yaw_quat(6.0), confirmed=True,
                                         thumb_outward=True)}},
-    # exception ARMED (released while thumb-outward) -> ready again
+    # still back-of-hand, still ready -- and still not re-firing (it is a button)
     {"dt": 40.0, "hands": {"Left": dict(pos=(312.0, 245.0), depth=(0.50, True),
                                         quat=_yaw_quat(8.0), confirmed=True,
-                                        thumb_outward=True, snap_allowed=True)}},
+                                        thumb_outward=True)}},
     # depth FROZEN (4.2 DECISION 1) -> refuse, even though everything else is fine
     {"dt": 40.0, "hands": {"Left": dict(pos=(314.0, 246.0), depth=(0.50, False),
                                         quat=_yaw_quat(10.0), confirmed=True)}},
@@ -138,7 +140,6 @@ def build():
                 chirality_confirmed=bool(spec.get("confirmed", False)) if spec else False,
                 orientation_valid=spec is not None,
                 edge_on=0.62 if spec else None,
-                snap_allowed=bool(spec.get("snap_allowed", False)) if spec else False,
             )
             obs_list.append(obs)
             if spec is not None:
@@ -152,8 +153,7 @@ def build():
                           "depth_m": v["depth"][0], "depth_valid": bool(v["depth"][1]),
                           "orientation": list(v["quat"]),
                           "thumb_outward": bool(v.get("thumb_outward", False)),
-                          "chirality_confirmed": bool(v.get("confirmed", False)),
-                          "snap_allowed": bool(v.get("snap_allowed", False))}
+                          "chirality_confirmed": bool(v.get("confirmed", False))}
                       for s, v in row_hands.items()},
             "events": len(events) - before,
         })
@@ -167,10 +167,11 @@ def main():
     with open(path, "w", encoding="utf-8") as fh:
         json.dump({
             "trace": "scripted_lifecycle",
-            "note": "Enter -> provisional chirality -> ready -> rule 3 refusal -> "
-                    "armed exception -> frozen depth -> rotation reference -> "
-                    "coast -> sustained loss -> re-entry. Presence drives a REAL "
-                    "HandStateTracker, so BRIDGE_WINDOW_MS is not duplicated here.",
+            "note": "Enter -> provisional chirality -> ready -> BACK OF HAND stays "
+                    "ready (rule 3's snap block removed 2026-08-25, queue F1) -> "
+                    "frozen depth -> rotation reference -> coast -> sustained loss "
+                    "-> re-entry. Presence drives a REAL HandStateTracker, so "
+                    "BRIDGE_WINDOW_MS is not duplicated here.",
             "input": rows,
             "expected_events": events,
         }, fh, indent=1)

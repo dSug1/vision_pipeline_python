@@ -144,10 +144,12 @@ def main():
 
         # --- compare
         for h in HANDS:
-            pa = P._thumb_outward_snap_allowed[h]
-            da = arm.thumb_outward_snap_allowed[h]
-            if pa != da:
-                diffs.append((i, h, "snap_allowed", pa, da))
+            # ⛔ `snap_allowed` was compared here until 2026-08-25. Rule 3's
+            # back-of-hand snap block was removed (owner, queue F1) and the
+            # armed/disarmed state deleted from BOTH tools, so there is nothing
+            # left to compare. ⚠ `thumb_outward` itself is still compared below:
+            # it remains a real observation in both, and the two must still agree
+            # on it even though neither acts on it any more.
             pl = P._last_known_thumb_outward[h]
             dl = arm.last_known_thumb_outward[h]
             if pl != dl:

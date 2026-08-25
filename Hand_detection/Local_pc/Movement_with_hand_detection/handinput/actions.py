@@ -302,15 +302,20 @@ class GrabReadyAction(Action):
     have one (see `__init__.py`). The interaction tier, or the game, ANDs this
     with proximity.
 
-    The three conditions are the three the game already applies, in one place:
-      * palm/back -- refuse while thumb-outward, unless rule 3's exception is
-        ARMED (`snap_allowed`, armed at a thumb-outward release);
+    The conditions are the ones the game applies, in one place:
       * U8 -- refuse while the chirality is PROVISIONAL. Measured: a back-of-hand
-        hand read as palm and took a cube rule 3 forbids;
+        hand read as palm and took a cube rule 3 then forbade;
       * 4.2 DECISION 1 -- refuse while depth is FROZEN rather than measured.
         ⚠ `depth_m is None` means the host supplies no depth at all (pre-4.2
         callers, and any host without a depth estimator) -- that must NOT refuse,
         or the action would be permanently false there.
+
+    ⛔⛔ THE PALM/BACK CONDITION IS GONE (owner, 2026-08-25, queue F1): an object
+    may be grabbed with the back of the hand to the camera, including on re-entry.
+    It read `is_thumb_outward`, which applies a HANDEDNESS-DEPENDENT correction and
+    so INVERTED on a wrong label -- and the label was wrong 10.8% of the time until
+    U7. ⚠ `thumb_outward` is still OBSERVED and still published as `palm_facing`;
+    it simply no longer gates anything.
     """
 
     kind = "button"
@@ -321,8 +326,7 @@ class GrabReadyAction(Action):
     def evaluate(self, obs, cfg):
         if obs.tracking_state != TRACKING:
             return False, False
-        ok = (not obs.thumb_outward) or obs.snap_allowed
-        ok = ok and obs.chirality_confirmed
+        ok = obs.chirality_confirmed
         if cfg["grab_ready"]["require_valid_depth"] and obs.depth_m is not None:
             ok = ok and obs.depth_valid
         return bool(ok), True

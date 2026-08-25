@@ -418,13 +418,50 @@ it before the build looks like.
 
 | # | question | why it decides something |
 |---|---|---|
-| 1 | **Per-tip visibility/confidence during real grabs** vs. open-hand frames | The Model Card says tips degrade under occlusion, and a closing hand occludes its own tips. If tips are unusable exactly while an object is held, the trim clamp must be tight — and we learn it now, not from a live session |
+| 1 | **Per-tip INSTABILITY while an object is held** vs. while it is not — frame-to-frame tip motion in the palm frame, per tip, split on `cubes[*].owner` | The Model Card says tips degrade under occlusion, and a closing hand occludes its own tips. If tips are unusable exactly while an object is held, the trim clamp must be tight — and we learn it now, not from a live session |
 | 2 | **How large is `R_res` in real handling?** Distribution of the tip-residual angle over the production takes | Sets `θ_max` from data. If real assembly-style motion is ±10°, a 45° clamp is decoration |
 | 3 | **How far does the tip barycentre move under pure articulation?** (§4.2) | Decides whether `g_pos = 1` is shippable or wants a clamp |
 | 4 | **How often is the tip set collinear or clustered?** `spread` and `scale` distributions, split by edge-on band | Sets §6.2's floors from measurement rather than taste |
 
 ⚠ Recorded takes carry **no images** (`N14`), so anything needing pixels cannot be
 settled this way. All four above are landmark-only.
+
+⛔⛔ **AND THE RECORDER CARRIES NO PER-LANDMARK CONFIDENCE — checked, not assumed.**
+`_record_frame` writes exactly `landmarks` (x, y px) and `world_landmarks`
+(x, y, z); MediaPipe's per-point `visibility`/`presence` are **not** stored, and
+are not reliably populated for hands in any case. So question 1 **cannot** be
+asked as *"what does the model say its confidence was"*.
+
+⭐ **The substitute is better, not merely available.** Measuring the tips' actual
+frame-to-frame **instability in the palm frame** scores the thing that damages the
+trim — motion that is not the hand moving — instead of the model's opinion of
+itself. It also keeps the house rule that made `_record_flush` what it is:
+**record what ran, never re-derive it.** ✅ And the split is free: every row
+carries `cubes[*].owner`, so *held* and *not held* separate exactly.
+
+---
+
+### ⭐⭐ ANSWERED 2026-08-25 — `analysis/f1_tip_census.py`, 123 takes
+
+Full numbers and their derivation: [`../../00_CORE/queue_notes/F1.md`](../../00_CORE/queue_notes/F1.md).
+The four results, and what each one settles:
+
+| | result | consequence for this spec |
+|---|---|---|
+| **M1** | noise floor **1.28–1.62 mm** median, 3.6–4.7 mm p95 per tip; held vs free **1.05–1.10** | ✅ **The design survives.** The Model Card's occlusion penalty is real but is 5–10%, not a collapse |
+| **M2** | residual **75–95°** at p90–p95 **inside ~0.5 s** | ⛔ **§3's trim cannot run at gain 1.** M1 rules out noise, so this is the rigid model being wrong — clamp **far below** the 16° short-horizon median |
+| **M3** | barycentre drift **1 cm median / 6 cm p95** in ~0.5 s with the palm still | ⛔ **§4.3's `g_pos = 1` needs a clamp or a gain < 1.** The spec's own ~1.6 cm estimate was conservative |
+| **M4** | `spread` p1 **0.172**; a 0.20 floor freezes **1.89%** of frames | ✅ **§6.2's floor is 0.20** — cheap, and above the p1 |
+
+⚠⚠ **A trap was hit while measuring and is worth keeping.** Raw frame-to-frame tip
+motion reads p95 **21–31 mm**, which looks like an unusable channel and was nearly
+reported as one. Restricting to frames where the **palm itself barely moved**
+(< 1°, < 2 mm) shows almost all of it is the operator genuinely moving their hand,
+and the true floor is **1.5 mm** — a factor of ~15. ⭐ Any "the tips are too noisy"
+claim must state which of the two it means.
+
+⛔ **And the recorder carries no per-landmark confidence** (§9's note), so M1 is
+what the tips *did*, not what the model *claimed*.
 
 ---
 
@@ -573,10 +610,10 @@ paid for once.
 
 | step | what | gate |
 |---|---|---|
-| 0 | §9's four corpus measurements | published before constants are fixed |
+| 0 | ✅ **DONE 2026-08-25** — §9's four measurements | `analysis/f1_tip_census.py`; results in §9 |
 | 1 | 1€ filter, transliterated + golden vectors, on the tip barycentre only | filter OFF ⇒ bit-identical |
 | 2 | `c_tips` replaces the palm centre for snap and translation (§4, §5.1) | `parity_replay`, then a live look |
-| 3 | Remove the back-of-hand snap rule + delete its state (§5.3) | `N8` recorded as re-opened |
+| 3 | ✅ **SHIPPED 2026-08-25** — back-of-hand snap rule + its state removed (§5.3) | 26/26 suites · traces regenerated · `parity_replay` NO DIVERGENCE / 2978 frames · `N8` re-opened. ⛔ **live take owed** |
 | 4 | The palm-frame trim (§3), gain slider defaulting to **0** | ⛔ gain 0 ⇒ **bit-identical to shipped Horn**, proved by replay |
 | 5 | Conditioning fades (§6.2) | floors from step 0, not from taste |
 | 6 | Live take, both tools, back to back | ⭐ *visibly* better, per §10.2's bar |

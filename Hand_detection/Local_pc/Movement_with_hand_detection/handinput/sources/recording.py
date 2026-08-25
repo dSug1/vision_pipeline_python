@@ -20,8 +20,12 @@ than it is:
     It is reconstructed below by running a real `HandStateTracker` over the
     recorded presence and timestamps -- the same module the tools run, fed the
     same inputs, so this is a re-run rather than an imitation.
-  * **`snap_allowed` before schema 2**, and everything about hands on takes with
-    no `recorder_schema` at all. Those rows are yielded with the fields absent.
+  * **everything about hands on takes with no `recorder_schema` at all.** Those
+    rows are yielded with the fields absent.
+  * ⛔ **`snap_allowed`** -- takes recorded before 2026-08-25 carry it, and it is
+    now deliberately IGNORED rather than replayed: rule 3's back-of-hand snap
+    block was removed (owner, queue F1), so replaying the field would reconstruct
+    a gate the pipeline no longer has.
 """
 import json
 import os
@@ -84,7 +88,6 @@ def frames(session_dir, limit=None):
                     depth_valid=(h or {}).get("depth_valid", False),
                     orientation=None,                      # not recorded -- see the header
                     thumb_outward=(h or {}).get("thumb_outward", False),
-                    snap_allowed=(h or {}).get("snap_allowed", False),
                     edge_on=None,
                     landmarks_px=lm,
                     world_landmarks=(h or {}).get("world_landmarks"),

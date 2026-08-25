@@ -248,7 +248,6 @@ def main() -> None:
                     data = hand_data_by_hand[handedness]
                     debug_tool._draw_hand(
                         frame, normalized, handedness, data["thumb_outward"],
-                        state.thumb_outward_snap_allowed[handedness],
                         state.last_hand_reliability_alpha[handedness], width, height,
                     )
                 debug_tool._draw_cubes(frame, state)

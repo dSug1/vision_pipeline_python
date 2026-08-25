@@ -120,19 +120,33 @@ plain language, not implementation detail (link to the code instead).
      held through the occlusion, leaving nothing to steal. Recorded so it
      is not rediscovered as a new bug. Merged queue item N8.
 
-3. **Thumb-outward snap restriction.** A hand cannot snap an object while
-   oriented with the thumb outward (i.e. the camera is facing the back of
-   the hand) — *unless* the hand was already oriented with the thumb
-   outward at the moment the object it's now trying to snap was last
-   un-snapped, and the hand has not presented with the thumb inward since
-   that un-snap. In practice: releasing an object while thumb-outward lets
-   you immediately re-grab it in that same orientation without first
-   turning your palm back to the camera; any other approach while
-   thumb-outward is blocked.
-   - Same files as rule 1: `_is_thumb_outward()` plus the
-     `last_known_thumb_outward`/`thumb_outward_snap_allowed` per-hand state
-     pair. Orientation sign convention calibrated live 2026-08-01 (see
-     `GESTURE_PIPELINE_SPEC.md` §13.6).
+3. ~~**Thumb-outward snap restriction.**~~ ⛔⛔ **REMOVED 2026-08-25** (owner,
+   queue `F1`). **An object may now be grabbed at any palm facing, including with
+   the back of the hand to the camera, and including on re-entry into the frame
+   window.** Owner: *"condition that cube cannot be grabbed if back of the hand is
+   shown to the camera is removed."*
+   - **What it used to say**: a hand could not snap while thumb-outward *unless*
+     it was already thumb-outward when the object was last un-snapped and had not
+     shown thumb-inward since. Kept here because rules 1, `U8` and `T3` below all
+     refer to it, and because the un-snap/re-grab behaviour it describes is what
+     several recorded takes were made to exercise.
+   - ⭐ **Why it went, and it was not for convenience.** It read
+     `_is_thumb_outward()`, which applies a **handedness-dependent** correction and
+     therefore **inverts on a wrong label** — and the label was wrong **10.8%** of
+     the time until `U7` replaced it with geometry. Rotation quality with the back
+     of the hand showing also measures **better**, not worse, on both control takes
+     (16.8° vs 23.5°, and 11.8° vs 24.5°).
+   - **Measured effect of the removal**, from the six takes whose recordings carry
+     the rule's own fields (3432 hand-frames): the rule was refusing on **15.7%**
+     of hand-frames, and on **8.3%** the hand held nothing, so a grab was genuinely
+     blocked. Those 8.3% are now allowed.
+   - ⚠ **This re-opens `N8`** (an object stolen by occluding the holding hand) —
+     rule 3 had been suppressing part of it incidentally. The real fix is the grab
+     trigger, `B5` + `4.4`. ⛔ Do not reintroduce a facing gate.
+   - **State**: `thumb_outward_snap_allowed` is **deleted** from both tools,
+     `handinput` and the recorder schema. `last_known_thumb_outward` **survives as
+     an observation only** — it is on the debug HUD and is published as
+     `palm_facing`; it gates nothing.
    - ⭐ **BEHAVIOUR ADDED 2026-08-22 (U8), owner-accepted live — A HAND THAT HAS
      JUST ENTERED THE FRAME CANNOT SNAP AT ALL for 200 ms.**
      Not a bug and not the edge-on latency below: the palm/back cue is computed
@@ -140,8 +154,13 @@ plain language, not implementation detail (link to the code instead).
      entering — the thumb being the last part to appear — that cue is not merely
      noisy but **undefined**, and MediaPipe supplies a plausible hallucinated
      thumb. Measured: a back-of-hand hand read as PALM and took a cube this rule
-     forbids. The game now **refuses to snap while the chirality is provisional**
+     forbade. The game now **refuses to snap while the chirality is provisional**
      rather than guess, which is the same choice rule 1's edge-on freeze makes.
+     ⚠ **`U8` is KEPT, but note its first reason expired with rule 3 above.** It
+     stands now on the OTHER thing chirality drives — the rotation sign and DR-2 —
+     so snapping on a provisional chirality still hands the object a wrong frame.
+     Worth re-measuring on its own; not silently dropped in a change that was not
+     about it.
      ⚠ **Felt cost**: a grab by a just-entered hand is delayed by up to 200 ms
      (lowered from 400 ms after the owner found that too long) — *delayed*, never refused; the hand is still
      there when the gate opens. ⭐ The window is a DURATION, so the delay

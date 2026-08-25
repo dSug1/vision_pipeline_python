@@ -109,7 +109,6 @@ def _publish_hand_input(state, hand_data_by_hand, pose_out, now_ms):
                 depth_valid=bool(_hd[1]) if _hd else False,
                 orientation=pose.get("orientation"),
                 thumb_outward=state.last_known_thumb_outward[handedness],
-                snap_allowed=state.thumb_outward_snap_allowed[handedness],
                 edge_on=(palm_geometry.edge_on_measure(data["pixel_landmarks"])
                          if data else None),
                 landmarks_px=(data or {}).get("pixel_landmarks"),
@@ -243,7 +242,7 @@ class _HandBundle:
     # one-variable property the whole rig depends on. Upstream per-hand state is
     # bound once per frame by `_bind_upstream_track_state`, not here.
     __slots__ = ("tracking", "orientation_filter", "rotation_state",
-                 "last_known_thumb_outward", "thumb_outward_snap_allowed",
+                 "last_known_thumb_outward",
                  "resync_blend_left", "reliability_alpha")
 
     def __init__(self):
@@ -251,7 +250,6 @@ class _HandBundle:
         self.orientation_filter = None
         self.rotation_state = None
         self.last_known_thumb_outward = False
-        self.thumb_outward_snap_allowed = False
         self.resync_blend_left = 0
         self.reliability_alpha = 1.0
 
@@ -268,7 +266,6 @@ def _new_bundle_for(state, slot):
     b.tracking = hand_state.HandStateTracker(bridge_window_ms=window)
     b.rotation_state = None
     b.last_known_thumb_outward = False
-    b.thumb_outward_snap_allowed = False
     b.resync_blend_left = 0
     b.reliability_alpha = 1.0
     return b
@@ -294,7 +291,6 @@ def _bind_track_state(state, now_ms):
         state.hand_state_trackers[slot] = b.tracking
         state.hand_rotation_states[slot] = b.rotation_state
         state.last_known_thumb_outward[slot] = b.last_known_thumb_outward
-        state.thumb_outward_snap_allowed[slot] = b.thumb_outward_snap_allowed
         state.resync_blend_left[slot] = b.resync_blend_left
         state.last_hand_reliability_alpha[slot] = b.reliability_alpha
     return bound
@@ -307,7 +303,6 @@ def _writeback_track_state(state, bound, now_ms):
     for slot, b in bound.items():
         b.rotation_state = state.hand_rotation_states[slot]
         b.last_known_thumb_outward = state.last_known_thumb_outward[slot]
-        b.thumb_outward_snap_allowed = state.thumb_outward_snap_allowed[slot]
         b.resync_blend_left = state.resync_blend_left[slot]
         b.reliability_alpha = state.last_hand_reliability_alpha[slot]
     state.track_registry.evict(now_ms)
@@ -840,7 +835,6 @@ class CubeState:
     cubes: Dict[str, Cube] = field(default_factory=dict)
     # Thumb-outward snap rule state (§13.6) — see update_hands' docstring.
     last_known_thumb_outward: Dict[str, bool] = field(default_factory=lambda: {h: False for h in TRACKED_HANDS})
-    thumb_outward_snap_allowed: Dict[str, bool] = field(default_factory=lambda: {h: False for h in TRACKED_HANDS})
     # ⭐ Palm CONDITIONING (0-1) per hand, for the on-screen diagnostic
     # (`_draw_hand`) — 1.0 = the palm's two vectors are well separated and the
     # frame's orientation is trustworthy, 0.0 = they are nearly parallel and it is
@@ -1573,13 +1567,13 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
     Thumb-outward snap rule (§13.6, direct request, 2026-08-01): don't snap
     while the hand is thumb-outward (back of hand facing camera) UNLESS the
     hand was already thumb-outward at the moment its currently-held cube
-    was last released, AND it hasn't shown thumb-inward since. Two bits of
-    per-hand state track this: `last_known_thumb_outward` (the most recent
-    reading while the hand WAS detected — persists through frames where
-    it's lost, so a tracking-loss release still has an orientation to
-    record) and `thumb_outward_snap_allowed` (the armed/disarmed exception
-    itself — armed on release with whatever orientation held at that
-    moment, disarmed the instant the hand is seen thumb-inward).
+    was last released, AND it hasn't shown thumb-inward since.
+
+    ⛔⛔ THAT RULE WAS REMOVED ON 2026-08-25 (owner, queue F1): an object may be
+    grabbed at any palm facing, including on re-entry into the frame window. The
+    armed/disarmed exception state (`thumb_outward_snap_allowed`) was deleted with
+    it. `last_known_thumb_outward` survives as an OBSERVATION only — it is on the
+    HUD and published as `palm_facing`, and it gates nothing.
 
     Rotation (2026-08-01, confirmed UNGATED — see the ROTATION_SLERP_FACTOR
     comment above) is RELATIVE, not absolute — direct request 2026-08-01,
@@ -1709,7 +1703,6 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
             state.stats["releases"] += 1
             state.release_cube(owned)
             released_this_frame.add(owned)
-            state.thumb_outward_snap_allowed[handedness] = state.last_known_thumb_outward[handedness]
 
     for handedness in TRACKED_HANDS:
         data = hand_data_by_hand[handedness]
@@ -1749,8 +1742,6 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                 state.resync_blend_left[handedness] = state.resync_blend_frames
         thumb_outward = data["thumb_outward"]
         state.last_known_thumb_outward[handedness] = thumb_outward
-        if not thumb_outward:
-            state.thumb_outward_snap_allowed[handedness] = False
 
         hand_pos = _hand_position(data["pixel_landmarks"])
         raw_quat, conditioning_norm = _hand_orientation_quaternion(data["world_landmarks"])
@@ -1789,8 +1780,10 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
 
         owned = _cube_for_hand(state, handedness, now_ms)
         if owned is None:
-            can_snap = ((not thumb_outward) or state.thumb_outward_snap_allowed[handedness])
-            can_snap = can_snap and handedness not in snap_blocked   # S3, see docstring
+            # ⛔⛔ RULE 3's BACK-OF-HAND SNAP BLOCK REMOVED 2026-08-25 (owner,
+            # queue F1) -- an object may be claimed at any palm facing, including
+            # on re-entry. Kept in step with production; `parity_replay` proves it.
+            can_snap = handedness not in snap_blocked   # S3, see docstring
             # ⭐⭐ 4.2 DECISION 1 (owner, 2026-08-23), mirroring production: NO
             # SNAPPING WHILE DEPTH IS FROZEN. A frozen depth is a held value, not
             # a measurement, and the gate below is 3D now. `None` = no depth
@@ -1910,7 +1903,7 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
     _writeback_track_state(state, _bound, now_ms)
 
 
-def _draw_hand(frame, normalized_landmarks, handedness, thumb_outward, snap_allowed, reliability_alpha, width, height):
+def _draw_hand(frame, normalized_landmarks, handedness, thumb_outward, reliability_alpha, width, height):
     hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
     for lm in normalized_landmarks:
         hand_landmarks_proto.landmark.append(landmark_pb2.NormalizedLandmark(x=lm.x, y=lm.y, z=lm.z))
@@ -1922,9 +1915,11 @@ def _draw_hand(frame, normalized_landmarks, handedness, thumb_outward, snap_allo
     xs = [lm.x for lm in normalized_landmarks]
     ys = [lm.y for lm in normalized_landmarks]
     text_x, text_y = int(min(xs) * width), int(min(ys) * height) - 10
+    # ⚠ OBSERVATION ONLY since 2026-08-25 -- palm facing no longer gates the snap
+    # (queue F1), so this must not read as "BLOCKED"/"allowed" any more. It is kept
+    # on the HUD because it is still the operator's window onto chirality.
     if thumb_outward:
-        label, color = (f"thumb-outward ({'allowed' if snap_allowed else 'BLOCKED'})",
-                         (0, 200, 0) if snap_allowed else (0, 0, 255))
+        label, color = "thumb-outward", (0, 200, 200)
     else:
         label, color = "thumb-inward", (0, 200, 200)
     # Display the ANATOMICAL hand (owner report 2026-08-22). DISPLAY ONLY --
@@ -2492,7 +2487,6 @@ def main():
                     data = hand_data_by_hand[handedness]
                     _draw_hand(
                         panel, normalized, handedness, data["thumb_outward"],
-                        arm.thumb_outward_snap_allowed[handedness],
                         arm.last_hand_reliability_alpha[handedness], width, height,
                     )
                 # ⭐ In the A/B rig, panel 2 also carries panel 1's cube as a

@@ -1,6 +1,6 @@
 {
  "trace": "scripted_lifecycle",
- "note": "Enter -> provisional chirality -> ready -> rule 3 refusal -> armed exception -> frozen depth -> rotation reference -> coast -> sustained loss -> re-entry. Presence drives a REAL HandStateTracker, so BRIDGE_WINDOW_MS is not duplicated here.",
+ "note": "Enter -> provisional chirality -> ready -> BACK OF HAND stays ready (rule 3's snap block removed 2026-08-25, queue F1) -> frozen depth -> rotation reference -> coast -> sustained loss -> re-entry. Presence drives a REAL HandStateTracker, so BRIDGE_WINDOW_MS is not duplicated here.",
  "input": [
   {
    "tCapture": 0.0,
@@ -32,8 +32,7 @@
       0.0
      ],
      "thumb_outward": false,
-     "chirality_confirmed": false,
-     "snap_allowed": false
+     "chirality_confirmed": false
     }
    },
    "events": 6
@@ -56,8 +55,7 @@
       0.0
      ],
      "thumb_outward": false,
-     "chirality_confirmed": false,
-     "snap_allowed": false
+     "chirality_confirmed": false
     }
    },
    "events": 2
@@ -80,8 +78,7 @@
       0.0
      ],
      "thumb_outward": false,
-     "chirality_confirmed": true,
-     "snap_allowed": false
+     "chirality_confirmed": true
     }
    },
    "events": 4
@@ -104,8 +101,7 @@
       0.0
      ],
      "thumb_outward": false,
-     "chirality_confirmed": true,
-     "snap_allowed": false
+     "chirality_confirmed": true
     }
    },
    "events": 2
@@ -128,11 +124,10 @@
       0.0
      ],
      "thumb_outward": true,
-     "chirality_confirmed": true,
-     "snap_allowed": false
+     "chirality_confirmed": true
     }
    },
-   "events": 3
+   "events": 2
   },
   {
    "tCapture": 280.0,
@@ -152,11 +147,10 @@
       0.0
      ],
      "thumb_outward": true,
-     "chirality_confirmed": true,
-     "snap_allowed": true
+     "chirality_confirmed": true
     }
    },
-   "events": 4
+   "events": 2
   },
   {
    "tCapture": 320.0,
@@ -176,8 +170,7 @@
       0.0
      ],
      "thumb_outward": false,
-     "chirality_confirmed": true,
-     "snap_allowed": false
+     "chirality_confirmed": true
     }
    },
    "events": 3
@@ -205,8 +198,7 @@
       0.0
      ],
      "thumb_outward": false,
-     "chirality_confirmed": true,
-     "snap_allowed": false
+     "chirality_confirmed": true
     }
    },
    "events": 6
@@ -229,8 +221,7 @@
       0.0
      ],
      "thumb_outward": false,
-     "chirality_confirmed": true,
-     "snap_allowed": false
+     "chirality_confirmed": true
     }
    },
    "events": 3
@@ -253,8 +244,7 @@
       0.0
      ],
      "thumb_outward": false,
-     "chirality_confirmed": true,
-     "snap_allowed": false
+     "chirality_confirmed": true
     }
    },
    "events": 3
@@ -289,8 +279,7 @@
       0.0
      ],
      "thumb_outward": false,
-     "chirality_confirmed": true,
-     "snap_allowed": false
+     "chirality_confirmed": true
     }
    },
    "events": 8
@@ -313,8 +302,7 @@
       0.0
      ],
      "thumb_outward": false,
-     "chirality_confirmed": true,
-     "snap_allowed": false
+     "chirality_confirmed": true
     }
    },
    "events": 3
@@ -337,8 +325,7 @@
       0.0
      ],
      "thumb_outward": false,
-     "chirality_confirmed": true,
-     "snap_allowed": false
+     "chirality_confirmed": true
     },
     "Right": {
      "position_px": [
@@ -354,8 +341,7 @@
       0.0
      ],
      "thumb_outward": false,
-     "chirality_confirmed": true,
-     "snap_allowed": false
+     "chirality_confirmed": true
     }
    },
    "events": 10
@@ -378,8 +364,7 @@
       0.0
      ],
      "thumb_outward": false,
-     "chirality_confirmed": true,
-     "snap_allowed": false
+     "chirality_confirmed": true
     },
     "Right": {
      "position_px": [
@@ -395,8 +380,7 @@
       0.0
      ],
      "thumb_outward": false,
-     "chirality_confirmed": true,
-     "snap_allowed": false
+     "chirality_confirmed": true
     }
    },
    "events": 4
@@ -768,22 +752,6 @@
    }
   },
   {
-   "action": "grab_ready",
-   "phase": "Canceled",
-   "hand": "Left",
-   "trackId": 1,
-   "value": true,
-   "tCapture": 240.0,
-   "control": "hand/Left/grabReady",
-   "quality": {
-    "trackingState": "TRACKING",
-    "orientationValid": true,
-    "depthValid": true,
-    "chiralityConfirmed": true,
-    "framesSinceMeasurement": 0
-   }
-  },
-  {
    "action": "palm_pose",
    "phase": "Performed",
    "hand": "Left",
@@ -825,38 +793,6 @@
    },
    "tCapture": 280.0,
    "control": "hand/Left/palmFacing",
-   "quality": {
-    "trackingState": "TRACKING",
-    "orientationValid": true,
-    "depthValid": true,
-    "chiralityConfirmed": true,
-    "framesSinceMeasurement": 0
-   }
-  },
-  {
-   "action": "grab_ready",
-   "phase": "Started",
-   "hand": "Left",
-   "trackId": 1,
-   "value": true,
-   "tCapture": 280.0,
-   "control": "hand/Left/grabReady",
-   "quality": {
-    "trackingState": "TRACKING",
-    "orientationValid": true,
-    "depthValid": true,
-    "chiralityConfirmed": true,
-    "framesSinceMeasurement": 0
-   }
-  },
-  {
-   "action": "grab_ready",
-   "phase": "Performed",
-   "hand": "Left",
-   "trackId": 1,
-   "value": true,
-   "tCapture": 280.0,
-   "control": "hand/Left/grabReady",
    "quality": {
     "trackingState": "TRACKING",
     "orientationValid": true,

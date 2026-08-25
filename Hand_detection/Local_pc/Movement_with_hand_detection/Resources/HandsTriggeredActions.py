@@ -154,23 +154,28 @@ _hand_depth_valid: Dict[str, bool] = {h: False for h in TRACKED_HANDS}
 # Not yet implemented — proximity is the only condition checked below
 # until fist detection exists to gate it.
 
-# Thumb-outward snap rule state (§13.6, direct request, 2026-08-01) — see
-# on_hands_frame's docstring for the full rule. `_last_known_thumb_outward`
-# persists the most recent reading through frames where a hand isn't
-# detected (so a tracking-loss release still has an orientation to
-# record); `_thumb_outward_snap_allowed` is the armed/disarmed exception.
+# Palm/back facing state. `_last_known_thumb_outward` persists the most recent
+# reading through frames where a hand isn't detected (so a tracking-loss release
+# still has an orientation to record).
+#
+# ⛔ THE SNAP RULE THIS ONCE SERVED IS GONE (owner, 2026-08-25, queue F1): an
+# object may be grabbed at any palm facing. `_thumb_outward_snap_allowed` -- the
+# armed/disarmed exception -- was DELETED with it rather than left updating,
+# because dead gating state is how a rule comes back by accident.
+# ⭐ This value survives because it is a real OBSERVATION: it is recorded, and
+# `handinput` publishes it as `palm_facing`. It gates nothing.
 _last_known_thumb_outward: Dict[str, bool] = {h: False for h in TRACKED_HANDS}
-_thumb_outward_snap_allowed: Dict[str, bool] = {h: False for h in TRACKED_HANDS}
 
 # DR-2 (queue item 2.2, spec M5e): freeze the palm/back sign while the palm is too
 # close to edge-on for it to be trustworthy. Per-hand, and SHARED with
 # LiveSnapDebug.py via palm_geometry so the two cannot diverge.
 #
-# What this protects, concretely: the rule-3 line below disarms the snap exception
-# on a single thumb-inward reading (`if not thumb_outward: ... = False`). Near
-# edge-on the raw sign chatters at up to 765 flips per 1000 frames (spec §0.2), so
-# ONE spurious flip mid-crossing silently revokes the exception. Freezing through
-# the band removes that.
+# ⚠ ITS ORIGINAL JUSTIFICATION WAS RULE-3-SHAPED and that rule is now gone: the
+# snap exception was disarmed by a single thumb-inward reading, and near edge-on
+# the raw sign chatters at up to 765 flips per 1000 frames (spec §0.2), so ONE
+# spurious flip silently revoked it. ⭐ DR-2 is KEPT regardless, because the sign
+# it stabilises still drives chirality and the rotation frame -- it was never
+# only about rule 3.
 #
 # Measured before shipping (A10): improved 2 of 10 ground-truth streams, worsened
 # NONE, and did nothing at all on both chirality controls. See spec §0.11.
@@ -885,7 +890,7 @@ class _HandBundle:
     # below); present so re-enabling the migration does not leave a Z-shaped
     # hole in it.
     __slots__ = ("palm_facing", "tracking", "rotation_state",
-                 "last_known_thumb_outward", "thumb_outward_snap_allowed",
+                 "last_known_thumb_outward",
                  "resync_blend_left", "reliability_alpha",
                  "depth_ratio_tracker", "hand_depth_tracker")
 
@@ -894,7 +899,6 @@ class _HandBundle:
         self.tracking = hand_state.HandStateTracker()
         self.rotation_state = None
         self.last_known_thumb_outward = False
-        self.thumb_outward_snap_allowed = False
         self.resync_blend_left = 0
         self.reliability_alpha = 1.0
         self.depth_ratio_tracker = palm_depth.DepthRatioTracker()
@@ -920,7 +924,9 @@ def _new_bundle_for(slot: str) -> "_HandBundle":
     Two failures, one cause:
       1. A hand that leaves and returns is a NEW track. Seeding from the slot
          handed it the previous hand's `thumb_outward_snap_allowed`, so a
-         back-of-hand hand could snap -- GAME_RULES rule 3 forbids that.
+         back-of-hand hand could snap -- GAME_RULES rule 3 forbade that then.
+         (⚠ That flag no longer exists: rule 3's snap block was removed by the
+         owner on 2026-08-25, queue F1. The SEEDING lesson is why this is kept.)
       2. Worse, the seed copied the tracker OBJECT BY REFERENCE, so two distinct
          tracks mutated ONE `HandStateTracker`. `holds_track` then answered for
          the wrong hand, release never fired, and every cube froze.
@@ -935,7 +941,6 @@ def _new_bundle_for(slot: str) -> "_HandBundle":
     b.tracking = hand_state.HandStateTracker(bridge_window_ms=window)
     b.rotation_state = None
     b.last_known_thumb_outward = False
-    b.thumb_outward_snap_allowed = False
     b.resync_blend_left = 0
     b.reliability_alpha = 1.0
     # FRESH estimators, never the slot's current ones: a returning hand must
@@ -974,7 +979,6 @@ def _bind_track_state(now_ms: float) -> None:
         _hand_state_trackers[slot] = bundle.tracking
         _hand_rotation_states[slot] = bundle.rotation_state
         _last_known_thumb_outward[slot] = bundle.last_known_thumb_outward
-        _thumb_outward_snap_allowed[slot] = bundle.thumb_outward_snap_allowed
         _resync_blend_left[slot] = bundle.resync_blend_left
         _last_hand_reliability_alpha[slot] = bundle.reliability_alpha
         _depth_ratio_trackers[slot] = bundle.depth_ratio_tracker
@@ -989,7 +993,6 @@ def _writeback_track_state(now_ms: float) -> None:
     for slot, bundle in _bound_bundles.items():
         bundle.rotation_state = _hand_rotation_states[slot]
         bundle.last_known_thumb_outward = _last_known_thumb_outward[slot]
-        bundle.thumb_outward_snap_allowed = _thumb_outward_snap_allowed[slot]
         bundle.resync_blend_left = _resync_blend_left[slot]
         bundle.reliability_alpha = _last_hand_reliability_alpha[slot]
         bundle.depth_ratio_tracker = _depth_ratio_trackers[slot]
@@ -1167,13 +1170,13 @@ def _record_flush():
         h["hand_depth_m"] = None if _hd is None else round(_hd, 4)
         h["depth_valid"] = bool(_hand_depth_valid[slot])
         h["thumb_outward"] = bool(_last_known_thumb_outward[slot])
-        # The U8 gate's own state, so a replay can separate "rule 3 refused
-        # because the hand was back" from "rule 3 refused because the chirality
-        # was still provisional" -- two very different behaviours that look
-        # identical from the outside.
+        # The U8 gate's own state, so a replay can tell a snap refused for a
+        # PROVISIONAL chirality from one refused for want of depth -- two very
+        # different behaviours that look identical from the outside.
+        # ⚠ `snap_allowed` was recorded here until 2026-08-25 and is GONE with
+        # rule 3 (queue F1). Takes older than that carry it; nothing writes it now.
         h["chirality_confirmed"] = bool(tracker.chirality_confirmed)
         h["orientation_valid"] = bool(tracker.orientation_valid)
-        h["snap_allowed"] = bool(_thumb_outward_snap_allowed[slot])
     _rec["fh"].write(json.dumps(row) + "\n")
     _rec["n"] += 1
     if row["hands"]:
@@ -1223,12 +1226,12 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     this frame is excluded from THIS frame's snap pass, so the earliest a
     cube can be re-claimed is next frame, never the same tick as its release.
 
-    Thumb-outward snap rule (§13.6, direct request, 2026-08-01): don't snap
-    while the hand is thumb-outward (back of hand facing camera) UNLESS the
-    hand was already thumb-outward at the moment its currently-held cube
-    was last released, AND it hasn't shown thumb-inward since. See the
-    module-level `_last_known_thumb_outward`/`_thumb_outward_snap_allowed`
-    comment for what each bit of state tracks.
+    ⛔ The thumb-outward snap rule (§13.6, 2026-08-01) was REMOVED on
+    2026-08-25 at the owner's request (queue F1): an object may be grabbed at any
+    palm facing, including on re-entry into frame. The armed/disarmed exception
+    state went with it; `_last_known_thumb_outward` survives as an OBSERVATION
+    only. ⚠ This re-opens N8 (stealing by occluding the holder) -- see the
+    snap site below.
 
     Rotation (2026-08-01, ported from LiveSnapDebug.py after live
     verification there — GESTURE_PIPELINE_SPEC.md §13.7 has the full
@@ -1326,7 +1329,6 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             # name, deferred by the owner. Do not smuggle it in here.
             cube_window.release_cube(owned_cube)
             released_this_frame.add(owned_cube)
-            _thumb_outward_snap_allowed[handedness] = _last_known_thumb_outward[handedness]
 
     # ⭐ handinput: this frame's per-hand facts, captured AS THE LOGIC PRODUCES
     # THEM and published after the loop. ⚠ Captured, never recomputed -- a second
@@ -1388,8 +1390,6 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
         )
         tracking.set_orientation_valid(_orientation_valid)
         _last_known_thumb_outward[handedness] = thumb_outward
-        if not thumb_outward:
-            _thumb_outward_snap_allowed[handedness] = False
 
         hand_pos = _hand_position(landmarks)
 
@@ -1459,14 +1459,39 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
 
         owned_cube = _cube_for_hand(handedness, now_ms)
         if owned_cube is None:
-            # ⭐⭐ U8: rule 3 may not act on a PROVISIONAL chirality.
+            # ⛔⛔ RULE 3's BACK-OF-HAND SNAP BLOCK WAS REMOVED (owner, 2026-08-25,
+            # queue F1): "cube can be grabbed even if the hand presents its back to
+            # the camera, even when it comes back by re-entry into the frame
+            # window." An object may now be claimed at any palm facing.
             #
-            # `thumb_outward` is computed FROM the chirality, so while a newly
-            # entered hand's chirality is unconfirmed the palm/back answer can be
-            # confidently WRONG -- not noisy, wrong, because the thumb has not yet
-            # cleared the frame edge and MediaPipe hallucinates one. Measured: a
-            # back-of-hand hand read as PALM and took a cube rule 3 forbids
-            # (`2026-08-22_190955_t3_remap_production_test`, f664, track age 5).
+            # ⭐ IT WAS NOT REMOVED FOR CONVENIENCE -- the evidence had turned
+            # against it. The block read `is_thumb_outward`, which applies a
+            # HANDEDNESS-DEPENDENT correction and therefore INVERTS on a wrong
+            # label; the label was wrong 10.8% of the time until U7 replaced it
+            # with geometry. And rotation quality with the back of the hand
+            # showing measures BETTER, not worse, on both control takes
+            # (16.8 vs 23.5 deg, and 11.8 vs 24.5 deg).
+            #
+            # ⚠ THIS RE-OPENS N8 (an object stolen by occluding the holding hand):
+            # rule 3 had been suppressing part of it incidentally. The real fix is
+            # the grab trigger, B5 + 4.4 -- do NOT reintroduce a facing gate here.
+            #
+            # ⭐ `_last_known_thumb_outward` SURVIVES on purpose. It gates nothing
+            # now, but it is a real observation, it is RECORDED, and `handinput`
+            # publishes it as `palm_facing`. What was deleted is the armed/disarmed
+            # exception (`_thumb_outward_snap_allowed`), which existed only to
+            # serve this gate -- dead gating state that still updates is how a rule
+            # comes back to life by accident.
+            #
+            # ⭐⭐ U8 STAYS: a snap may not act on a PROVISIONAL chirality.
+            # ⚠ Its ORIGINAL justification was rule-3-shaped (a back-of-hand hand
+            # read as PALM and took a cube rule 3 forbade -- f664 of
+            # `2026-08-22_190955_t3_remap_production_test`), and that specific harm
+            # is gone with the rule. It is kept because chirality ALSO drives the
+            # rotation sign and DR-2, so grabbing on a provisional one still hands
+            # the object a wrong frame. ⚠ Worth re-measuring on its own now that
+            # its first reason has expired -- but not silently dropped in a change
+            # that was not about it.
             #
             # ⚠ SUPPRESS, DO NOT GUESS -- the DR-2 pattern. Three cheaper remedies
             # were measured and all failed: conditioning-gating (the bad frames
@@ -1483,8 +1508,7 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             # this proves too strict in play; do not change it without a take.
             _chirality_ok = _palm_facing_trackers[handedness].chirality_confirmed
             _depth_ok = _hand_depth_valid[handedness] or not palm_depth.SNAP_REQUIRES_VALID_DEPTH
-            can_snap = ((not thumb_outward) or _thumb_outward_snap_allowed[handedness]) \
-                and _chirality_ok and _depth_ok
+            can_snap = _chirality_ok and _depth_ok
             # ⚠ A FREE HAND CARRIES NO DEPTH BASELINE. Dropping it here rather
             # than at each release SITE is the same guard `_cube_holder_track`
             # uses: production releases from several places, and a forgotten one
@@ -1600,8 +1624,8 @@ def _publish_hand_input(hands, poses: Dict[str, dict], now_ms: float) -> None:
     consumes it does.
 
     ⚠ Called AFTER `_record_flush()` so the recording and the event stream describe
-    the same instant, and after every mutation so `snap_allowed` is this frame's
-    final answer rather than a mid-frame one.
+    the same instant, and after every mutation so each field is this frame's final
+    answer rather than a mid-frame one.
 
     ⛔ Exceptions are swallowed HERE and only here. A subscriber's bug must not be
     able to stop a cube from being drawn -- that is the difference between an input
@@ -1624,7 +1648,6 @@ def _publish_hand_input(hands, poses: Dict[str, dict], now_ms: float) -> None:
                 depth_valid=_hand_depth_valid[handedness],
                 orientation=pose.get("orientation"),
                 thumb_outward=_last_known_thumb_outward[handedness],
-                snap_allowed=_thumb_outward_snap_allowed[handedness],
                 edge_on=(palm_geometry.edge_on_measure(landmarks)
                          if pose.get("landmarks_px") else None),
                 landmarks_px=pose.get("landmarks_px"),

@@ -97,7 +97,10 @@ class HandObservation:
     chirality_confirmed: bool = False
     orientation_valid: bool = False
     edge_on: Optional[float] = None
-    snap_allowed: bool = False                  # rule 3's ARMED exception (see actions.grab_ready)
+    # ⛔ `snap_allowed` (rule 3's ARMED exception) was REMOVED 2026-08-25 with
+    # the back-of-hand snap block itself -- owner request, queue F1. A host that
+    # still passes it gets a TypeError rather than a silently ignored field, which
+    # is the intended failure: the rule is gone, not merely defaulted off.
 
     landmarks_px: Optional[Sequence[Sequence[float]]] = None
     world_landmarks: Optional[Sequence[Sequence[float]]] = None
