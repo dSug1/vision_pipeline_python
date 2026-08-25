@@ -20,6 +20,7 @@ works.
 | | |
 |---|---|
 | **`wake_e_drive.py`** | ⚠ **run this first, always.** The capture drive's first access after an idle gap fails; this retries past it |
+| ⭐⭐ **`RecordRatioCalibration.py`** | **ON-AXIS, PAUSED, DECLARED-ANGLE** takes for the 2D-ratio orientation table. Reticle + live off-axis readout in degrees; a frame only counts toward a hold if the palm centre is within tolerance. ⚠ **The on-axis constraint is first-order, not a nicety** — one palm width off centre is already ~10° of viewing-ray tilt. `--axis yaw|pitch --hand left|right` |
 | **`VerifyChiralityFixture.py`** | ⛔ **run after ANY mirroring or handedness change.** End-to-end chirality guard — §13.6.1 once shipped inverted while an "end-to-end confirmed" claim passed |
 | `RecordPerceptionSequence.py` + `record_perception_sequence.bat` | record a **scripted take** (raw MediaPipe output, no gesture logic, no cube) |
 | `RecordRotationDebug.py` + `record_rotation_debug.bat` | record a rotation take |
