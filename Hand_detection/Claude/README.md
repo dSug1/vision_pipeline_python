@@ -49,7 +49,7 @@ specify in its own conversation.
 **Open show-stopper**: the **yaw lean** (~27° at a 60–90° hand turn). Diagnosis
 proven; four remedies A10-rejected.
 **Just landed**: `L1` the rotation lag (τ = 20 ms) · `IS1`–`IS3` the input system
-(⛔ live look owed) · `SEC1` the security audit.
+(✅ shipped, owner ran both tools) · `SEC1` the security audit.
 Full status: [`00_CORE/QUEUE.md`](00_CORE/QUEUE.md)'s YOU-ARE-HERE block.
 Full narrative: [`10_HAND_TRACKING/history/SESSION_LOG.md`](10_HAND_TRACKING/history/SESSION_LOG.md).
 
