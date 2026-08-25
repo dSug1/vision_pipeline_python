@@ -189,7 +189,7 @@ remedy does not — [`10_HAND_TRACKING/spec/ORIENTATION_DIAGNOSIS.md`](../10_HAN
 | [IS1](queue_notes/IS1.md) | Input system — the package boundary | **INPUT** | platform | ✅✅ **SHIPPED 2026-08-25** — owner ran both tools, clean | — |
 | [IS2](queue_notes/IS2.md) | Input system — conformance as DATA | **INPUT** | platform | ✅✅ **SHIPPED 2026-08-25** | IS1 |
 | [IS3](queue_notes/IS3.md) | Input system — the action layer, wired as an OBSERVER | **INPUT** | platform | ✅✅ **SHIPPED 2026-08-25** — owner ran both tools back to back, clean | IS1 |
-| [IS4](queue_notes/IS4.md) | Input system — extract the **interaction** tier | **INPUT** | platform | open, owner-deferred 2026-08-25 | IS3 |
+| [IS4](queue_notes/IS4.md) | Input system — extract the **interaction** tier | **INPUT** | platform | ⭐⭐ **PREREQUISITE OF THE PORT** (2026-08-25) — no longer optional now that both hosts ship; do it in Python **before** any port | IS3 |
 | [SEC1](queue_notes/SEC1.md) | Robustness + security audit of both tools | **SEC** | infra | ✅ done 2026-08-25 — 7 fixes shipped, 51-check suite | — |
 | [SEC2](queue_notes/SEC2.md) | Pin the dependency **tree** | **SEC** | infra | ⭐ half done — environment now recorded; hash-pinning is packaging work | U10, U11 |
 | [SEC3](queue_notes/SEC3.md) | Face detector runs every frame, nothing consumes it | **SEC** | privacy / perf | ⛔ **open — owner's call.** `--face off` exists, default deliberately not flipped | — |

@@ -62,7 +62,7 @@ audit is not exempt from A10 because its other findings are code-shaped.**
 |---|---|
 | [`U10`](../00_CORE/queue_notes/U10.md) | **write it down**: a privacy policy saying exactly what is true, per-store camera declarations (Steam / App Store / Google Play each differ), platform permission strings. ⚠ Not a build — do not start it as one |
 | [`U11`](../00_CORE/queue_notes/U11.md) | shipping-build hygiene: strip dead assets, hard-disable dev capture. At package time |
-| [`N13`](../00_CORE/queue_notes/N13.md) | the licence inventory the commercial release requires |
+| [`N13`](../00_CORE/queue_notes/N13.md) | the licence inventory the commercial release requires. ⭐ **The model licence is now CLOSED** — the Model Card states *"LICENSED UNDER Apache License, Version 2.0"*; evidence in [`evidence/`](evidence/) |
 
 ## Read
 

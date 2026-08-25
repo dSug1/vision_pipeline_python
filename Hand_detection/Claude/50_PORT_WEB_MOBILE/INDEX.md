@@ -71,7 +71,7 @@ Run because the platform decision must be evidenced, not preferred, and because
 | `@mediapipe/tasks-vision` (declared `1.0.0`) | Apache 2.0, same project | ✅ |
 | `three` (declared `0.185.1`) | MIT | ✅ |
 | `mediapipe==0.10.14` (Python, in use) | Apache 2.0 | ✅ |
-| ⚠ **the `.task` MODEL BUNDLE** | **not stated at source** | ⛔ **unverified** |
+| ✅ **the `.task` MODEL BUNDLE** | **Apache License, Version 2.0** | ✅ **the Model Card says so verbatim** |
 
 ⛔⛔ **THE ONE REAL FINDING.** Google's own hand-landmarker page licenses its
 **code samples** Apache 2.0 and its **page content** CC-BY-4.0, and says
@@ -121,6 +121,99 @@ without a hand in view), so runtime speed may well not be the binding constraint
 obvious hybrid and is **not** evaluated here: `WKWebView` has its own
 `getUserMedia` history and needs its own check before it is treated as a way out
 of the iOS PWA problem.
+
+---
+
+## ⭐⭐ TARGET ARCHITECTURE — one core, N hosts (decided 2026-08-25)
+
+**Owner: ship BOTH browser and native.** The architecture below is what keeps
+that from costing double.
+
+### ⛔ The framing that was rejected, and why
+
+*"De-double `Web/` into `Browser/` and `Native/`"* organises by **host**, and
+leaves the logic duplicated inside each one. That is the shape this project has
+already paid for twice: `Local_pc` alone carries the gesture logic in **two**
+places (production + the debug tool), which is why `U6` exists, why
+`parity_replay` exists, and why the debug tool silently lost its snap-highlight
+for two days. Three host folders is that problem cubed — and it is really six,
+because each host grows a debug variant.
+
+### The shape
+
+```
+Hand_detection/
+  Claude/                    docs
+  core/
+    conformance/             ⭐ LANGUAGE-NEUTRAL: vectors + action traces + manifest.
+                                No language owns it; it is the contract between them.
+    python/                  the REFERENCE implementation (estimators + handinput
+                                + the interaction tier, after IS4)
+    typescript/              the PORT
+  hosts/
+    pc_python/               ← Local_pc/ (server + client + debug tool)
+    browser/                 ← Web/, grown up
+    native/                  (new)
+  analysis/                  evidence harnesses — stay Python, read recordings, never port
+  tools/                     recording / troubleshooting — stay Python
+```
+
+### ⭐⭐ The insight that halves the cost
+
+**The platform-specific part is the landmark SOURCE, not the core.** You do not
+need a Swift core and a Kotlin core. `handinput/sources/` is already the seam —
+the package's own doc says a future source *"that owns a MediaPipe instance and
+calls the estimators itself"* fills the same `HandObservation`, and everything
+above that struct is unchanged.
+
+| | browser | native |
+|---|---|---|
+| core (estimators + input + interaction) | **shared TypeScript** | **the same shared TypeScript** |
+| landmark source | `@mediapipe/tasks-vision` (first-party, Apache 2.0) | thin Swift/Kotlin module over MediaPipe's **first-party** iOS/Android SDK |
+| renderer | Three.js | Three.js via GL bindings, or native |
+
+So the real cost is **one core port + two thin sources + two renderers**, not two
+full ports. ⚠ The known risk: there is **no off-the-shelf React Native MediaPipe
+hand-tracking plugin** — those thin modules get written. A landmarks-only bridge
+is small, and it is the only third-party-free path.
+
+### ⛔ The prerequisite: `IS4`
+
+The **interaction tier** (grab-what, arbitration, ownership) is not in the
+portable core today. With two shipping hosts, leaving it out means every host
+reimplements the most defect-dense logic in the project. **`IS4` moves ahead of
+the port** — extract it in Python first, prove it with `parity_replay` where that
+guard already exists.
+
+### The sequence, agreed 2026-08-25
+
+| # | step | note |
+|---|---|---|
+| 1 | **`F1`** — fingertip transform | unchanged; perception-only, so it accrues no throwaway work |
+| 2 | **Platform decision** | right after `F1` |
+| 3 | ⭐ **`IS4`** — interaction tier into the core, **in Python** | before any port; prove with `parity_replay` on the two PC tools |
+| 4 | **Restructure to `core/` + `hosts/`** | same moment — a move is cheapest when the core is freshly defined |
+| 5 | **TypeScript core port**, validated against `core/conformance/` | |
+| 6 | **browser host**, then **native host**, sharing that core | |
+
+⚠ **Nothing moves before step 3.** Restructuring now buys nothing and disturbs a
+working pipeline right before `F1`.
+
+### The two rules, restated for three hosts
+
+⭐ **`N6` scales up.** Shared code is imported, never copied — and across
+languages "imported" becomes **"generated from one core and checked against one
+conformance suite."** `core/conformance/` is already *data*, not Python asserts,
+which is what makes that enforceable.
+
+⭐ **`U6` scales up.** `parity_replay` compares two Python implementations; across
+languages the equivalent is **conformance vectors + the recorded action trace** —
+replay one take through every implementation and require identical events.
+
+⚠ And the gap that bit us on 2026-08-25 stays open and gets worse: **renderer
+parity is unguarded**, and three renderers make it three ways to diverge
+invisibly. Decide at step 4 whether a one-frame render comparison earns its
+weight.
 
 ## ⚠ The platform decision blocks more than itself
 

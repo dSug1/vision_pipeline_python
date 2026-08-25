@@ -12,6 +12,52 @@ block here is superseded and marked so.
 
 ---
 
+## 2026-08-25 (late) — the platform decision is shaped, and the Model Card lands
+
+**Owner decisions**: ship **both** browser and native · the platform decision is
+sequenced **right after `F1`** · **Unity stays out**, re-affirmed rather than
+inherited (*"if ever we will move to Unity, we will do another project to port it
+to C#"*). Architecture and the agreed six-step sequence:
+[`../../50_PORT_WEB_MOBILE/INDEX.md`](../../50_PORT_WEB_MOBILE/INDEX.md).
+
+⭐⭐ **The cost of "both" is not double, and the reason is structural**: the
+platform-specific part is the landmark **SOURCE**, not the core. One TypeScript
+core serves browser *and* native; only a thin per-platform module over
+MediaPipe's first-party SDK differs. `handinput/sources/` was already that seam.
+⛔ Consequence: **`IS4` is promoted from optional to a prerequisite of the port** —
+with two hosts, an interaction tier outside the core means every host
+reimplements snap, arbitration and ownership.
+
+⭐⭐⭐ **AND THE MODEL CARD ARRIVED, which is the substantive event of the night.**
+The owner supplied it as `.docx`; it is archived and transcribed under
+`60_SECURITY_COMPLIANCE/evidence/`. Four findings, in order of how much they
+change what we do:
+
+1. ⛔⛔ **FINGERTIPS ARE THE MODEL'S WORST LANDMARKS, by Google's own evaluation** —
+   *"per-joint MNAE is the smallest at the base of each finger, and gets larger
+   toward the fingertip… prediction is easier around the palm which is more rigid
+   than the fingers."* **`F1` proposes driving the whole transform from exactly
+   those landmarks.** It does not kill the row; it reframes it — tips are noisy
+   *measurements*, not truth. A second, independent reason not to build a rigid
+   fit over palm+tips.
+2. ⭐⭐ **THE WORLD-Z DIAGNOSIS IS CORROBORATED AT SOURCE** — *"metric x, y, z…
+   provided using **synthetic data**, obtained via the GHUM model fitted to 2D
+   point projections"*, and Google evaluates **only 2D** because of it. **The
+   depth channel the yaw lean rides on has never been accuracy-tested by its
+   authors.** Months of measurement here reached the same conclusion.
+3. ⛔ **THE GAME'S CORE ACTION IS LISTED OUT OF SCOPE** — *"Not appropriate for…
+   occlusions. For example **when the hand is holding objects**."* Not a reason
+   to stop; it is the honest ceiling under `T1`/`T2`/`N12`.
+4. ⚠ **Mobile is untested by the model's authors** — *"not tested in
+   'in-the-wild' smartphone camera conditions, including low-end devices, low
+   light, motion blur"*. A port risk with a cheap mitigation: `analysis/` runs on
+   any JSONL take, so a phone take can be scored on day one.
+
+✅ And the licence gap closes: *"LICENSED UNDER — Apache License, Version 2.0."*
+The whole dependency set now clears `N13`.
+
+---
+
 ## 2026-08-25 (night) — ✅ U7 IS CLOSED: the declared known-hand take finally ran
 
 **The last open item on U7 was never a code change — it was a measurement.** The
