@@ -76,8 +76,10 @@ Run because the platform decision must be evidenced, not preferred, and because
 ⛔⛔ **THE ONE REAL FINDING.** Google's own hand-landmarker page licenses its
 **code samples** Apache 2.0 and its **page content** CC-BY-4.0, and says
 **nothing about the model bundle**. Third-party write-ups assert Apache 2.0
-confidently, and the official Model Card is an **image-only PDF with no
-extractable text**. ⭐ The practical read is that it is almost certainly fine —
+confidently, and the official Model Card **could not be read automatically here**
+(7 pages, 18 fonts, CID-encoded text layer -- a naive extractor returns mojibake;
+it needs a real PDF text extractor). ⭐ Archived for the inventory at
+[`../60_SECURITY_COMPLIANCE/evidence/`](../60_SECURITY_COMPLIANCE/evidence/). ⭐ The practical read is that it is almost certainly fine —
 but *"almost certainly"* is not the standard `N13` sets, and `SEC2` already
 records that the licence inventory is owed. **Get this in writing before a store
 submission, not before the platform decision** — it does not block the decision,
