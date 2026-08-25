@@ -1,0 +1,55 @@
+# ⭐ A RECORD OF THE ENVIRONMENT, NOT AN INSTALL FILE (queue SEC2, 2026-08-25).
+#
+# ⛔ launch.bat does NOT read this. `requirements.txt` is still what builds the
+# .venv. This file exists to answer one question that had no answer before:
+# **which exact package set produced the measurements in the corpus?**
+#
+# ⚠⚠ WHY IT WAS WORTH ONE MINUTE. Only two packages are pinned
+# (mediapipe==0.10.14, pygame==2.6.1); the other 24 are transitive from mediapipe
+# and floated freely -- and they have ALREADY drifted well past what mediapipe
+# 0.10.14 was built against: **numpy 2.4.6** and **opencv-contrib-python
+# 5.0.0.93**, both major versions ahead of that release's era. So rebuilding the
+# venv today does not reproduce the environment every recorded number came from,
+# and nothing anywhere said what that environment was. This file says it.
+#
+# ⭐ The reassuring half, and it is why this is not urgent: **numpy appears in 18
+# files and every one of them is a measurement harness.** The shipping path --
+# the estimator layer -- is numpy-free BY CONTRACT (that is what makes it
+# portable), so this is a reproducibility-of-the-RIG risk, not a product risk.
+#
+# ⚠ WHAT THIS IS STILL NOT: hash pinning. `pip install --require-hashes` is the
+# real supply-chain control and it belongs with packaging (U10/U11), where it also
+# generates the licence inventory **N13 requires** -- you cannot licence-audit a
+# dependency set you have never enumerated. See PART_ONE.md §3.1 row SEC2.
+#
+# Regenerate deliberately, in a commit that says why:
+#     .venv/Scripts/python.exe -m pip freeze > requirements.lock.txt
+#
+# Captured 2026-08-25 · Python 3.11.9 · Windows 11 x64
+#
+absl-py==2.5.0
+attrs==26.1.0
+cffi==2.1.0
+contourpy==1.3.3
+cycler==0.12.1
+flatbuffers==25.12.19
+fonttools==4.63.0
+jax==0.10.2
+jaxlib==0.10.2
+kiwisolver==1.5.0
+matplotlib==3.11.1
+mediapipe==0.10.14
+ml_dtypes==0.5.4
+numpy==2.4.6
+opencv-contrib-python==5.0.0.93
+opt_einsum==3.4.0
+packaging==26.2
+pillow==12.3.0
+protobuf==4.25.9
+pycparser==3.0
+pygame==2.6.1
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+scipy==1.17.1
+six==1.17.0
+sounddevice==0.5.5

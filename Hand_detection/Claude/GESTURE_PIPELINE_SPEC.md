@@ -7026,20 +7026,50 @@ rather than believed.
   the owner is about to judge the input system in. **Queue `SEC4`.**
 * ⚠ **Both tools feed MediaPipe a FAKE clock**: `timestamp_ms += 33` per frame, a
   hardcoded 30 fps, while N7 measured the real rate at 15–24 fps. ⭐ They MIRROR
-  each other, so this is not a divergence — but VIDEO mode uses that timestamp for
-  its own temporal tracking, so the tracker is told the hand moves ~2× faster than
-  it does. ⛔ **Not changed here**: it alters what MediaPipe outputs, so it is an
-  A10 measurement with an A/B, not an audit edit. **Queue `SEC5`.**
+  each other, so this is not a divergence, and the timestamps are monotonic so
+  MediaPipe's contract holds. ⛔ **Not changed here**, and see §18.4 — the first
+  version of this bullet asserted a mechanism it had not measured. **Queue `SEC5`.**
 * ⚠ **Only two direct dependencies are pinned** (`mediapipe==0.10.14`,
-  `pygame==2.6.1`) and the transitive tree floats — numpy, opencv-contrib-python,
-  protobuf and the rest. For a build that will be commercialised, that is the
-  realistic supply-chain exposure, and it is also what N13 needs in order to check
-  licences at all. Fix is a hash-pinned lock file, not code. **Queue `SEC2`.**
+  `pygame==2.6.1`); the other **24 are transitive from mediapipe and float**.
+  ⭐ Measured, not assumed: they have **already drifted past what mediapipe 0.10.14
+  was built against** — numpy 2.4.6 and opencv-contrib-python 5.0.0.93. So the
+  environment the corpus's numbers came from was unrecorded and not reproducible.
+  `requirements.lock.txt` now records it; hash pinning and the licence inventory
+  N13 needs belong to packaging. **Queue `SEC2`.**
 * ⚠ `Client.py` connects **at import time**, so its packet-parsing loop cannot be
   unit-tested without a live socket. Verified this time by an ad-hoc fake server
   (below); restructuring it is more risk than value today.
 
-### 18.4 How the fixes were verified
+### 18.4 ⚠⚠ A CORRECTION TO §18.3, MADE THE SAME DAY — and it is the audit's own lesson
+
+The first version of §18.3's `SEC5` bullet said the fake clock means *"the tracker
+is told the hand moves ~2× faster than it does, a plausible contributor to
+landmark-layer jitter."*
+
+⛔ **That is a hypothesis about MediaPipe's internals, and it was written as
+though it were a finding.** In the Tasks API the VIDEO-mode timestamp is primarily
+a **graph packet timestamp**; it is not established that the hand-landmarker graph
+runs any velocity- or time-based filter that would consume it. The honest
+statement is narrower: **the clock is wrong, and the effect on the output is
+unmeasured — quite possibly nil.**
+
+⭐ It is corrected here rather than quietly edited because it is exactly the
+failure this project keeps a rejected-list for: *"a mechanism that sounds right"*
+becoming a recorded fact, and then a build being sequenced around it. An audit is
+not exempt from A10 just because its other findings are code-shaped.
+
+⭐⭐ **AND THE CONSTRAINT THAT MAKES IT INTERESTING: THE CORPUS CANNOT TEST IT.**
+Changing MediaPipe's *input* means re-running MediaPipe, and the corpus holds **no
+image data at all** — 415 files, landmarks only, deliberately. There is nothing to
+replay. ⭐ But a clean test needs no pixels and no new recording format: **two
+`HandLandmarker` instances fed the SAME `mp_image` each frame**, one on `+= 33`,
+one on the measured `tCapture`. Same camera, same frames, one variable, each
+keeping its own tracking state — the multi-arm pattern `update_hands_all` already
+implements, with the second inference free because the pipeline is camera-bound.
+Both arms record through the existing recorder, so `t5h` scores it with no new
+harness. A **null closes the item permanently**, which is worth as much as a hit.
+
+### 18.5 How the fixes were verified
 
 * **`analysis/verify_hardening.py`, 51 checks** — tag traversal (including the
   *property* that any tag joined under the root stays under it), the capture
