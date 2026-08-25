@@ -1,3 +1,15 @@
+# THE PINCH ERA — the gesture pipeline spec, §1–§12, verbatim
+
+> **history · the trained-classifier pipeline and the whole pinch arc**
+> **SOURCE** · `GESTURE_PIPELINE_SPEC.md` §1, §3–§12.7 — extracted verbatim, not edited
+
+⛔ **Archived direction** (2026-08-01) — code, corpus and weights kept, not
+deleted. ⭐ Still worth reading for §12.7's generalised lessons and for the
+four-stage method, which is unchanged and now lives in
+[`../spec/GESTURE_DEV_WORKFLOW.md`](../spec/GESTURE_DEV_WORKFLOW.md).
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/GESTURE_PIPELINE_SPEC.md lines 1-63
      commit : 3d44c9a

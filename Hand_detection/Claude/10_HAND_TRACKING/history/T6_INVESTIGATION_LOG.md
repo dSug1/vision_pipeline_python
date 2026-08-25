@@ -1,3 +1,15 @@
+# T6 — the orientation investigation, verbatim
+
+> **history · §2.0–§2.0.19, twenty sections of measurement on the yaw lean**
+> **SOURCE** · `HANDOFF_T6_ORIENTATION_FROM_2D.md` §2.0–§2.0.19 — extracted verbatim, not edited
+
+⭐⭐ **Read §2.0.4 before proposing any rotation fix** — *where three rejects
+leave it*. The short version: **Horn's flaw is BIAS, every per-frame
+replacement's flaw is VARIANCE.** ⚠ Also here: the Google patents, the
+distortion measured at source, and the anisotropic fit's derivation.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/HANDOFF_T6_ORIENTATION_FROM_2D.md lines 105-1139
      commit : 3d44c9a

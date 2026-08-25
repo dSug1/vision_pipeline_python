@@ -1,3 +1,11 @@
+# The queue table's scaffolding — verbatim
+
+> The header row and phase dividers of the original `PART_ONE.md` §3.1
+> table, kept so the table reassembles exactly. The live queue is
+> [`../QUEUE.md`](../QUEUE.md); each data row is its own file here.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 1158-1160
      commit : 3d44c9a

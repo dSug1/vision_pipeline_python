@@ -1,3 +1,13 @@
+# PART ONE — its title and banners, verbatim
+
+> **history · why Part One exists and how its gesture set changed twice**
+> **SOURCE** · `PART_ONE.md` lines 1–61 — extracted verbatim, not edited
+
+⚠ Its pointer to *§​3.1 is the single build queue* is now
+[`../../00_CORE/QUEUE.md`](../../00_CORE/QUEUE.md).
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 1-61
      commit : 3d44c9a

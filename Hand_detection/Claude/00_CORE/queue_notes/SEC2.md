@@ -1,3 +1,13 @@
+# `SEC2` — Pin the DEPENDENCY TREE, not just the two direct deps
+
+> **Dossier.** The full, unedited history of this queue row.
+> Its one-line status and its place in the order are in
+> [`../QUEUE.md`](../QUEUE.md) — update **both** when it changes.
+>
+> **Status when this file was created (2026-08-25):** ⭐ PART ONE DONE 2026-08-25 (the environment is now RECORDED); the hash-pinned lock is deferred to PACKAGING
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 1249-1249
      commit : 3d44c9a

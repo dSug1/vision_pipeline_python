@@ -1,3 +1,14 @@
+# PIPELINE B — Three.js scene + Blender asset pipeline, verbatim
+
+> **reference · the original 3D asset plan**
+> **SOURCE** · `Specification.md` §8 — extracted verbatim, not edited
+
+⚠ Written in the Part Zero era and **never built**. It is the starting point
+for `U2`, which is postponed on the platform decision — see
+[`INDEX.md`](INDEX.md).
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/Specification.md lines 504-552
      commit : 3d44c9a

@@ -1,3 +1,15 @@
+# THE INPUT SYSTEM — §17, the record
+
+> **live · what was built, what was deliberately not, and why**
+> **SOURCE** · `GESTURE_PIPELINE_SPEC.md` §17–§17.7 — extracted verbatim, not edited
+
+⭐ **§17.2** is the decision that made it shippable in one session (it observes,
+it does not drive); **§17.5** is why the estimator modules were *not* moved into
+the package; **§17.7** is what is explicitly not done. Usage doc:
+`Local_pc/Movement_with_hand_detection/handinput/README.md`.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/GESTURE_PIPELINE_SPEC.md lines 6825-6957
      commit : 3d44c9a

@@ -1,3 +1,15 @@
+# ORIGINAL GOAL & CONSTRAINTS — verbatim
+
+> **reference · the owner's original framing, and the open decisions it listed**
+> **SOURCE** · `Specification.md` §0 and §13, the Part Zero-era build handoff — extracted verbatim, not edited
+
+⚠ **HISTORICAL FRAMING, KEPT FOR THE GOAL.** Two of its constraints have been
+overtaken by events — OpenCV *is* used server-side, and native mobile joined
+the browser as a target. What is current is [`CHARTER.md`](CHARTER.md); what is
+binding is [`CONSTRAINTS.md`](CONSTRAINTS.md).
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/Specification.md lines 10-62
      commit : 3d44c9a

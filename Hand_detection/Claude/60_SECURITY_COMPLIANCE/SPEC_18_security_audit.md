@@ -1,3 +1,15 @@
+# ROBUSTNESS & SECURITY AUDIT — §18
+
+> **live · what was already right, what was fixed, and what was deliberately not**
+> **SOURCE** · `GESTURE_PIPELINE_SPEC.md` §18–§18.5 — extracted verbatim, not edited
+
+⭐ **§18.1 is the compliance evidence** — no network egress anywhere, verifiable
+by absence. ⚠⚠ **§18.4 is a retraction made the same day**, and it carries the
+audit's own lesson: an audit is not exempt from A10 because its findings are
+code-shaped.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/GESTURE_PIPELINE_SPEC.md lines 6958-7088
      commit : 3d44c9a

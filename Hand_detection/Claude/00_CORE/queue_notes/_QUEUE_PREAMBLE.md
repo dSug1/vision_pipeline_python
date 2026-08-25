@@ -1,3 +1,11 @@
+# The queue's preamble — verbatim
+
+> The governing rules of the build queue, exactly as they stood in
+> `PART_ONE.md` §3.1 before the 2026-08-25 reorganisation.
+> The queue itself is now [`../QUEUE.md`](../QUEUE.md).
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 223-276
      commit : 3d44c9a

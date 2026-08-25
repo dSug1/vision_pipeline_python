@@ -1,3 +1,13 @@
+# `SEC5` — Both tools feed MediaPipe a FAKE clock (timestamp_ms += 33)
+
+> **Dossier.** The full, unedited history of this queue row.
+> Its one-line status and its place in the order are in
+> [`../QUEUE.md`](../QUEUE.md) — update **both** when it changes.
+>
+> **Status when this file was created (2026-08-25):** OPEN 2026-08-25 — needs a LIVE two-detector A/B. ⚠ The corpus cannot test it
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 1252-1252
      commit : 3d44c9a

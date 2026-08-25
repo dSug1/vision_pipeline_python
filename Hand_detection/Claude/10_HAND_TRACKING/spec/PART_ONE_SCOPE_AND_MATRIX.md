@@ -1,3 +1,15 @@
+# SCOPE, ARCHITECTURE DECISIONS, AND THE GESTURE/SIGNAL MATRIX
+
+> **live · what Part One covers, its core architecture calls, and the gesture matrix**
+> **SOURCE** · `PART_ONE.md` §1–§3 and the S1–S12 literature index — extracted verbatim, not edited
+
+⭐ §2's architecture decisions — sticky grab, shared-registry arbitration,
+image-space translation, depth-proxy over raw z, quaternion rotation — are
+**unchanged and still apply**. The matrix in §3 is meant to be enriched as
+gestures are added.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 62-222
      commit : 3d44c9a

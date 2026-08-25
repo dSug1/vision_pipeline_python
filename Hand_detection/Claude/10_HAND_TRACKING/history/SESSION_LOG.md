@@ -1,3 +1,15 @@
+# SESSION LOG — every "YOU ARE HERE", newest first
+
+> **history · the narrative of how the project got here, 2026-08-03 → 2026-08-25**
+> **SOURCE** · `PART_ONE.md` §3.1's YOU-ARE-HERE blocks — extracted verbatim, not edited
+
+⭐ **This is where a session's story goes on the day it happens.** The current
+status lives at the top of
+[`../../00_CORE/QUEUE.md`](../../00_CORE/QUEUE.md); everything below the first
+block here is superseded and marked so.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 277-1140
      commit : 3d44c9a

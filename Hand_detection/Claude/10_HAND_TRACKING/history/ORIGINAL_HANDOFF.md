@@ -1,3 +1,13 @@
+# THE ORIGINAL BUILD HANDOFF — verbatim
+
+> **history · prior art, repo layout, Pipeline A, the superseded build order**
+> **SOURCE** · `Specification.md` §1–§3, §7, §11 — extracted verbatim, not edited
+
+⚠ Its build order is **historical** — the queue superseded it. Keep it for the
+prior-art scan and the original architecture reasoning.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/Specification.md lines 1-9
      commit : 3d44c9a

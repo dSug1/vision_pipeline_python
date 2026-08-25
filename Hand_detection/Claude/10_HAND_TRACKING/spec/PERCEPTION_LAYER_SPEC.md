@@ -1,3 +1,15 @@
+# PERCEPTION LAYER — the forward design
+
+> **live · the target architecture, `HandState` v2, modules M0–M10, test protocol**
+> **SOURCE** · `PERCEPTION_LAYER_SPEC.md` header, §0.0, §0.1, and §0–§10 — extracted verbatim, not edited
+
+⚠⚠ **READ §0.1's AMENDMENT LOG BEFORE ANY MODULE BODY.** Several modules were
+amended, re-pointed or killed after they were written, and the log is what says
+which. The dated build record is
+[`../history/PERCEPTION_SESSION_LOG.md`](../history/PERCEPTION_SESSION_LOG.md).
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PERCEPTION_LAYER_SPEC.md lines 1-300
      commit : 3d44c9a

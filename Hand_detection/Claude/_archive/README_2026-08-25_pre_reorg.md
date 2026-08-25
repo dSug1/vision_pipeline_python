@@ -1,3 +1,14 @@
+# THE PRE-REORGANISATION README — verbatim
+
+> **archive · the single-file map as it stood before 2026-08-25**
+> **SOURCE** · `README.md` at commit 3d44c9a — extracted verbatim, not edited
+
+⛔ **SUPERSEDED.** Kept whole as the safety net for the reorganisation: every
+fact in it was redistributed into the new `00_CORE/` and `INDEX.md` files.
+The live router is [`../README.md`](../README.md).
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/README.md lines 1-466
      commit : 3d44c9a

@@ -1,3 +1,15 @@
+# PERCEPTION LAYER — the build log, verbatim
+
+> **history · §0.2–§0.18, every module built or killed and the audit of the nulls**
+> **SOURCE** · `PERCEPTION_LAYER_SPEC.md` §0.2–§0.18 — extracted verbatim, not edited
+
+⭐ Where DR-1, DR-2, M2, M4, M5, M6 and Phase 1's closure actually happened,
+dated. The **forward design** is
+[`../spec/PERCEPTION_LAYER_SPEC.md`](../spec/PERCEPTION_LAYER_SPEC.md); its
+§0.1 amendment log is binding and stayed there.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PERCEPTION_LAYER_SPEC.md lines 301-2189
      commit : 3d44c9a

@@ -1,3 +1,14 @@
+# SNAP / TRANSLATE / ROTATE / RELEASE — §13
+
+> **live · the current gesture set's design, build record and the mesh-generic renderer**
+> **SOURCE** · `GESTURE_PIPELINE_SPEC.md` §13–§13.8 — extracted verbatim, not edited
+
+⭐ The pivot away from pinch, and everything that shipped after it. ⚠ §13.6.1 is
+the production-only inversion that passed an "end-to-end confirmed" claim while
+shipped inverted — the origin of the *automated green is not sufficient* rule.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/GESTURE_PIPELINE_SPEC.md lines 2675-3463
      commit : 3d44c9a

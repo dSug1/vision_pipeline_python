@@ -1,3 +1,15 @@
+# MANIPULATION — §14: translation, depth, the yaw investigation, the lag
+
+> **live · grab-relative translation, Z-axis, 4.2, and the rotation lag fix**
+> **SOURCE** · `GESTURE_PIPELINE_SPEC.md` §14–§14.3.6 — extracted verbatim, not edited
+
+⭐ The most-cited spec file. **§14.1** grab-relative translation · **§14.2** the
+release trigger · **§14.3** Z-axis · **§14.3.4–§14.3.4.11** the yaw-lean
+investigation · **§14.3.5** what 4.2 shipped · **§14.3.6** the lag.
+⚠ When two sections conflict, **the later one wins**.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/GESTURE_PIPELINE_SPEC.md lines 3464-5331
      commit : 3d44c9a

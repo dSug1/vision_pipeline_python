@@ -1,3 +1,14 @@
+# HOW A NEW GESTURE GETS BUILT
+
+> **live · the core discipline, and the four-stage workflow for any new gesture**
+> **SOURCE** · `GESTURE_PIPELINE_SPEC.md` §2 + `PART_ONE.md` §8 — extracted verbatim, not edited
+
+⭐ **Still current and still binding**, even though the pinch gesture it was
+written for is archived. §2's *no heuristic pile-up* is restated in
+[`../../00_CORE/METHOD.md`](../../00_CORE/METHOD.md).
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/GESTURE_PIPELINE_SPEC.md lines 64-80
      commit : 3d44c9a

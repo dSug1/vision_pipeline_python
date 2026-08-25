@@ -1,3 +1,13 @@
+# CAMERA PERMISSIONS & CYBERSECURITY — the original requirements, verbatim
+
+> **reference · the browser permission UX, and the standing security requirement**
+> **SOURCE** · `Specification.md` §9–§10 — extracted verbatim, not edited
+
+⚠ Written before the audience decision. **COPPA/GDPR-K now apply** and the
+requirements below are a floor, not the position — see [`INDEX.md`](INDEX.md).
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/Specification.md lines 553-623
      commit : 3d44c9a

@@ -1,3 +1,13 @@
+# `SEC4` — The DEBUG recorder buffers the whole session in RAM; production streams
+
+> **Dossier.** The full, unedited history of this queue row.
+> Its one-line status and its place in the order are in
+> [`../QUEUE.md`](../QUEUE.md) — update **both** when it changes.
+>
+> **Status when this file was created (2026-08-25):** OPEN 2026-08-25 — deliberately deferred
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 1251-1251
      commit : 3d44c9a

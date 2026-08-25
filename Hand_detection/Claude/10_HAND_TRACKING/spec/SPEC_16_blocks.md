@@ -1,3 +1,15 @@
+# THE BLOCK REPRESENTATION — §15–§16
+
+> **live · the palm transform + finger arcs, and the six-arm anchor decision**
+> **SOURCE** · `GESTURE_PIPELINE_SPEC.md` §15–§16.17 — extracted verbatim, not edited
+
+⭐ **§16.17 is binding**: *a jump both estimators reproduce is already in the
+landmarks* — which is why T1/T2 belong to the landmark layer and no further
+estimator work will touch them. ⚠ **§16.14 is RETRACTED** — the metric was
+self-measuring.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/GESTURE_PIPELINE_SPEC.md lines 5332-6824
      commit : 3d44c9a

@@ -1,3 +1,20 @@
+# THE YAW LEAN — the defect and its cause
+
+> **live · the open show-stopper, and what is proven about it**
+> **SOURCE** · `HANDOFF_T6_ORIENTATION_FROM_2D.md` §1–§2 — extracted verbatim, not edited
+
+⭐⭐ **THE DIAGNOSIS BELOW STILL STANDS. THE REMEDY IT WAS WRITTEN FOR DOES
+NOT** — T6 was built and A10-rejected on 2026-08-24, and the file's own banner
+says so. ⚠⚠ One amendment the banner records: the premise *"the 2D landmarks
+are good"* was an **inference from roll**, and roll was measured with Horn over
+**world** landmarks — T6 was the first direct test of 2D-only pose and it was
+worse. ⛔ Before proposing anything here, read
+[`../REJECTED.md`](../REJECTED.md) and
+[`../history/T6_INVESTIGATION_LOG.md`](../history/T6_INVESTIGATION_LOG.md)
+§2.0.4.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/HANDOFF_T6_ORIENTATION_FROM_2D.md lines 1-104
      commit : 3d44c9a

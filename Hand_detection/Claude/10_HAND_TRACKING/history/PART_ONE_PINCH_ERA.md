@@ -1,3 +1,13 @@
+# PART ONE — the pinch classifier's design basis, verbatim
+
+> **history · the 2026-07-30 state-of-the-art check and its derived result**
+> **SOURCE** · `PART_ONE.md` §6–§6.1 — extracted verbatim, not edited
+
+⛔ The rule-based approach documented here was **abandoned**; pinch itself was
+archived 2026-08-01. Kept as the evidence trail for why.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 1378-1468
      commit : 3d44c9a

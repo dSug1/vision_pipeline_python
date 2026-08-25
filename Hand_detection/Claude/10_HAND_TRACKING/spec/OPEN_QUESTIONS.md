@@ -1,3 +1,14 @@
+# OPEN QUESTIONS — to resolve empirically, not now
+
+> **live · questions deliberately parked until evidence exists**
+> **SOURCE** · `PART_ONE.md` §5 — extracted verbatim, not edited
+
+⚠ These are **not** queue items. A question here becomes a row in
+[`../../00_CORE/QUEUE.md`](../../00_CORE/QUEUE.md) only when it is worth
+measuring.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 1303-1377
      commit : 3d44c9a

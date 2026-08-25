@@ -1,3 +1,16 @@
+# T6 — the proposed fix and what happened to it, verbatim
+
+> **history · the planar-PnP remedy, its costs, and the execution record of all 8 steps**
+> **SOURCE** · `HANDOFF_T6_ORIENTATION_FROM_2D.md` §3, §4, §9 — extracted verbatim, not edited
+
+⛔⛔ **A10-REJECTED 2026-08-24.** Kept for §9's execution record, which holds
+several findings that outlived the remedy: the FOV sensitivity owed to `U12`,
+the inverted convention constant caught only by measurement, and the LCG
+noise-source trap. The **diagnosis** is
+[`../spec/ORIENTATION_DIAGNOSIS.md`](../spec/ORIENTATION_DIAGNOSIS.md).
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/HANDOFF_T6_ORIENTATION_FROM_2D.md lines 1140-1246
      commit : 3d44c9a

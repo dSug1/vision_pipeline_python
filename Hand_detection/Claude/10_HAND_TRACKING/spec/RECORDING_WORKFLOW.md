@@ -1,3 +1,13 @@
+# RECORDING & ANALYSIS WORKFLOW
+
+> **live · how a take is made, annotated and replayed**
+> **SOURCE** · `PART_ONE.md` §7–§7.2 — extracted verbatim, not edited
+
+⚠ Recordings go to `E:`, never `--local`, and the drive must be woken first
+(`wake_e_drive.py`). ⛔ The corpus holds **no image data** — landmarks only.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 1469-1648
      commit : 3d44c9a

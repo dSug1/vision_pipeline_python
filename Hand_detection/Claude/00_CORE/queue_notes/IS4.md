@@ -1,3 +1,13 @@
+# `IS4` — INPUT SYSTEM — extract the INTERACTION tier (grab/hold/arbitration)
+
+> **Dossier.** The full, unedited history of this queue row.
+> Its one-line status and its place in the order are in
+> [`../QUEUE.md`](../QUEUE.md) — update **both** when it changes.
+>
+> **Status when this file was created (2026-08-25):** OPEN, owner-deferred 2026-08-25 — "Not sure if I need this for the moment... If it can be implemented in the future with little change, let's keep it for the future"
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 1253-1253
      commit : 3d44c9a

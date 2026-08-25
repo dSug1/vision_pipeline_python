@@ -1,3 +1,13 @@
+# `T6d` — ⛔ THE ANISOTROPIC 2×2 FIT — live, with sliders
+
+> **Dossier.** The full, unedited history of this queue row.
+> Its one-line status and its place in the order are in
+> [`../QUEUE.md`](../QUEUE.md) — update **both** when it changes.
+>
+> **Status when this file was created (2026-08-25):** ⛔⛔ BUILT, LIVE-TESTED OVER FOUR SESSIONS, AND REJECTED BY THE OWNER 2026-08-24 ("the anisotropic fit bring very minor improvement and I don't want to ship it"). ⭐ Nothing to revert — production never 
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 1186-1186
      commit : 3d44c9a

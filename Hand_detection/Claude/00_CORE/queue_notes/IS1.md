@@ -1,3 +1,13 @@
+# `IS1` — ⭐⭐ INPUT SYSTEM — the package boundary
+
+> **Dossier.** The full, unedited history of this queue row.
+> Its one-line status and its place in the order are in
+> [`../QUEUE.md`](../QUEUE.md) — update **both** when it changes.
+>
+> **Status when this file was created (2026-08-25):** ✅ BUILT 2026-08-25. ⛔ NOT "shipped" until the owner's live look
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 1245-1245
      commit : 3d44c9a

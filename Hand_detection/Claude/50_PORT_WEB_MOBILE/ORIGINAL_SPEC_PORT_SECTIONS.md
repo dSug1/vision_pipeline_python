@@ -1,3 +1,14 @@
+# THE ORIGINAL PORT PLAN — verbatim
+
+> **reference · Part Zero, Part Zero-bis, the landmark data contract, Snap Spectacles**
+> **SOURCE** · `Specification.md` §4, §5, §6, §12 — extracted verbatim, not edited
+
+⭐ §6's **shared landmark data contract** is the ancestor of `HandState` v2 and
+is still the right frame for the port. §12 (Snap Spectacles) is design-for-later
+only, not in scope.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/Specification.md lines 239-362
      commit : 3d44c9a

@@ -1,3 +1,17 @@
+# ROTATION — the acceptance bar, the traps, and the takes
+
+> **live · what any rotation change must beat, and how not to be fooled measuring it**
+> **SOURCE** · `HANDOFF_T6_ORIENTATION_FROM_2D.md` §5–§8 — extracted verbatim, not edited
+
+⭐⭐ **Reusable, and the most useful page here for `F1`.** §5 is the baseline
+table (yaw 14.5° / lean 23.4° / pitch 5.5° / roll 6.7° / jitter p95 25.41°),
+§6 what is already rejected, **§7 the six measurement traps — every one hit for
+real**, §8 which take to use for which axis and which to distrust.
+⚠ Cross-take absolute axis numbers are not comparable: the camera moved between
+recordings. Same-take A/B is sound.
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/HANDOFF_T6_ORIENTATION_FROM_2D.md lines 1247-1373
      commit : 3d44c9a

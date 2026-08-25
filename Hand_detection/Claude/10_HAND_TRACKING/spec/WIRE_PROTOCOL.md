@@ -1,3 +1,15 @@
+# THE WIRE — what the socket actually carries
+
+> **live · the landmark packets between server and client**
+> **SOURCE** · `PART_ONE.md` §4 — extracted verbatim, not edited
+
+⭐ The gap this section originally described is **closed**: the wire *does*
+carry `world_landmarks` (`hands_world`, 21×3 per hand, sent before each
+`hands` packet). Relevant to the port —
+[`../../50_PORT_WEB_MOBILE/INDEX.md`](../../50_PORT_WEB_MOBILE/INDEX.md).
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 1263-1302
      commit : 3d44c9a

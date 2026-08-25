@@ -1,3 +1,13 @@
+# `IS3` — ⭐⭐ INPUT SYSTEM — the action layer, wired into both tools as an OBSERVER
+
+> **Dossier.** The full, unedited history of this queue row.
+> Its one-line status and its place in the order are in
+> [`../QUEUE.md`](../QUEUE.md) — update **both** when it changes.
+>
+> **Status when this file was created (2026-08-25):** ✅ BUILT 2026-08-25. ⛔ Owner's live take still owed
+
+---
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/PART_ONE.md lines 1247-1247
      commit : 3d44c9a
