@@ -49,6 +49,13 @@ WHAT IT WRITES
 is silently dropped: a take that could not hold the axis should be VISIBLE in the
 data, not absent from it.
 
+⭐⭐ IF THE OPERATOR MEASURES THE REAL DISTANCE, PASS IT: `--declared-depth-m`.
+It is optional for the ratio table (ratios are scale-free), but it is the ONLY
+declared depth ground truth in the corpus -- so these six takes would also, for
+free, measure the absolute depth estimator's per-user scale bias, which today is
+absorbed by a deliberately generous GRAB_Z_TOLERANCE_M = 0.15 m and is exactly
+what U12 exists to collapse.
+
 Run from the app root:
     .venv/Scripts/python.exe tools/RecordRatioCalibration.py --axis yaw --hand right
 """
@@ -70,6 +77,7 @@ from mediapipe.tasks.python import vision
 _APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_APP_ROOT, "Resources"))
 import palm_geometry as PG          # noqa: E402  (imported, never copied -- N6)
+import palm_depth as PD              # noqa: E402  (NOMINAL_SPAN_M -- one source)
 import session_paths                # noqa: E402
 
 HAND_LANDMARKER_MODEL_PATH = os.path.join(
@@ -95,9 +103,39 @@ PROMPTS = {
 }
 
 
+def _median(xs):
+    xs = sorted(x for x in xs if x is not None)
+    return round(xs[len(xs) // 2], 4) if xs else None
+
+
 def palm_centre_px(landmarks):
     pts = [landmarks[i] for i in PALM_LANDMARKS]
     return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+
+
+def depth_estimate_m(landmarks, focal):
+    """Rough absolute depth, MIN over the four rigid palm spans.
+
+    ⭐ MIN, not mean or max, and the reason is the whole point of this protocol:
+    foreshortening only ever SHORTENS a projected span, and a shorter span implies
+    a LARGER apparent depth. So the least-foreshortened span is the one giving the
+    SMALLEST depth, and taking the min is what makes this survive a take that
+    deliberately rotates the palm 180 deg. Same trick `palm_depth` uses.
+
+    ⚠ It is an ESTIMATE, for confirming that the three takes really sat at
+    different depths -- not a calibrated measurement. It inherits the assumed
+    60 deg HFOV and anthropometric medians, so it carries a per-user scale bias.
+    """
+    best = None
+    for (a, b), metres in PD.NOMINAL_SPAN_M.items():
+        pa, pb = landmarks[a], landmarks[b]
+        span_px = math.hypot(pa[0] - pb[0], pa[1] - pb[1])
+        if span_px <= 1e-6:
+            continue
+        d = focal * metres / span_px
+        if best is None or d < best:
+            best = d
+    return best
 
 
 def main():
@@ -115,6 +153,12 @@ def main():
     ap.add_argument("--camera-index", type=int, default=0)
     ap.add_argument("--tag", type=str, default="",
                     help="suffix appended to the session name")
+    ap.add_argument("--declared-depth-m", type=float, default=None,
+                    help="MEASURED palm-to-lens distance in metres, declared "
+                         "BEFORE recording. Optional for the ratio table (ratios "
+                         "are scale-free) but valuable: it is the only DECLARED "
+                         "depth ground truth in the corpus, so it also measures "
+                         "the absolute estimator's per-user scale bias (U12).")
     ap.add_argument("--note", type=str, default="")
     args = ap.parse_args()
 
@@ -161,7 +205,7 @@ def main():
     try:
         for pi, ang in enumerate(angles):
             collected, arming, started_at = 0, True, None
-            off_hist = []
+            off_hist, depth_hist = [], []
             while True:
                 ok, frame = cap.read()
                 if not ok:
@@ -174,7 +218,7 @@ def main():
                 res = detector.detect_for_video(
                     mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb), int(t_ms))
 
-                hands, off, alpha, on_axis = [], None, None, False
+                hands, off, alpha, on_axis, depth = [], None, None, False, None
                 for idx in range(len(res.hand_landmarks)):
                     lms = [[round(lm.x * width, 2), round(lm.y * height, 2)]
                            for lm in res.hand_landmarks[idx]]
@@ -190,6 +234,7 @@ def main():
                     off = math.hypot(px - cx, py - cy)
                     alpha = math.degrees(math.atan(off / focal))
                     on_axis = off <= args.tolerance_px
+                    depth = depth_estimate_m(hands[0]["landmarks"], focal)
 
                 # ---- capture ------------------------------------------------
                 if not arming and len(hands) == 1:
@@ -202,10 +247,13 @@ def main():
                         "palm_offset_px": round(off, 2),
                         "alpha_deg": round(alpha, 3),
                         "on_axis": bool(on_axis),
+                        "depth_est_m": round(depth, 4) if depth else None,
                     })
                     if on_axis:
                         collected += 1
                         off_hist.append(off)
+                        if depth:
+                            depth_hist.append(depth)
 
                 # ---- HUD ----------------------------------------------------
                 colour = ((0, 200, 0) if on_axis else
@@ -218,6 +266,9 @@ def main():
                     px, py = palm_centre_px(hands[0]["landmarks"])
                     cv2.circle(frame, (int(px), int(py)), 5, colour, -1)
                     cv2.line(frame, (int(cx), int(cy)), (int(px), int(py)), colour, 1)
+                    if depth:
+                        cv2.putText(frame, "depth ~%.2f m" % depth, (width - 190, height - 40),
+                                    cv2.FONT_HERSHEY_DUPLEX, 0.6, (220, 220, 220), 1, cv2.LINE_AA)
                     cv2.putText(frame, "off %4.0f px = %4.1f deg" % (off, alpha),
                                 (10, height - 40), cv2.FONT_HERSHEY_DUPLEX, 0.6,
                                 colour, 1, cv2.LINE_AA)
@@ -250,7 +301,8 @@ def main():
                 if k == ord('r'):                      # redo: drop this position
                     if started_at is not None:
                         del records[started_at:]
-                    collected, arming, started_at, off_hist = 0, True, None, []
+                    collected, arming, started_at = 0, True, None
+                    off_hist, depth_hist = [], []
                 if k == ord('n'):
                     break
                 if (not arming) and collected >= args.hold_frames:
@@ -259,13 +311,17 @@ def main():
             if aborted:
                 break
             off_hist.sort()
+            depth_hist.sort()
+            med_d = depth_hist[len(depth_hist) // 2] if depth_hist else None
             per_pos.append({
                 "position_index": pi,
                 "declared_deg": ang,
                 "on_axis_frames": collected,
                 "median_offset_px": round(off_hist[len(off_hist) // 2], 2) if off_hist else None,
+                "median_depth_est_m": round(med_d, 4) if med_d else None,
             })
-            print("[calib]   %6.1f deg -> %d on-axis frames" % (ang, collected))
+            print("[calib]   %6.1f deg -> %d on-axis frames%s"
+                  % (ang, collected, ("   depth ~%.2f m" % med_d) if med_d else ""))
     finally:
         cap.release()
         cv2.destroyAllWindows()
@@ -294,6 +350,9 @@ def main():
         "positions": per_pos,
         "frames": len(records),
         "frames_on_axis": on_axis_total,
+        "median_depth_est_m": _median([r["depth_est_m"] for r in records
+                                       if r["on_axis"] and r.get("depth_est_m")]),
+        "declared_depth_m": args.declared_depth_m,
         "tolerance_px": args.tolerance_px,
         "tolerance_deg": round(math.degrees(math.atan(args.tolerance_px / focal)), 3),
         "focal_px": round(focal, 2),
@@ -314,6 +373,13 @@ def main():
     with open(os.path.join(outdir, "meta.json"), "w", encoding="utf-8") as fh:
         json.dump(meta, fh, indent=1)
 
+    est = meta["median_depth_est_m"]
+    if args.declared_depth_m and est:
+        ratio = est / args.declared_depth_m
+        print("[calib] depth  declared %.3f m   estimated %.3f m   ratio %.3f"
+              % (args.declared_depth_m, est, ratio))
+        print("[calib]        ⭐ that ratio IS the absolute estimator's scale bias "
+              "at this depth (U12).")
     print("[calib] wrote %d frames (%d on-axis) to" % (len(records), on_axis_total))
     print("        %s" % outdir)
     if aborted:

@@ -19,8 +19,8 @@ covered by §2.0.12, contrary to a first reading that has been retracted. It use
 truth from **declared paused positions**. §2.0.9 refuted transfer but binned by the
 *fitted* (corrupted) pose, so its verdict does not carry. ⭐ The prize is large:
 bias **22.6°** at 60–80° yaw against a within-bin scatter of **5.0°**. ⭐ The
-decisive transfer test needs **no new recording and no pipeline change**. Full
-method, numbers and acceptance bar:
+runnable protocol is [`RATIO_TABLE_CALIBRATION_PROTOCOL.md`](RATIO_TABLE_CALIBRATION_PROTOCOL.md).
+Full method, numbers and acceptance bar:
 [`../../00_CORE/queue_notes/T6.md`](../../00_CORE/queue_notes/T6.md).
 
 ⭐ **The one durable good-news finding**: MediaPipe's tilt **direction** is right

@@ -57,6 +57,7 @@ yaw/palm-sink · `N12` pitch-crossing jump · `U5` occlusion coast.
 | know what to build next | [`../00_CORE/QUEUE.md`](../00_CORE/QUEUE.md) |
 | understand the yaw lean before touching rotation | [`spec/ORIENTATION_DIAGNOSIS.md`](spec/ORIENTATION_DIAGNOSIS.md) |
 | **measure** a rotation change without being fooled | [`spec/ROTATION_ACCEPTANCE_AND_TRAPS.md`](spec/ROTATION_ACCEPTANCE_AND_TRAPS.md) — the baselines to beat, the six traps, the takes to use |
+| ⭐ **record the 2D-ratio calibration takes** (queued after `F1`) | [`spec/RATIO_TABLE_CALIBRATION_PROTOCOL.md`](spec/RATIO_TABLE_CALIBRATION_PROTOCOL.md) — six on-axis paused takes, the analysis order, the decision thresholds |
 | know how snap / translate / rotate / release behave and why | [`spec/SPEC_13_snap_rotate_release.md`](spec/SPEC_13_snap_rotate_release.md), [`spec/SPEC_14_manipulation.md`](spec/SPEC_14_manipulation.md) |
 | know the forward design below the gesture layer | [`spec/PERCEPTION_LAYER_SPEC.md`](spec/PERCEPTION_LAYER_SPEC.md) — ⚠ **read its §0.1 amendment log before any module body** |
 | know the block representation (palm transform + finger arcs) | [`spec/SPEC_16_blocks.md`](spec/SPEC_16_blocks.md) |
