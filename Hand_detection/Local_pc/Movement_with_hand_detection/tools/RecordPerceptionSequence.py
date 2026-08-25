@@ -47,6 +47,11 @@ import argparse
 import hashlib
 import json
 import os
+
+# ⚠ MOVED 2026-08-25 out of the app root. This file's own directory is no
+# longer the app root, so every path that used to resolve from `__file__`
+# now goes one level up. Behaviour is unchanged; only the anchor moved.
+_APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import time
 from datetime import datetime
 
@@ -61,9 +66,9 @@ CAPTURE_ROOT = r"E:\Python\Recordings for vision_pipeline\Recordings_perception_
 # WinError 21). Sessions are self-contained folders of plain JSONL + meta.json,
 # so a local capture can simply be moved to CAPTURE_ROOT later -- nothing in the
 # analysis path depends on which root a session came from.
-LOCAL_CAPTURE_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "perception_recordings")
+LOCAL_CAPTURE_ROOT = os.path.join(_APP_ROOT, "perception_recordings")
 HAND_LANDMARKER_MODEL_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
+    _APP_ROOT,
     "..", "Python_Server_MediaPipe_vision_pipeline", "Resources", "hand_landmarker.task",
 )
 

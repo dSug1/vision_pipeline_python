@@ -2,6 +2,11 @@ import glob
 import json
 import os
 
+# ⚠ MOVED 2026-08-25 out of the app root. This file's own directory is no
+# longer the app root, so every path that used to resolve from `__file__`
+# now goes one level up. Behaviour is unchanged; only the anchor moved.
+_APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 import numpy as np
 
 from Resources import classifier, features
@@ -25,7 +30,7 @@ from Resources import classifier, features
 # archived under .../Unsuccessful_grip/, not read here anymore.
 RECORDINGS_DIR = r"E:\Python\Recordings for vision_pipeline\Pencil_style_grip"
 WEIGHTS_OUT = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "Resources", "pinch_classifier_weights.json"
+    _APP_ROOT, "Resources", "pinch_classifier_weights.json"
 )
 
 BASE_CLASS_PREFIXES = {

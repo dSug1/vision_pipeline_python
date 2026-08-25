@@ -20,13 +20,18 @@ import glob
 import json
 import math
 import os
+
+# ⚠ MOVED 2026-08-25 out of the app root. This file's own directory is no
+# longer the app root, so every path that used to resolve from `__file__`
+# now goes one level up. Behaviour is unchanged; only the anchor moved.
+_APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import time
 
 import numpy as np
 
 ROOTS = [
     r"E:\Python\Recordings for vision_pipeline\Recordings_perception_layer\sessions",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "perception_recordings", "sessions"),
+    os.path.join(_APP_ROOT, "perception_recordings", "sessions"),
 ]
 
 PALM = [0, 5, 9, 13, 17]

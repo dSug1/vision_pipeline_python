@@ -86,8 +86,9 @@ it to `sys.path`). A copy is how the two drift.
 | ⭐ tune **rotation smoothing** by feel | `LiveSnapDebug.py` — a second window carries one slider, `SMOOTH ms` (0–150; its integer **is** τ in ms). `--smooth-ms N`, `--no-sliders` |
 | ⭐ the **lag A/B** — same estimator, smoothing the only difference | `LiveSnapDebug.py --slerp-ab` — panel 1 = the old per-frame 0.35, panel 2 = the τ slider |
 | debug + record (cube visible, writes a session) | `LiveSnapDebug.py --record` |
-| record a scripted take | `record_perception_sequence.bat <sequence>` |
-| ⚠ wake the capture drive first | `wake_e_drive.py` |
+| record a scripted take | `tools
+ecord_perception_sequence.bat <sequence>` |
+| ⚠ wake the capture drive first | `tools/wake_e_drive.py` |
 | record a PRODUCTION session | `VISION_RECORD=1 VISION_RECORD_TAG=<name> … PythonApp_Main.py` — same JSONL schema, so every `analysis/` harness reads it |
 | the ownership A/B rig | `LiveSnapDebug.py --ownership-ab` — two panels, label vs track keying |
 | record live action events from either tool | `HANDINPUT_TRACE=1 HANDINPUT_TRACE_TAG=<name> …` |
@@ -103,7 +104,7 @@ capture handles inside *one* process both succeed; that is a misleading test.)
 |---|---|
 | golden vectors | `analysis/verify_*.py` — **26 suites, all passing** |
 | the two tools must still agree | `analysis/parity_replay.py` |
-| chirality guard (after ANY mirroring/handedness change) | `VerifyChiralityFixture.py` |
+| chirality guard (after ANY mirroring/handedness change) | `tools/VerifyChiralityFixture.py` |
 | the audit's guards (tags, camera stalls, loopback, the `meta` clamp) | `analysis/verify_hardening.py` — 51 checks |
 | the INPUT SYSTEM: boundary, contract, vectors, action trace | `analysis/verify_handinput.py` — 96 checks |
 | the two recorders must not drift apart | `analysis/verify_recorder_parity.py` |

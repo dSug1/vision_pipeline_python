@@ -19,7 +19,7 @@ REM             known_right_palm, known_right_back, known_left_palm,
 REM             known_left_back
 REM ============================================================
 
-cd /d "%~dp0"
+cd /d "%~dp0" & cd ..
 
 if not exist ".venv\Scripts\python.exe" (
     echo [perception] No local .venv found ^-- run launch.bat first to set it up.
@@ -41,7 +41,7 @@ if not "%2"=="" set EXTRA=%EXTRA% --duration %2
 if not "%3"=="" set EXTRA=%EXTRA% --camera-index %3
 if /I "%4"=="local" set EXTRA=%EXTRA% --local
 
-".venv\Scripts\python.exe" "RecordPerceptionSequence.py" --sequence %SEQ%%EXTRA%
+".venv\Scripts\python.exe" "tools\RecordPerceptionSequence.py" --sequence %SEQ%%EXTRA%
 
 echo.
 echo [perception] Sequence finished.

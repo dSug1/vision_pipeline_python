@@ -61,6 +61,11 @@ import ast
 import glob
 import json
 import os
+
+# ⚠ MOVED 2026-08-25 out of the app root. This file's own directory is no
+# longer the app root, so every path that used to resolve from `__file__`
+# now goes one level up. Behaviour is unchanged; only the anchor moved.
+_APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import sys
 
 # MUST be set before pygame is imported anywhere down the chain. See the module
@@ -68,7 +73,7 @@ import sys
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
+_HERE = _APP_ROOT
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 

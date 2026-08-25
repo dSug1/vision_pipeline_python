@@ -12,7 +12,7 @@ REM    e.g. record_translation_pivot_debug.bat 12 0 large_pos1
 REM         record_translation_pivot_debug.bat 12 0 small_pos2
 REM ============================================================
 
-cd /d "%~dp0"
+cd /d "%~dp0" & cd ..
 
 if not exist ".venv\Scripts\python.exe" (
     echo [record_translation_pivot_debug] No local .venv found ^-- run launch.bat first to set it up.
@@ -29,7 +29,7 @@ if "%CAMERA%"=="" set CAMERA=0
 set LABEL=%3
 if "%LABEL%"=="" set LABEL=session
 
-".venv\Scripts\python.exe" "RecordTranslationPivotDebug.py" --duration %DURATION% --camera-index %CAMERA% --label %LABEL%
+".venv\Scripts\python.exe" "tools\RecordTranslationPivotDebug.py" --duration %DURATION% --camera-index %CAMERA% --label %LABEL%
 
 echo.
 echo [record_translation_pivot_debug] Recording session finished.

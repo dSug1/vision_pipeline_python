@@ -18,7 +18,7 @@ REM  no keypress needed once it starts, since your hands are busy
 REM  performing the gesture, not at the keyboard.
 REM ============================================================
 
-cd /d "%~dp0"
+cd /d "%~dp0" & cd ..
 
 if not exist ".venv\Scripts\python.exe" (
     echo [record] No local .venv found ^-- run launch.bat first to set it up.

@@ -1,5 +1,10 @@
 import argparse
 import os
+
+# ⚠ MOVED 2026-08-25 out of the app root. This file's own directory is no
+# longer the app root, so every path that used to resolve from `__file__`
+# now goes one level up. Behaviour is unchanged; only the anchor moved.
+_APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import time
 from collections import deque
 
@@ -33,11 +38,11 @@ from tune_event_layer import WINDOWED_REPRESENTATIONS
 # how the classifier/event layer actually feel in real use.
 
 HAND_LANDMARKER_MODEL_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
+    _APP_ROOT,
     "..", "Python_Server_MediaPipe_vision_pipeline", "Resources", "hand_landmarker.task",
 )
 WEIGHTS_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "Resources", "pinch_classifier_weights.json"
+    _APP_ROOT, "Resources", "pinch_classifier_weights.json"
 )
 
 # Wall-clock seconds, not a frame count -- matches how DELTA_WINDOW_MS is

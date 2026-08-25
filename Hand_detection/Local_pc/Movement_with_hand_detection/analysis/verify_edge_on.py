@@ -14,6 +14,13 @@ BASE = (r"c:\Users\sugit\Documents\_scripts_persos\_Persos\vision_pipeline_pytho
         r"\Hand_detection\Local_pc\Movement_with_hand_detection")
 sys.path.insert(0, BASE)
 
+# ⚠ AnalyzePerceptionSequences.py MOVED 2026-08-25 to tools/ -- it is not run by the debug tool
+# or by production, so it no longer sits in the app root. Kept re-runnable:
+# a harness that cannot be re-run is an assertion, not a finding.
+_MOVED_2026_08_25 = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tools')
+sys.path.insert(0, _MOVED_2026_08_25)
+
 from AnalyzePerceptionSequences import edge_on as analyser_edge_on
 from Resources import palm_geometry
 

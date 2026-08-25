@@ -141,6 +141,11 @@ import datetime
 import json
 import math
 import os
+
+# ⚠ MOVED 2026-08-25 out of the app root. This file's own directory is no
+# longer the app root, so every path that used to resolve from `__file__`
+# now goes one level up. Behaviour is unchanged; only the anchor moved.
+_APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import random
 import sys
 import time
@@ -150,7 +155,7 @@ import cv2
 import numpy as np
 import mediapipe as mp
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+BASE = _APP_ROOT
 sys.path.insert(0, BASE)
 
 # ⚠ Imported, never copied -- the whole cube/snap/translate/rotate logic, the

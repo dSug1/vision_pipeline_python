@@ -21,7 +21,7 @@ REM  Press 'q' in a window to end each take. Takes are ~45-60 s each,
 REM  about 5 minutes in total. Recording is automatic.
 REM ============================================================
 
-cd /d "%~dp0"
+cd /d "%~dp0" & cd ..
 
 if not exist ".venv\Scripts\python.exe" (
     echo [record] No local .venv found ^-- run launch.bat first to set it up.

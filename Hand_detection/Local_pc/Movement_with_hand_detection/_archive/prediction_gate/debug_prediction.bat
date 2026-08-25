@@ -52,7 +52,7 @@ REM  visible is the trade: fewer transient cube spikes against ~83 ms of
 REM  hold at every flag.
 REM ============================================================
 
-cd /d "%~dp0"
+cd /d "%~dp0" & cd ..\..
 
 if not exist ".venv\Scripts\python.exe" (
     echo [debug_prediction] No local .venv found ^-- run launch.bat first to set it up.
@@ -68,11 +68,11 @@ REM A/B you just watched can be re-measured offline under any gate config.
 REM Pass explicit arguments to opt out.
 set "FIRSTARG=%~1"
 if "%FIRSTARG%"=="" (
-    ".venv\Scripts\python.exe" "LiveBlockPredictionDebug.py" --record
+    ".venv\Scripts\python.exe" "_archive\prediction_gate\LiveBlockPredictionDebug.py" --record
 ) else if "%FIRSTARG:~0,1%"=="-" (
-    ".venv\Scripts\python.exe" "LiveBlockPredictionDebug.py" %*
+    ".venv\Scripts\python.exe" "_archive\prediction_gate\LiveBlockPredictionDebug.py" %*
 ) else (
-    ".venv\Scripts\python.exe" "LiveBlockPredictionDebug.py" --camera-index %*
+    ".venv\Scripts\python.exe" "_archive\prediction_gate\LiveBlockPredictionDebug.py" --camera-index %*
 )
 
 echo.

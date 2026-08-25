@@ -1,6 +1,11 @@
 import argparse
 import json
 import os
+
+# ⚠ MOVED 2026-08-25 out of the app root. This file's own directory is no
+# longer the app root, so every path that used to resolve from `__file__`
+# now goes one level up. Behaviour is unchanged; only the anchor moved.
+_APP_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 import time
 from datetime import datetime
 
@@ -30,7 +35,7 @@ from mediapipe.tasks.python import vision
 # external drive.
 import LiveSnapDebug as debug_tool
 
-RECORDINGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rotation_debug_recordings")
+RECORDINGS_DIR = os.path.join(_APP_ROOT, "rotation_debug_recordings")
 
 DEFAULT_DURATION_S = 8.0
 COUNTDOWN_S = 3.0

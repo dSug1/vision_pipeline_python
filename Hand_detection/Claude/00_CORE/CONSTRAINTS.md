@@ -65,7 +65,7 @@ merely default-off (`U11`).
 ## 6. ⚠ Recordings live on `E:` — never `--local`
 
 `E:\Python\Recordings for vision_pipeline\…`. Wake the drive first
-(`wake_e_drive.py`); its first access after an idle gap fails.
+(`tools/wake_e_drive.py`); its first access after an idle gap fails.
 
 ⛔ **The corpus contains NO image data** (`N14`) — landmarks only, established by
 exhaustive scan. So **no image-based model can ever be run over it

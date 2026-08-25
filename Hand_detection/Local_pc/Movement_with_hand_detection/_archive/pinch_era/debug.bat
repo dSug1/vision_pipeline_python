@@ -8,7 +8,7 @@ REM  Usage: debug.bat [camera_index]   e.g. debug.bat 1
 REM  Press 'q' or close the window to stop.
 REM ============================================================
 
-cd /d "%~dp0"
+cd /d "%~dp0" & cd ..\..
 
 if not exist ".venv\Scripts\python.exe" (
     echo [debug] No local .venv found ^-- run launch.bat first to set it up.
@@ -17,9 +17,9 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 if "%~1"=="" (
-    ".venv\Scripts\python.exe" "LiveGestureDebug.py"
+    ".venv\Scripts\python.exe" "_archive\pinch_era\LiveGestureDebug.py"
 ) else (
-    ".venv\Scripts\python.exe" "LiveGestureDebug.py" --camera-index %1
+    ".venv\Scripts\python.exe" "_archive\pinch_era\LiveGestureDebug.py" --camera-index %1
 )
 
 echo.

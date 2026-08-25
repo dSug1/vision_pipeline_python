@@ -154,7 +154,7 @@ remedy does not — [`10_HAND_TRACKING/spec/ORIENTATION_DIAGNOSIS.md`](../10_HAN
 | [N1](queue_notes/N1.md) | Re-express frame-count parameters in ms | HAND | perception | queued | — |
 | [N2](queue_notes/N2.md) | Pose-normalise the bone residual | HAND | perception | queued | 1.4 |
 | [N3](queue_notes/N3.md) | Speed-threshold sweep | HAND | perception | ✅ closed 2026-08-03 | — |
-| [N4](queue_notes/N4.md) | External capture drive is unreliable | CORE | infra | open — `wake_e_drive.py` retries past it | — |
+| [N4](queue_notes/N4.md) | External capture drive is unreliable | CORE | infra | open — `tools/wake_e_drive.py` retries past it | — |
 | [N5](queue_notes/N5.md) | DR-1 track-level hand identity | HAND | perception | ✅ done, live-confirmed 2026-08-02 | — |
 | [N6](queue_notes/N6.md) | Shared modules are imported, never copied | CORE | infra | ✅ resolved 2026-08-02 — now a binding rule | — |
 | [N7](queue_notes/N7.md) | Drive `ASSUMED_FPS` from measured timing | HAND | perception | ✅ done 2026-08-04 (DR-1); ⚠ `palm_geometry` still to do | 0.1 |

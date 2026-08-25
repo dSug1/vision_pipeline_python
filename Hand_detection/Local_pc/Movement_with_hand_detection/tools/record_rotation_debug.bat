@@ -11,7 +11,7 @@ REM    e.g. record_rotation_debug.bat 8
 REM         record_rotation_debug.bat 10 1
 REM ============================================================
 
-cd /d "%~dp0"
+cd /d "%~dp0" & cd ..
 
 if not exist ".venv\Scripts\python.exe" (
     echo [record_rotation_debug] No local .venv found ^-- run launch.bat first to set it up.
@@ -25,7 +25,7 @@ if "%DURATION%"=="" set DURATION=8
 set CAMERA=%2
 if "%CAMERA%"=="" set CAMERA=0
 
-".venv\Scripts\python.exe" "RecordRotationDebug.py" --duration %DURATION% --camera-index %CAMERA%
+".venv\Scripts\python.exe" "tools\RecordRotationDebug.py" --duration %DURATION% --camera-index %CAMERA%
 
 echo.
 echo [record_rotation_debug] Recording session finished.

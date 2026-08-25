@@ -45,6 +45,13 @@ try:
 except (AttributeError, ValueError):
     pass
 
+# ⚠ LiveBlockPredictionDebug.py MOVED 2026-08-25 to _archive/prediction_gate/ -- it is not run by the debug tool
+# or by production, so it no longer sits in the app root. Kept re-runnable:
+# a harness that cannot be re-run is an assertion, not a finding.
+_MOVED_2026_08_25 = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '_archive/prediction_gate')
+sys.path.insert(0, _MOVED_2026_08_25)
+
 import LiveBlockPredictionDebug as T
 import LiveSnapDebug as LSD
 from Resources import hand_blocks as HB
