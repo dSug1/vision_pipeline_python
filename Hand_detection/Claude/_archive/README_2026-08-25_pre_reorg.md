@@ -1,3 +1,11 @@
+<!-- PROVENANCE — machine-extracted, NOT edited.
+     source : Claude/README.md lines 1-466
+     commit : 3d44c9a
+     when   : 2026-08-25 documentation reorganisation
+     Every byte between the VERBATIM markers below is exactly as it was.
+     The map of the new folder layout is Claude/README.md.
+-->
+<!-- VERBATIM-BEGIN -->
 # READ THIS FIRST — the map
 
 ⭐ **This file is the single entry point.** It is a MAP, not a copy: it tells you
@@ -464,3 +472,4 @@ what was measured, what was deliberately not done, and what would close it:
 ⚠⚠ **The reusable lesson from `SEC5` is the audit's own**: a mechanism that
 sounds right became a recorded fact for one day. **An audit is not exempt from
 A10 because its other findings are code-shaped.**
+<!-- VERBATIM-END -->

@@ -1,0 +1,1011 @@
+{
+ "note": "Every byte of the six source files below was tiled into the ranges in 'ranges' and written verbatim between <!-- VERBATIM-BEGIN --> / <!-- VERBATIM-END --> markers in the destination files. _archive/migration/verify_split.py rebuilds each source from those blocks; it reproduced all six byte-for-byte before the originals were removed. The sha256 values here let that be re-checked at any time.",
+ "originals": {
+  "GESTURE_PIPELINE_SPEC.md": {
+   "bytes": 442541,
+   "sha256": "d0dd3ec963f88b0706d6f93c5232bc7c5802bd680296c9b5d95a4e859a62496e"
+  },
+  "HANDOFF_T6_ORIENTATION_FROM_2D.md": {
+   "bytes": 94264,
+   "sha256": "d025bff54a3b041aa3b4c2cab41a7d7f11653fc6b8efe8d46f57480c24ef4afd"
+  },
+  "PART_ONE.md": {
+   "bytes": 307007,
+   "sha256": "5a68d93b669f98339ee4d99bebf5f1505f4d711ae82279558876d1cd1004a633"
+  },
+  "PERCEPTION_LAYER_SPEC.md": {
+   "bytes": 230959,
+   "sha256": "21ac4409dca5dbf967143662b28dd1d0b6f3c2dff4f8663c5e002af773803878"
+  },
+  "README.md": {
+   "bytes": 36762,
+   "sha256": "7205af72015de38c82bf393486916d382281c9f7c7bd91f1581d97dc20aefbf0"
+  },
+  "Specification.md": {
+   "bytes": 48925,
+   "sha256": "df754158e15969db749a44ac95c8180db0010101f49bdaeef1e864c1ffd379bc"
+  }
+ },
+ "ranges": [
+  {
+   "src": "GESTURE_PIPELINE_SPEC.md",
+   "first": 1,
+   "last": 63,
+   "dest": "10_HAND_TRACKING/history/SPEC_01_12_pinch_era.md",
+   "block": 0
+  },
+  {
+   "src": "GESTURE_PIPELINE_SPEC.md",
+   "first": 64,
+   "last": 80,
+   "dest": "10_HAND_TRACKING/spec/GESTURE_DEV_WORKFLOW.md",
+   "block": 0
+  },
+  {
+   "src": "GESTURE_PIPELINE_SPEC.md",
+   "first": 81,
+   "last": 2674,
+   "dest": "10_HAND_TRACKING/history/SPEC_01_12_pinch_era.md",
+   "block": 1
+  },
+  {
+   "src": "GESTURE_PIPELINE_SPEC.md",
+   "first": 2675,
+   "last": 3463,
+   "dest": "10_HAND_TRACKING/spec/SPEC_13_snap_rotate_release.md",
+   "block": 0
+  },
+  {
+   "src": "GESTURE_PIPELINE_SPEC.md",
+   "first": 3464,
+   "last": 5331,
+   "dest": "10_HAND_TRACKING/spec/SPEC_14_manipulation.md",
+   "block": 0
+  },
+  {
+   "src": "GESTURE_PIPELINE_SPEC.md",
+   "first": 5332,
+   "last": 6824,
+   "dest": "10_HAND_TRACKING/spec/SPEC_16_blocks.md",
+   "block": 0
+  },
+  {
+   "src": "GESTURE_PIPELINE_SPEC.md",
+   "first": 6825,
+   "last": 6957,
+   "dest": "40_INPUT_SYSTEM/SPEC_17_input_system.md",
+   "block": 0
+  },
+  {
+   "src": "GESTURE_PIPELINE_SPEC.md",
+   "first": 6958,
+   "last": 7088,
+   "dest": "60_SECURITY_COMPLIANCE/SPEC_18_security_audit.md",
+   "block": 0
+  },
+  {
+   "src": "PERCEPTION_LAYER_SPEC.md",
+   "first": 1,
+   "last": 300,
+   "dest": "10_HAND_TRACKING/spec/PERCEPTION_LAYER_SPEC.md",
+   "block": 0
+  },
+  {
+   "src": "PERCEPTION_LAYER_SPEC.md",
+   "first": 301,
+   "last": 2189,
+   "dest": "10_HAND_TRACKING/history/PERCEPTION_SESSION_LOG.md",
+   "block": 0
+  },
+  {
+   "src": "PERCEPTION_LAYER_SPEC.md",
+   "first": 2190,
+   "last": 3901,
+   "dest": "10_HAND_TRACKING/spec/PERCEPTION_LAYER_SPEC.md",
+   "block": 1
+  },
+  {
+   "src": "HANDOFF_T6_ORIENTATION_FROM_2D.md",
+   "first": 1,
+   "last": 104,
+   "dest": "10_HAND_TRACKING/spec/ORIENTATION_DIAGNOSIS.md",
+   "block": 0
+  },
+  {
+   "src": "HANDOFF_T6_ORIENTATION_FROM_2D.md",
+   "first": 105,
+   "last": 1139,
+   "dest": "10_HAND_TRACKING/history/T6_INVESTIGATION_LOG.md",
+   "block": 0
+  },
+  {
+   "src": "HANDOFF_T6_ORIENTATION_FROM_2D.md",
+   "first": 1140,
+   "last": 1246,
+   "dest": "10_HAND_TRACKING/history/T6_REJECTED_REMEDY.md",
+   "block": 0
+  },
+  {
+   "src": "HANDOFF_T6_ORIENTATION_FROM_2D.md",
+   "first": 1247,
+   "last": 1373,
+   "dest": "10_HAND_TRACKING/spec/ROTATION_ACCEPTANCE_AND_TRAPS.md",
+   "block": 0
+  },
+  {
+   "src": "HANDOFF_T6_ORIENTATION_FROM_2D.md",
+   "first": 1374,
+   "last": 1492,
+   "dest": "10_HAND_TRACKING/history/T6_REJECTED_REMEDY.md",
+   "block": 1
+  },
+  {
+   "src": "Specification.md",
+   "first": 1,
+   "last": 9,
+   "dest": "10_HAND_TRACKING/history/ORIGINAL_HANDOFF.md",
+   "block": 0
+  },
+  {
+   "src": "Specification.md",
+   "first": 10,
+   "last": 62,
+   "dest": "00_CORE/ORIGINAL_GOAL_AND_CONSTRAINTS.md",
+   "block": 0
+  },
+  {
+   "src": "Specification.md",
+   "first": 63,
+   "last": 238,
+   "dest": "10_HAND_TRACKING/history/ORIGINAL_HANDOFF.md",
+   "block": 1
+  },
+  {
+   "src": "Specification.md",
+   "first": 239,
+   "last": 362,
+   "dest": "50_PORT_WEB_MOBILE/ORIGINAL_SPEC_PORT_SECTIONS.md",
+   "block": 0
+  },
+  {
+   "src": "Specification.md",
+   "first": 363,
+   "last": 503,
+   "dest": "10_HAND_TRACKING/history/ORIGINAL_HANDOFF.md",
+   "block": 2
+  },
+  {
+   "src": "Specification.md",
+   "first": 504,
+   "last": 552,
+   "dest": "30_OBJECTS_3D/ORIGINAL_SPEC_PIPELINE_B.md",
+   "block": 0
+  },
+  {
+   "src": "Specification.md",
+   "first": 553,
+   "last": 623,
+   "dest": "60_SECURITY_COMPLIANCE/ORIGINAL_SPEC_PRIVACY.md",
+   "block": 0
+  },
+  {
+   "src": "Specification.md",
+   "first": 624,
+   "last": 666,
+   "dest": "10_HAND_TRACKING/history/ORIGINAL_HANDOFF.md",
+   "block": 3
+  },
+  {
+   "src": "Specification.md",
+   "first": 667,
+   "last": 719,
+   "dest": "50_PORT_WEB_MOBILE/ORIGINAL_SPEC_PORT_SECTIONS.md",
+   "block": 1
+  },
+  {
+   "src": "Specification.md",
+   "first": 720,
+   "last": 728,
+   "dest": "00_CORE/ORIGINAL_GOAL_AND_CONSTRAINTS.md",
+   "block": 1
+  },
+  {
+   "src": "README.md",
+   "first": 1,
+   "last": 466,
+   "dest": "_archive/README_2026-08-25_pre_reorg.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1,
+   "last": 61,
+   "dest": "10_HAND_TRACKING/history/PART_ONE_ORIGINS.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 62,
+   "last": 222,
+   "dest": "10_HAND_TRACKING/spec/PART_ONE_SCOPE_AND_MATRIX.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 223,
+   "last": 276,
+   "dest": "00_CORE/queue_notes/_QUEUE_PREAMBLE.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 277,
+   "last": 1140,
+   "dest": "10_HAND_TRACKING/history/SESSION_LOG.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1141,
+   "last": 1157,
+   "dest": "10_HAND_TRACKING/spec/PART_ONE_SCOPE_AND_MATRIX.md",
+   "block": 1
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1158,
+   "last": 1160,
+   "dest": "00_CORE/queue_notes/_TABLE_SCAFFOLD.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1161,
+   "last": 1161,
+   "dest": "00_CORE/queue_notes/0.2.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1162,
+   "last": 1162,
+   "dest": "00_CORE/queue_notes/0.1.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1163,
+   "last": 1163,
+   "dest": "00_CORE/queue_notes/0.2b.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1164,
+   "last": 1164,
+   "dest": "00_CORE/queue_notes/0.3.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1165,
+   "last": 1165,
+   "dest": "00_CORE/queue_notes/0.4.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1166,
+   "last": 1166,
+   "dest": "00_CORE/queue_notes/0.5.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1167,
+   "last": 1167,
+   "dest": "00_CORE/queue_notes/_TABLE_SCAFFOLD.md",
+   "block": 1
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1168,
+   "last": 1168,
+   "dest": "00_CORE/queue_notes/1.1.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1169,
+   "last": 1169,
+   "dest": "00_CORE/queue_notes/1.2.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1170,
+   "last": 1170,
+   "dest": "00_CORE/queue_notes/1.3.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1171,
+   "last": 1171,
+   "dest": "00_CORE/queue_notes/1.4.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1172,
+   "last": 1172,
+   "dest": "00_CORE/queue_notes/1.5.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1173,
+   "last": 1173,
+   "dest": "00_CORE/queue_notes/1.6.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1174,
+   "last": 1174,
+   "dest": "00_CORE/queue_notes/1.7.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1175,
+   "last": 1175,
+   "dest": "00_CORE/queue_notes/_TABLE_SCAFFOLD.md",
+   "block": 2
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1176,
+   "last": 1176,
+   "dest": "00_CORE/queue_notes/2.1.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1177,
+   "last": 1177,
+   "dest": "00_CORE/queue_notes/2.2.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1178,
+   "last": 1178,
+   "dest": "00_CORE/queue_notes/2.3.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1179,
+   "last": 1179,
+   "dest": "00_CORE/queue_notes/_TABLE_SCAFFOLD.md",
+   "block": 3
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1180,
+   "last": 1180,
+   "dest": "00_CORE/queue_notes/R.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1181,
+   "last": 1181,
+   "dest": "00_CORE/queue_notes/_TABLE_SCAFFOLD.md",
+   "block": 4
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1182,
+   "last": 1182,
+   "dest": "00_CORE/queue_notes/T1.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1183,
+   "last": 1183,
+   "dest": "00_CORE/queue_notes/T2.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1184,
+   "last": 1184,
+   "dest": "00_CORE/queue_notes/T3.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1185,
+   "last": 1185,
+   "dest": "00_CORE/queue_notes/T4.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1186,
+   "last": 1186,
+   "dest": "00_CORE/queue_notes/T6d.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1187,
+   "last": 1187,
+   "dest": "00_CORE/queue_notes/T6.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1188,
+   "last": 1188,
+   "dest": "00_CORE/queue_notes/L1.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1189,
+   "last": 1189,
+   "dest": "00_CORE/queue_notes/F1.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1190,
+   "last": 1190,
+   "dest": "00_CORE/queue_notes/T7.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1191,
+   "last": 1191,
+   "dest": "00_CORE/queue_notes/_TABLE_SCAFFOLD.md",
+   "block": 5
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1192,
+   "last": 1192,
+   "dest": "00_CORE/queue_notes/B1.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1193,
+   "last": 1193,
+   "dest": "00_CORE/queue_notes/B2.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1194,
+   "last": 1194,
+   "dest": "00_CORE/queue_notes/B3.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1195,
+   "last": 1195,
+   "dest": "00_CORE/queue_notes/B4.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1196,
+   "last": 1196,
+   "dest": "00_CORE/queue_notes/B5.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1197,
+   "last": 1197,
+   "dest": "00_CORE/queue_notes/B6.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1198,
+   "last": 1198,
+   "dest": "00_CORE/queue_notes/B7.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1199,
+   "last": 1199,
+   "dest": "00_CORE/queue_notes/B8.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1200,
+   "last": 1200,
+   "dest": "00_CORE/queue_notes/_TABLE_SCAFFOLD.md",
+   "block": 6
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1201,
+   "last": 1201,
+   "dest": "00_CORE/queue_notes/3.1.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1202,
+   "last": 1202,
+   "dest": "00_CORE/queue_notes/3.2.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1203,
+   "last": 1203,
+   "dest": "00_CORE/queue_notes/3.3.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1204,
+   "last": 1204,
+   "dest": "00_CORE/queue_notes/3.4.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1205,
+   "last": 1205,
+   "dest": "00_CORE/queue_notes/_TABLE_SCAFFOLD.md",
+   "block": 7
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1206,
+   "last": 1206,
+   "dest": "00_CORE/queue_notes/D0.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1207,
+   "last": 1207,
+   "dest": "00_CORE/queue_notes/D1.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1208,
+   "last": 1208,
+   "dest": "00_CORE/queue_notes/D2.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1209,
+   "last": 1209,
+   "dest": "00_CORE/queue_notes/D3.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1210,
+   "last": 1210,
+   "dest": "00_CORE/queue_notes/D4.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1211,
+   "last": 1211,
+   "dest": "00_CORE/queue_notes/_TABLE_SCAFFOLD.md",
+   "block": 8
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1212,
+   "last": 1212,
+   "dest": "00_CORE/queue_notes/4.1.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1213,
+   "last": 1213,
+   "dest": "00_CORE/queue_notes/4.2.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1214,
+   "last": 1214,
+   "dest": "00_CORE/queue_notes/4.3.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1215,
+   "last": 1215,
+   "dest": "00_CORE/queue_notes/4.4.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1216,
+   "last": 1216,
+   "dest": "00_CORE/queue_notes/_TABLE_SCAFFOLD.md",
+   "block": 9
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1217,
+   "last": 1217,
+   "dest": "00_CORE/queue_notes/5.1.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1218,
+   "last": 1218,
+   "dest": "00_CORE/queue_notes/5.2.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1219,
+   "last": 1219,
+   "dest": "00_CORE/queue_notes/5.3.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1220,
+   "last": 1220,
+   "dest": "00_CORE/queue_notes/5.4.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1221,
+   "last": 1221,
+   "dest": "00_CORE/queue_notes/5.5.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1222,
+   "last": 1222,
+   "dest": "00_CORE/queue_notes/_TABLE_SCAFFOLD.md",
+   "block": 10
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1223,
+   "last": 1223,
+   "dest": "00_CORE/queue_notes/N1.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1224,
+   "last": 1224,
+   "dest": "00_CORE/queue_notes/N2.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1225,
+   "last": 1225,
+   "dest": "00_CORE/queue_notes/N3.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1226,
+   "last": 1226,
+   "dest": "00_CORE/queue_notes/N4.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1227,
+   "last": 1227,
+   "dest": "00_CORE/queue_notes/N5.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1228,
+   "last": 1228,
+   "dest": "00_CORE/queue_notes/N6.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1229,
+   "last": 1229,
+   "dest": "00_CORE/queue_notes/N7.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1230,
+   "last": 1230,
+   "dest": "00_CORE/queue_notes/N8.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1231,
+   "last": 1231,
+   "dest": "00_CORE/queue_notes/N9.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1232,
+   "last": 1232,
+   "dest": "00_CORE/queue_notes/N10.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1233,
+   "last": 1233,
+   "dest": "00_CORE/queue_notes/N11.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1234,
+   "last": 1234,
+   "dest": "00_CORE/queue_notes/N12.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1235,
+   "last": 1235,
+   "dest": "00_CORE/queue_notes/N13.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1236,
+   "last": 1236,
+   "dest": "00_CORE/queue_notes/N14.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1237,
+   "last": 1237,
+   "dest": "00_CORE/queue_notes/N15.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1238,
+   "last": 1238,
+   "dest": "00_CORE/queue_notes/N16.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1239,
+   "last": 1239,
+   "dest": "00_CORE/queue_notes/N17.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1240,
+   "last": 1240,
+   "dest": "00_CORE/queue_notes/N18.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1241,
+   "last": 1241,
+   "dest": "00_CORE/queue_notes/_TABLE_SCAFFOLD.md",
+   "block": 11
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1242,
+   "last": 1242,
+   "dest": "00_CORE/queue_notes/U1.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1243,
+   "last": 1243,
+   "dest": "00_CORE/queue_notes/U2.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1244,
+   "last": 1244,
+   "dest": "00_CORE/queue_notes/U3.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1245,
+   "last": 1245,
+   "dest": "00_CORE/queue_notes/IS1.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1246,
+   "last": 1246,
+   "dest": "00_CORE/queue_notes/IS2.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1247,
+   "last": 1247,
+   "dest": "00_CORE/queue_notes/IS3.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1248,
+   "last": 1248,
+   "dest": "00_CORE/queue_notes/SEC1.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1249,
+   "last": 1249,
+   "dest": "00_CORE/queue_notes/SEC2.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1250,
+   "last": 1250,
+   "dest": "00_CORE/queue_notes/SEC3.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1251,
+   "last": 1251,
+   "dest": "00_CORE/queue_notes/SEC4.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1252,
+   "last": 1252,
+   "dest": "00_CORE/queue_notes/SEC5.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1253,
+   "last": 1253,
+   "dest": "00_CORE/queue_notes/IS4.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1254,
+   "last": 1254,
+   "dest": "00_CORE/queue_notes/U7.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1255,
+   "last": 1255,
+   "dest": "00_CORE/queue_notes/U4.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1256,
+   "last": 1256,
+   "dest": "00_CORE/queue_notes/U6.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1257,
+   "last": 1257,
+   "dest": "00_CORE/queue_notes/U8.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1258,
+   "last": 1258,
+   "dest": "00_CORE/queue_notes/U9.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1259,
+   "last": 1259,
+   "dest": "00_CORE/queue_notes/U10.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1260,
+   "last": 1260,
+   "dest": "00_CORE/queue_notes/U11.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1261,
+   "last": 1261,
+   "dest": "00_CORE/queue_notes/U12.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1262,
+   "last": 1262,
+   "dest": "00_CORE/queue_notes/U5.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1263,
+   "last": 1302,
+   "dest": "10_HAND_TRACKING/spec/WIRE_PROTOCOL.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1303,
+   "last": 1377,
+   "dest": "10_HAND_TRACKING/spec/OPEN_QUESTIONS.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1378,
+   "last": 1468,
+   "dest": "10_HAND_TRACKING/history/PART_ONE_PINCH_ERA.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1469,
+   "last": 1648,
+   "dest": "10_HAND_TRACKING/spec/RECORDING_WORKFLOW.md",
+   "block": 0
+  },
+  {
+   "src": "PART_ONE.md",
+   "first": 1649,
+   "last": 1707,
+   "dest": "10_HAND_TRACKING/spec/GESTURE_DEV_WORKFLOW.md",
+   "block": 1
+  }
+ ]
+}
