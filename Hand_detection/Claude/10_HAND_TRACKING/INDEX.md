@@ -37,10 +37,13 @@ fact and is why an earlier pass wrongly recommended accepting it.
 **The diagnosis is proven twice over and still stands; the remedy is not found.**
 → [`spec/ORIENTATION_DIAGNOSIS.md`](spec/ORIENTATION_DIAGNOSIS.md)
 
-**Next build: `F1`** — the cube's transform (position *and* rotation) from the
-**fingertips**, palm demoted to support. Owner will specify it in its own
-conversation. ⛔ Its one trap is already in `REJECTED.md`: **not** a rigid-body
-fit over palm+tips.
+**Next build: `F1` — ⭐ now SPECIFIED and ready to build.** The cube's transform
+(position *and* rotation) from the **fingertips**, palm demoted to support. The
+owner specified it 2026-08-25 →
+[`spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](spec/F1_FINGERTIP_TRANSFORM_SPEC.md).
+⛔ Its one trap is in `REJECTED.md` and the design is built around it: **not** a
+rigid-body fit over palm+tips — the tips enter as a **deformation in the palm's
+frame**, feeding a bounded trim that is **bit-identical to shipped Horn at gain 0**.
 
 **Open, deliberately not next**: the two-hand swap · `N8` cube-stealing
 palm-first (routed to `B5`) · `T1` back-of-hand rotation quality · `T4`
@@ -55,6 +58,7 @@ yaw/palm-sink · `N12` pitch-crossing jump · `U5` occlusion coast.
 | ⛔ **check whether an idea has already failed** | [`REJECTED.md`](REJECTED.md) — **do this first, it is the cheapest page here** |
 | know the processes, modules and every command | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
 | know what to build next | [`../00_CORE/QUEUE.md`](../00_CORE/QUEUE.md) |
+| ⭐⭐ **build `F1`** — the transform from the fingertips | [`spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](spec/F1_FINGERTIP_TRANSFORM_SPEC.md) — the owner's specification, the palm-frame-deformation design, the acceptance bar, the build order |
 | understand the yaw lean before touching rotation | [`spec/ORIENTATION_DIAGNOSIS.md`](spec/ORIENTATION_DIAGNOSIS.md) |
 | **measure** a rotation change without being fooled | [`spec/ROTATION_ACCEPTANCE_AND_TRAPS.md`](spec/ROTATION_ACCEPTANCE_AND_TRAPS.md) — the baselines to beat, the six traps, the takes to use |
 | ⭐ **record the 2D-ratio calibration takes** (queued after `F1`) | [`spec/RATIO_TABLE_CALIBRATION_PROTOCOL.md`](spec/RATIO_TABLE_CALIBRATION_PROTOCOL.md) — six on-axis paused takes, the analysis order, the decision thresholds |

@@ -26,10 +26,16 @@ The binding one, restated: **A10 — measure or revert.**
 
 ## ⭐⭐⭐ YOU ARE HERE (2026-08-25)
 
-**NEXT BUILD IS `F1`** — the cube's transform (Vector3 position *and* rotation
-quaternion) driven by the **fingertips**, palm demoted to a support role. Owner
-will specify it in its own conversation. ⛔ Its one trap: **not** a rigid-body
-fit over palm+tips — that arm is A10-dead twice.
+**NEXT BUILD IS `F1`, AND IT IS NOW SPECIFIED** — the cube's transform (Vector3
+position *and* rotation quaternion) driven by the **fingertips**, palm demoted to
+a support role. The owner specified it 2026-08-25; the design, acceptance bar and
+build order are
+[`10_HAND_TRACKING/spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](../10_HAND_TRACKING/spec/F1_FINGERTIP_TRANSFORM_SPEC.md).
+⛔ Its one trap is respected rather than avoided: **not** a rigid-body fit over
+palm+tips — the tips enter as a **deformation in the palm's frame**, feeding a
+bounded trim that is **bit-identical to shipped Horn at gain 0**.
+⭐ **Step 0 is measurement, and it is free** — four questions the existing corpus
+answers today, before a constant is chosen.
 
 Last three landings: **`L1`** rotation lag fixed and shipped (τ = 20 ms);
 **`IS1`–`IS3`** the input system ✅ **SHIPPED** (`handinput/`, observes-only) —
@@ -93,7 +99,7 @@ remedy does not — [`10_HAND_TRACKING/spec/ORIENTATION_DIAGNOSIS.md`](../10_HAN
 | [T6](queue_notes/T6.md) | Orientation from 2D (planar PnP) | HAND | perception | ⛔⛔ **built and A10-rejected 2026-08-24** — yaw got worse; code in `estimators()` only. ⭐⭐ **A 2D-RATIO-TABLE correction is OPEN and NOT covered by §2.0.12** (owner 2026-08-25) — clean depth-free index, yaw/pitch kept separate, declared ground truth. §2.0.9's refutation used a *contaminated* index so it does not carry. **Protocol + tool are ready**: `spec/RATIO_TABLE_CALIBRATION_PROTOCOL.md`, `tools/RecordRatioCalibration.py`. Owner runs it after `F1` | 4.2 |
 | [T6d](queue_notes/T6d.md) | The anisotropic 2×2 fit | HAND | perception | ⛔⛔ built, 4 live sessions, **owner-rejected 2026-08-24** — production never ran it | T6 |
 | [L1](queue_notes/L1.md) | Rotation smoothing — a **time constant** | HAND | responsiveness | ✅✅ **shipped 2026-08-24**, owner-settled live at τ = 20 ms | — |
-| [F1](queue_notes/F1.md) | ⭐⭐⭐ **The cube's transform from the FINGERTIPS** | HAND | perception + gesture | ⭐⭐ **NEXT BUILD** — owner to specify in its own conversation | L1 ✅ |
+| [F1](queue_notes/F1.md) | ⭐⭐⭐ **The cube's transform from the FINGERTIPS** | HAND | perception + gesture | ⭐⭐⭐ **SPECIFIED 2026-08-25, READY TO BUILD** — owner's 8 points captured; design is a **palm-frame deformation + bounded trim** (gain 0 ⇒ bit-identical to Horn), 1€ filter for jitter (⛔ not a deadband), back-of-hand snap rule REMOVED (⚠ re-opens `N8`), τ = 20 ms untouched. ⛔ Contact-point arm dropped on a **patent** finding. Step 0 is 4 free corpus measurements → [`spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](../10_HAND_TRACKING/spec/F1_FINGERTIP_TRANSFORM_SPEC.md) | L1 ✅ |
 | [T7](queue_notes/T7.md) | World-referenced rotation (tilted camera) | HAND | perception | designed 2026-08-24 — ⭐ ships **with U12**, not after T6; no-op until then | T6, U12 |
 
 ## Phase B — the block representation
