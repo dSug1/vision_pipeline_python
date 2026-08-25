@@ -13,10 +13,14 @@ worse. ⛔ Before proposing anything here, read
 [`../history/T6_INVESTIGATION_LOG.md`](../history/T6_INVESTIGATION_LOG.md)
 §2.0.4.
 
-⭐⭐ **A 2D-BENCHMARK CORRECTION PATH IS QUEUED FOR REVISIT AFTER `F1`** (owner,
-2026-08-25). It maps onto §2.0.11/§2.0.12, which closed the regression line **for
-the features they tried** — and `F1` supplies **finger configuration**, one of the
-four they left untested. Mapping, measurements and the acceptance bar:
+⭐⭐ **A 2D-RATIO-TABLE CORRECTION IS OPEN** (owner, 2026-08-25) — and it is **NOT**
+covered by §2.0.12, contrary to a first reading that has been retracted. It uses a
+**clean depth-free index**, keeps **yaw and pitch separate**, and takes ground
+truth from **declared paused positions**. §2.0.9 refuted transfer but binned by the
+*fitted* (corrupted) pose, so its verdict does not carry. ⭐ The prize is large:
+bias **22.6°** at 60–80° yaw against a within-bin scatter of **5.0°**. ⭐ The
+decisive transfer test needs **no new recording and no pipeline change**. Full
+method, numbers and acceptance bar:
 [`../../00_CORE/queue_notes/T6.md`](../../00_CORE/queue_notes/T6.md).
 
 ⭐ **The one durable good-news finding**: MediaPipe's tilt **direction** is right
