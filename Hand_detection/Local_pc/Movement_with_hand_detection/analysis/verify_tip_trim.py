@@ -98,7 +98,18 @@ def section_gate():
     got = t.update(make_hand(curl=25.0), IDQ, 0.09, 100.0, gain=0.0)
     check("gain 0 returns the IDENTITY OBJECT (not a rebuilt one)",
           got is tip_trim.IDENTITY)
-    check("module default TRIM_GAIN is 0.0 -- it lands OFF",
+    # ⛔ THIS ASSERTED A POLICY, NOT A PROPERTY, AND THE POLICY HAS BEEN RETIRED.
+    # It pinned "the trim LANDS OFF until the live take raises it" -- correct while
+    # `F1` was unconfirmed, and false from 2026-08-26, when the owner ran four rig
+    # sessions and switched it on in production.
+    # ⭐ The real invariant is the one below and it is unchanged and still tested:
+    # at gain 0 the trim returns the IDENTITY OBJECT, so the off state is
+    # bit-identical to shipped Horn. That is what makes the switch revert-free; the
+    # default's VALUE is a decision, and a fixture must not freeze a decision.
+    # ⛔ The shipped value went 0.0 -> 1.0 -> 0.0 in one day, and the round trip is
+    # the useful part: §10.1 measured the trim non-monotonic in the declared finger
+    # angle at EVERY gain and clamp, so it was removed. See `tip_trim.TRIM_GAIN`.
+    check("TRIM_GAIN is the owner's shipped value (0.0 -- removed 2026-08-26)",
           tip_trim.TRIM_GAIN == 0.0, str(tip_trim.TRIM_GAIN))
     t2 = tip_trim.TipTrim()
     check("an unfrozen trim is identity even at full gain",

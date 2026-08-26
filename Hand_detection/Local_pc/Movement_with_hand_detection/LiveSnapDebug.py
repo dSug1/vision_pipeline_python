@@ -2094,6 +2094,16 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                 # on the track's death, and NOT on the first frame the hand is
                 # missing. See `_update_snap_depth` for the divergence this fixed.
                 _snap_depth_trackers[handedness].reset()
+                # ⛔⛔ AND THE TIP TRIM, for the same reason and found the same way.
+                # Production resets it in TWO places -- the free-hand branch AND
+                # here, on the track's death -- and this tool had only the first.
+                # A trim reference outlived the hand it was fitted to, so a new
+                # hand's first frames were trimmed against a DEAD hand's fingers.
+                # ⚠ Invisible until `TRIM_GAIN` went to 1.0 in production: at gain
+                # 0 the trim is the identity object and there is nothing to carry
+                # over. `parity_replay` reported it as a 9.6 deg orientation gap
+                # the moment the switch was flipped.
+                state.tip_trims[handedness].reset()
                 # ⛔⛔ MISSING UNTIL 2026-08-22 -- production always did this and
                 # this tool never did. Owner, live: "when the palm exits and comes
                 # back with back, the back hand still grabs the cube for a short
@@ -2666,7 +2676,17 @@ def main():
         if args.f1_rig:
             # ⭐ The rig exists to show the trim, so it starts with the trim ON --
             # while the ordinary single-arm view stays at production's 0.
-            cv2.setTrackbarPos("TRIM gain %", SLIDER_WIN, TRIM_GAIN_MAX_PCT)
+            # ⛔ NO LONGER RAISED. Until 2026-08-26 the rig pushed this to 100% so
+            # panel 3 would exercise the trim. The trim was REMOVED that evening --
+            # §10.1 measured it non-monotonic in the declared finger angle at every
+            # gain and clamp -- so forcing it on here would make the rig demonstrate
+            # a feature the game no longer has, and the owner would be judging
+            # something that is not the product.
+            # ⭐ Panel 3 now equals panel 2 by construction. Kept rather than
+            # deleted: restoring one line is how the trim gets re-tested if the
+            # fingertip fit is ever made non-rigid (spec §3.1's open door).
+            #   cv2.setTrackbarPos("TRIM gain %", SLIDER_WIN, TRIM_GAIN_MAX_PCT)
+            pass
 
     timestamp_ms = 0
     print("[LiveSnapDebug] Running -- press 'q' or close a window to stop.")

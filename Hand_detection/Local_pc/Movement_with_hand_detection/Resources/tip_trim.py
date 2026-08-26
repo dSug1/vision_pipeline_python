@@ -61,6 +61,41 @@ IDENTITY = (1.0, 0.0, 0.0, 0.0)
 
 # ⛔ LANDS OFF. The live take raises it; `analysis/verify_f1_trim.py` pins that 0.0
 # is bit-identical to shipped Horn.
+# ⭐⭐ SWITCHED ON IN PRODUCTION 2026-08-26, owner's instruction. The clamp
+# (`TRIM_MAX_DEG` below) is what keeps this a TRIM rather than a follow: the raw
+# tip residual is 75-95 deg and the applied correction is bounded to 10.
+# ⛔⛔ REMOVED 2026-08-26 -- the owner asked for this twice and was right twice.
+#
+# §10.1's take settled it with a measurement instead of an argument. Swept
+# OFFLINE over the recorded take (no re-recording needed -- it stores landmarks),
+# the fine channel's response to a DECLARED 10/20/40 deg finger rotation was:
+#
+#     gain 1.00  clamp  10 :  10.00  9.89 10.09   SATURATED -- always the clamp
+#     gain 1.00  clamp 180 :  15.71 12.56 20.29   NON-MONOTONIC
+#     gain 0.25  clamp 180 :   3.94  3.09  5.11   NON-MONOTONIC
+#     gain 0.05  clamp 180 :   0.79  0.62  1.02   NON-MONOTONIC
+#
+# ⛔ THERE IS NO SETTING AT WHICH IT IS A FINE CONTROL. At 20 deg of finger
+# rotation it moves the object LESS than at 10. The clamp was not a safety bound
+# on a working signal -- it was MASKING a signal that does not track the fingers,
+# by pinning every answer to the clamp value.
+#
+# ⭐ The cause was already in the record: Step 0's M2 measured the rigid tip
+# residual swinging 75-95 deg within half a second, and named it -- "it is the
+# rigid model being wrong. Horn's best rigid explanation of a non-rigid 5-point
+# set tumbles". The trim's raw input is that tumbling, not finger rotation.
+#
+# ⚠ AND IT RETRACTS A CLAIM I MADE FROM THE RIG: the 21.2 deg lean against the
+# shipped 32.9 deg was NOT the fingers steering the cube. It was a CONSTANT 10 deg
+# offset that happened to sit in a helpful direction. A lower number is not a
+# better answer when the thing producing it cannot be aimed.
+#
+# ⭐ 0.0 is the TESTED off state, not merely a small value: `update()` returns
+# the IDENTITY OBJECT here, so the pipeline is byte-for-byte shipped Horn and the
+# whole module is inert. `TRIM_MAX_DEG` below is moot while this is 0.
+# ⭐ `F1` STEP 2 IS UNAFFECTED and stays on: the fingertip GRIP point, `A1`'s
+# re-centring walk and the depth anchoring are a separate channel the owner
+# accepted live, and none of them route through this file.
 TRIM_GAIN = 0.0
 
 # The hard bound on the trim, in degrees. ⚠ Set from the census (see the header),

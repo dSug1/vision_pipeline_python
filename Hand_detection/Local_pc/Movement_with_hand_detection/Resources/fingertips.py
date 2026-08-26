@@ -74,7 +74,14 @@ TIPS = (4, 8, 12, 16, 20)
 # (False, True, True), and an explicit value always wins over this global -- so
 # the three-window comparison still works with this off, and the ordinary
 # single-arm debug view now matches production again.
-USE_TIP_BARYCENTER = False
+# ⭐⭐ SWITCHED ON IN PRODUCTION 2026-08-26, owner's instruction, after four
+# rig sessions. ⚠ Shipped with the `A10` non-regression bar and §10.1's
+# trim-resolution metric still OUTSTANDING; the owner chose the LIVE LOOK as the
+# gate, knowing that jitter p95 25.41 is the metric that killed the 9-point fit.
+# ⚠ The docstring above still describes the OFF state as today's behaviour --
+# that remains true and is what `verify_f1_grip_offstate` pins; it is simply no
+# longer the state the game runs in.
+USE_TIP_BARYCENTER = True
 
 # ⚠ ONE COPY, imported by both tools (`CONSTRAINTS` §4 / N6). A tuning constant
 # that exists twice is how the two pipelines drift.
