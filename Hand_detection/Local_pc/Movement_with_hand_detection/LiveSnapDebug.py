@@ -186,9 +186,16 @@ SLIDERS = (
     # ⛔ 0 = the fingertip filter OFF, and off is BIT-EXACT (the input value is
     # returned unchanged), so this position is genuinely today-without-F1's-filter
     # rather than an approximation of it.
-    ("JITTER tau ms", JITTER_TAU_MAX_MS, 133, lambda n: float(n)),
-    # `beta`: how fast the cutoff opens with speed. Higher = less lag when moving.
-    ("SPEED b x1000", 200, 20, lambda n: n / 1000.0),
+    # ⛔⛔ PARKED 2026-08-26, owner: "jitter and speed ... removed at their
+    # minimums ... don't delete the code, just park those three". Both are now
+    # fixed at ZERO -- the 1-euro filter's own off state, which is BIT-EXACT
+    # passthrough rather than an approximation. Reason: the census puts the tip
+    # noise floor at 1.5 mm median, so there was little for the filter to remove,
+    # and the owner found its lag "unbearable" at any useful setting.
+    # ⭐ To revisit, put these two lines back in the tuple and restore the
+    # 5-value unpack in `_read_sliders`; nothing else was removed.
+    #   ("JITTER tau ms", JITTER_TAU_MAX_MS, 133, lambda n: float(n)),
+    #   ("SPEED b x1000", 200, 20, lambda n: n / 1000.0),
     # ⚠ DRIVES ONLY THE ARM THAT HAS THE TRIM ON. In the three-window rig panels
     # 1 and 2 pin their gain to 0.0 explicitly, so sweeping this moves panel 3 and
     # leaves the controls alone -- which is what keeps the rig one-variable.
@@ -199,7 +206,53 @@ SLIDERS = (
     # use, which is the exact divergence `U6` keeps `parity_replay` around to
     # prevent. The rig is where the trim is meant to be ON, so the rig turns it on.
     ("TRIM gain %", TRIM_GAIN_MAX_PCT, 0, lambda n: n / 100.0),
-    ("TRIM max deg", TRIM_MAX_DEG_MAX, 10, lambda n: float(n)),
+    # ⭐⭐ THE GRAB RADIUS, owner 2026-08-26: "slider x the narrower axis of the
+    # cube's projected footprint, slider between 0 and 1". Shown as a PERCENT
+    # because the panel's rule is that the displayed integer IS the applied value
+    # in its stated unit, and a trackbar cannot show 0.50.
+    # ⚠ 0% means NOTHING CAN BE GRABBED -- deliberately reachable, because a
+    # slider whose useful range is hidden behind a floor teaches the wrong thing
+    # about where the limit is.
+    # ⭐ Starts at the shipped 50%. Measured on 50 real grabs: 50% -> 42% of them
+    # still occur, 60% -> 54%, 75% -> 72%, 100% -> 80%.
+    # ⚠ The start value here is a PLACEHOLDER, exactly as "SMOOTH ms"'s is: this
+    # table is built before `hand_state` is imported, so the real value is pushed
+    # onto the trackbar in `_create_sliders`. A literal that drifts from the
+    # constant would show the operator a number the pipeline is not using.
+    # ⚠ RANGE IS 0..300, not 0..100. At 100 max the owner could not get BACK to a
+    # working value once 33% turned out to be unusable -- a slider that cannot
+    # reach the previous behaviour is a trap, not a control.
+    ("GRAB radius %", 300, 100, lambda n: n / 100.0),
+    # ⭐⭐ A1's fade budget, owner 2026-08-26: "make a slider for these xx ms,
+    # between 0 and 1000 ms". Milliseconds OF HAND MOVEMENT, not of wall clock —
+    # a hand held still does not spend it.
+    # ⚠ 0 ms is the TELEPORT, and it is reachable on purpose: it is the design the
+    # acceptance gate rejected at 118.4 px in one frame, so the slider's own left
+    # end shows what that felt like.
+    ("FADE ms moving", 1000, 300, lambda n: float(n)),
+    # ⭐⭐ How much of the HAND's own step the cube may spend closing the gap, per
+    # frame. Owner 2026-08-26: "a multiple of the hand movement cap, with a slider
+    # between 0.05 and 1". Shown as a percent so the displayed integer IS the
+    # applied value, the rule every slider on this panel follows.
+    # ⚠ 0 is reachable and means the cube NEVER re-centres — informative rather
+    # than hidden. The owner's stated floor, 0.05, is position 5.
+    ("WALK % of hand", 100, 25, lambda n: n / 100.0),
+    # ⭐⭐ THE AXIAL HALF OF THE GRAB GATE, owner 2026-08-26: "currently, the margin
+    # is too wide". In CENTIMETRES so the displayed integer is the applied value.
+    # ⚠ It is deliberately SEPARATE from the in-plane radius and always has been:
+    # x,y are MEASURED in pixels while depth is ESTIMATED, and `T6` measured the
+    # four palm spans disagreeing about that estimate by 13-22% at a single square
+    # pose. `GRAB_Z_TOLERANCE_M`'s own comment says it is sized to swallow that so
+    # the gate stays REACHABLE.
+    # ⛔ MEASURED BEFORE TIGHTENING: on the two takes recorded before the depth
+    # ratchet was fixed, |hand depth - cube depth| at grab ran a MEDIAN 12.3 cm
+    # (p95 14.6), i.e. pressed against today's 15. Most of that was the ratchet --
+    # cubes pinned at the 0.30 m floor while the hand sat at 0.42 -- so it should
+    # be far smaller now. This slider is how we find out, live.
+    ("GRAB z margin cm", 30, 15, lambda n: n / 100.0),
+    # ⛔ PARKED 2026-08-26 alongside the two above -- the owner retired it after
+    # revisiting an earlier preference for a raised clamp.
+    #   ("TRIM max deg", TRIM_MAX_DEG_MAX, 10, lambda n: float(n)),
 )
 
 # ⭐ OWNER'S CHOICE, 2026-08-24, settled live: **20 ms**. Reached by sweeping the
@@ -212,6 +265,9 @@ SLERP_TAU_MS = _HS_const.ROTATION_SLERP_TAU_MS
 # ⭐ F1's live values, mirrored here so `--no-sliders` still runs. Seeded from the
 # module defaults rather than repeated as literals (N6: a tuning constant lives in
 # ONE module), and converted into the ms the slider speaks.
+# ⛔ ITS SLIDER IS PARKED (see `SLIDERS`), so this is now a fixed value rather than
+# a live knob. ⚠ NOT parked at zero: zero failed the acceptance gate -- see
+# `fingertips.GRIP_FILTER_ENABLED` for the 120.4 px measurement.
 JITTER_TAU_MS = 1000.0 / (2.0 * math.pi * one_euro.MIN_CUTOFF_HZ)
 JITTER_BETA = one_euro.BETA
 
@@ -223,6 +279,7 @@ JITTER_BETA = one_euro.BETA
 # `Resources` is a package alongside this file; importing this ONE module does not
 # pull in HandsTriggeredActions/CubeWindow, so no pygame window is opened.
 from Resources import owner_remap
+from Resources import object_extent  # noqa: E402
 from Resources import palm_geometry  # noqa: E402
 from Resources import hand_state  # noqa: E402
 from Resources import hand_tracks  # noqa: E402  (4.1 migration, shared with production)  (queue D1 -- state lives on CubeState)
@@ -730,7 +787,18 @@ TRANSLATION_EPSILON_PX = 5.0
 # per its own "kept in logic-sync with the production module" discipline.
 CUBE_SIZE_SMALL = 40
 CUBE_SIZE_LARGE = CUBE_SIZE_SMALL * 2
-GRAB_RADIUS_MULTIPLIER = 1.5
+# ⛔ IMPORTED, NEVER COPIED (`CONSTRAINTS` §4 / N6). This was a SECOND copy of a
+# tuning constant until 2026-08-26 -- both tools happened to read 1.5, so the
+# duplication was invisible right up until the moment one of them was tuned.
+# ⭐ Now there is one definition and the debug tool cannot drift from production
+# on the grab radius, whatever it is set to.
+GRAB_RADIUS_MULTIPLIER = _HS_const.GRAB_RADIUS_MULTIPLIER
+
+# ⭐ A1's fade budget, in ms OF HAND MOVEMENT. Slider-driven here; `fingertips`
+# holds the shipped default and production reads that one.
+GRIP_ALIGN_MOVING_MS = fingertips.GRIP_ALIGN_MOVING_MS
+GRIP_ALIGN_MASK_RATIO = fingertips.GRIP_ALIGN_MASK_RATIO
+GRAB_Z_TOLERANCE_M = _PDepth.GRAB_Z_TOLERANCE_M
 CUBE_ALPHA = 0.55  # transparency of the cube overlay, so the video stays visible underneath
 SNAP_BORDER_COLOR = (255, 255, 255)
 SNAP_BORDER_WIDTH = 3
@@ -793,11 +861,17 @@ class Mesh:
     faces: Tuple[MeshFace, ...]
 
 
+# ⭐ Hoisted to a module constant so the slider panel can report the grab
+# footprint without building a mesh, and so there is ONE vertex list in this file
+# rather than one per caller.
+_CUBE_MESH_VERTS = (
+    (-1.0, -1.0, -1.0), (1.0, -1.0, -1.0), (1.0, 1.0, -1.0), (-1.0, 1.0, -1.0),
+    (-1.0, -1.0, 1.0), (1.0, -1.0, 1.0), (1.0, 1.0, 1.0), (-1.0, 1.0, 1.0),
+)
+
+
 def _make_cube_mesh(color_x, color_y, color_z) -> Mesh:
-    vertices = (
-        (-1.0, -1.0, -1.0), (1.0, -1.0, -1.0), (1.0, 1.0, -1.0), (-1.0, 1.0, -1.0),
-        (-1.0, -1.0, 1.0), (1.0, -1.0, 1.0), (1.0, 1.0, 1.0), (-1.0, 1.0, 1.0),
-    )
+    vertices = _CUBE_MESH_VERTS
     face_specs = (
         ((1, 2, 6, 5), (1.0, 0.0, 0.0), color_x),
         ((0, 3, 7, 4), (-1.0, 0.0, 0.0), _darken(color_x)),
@@ -915,6 +989,13 @@ class Cube:
     grab_residual_offset: Optional[Tuple[float, float]] = None
     # ⭐ F1 step 2, mirroring production's Cube.
     grab_grip_offset: Optional[Tuple[float, float]] = None
+    # ⭐ A1's fade budget, in milliseconds OF HAND MOVEMENT still to be spent.
+    grab_grip_fade_ms: Optional[float] = None
+    # ⭐ A1-in-Z: how far the object's depth ANCHOR still has to travel to reach
+    # the hand's. Walked to zero on the same progress as the in-plane offset, so
+    # the grab is continuous in depth instead of switching in one frame.
+    grab_depth_offset_m: Optional[float] = None
+    grab_hand_depth_m: Optional[float] = None
     # B4 alternative anchor (Resources/palm_anchor.py): the frozen metric offset
     # in the PALM's own frame. Used instead of the two fields above when
     # update_hands is given an `anchor`; None for §14.1's incumbent path.
@@ -1005,6 +1086,10 @@ class CubeState:
     slerp_tau_ms: float = 149.0
     # Previous frame's clock for this arm, for the dt the time-based form needs.
     last_frame_ms: Optional[float] = None
+    # ⭐ Previous frame's grip point per hand — A1's fade needs a SPEED, and the
+    # speed has to come from the same point the object is following.
+    last_grip_px: Dict[str, Optional[Tuple[float, float]]] = field(
+        default_factory=lambda: {h: None for h in TRACKED_HANDS})
     # Cube name -> the handedness slot whose tracker governs it. See production's
     # `_owner_hand_of_cube`: release must follow the owning TRACK across a
     # relabel, and must keep the last known hand while the track is absent so
@@ -1113,6 +1198,9 @@ class CubeState:
         cube.grab_landmark_weights = None
         cube.grab_residual_offset = None
         cube.grab_grip_offset = None
+        cube.grab_grip_fade_ms = None
+        cube.grab_depth_offset_m = None
+        cube.grab_hand_depth_m = None
         cube.grab_anchor_state = None
         cube.grab_depth_m = None    # 4.2: depth freezes in place, like position
 
@@ -1426,7 +1514,13 @@ def _try_snap(state: CubeState, handedness: str, hand_pos: Tuple[float, float],
         if name in exclude:
             continue
         cube = state.cubes[name]
-        grab_radius = state.projected_size_of(cube) * GRAB_RADIUS_MULTIPLIER
+        # ⭐ Mirrors production exactly, through the ONE shared implementation
+        # (`Resources/object_extent.py`) -- the grab region is the one thing the
+        # two renderers must never disagree about.
+        grab_radius = object_extent.grab_extent(
+            state.projected_size_of(cube), cube.orientation,
+            cube.mesh.vertices, CUBE_PERSPECTIVE_DISTANCE_RATIO,
+        ) * GRAB_RADIUS_MULTIPLIER
         cx, cy = state.cube_center(name)
         dist = math.hypot(hand_pos[0] - cx, hand_pos[1] - cy)
         if dist > grab_radius:
@@ -1573,12 +1667,23 @@ def _read_sliders() -> None:
     to carry on with. ⛔ Reads ALL sliders or none -- a partial read would leave
     the tool in a state no slider position describes.
     """
-    global SLERP_TAU_MS, JITTER_TAU_MS, JITTER_BETA
+    global SLERP_TAU_MS, JITTER_TAU_MS, JITTER_BETA, GRAB_RADIUS_MULTIPLIER
+    global GRIP_ALIGN_MOVING_MS, GRIP_ALIGN_MASK_RATIO, GRAB_Z_TOLERANCE_M
     try:
         vals = [spec[3](cv2.getTrackbarPos(spec[0], SLIDER_WIN)) for spec in SLIDERS]
     except cv2.error:
         return
-    SLERP_TAU_MS, JITTER_TAU_MS, JITTER_BETA, _gain, _maxdeg = vals
+    # ⚠ THREE sliders now -- three others are parked (see `SLIDERS`). The parked
+    # values are NOT re-read here; they keep their module defaults.
+    (SLERP_TAU_MS, _gain, GRAB_RADIUS_MULTIPLIER, GRIP_ALIGN_MOVING_MS,
+     GRIP_ALIGN_MASK_RATIO, GRAB_Z_TOLERANCE_M) = vals
+    # ⚠ The SHARED module global, like TRIM gain above: `decay_grip_offset` reads
+    # it internally, and the two tools cannot run at once (one camera, DSHOW is
+    # exclusive), so there is no window in which they could disagree.
+    fingertips.GRIP_ALIGN_MASK_RATIO = GRIP_ALIGN_MASK_RATIO
+    # ⚠ Same reasoning: both tools read this attribute at call time, and they can
+    # never run at once, so driving the shared module is safe and keeps ONE value.
+    _PDepth.GRAB_Z_TOLERANCE_M = GRAB_Z_TOLERANCE_M
 
     # ⭐ The fingertip filter is SHARED across arms by design, so configuring it
     # here configures every panel at once -- which is correct: the arms differ in
@@ -1597,15 +1702,53 @@ def _read_sliders() -> None:
     # ⚠ The module GLOBAL, not a per-arm value: arms that pin their gain (the rig
     # controls, at 0.0) are unaffected, and arms that leave it None follow this.
     tip_trim.TRIM_GAIN = _gain
-    tip_trim.TRIM_MAX_DEG = _maxdeg
 
+    # ⚠ `GRAB_RADIUS_MULTIPLIER` above rebinds THIS MODULE's name only, and that is
+    # deliberate: `hand_state` keeps the shipped value, so sweeping the slider
+    # tunes the debug tool without silently editing the constant production reads.
+    # ⛔ Which also means a value settled here has to be written into
+    # `hand_state.GRAB_RADIUS_MULTIPLIER` to survive the session -- the same
+    # discipline tau went through.
+
+
+
+def settled_values() -> dict:
+    """Every live-tuned value, with the unit its slider speaks. ⭐ ONE PLACE.
+
+    ⛔⛔ THIS EXISTS BECAUSE THE VALUES WERE ONCE UNRECOVERABLE. On 2026-08-26 the
+    owner tuned six sliders to a setting they liked and asked to keep it -- and the
+    numbers lived only in a running process's trackbars. `tau_changes` had captured
+    the smoothing slider since `L1` and nothing had captured the other five, so a
+    session's worth of tuning could be lost by closing a window.
+    ⭐ Written into every take's `meta.json` AND printed on exit, so a setting the
+    owner likes survives the session that produced it.
+    """
+    return {
+        "slerp_tau_ms": SLERP_TAU_MS,
+        "trim_gain": tip_trim.TRIM_GAIN,
+        "trim_max_deg": tip_trim.TRIM_MAX_DEG,
+        "grab_radius_x_footprint": GRAB_RADIUS_MULTIPLIER,
+        "grip_align_moving_ms": GRIP_ALIGN_MOVING_MS,
+        "grip_align_mask_ratio": GRIP_ALIGN_MASK_RATIO,
+        "grab_z_margin_m": GRAB_Z_TOLERANCE_M,
+        "jitter_tau_ms": JITTER_TAU_MS,
+        "jitter_beta": JITTER_BETA,
+    }
+
+
+def print_settled_values(prefix="[LiveSnapDebug]"):
+    """Print the tuned values in a form that can be pasted back into the code."""
+    print(f"{prefix} ---- SLIDER VALUES AT EXIT ----")
+    for k, v in settled_values().items():
+        print(f"{prefix}   {k:<26} = {v!r}")
+    print(f"{prefix} -------------------------------")
 
 
 def _draw_slider_panel(open_: bool):
     """The panel's own canvas: the value in the unit the owner reasons about."""
     if not open_ or cv2.getWindowProperty(SLIDER_WIN, cv2.WND_PROP_VISIBLE) < 1:
         return
-    canvas = np.zeros((250, 520, 3), dtype=np.uint8)
+    canvas = np.zeros((380, 520, 3), dtype=np.uint8)
     cv2.putText(canvas, f"smoothing tau = {SLERP_TAU_MS:.0f} ms", (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (120, 255, 255), 2, cv2.LINE_AA)
     note = ("no smoothing -- the cube goes exactly where Horn says"
@@ -1654,6 +1797,38 @@ def _draw_slider_panel(open_: bool):
                 cv2.LINE_AA)
     cv2.putText(canvas, "following the fingers -- which is the A10-dead arm.",
                 (10, 234), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
+                cv2.LINE_AA)
+
+    # ⭐ THE GRAB RADIUS, printed in BOTH units: the fraction the slider sets, and
+    # the pixels it comes to on a face-on large cube at the resting depth -- which
+    # is the number the operator is actually aiming inside of.
+    cv2.line(canvas, (10, 252), (510, 252), (60, 60, 60), 1)
+    _face_on = object_extent.grab_extent(
+        palm_geometry.projected_size_px(CUBE_SIZE_LARGE,
+                                        palm_geometry.REFERENCE_DEPTH_M),
+        (1.0, 0.0, 0.0, 0.0), _CUBE_MESH_VERTS, CUBE_PERSPECTIVE_DISTANCE_RATIO)
+    if GRAB_RADIUS_MULTIPLIER <= 0:
+        gl = "GRAB radius 0%  --  NOTHING can be picked up"
+        gc = (120, 120, 255)
+    else:
+        gl = (f"grab radius: {GRAB_RADIUS_MULTIPLIER:.2f} x footprint "
+              f"= {GRAB_RADIUS_MULTIPLIER * _face_on:.0f} px face-on")
+        gc = (120, 255, 200)
+    cv2.putText(canvas, gl, (10, 278), cv2.FONT_HERSHEY_SIMPLEX, 0.52, gc, 1,
+                cv2.LINE_AA)
+    cv2.putText(canvas, "of 50 real grabs: 50% -> 42% still occur, 75% -> 72%,",
+                (10, 300), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
+                cv2.LINE_AA)
+    cv2.putText(canvas, "100% -> 80%.  Smaller radius = smaller slide at grab.",
+                (10, 320), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
+                cv2.LINE_AA)
+    _zl = (f"grab z margin: {GRAB_Z_TOLERANCE_M * 100:.0f} cm"
+           f"    walk: {GRIP_ALIGN_MASK_RATIO:.2f} x hand step")
+    cv2.putText(canvas, _zl, (10, 348), cv2.FONT_HERSHEY_SIMPLEX, 0.52,
+                (120, 255, 200) if GRAB_Z_TOLERANCE_M > 0 else (120, 120, 255),
+                1, cv2.LINE_AA)
+    cv2.putText(canvas, "depth is ESTIMATED, not measured: T6 put the four palm",
+                (10, 368), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
                 cv2.LINE_AA)
     try:
         cv2.imshow(SLIDER_WIN, canvas)
@@ -1935,11 +2110,20 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
         # ⭐ The grip point is computed ONCE per frame from the SHARED tracker, and
         # each arm then chooses whether to use it -- so the filter history is
         # identical across panels and the only difference is the choice itself.
-        _grip = fingertips.grip_position_px(
-            _grip_trackers[handedness], data["pixel_landmarks"], now_ms)
         _use_tips = (fingertips.USE_TIP_BARYCENTER if state.use_tips is None
                      else state.use_tips)
+        # ⛔⛔ THE FLAG MUST GO *INTO* `grip_position_px`, NOT BE APPLIED AFTER IT.
+        # Until 2026-08-26 it was applied after: the call read the module global
+        # (False) and returned the palm centre, so `_grip` and `palm_pos` were the
+        # SAME POINT and the line below chose between two identical values. The
+        # rig's panels 1 and 2 were bit-identical in position for the whole of the
+        # owner's first live take -- 0.00 px over 6025 owned-cube samples.
+        _grip = fingertips.grip_position_px(
+            _grip_trackers[handedness], data["pixel_landmarks"], now_ms,
+            use_tips=_use_tips)
         hand_pos = _grip if _use_tips else palm_pos
+        _prev_grip_px = state.last_grip_px.get(handedness)
+        state.last_grip_px[handedness] = hand_pos
         raw_quat, conditioning_norm = _hand_orientation_quaternion(data["world_landmarks"])
         state.last_hand_reliability_alpha[handedness] = _reliability_alpha(conditioning_norm)
         # ⭐ RAW straight through -- Horn replaces it below on every frame it
@@ -2008,7 +2192,21 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                     cube = state.cubes[owned]
                     # 4.2: freeze the Z baseline pair with the others, so the
                     # grab frame is continuous in Z too (ratio 1.0 at grab).
+                    # ⭐ A1-in-Z: anchor to the HAND's measured depth so the grab
+                    # cannot ratchet the object into the near wall (see
+                    # `fingertips.GRIP_ALIGN_DEPTH_AT_GRAB` for the measurement).
+                    # ⛔ NO JUMP. The first version set `cube.depth_m` to the
+                    # hand's depth right here, and the object visibly stepped in Z
+                    # at the instant of the grab (owner, 2026-08-26). The anchor is
+                    # now WALKED there, on the same progress as the in-plane offset.
                     cube.grab_depth_m = cube.depth_m
+                    if (fingertips.GRIP_ALIGN_DEPTH_AT_GRAB and _use_tips
+                            and _hand_depth_m is not None):
+                        cube.grab_hand_depth_m = _hand_depth_m
+                        cube.grab_depth_offset_m = cube.depth_m - _hand_depth_m
+                    else:
+                        cube.grab_hand_depth_m = None
+                        cube.grab_depth_offset_m = None
                     state.depth_ratio_trackers[handedness].freeze(data["pixel_landmarks"])
                     cube.grab_hand_orientation = hand_quat_now
                     cube.grab_cube_orientation = cube.orientation
@@ -2049,10 +2247,16 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                         )
                         # ⭐ F1 step 2, mirroring production: the same no-pop
                         # construction against the grip point.
+                        # ⭐⭐ A1: zero offset means the cube's centre IS the
+                        # fingertip barycentre, in x and y, for the whole hold.
+                        # ⭐ A1 keeps this offset -- the grab stays continuous --
+                        # and fades it to zero during the hold, so the cube ends
+                        # up ON the barycentre without popping onto it.
                         cube.grab_grip_offset = (
                             object_pos_at_grab[0] - hand_pos[0],
                             object_pos_at_grab[1] - hand_pos[1],
                         )
+                        cube.grab_grip_fade_ms = GRIP_ALIGN_MOVING_MS
         if owned is not None:
             cube = state.cubes[owned]
             # ⭐⭐ 4.2 -- Z FIRST, before the X/Y target is applied: the clamp and
@@ -2064,7 +2268,15 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                 _ratio, _ratio_valid = state.depth_ratio_trackers[handedness].update(
                     data["pixel_landmarks"])
                 if _ratio_valid and _ratio > 1e-6:
-                    cube.depth_m = palm_geometry.clamp_depth(cube.grab_depth_m / _ratio)
+                    # ⭐ The anchor walks from the object's own depth at grab
+                    # towards the hand's. At grab the offset is the whole gap, so
+                    # this is exactly today's value and nothing moves; as the walk
+                    # retires it the anchor becomes the hand's depth.
+                    _anchor = cube.grab_depth_m
+                    if (cube.grab_hand_depth_m is not None
+                            and cube.grab_depth_offset_m is not None):
+                        _anchor = cube.grab_hand_depth_m + cube.grab_depth_offset_m
+                    cube.depth_m = palm_geometry.clamp_depth(_anchor / _ratio)
             if anchor is not None:
                 new_center = anchor.apply(cube.grab_anchor_state,
                                           data["pixel_landmarks"],
@@ -2072,7 +2284,27 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
             else:
                 # ⭐⭐ F1 STEP 2 -- the object follows the fingertip barycentre.
                 # Identical to production; `parity_replay` is what keeps it so.
-                if fingertips.USE_TIP_BARYCENTER and cube.grab_grip_offset is not None:
+                # ⛔ SECOND HALF OF THE SAME DEFECT: this tested the module
+                # global too, so even a correct grip point would have been
+                # ignored here. It follows the ARM's flag now; `state.use_tips`
+                # is None for every non-rig caller, which resolves to the global
+                # and leaves production and the single-arm view untouched.
+                if _use_tips and cube.grab_grip_offset is not None:
+                    # ⭐⭐ A1's fade. `state.last_frame_ms` is still the PREVIOUS
+                    # frame here -- it is advanced after the slerp, further down --
+                    # so this is the same dt the rotation channel uses.
+                    _dt = (None if (now_ms is None or state.last_frame_ms is None)
+                           else now_ms - state.last_frame_ms)
+                    # ⭐⭐ The fade is spent in HAND MOVEMENT, not wall time, so a
+                    # cube never slides on its own while the hand is still.
+                    _prev_px = _prev_grip_px
+                    _hand_step = (None if _prev_px is None else
+                                  math.hypot(hand_pos[0] - _prev_px[0],
+                                             hand_pos[1] - _prev_px[1]))
+                    (cube.grab_grip_offset, cube.grab_depth_offset_m,
+                     cube.grab_grip_fade_ms) = fingertips.decay_grip_offset(
+                        cube.grab_grip_offset, cube.grab_depth_offset_m,
+                        cube.grab_grip_fade_ms, _dt, _hand_step)
                     new_center = (
                         hand_pos[0] + cube.grab_grip_offset[0],
                         hand_pos[1] + cube.grab_grip_offset[1],
@@ -2400,6 +2632,15 @@ def main():
     if args.sliders:
         _create_sliders()
         cv2.setTrackbarPos(SLIDERS[0][0], SLIDER_WIN, int(round(SLERP_TAU_MS)))
+        # ⭐ The applied value, not the table's placeholder.
+        cv2.setTrackbarPos("GRAB radius %", SLIDER_WIN,
+                           int(round(GRAB_RADIUS_MULTIPLIER * 100)))
+        cv2.setTrackbarPos("FADE ms moving", SLIDER_WIN,
+                           int(round(GRIP_ALIGN_MOVING_MS)))
+        cv2.setTrackbarPos("WALK % of hand", SLIDER_WIN,
+                           int(round(GRIP_ALIGN_MASK_RATIO * 100)))
+        cv2.setTrackbarPos("GRAB z margin cm", SLIDER_WIN,
+                           int(round(GRAB_Z_TOLERANCE_M * 100)))
         if args.f1_rig:
             # ⭐ The rig exists to show the trim, so it starts with the trim ON --
             # while the ordinary single-arm view stays at production's 0.
@@ -2822,11 +3063,15 @@ def main():
                     "slerp_tau_max_ms": SLERP_TAU_MAX_MS,
                     "tau_changes": _tau_changes,
                     "slerp_mode": [a.slerp_mode for a in arms],
+                    # ⭐ Every tuned value, so a take is self-describing and a
+                    # setting the owner liked can be recovered from the recording.
+                    "settled_values": settled_values(),
                 }, fh, indent=2)
             with_hand = sum(1 for r in records if r["hands"])
             print(f"[LiveSnapDebug] Saved {len(records)} frames "
                   f"({fps:.2f} fps measured) to {session_dir}")
             print(f"[LiveSnapDebug] frames with >=1 hand: {with_hand}/{len(records)}")
+            print_settled_values()
 
 
 if __name__ == "__main__":

@@ -75,7 +75,15 @@ import math
 # the fingertip noise floor at a 1.5 mm median / ~4.7 mm p95 per tip, on frames
 # where the palm itself barely moved. MIN_CUTOFF_HZ is set low enough to bite on
 # that at rest without being felt in motion.
-MIN_CUTOFF_HZ = 1.2
+# ⭐⭐ SETTLED LIVE BY THE OWNER, 2026-08-26: **tau = 70 ms**, i.e. this cutoff.
+# Reached the way the project settles feel constants -- on the rig, by preference,
+# after the owner found the 132.6 ms default's lag "unbearable".
+# ⛔ 70 ms rather than the ZERO first asked for: zero is the filter's OFF state and
+# `analysis/verify_f1_grip_offstate.py` REFUSES it -- unfiltered, the fingertip
+# grip point steps 120.7 px in a single frame against the palm path's 76.0 px.
+# ⚠ Stored as a CUTOFF because that is what the filter speaks; the slider spoke
+# milliseconds because that is what a person can reason about. tau = 1/(2*pi*fc).
+MIN_CUTOFF_HZ = 2.2736          # tau = 70 ms
 BETA = 0.02
 D_CUTOFF_HZ = 1.0          # the paper's own default for the derivative's own filter
 

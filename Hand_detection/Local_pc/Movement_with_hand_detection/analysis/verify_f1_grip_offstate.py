@@ -27,6 +27,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from Resources import object_extent                          # noqa: E402
 from Resources import fingertips                               # noqa: E402
 from Resources import HandsTriggeredActions as P               # noqa: E402
 
@@ -77,10 +78,51 @@ def recorded_cubes(row):
     return c
 
 
+# ⛔⛔ THE GRAB RADIUS THE REFERENCE TAKE WAS RECORDED UNDER, AND WHY IT IS PINNED.
+#
+# This gate's reference is a RECORDING, so it is a net over the WHOLE pipeline:
+# change any gameplay constant and the replay stops reproducing the take. That is
+# usually the point. But the subject this file NAMES is the `F1` switch, and on
+# 2026-08-26 the owner tightened `GRAB_RADIUS_MULTIPLIER` from 1.5 to 0.5 -- a
+# deliberate behaviour change, which made check 1 fail at 288 px for a reason that
+# has nothing to do with the switch.
+#
+# ⭐ So the radius is PINNED here to the value in force when the take was made.
+# The gate then isolates the variable it claims to test, instead of reporting a
+# switch failure that is really a constant change.
+#
+# ⛔ WHAT THIS COSTS, STATED PLAINLY: this gate can no longer notice a change to
+# the grab radius. That is now covered only by the constant's own definition in
+# `hand_state.py` and by a live take -- a tightened radius CANNOT be validated
+# against recordings made under the old one, because the grabs it removes are
+# exactly the ones the recording contains.
+RECORDING_ERA_GRAB_RADIUS = 1.5
+
+
+def _recording_era_grab_extent(size_px, orientation, vertices, perspective_ratio):
+    """The grab rule EXACTLY as it stood when the reference take was recorded.
+
+    ⛔ Pinning the multiplier back to 1.5 is not enough, because the rule's FORM
+    changed too: it used to multiply the object's NOMINAL projected edge, and now
+    it multiplies the narrower axis of the projected FOOTPRINT (~1.2x larger,
+    orientation-dependent). Restoring only the number still moved the grab region
+    and check 1 still failed, at 158 px.
+
+    ⭐ So the harness restores the whole expression. The F1 switch is then the only
+    thing that differs between the recording and the replay, which is what this
+    file exists to measure.
+    """
+    return size_px
+
+
 def replay(rows, use_tips):
     """Drive production over the take and return its per-frame cube centres."""
     prev = fingertips.USE_TIP_BARYCENTER
+    prev_radius = P.GRAB_RADIUS_MULTIPLIER
     fingertips.USE_TIP_BARYCENTER = use_tips
+    P.GRAB_RADIUS_MULTIPLIER = RECORDING_ERA_GRAB_RADIUS
+    prev_extent = object_extent.grab_extent
+    object_extent.grab_extent = _recording_era_grab_extent
     P.configure_source_resolution(640, 480)
     # ⛔ A WHOLLY FRESH WORLD, not a released one. `release_cube` clears the grab
     # baseline but leaves the cube WHERE IT ENDED, so a second pass would start
@@ -116,6 +158,8 @@ def replay(rows, use_tips):
                         for n, c in P.cube_window.cubes.items()})
     finally:
         fingertips.USE_TIP_BARYCENTER = prev
+        P.GRAB_RADIUS_MULTIPLIER = prev_radius
+        object_extent.grab_extent = prev_extent
     return out
 
 

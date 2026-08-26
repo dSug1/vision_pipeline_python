@@ -192,6 +192,13 @@ class Cube:
     # everything else -- a stale one would re-anchor the NEXT grab of this object
     # to where the fingers were during the previous one.
     grab_grip_offset: Optional[Tuple[float, float]] = None
+    # ⭐ A1's fade budget, in milliseconds OF HAND MOVEMENT still to be spent.
+    grab_grip_fade_ms: Optional[float] = None
+    # ⭐ A1-in-Z: how far the object's depth ANCHOR still has to travel to reach
+    # the hand's. Walked to zero on the same progress as the in-plane offset, so
+    # the grab is continuous in depth instead of switching in one frame.
+    grab_depth_offset_m: Optional[float] = None
+    grab_hand_depth_m: Optional[float] = None
     # ⭐⭐ 4.2 -- Z-AXIS TRANSLATION (§14.3). `size` above is now the object's
     # extent AT THE REFERENCE DEPTH; `depth_m` is where it actually is, and
     # `projected_size` is what it occupies on screen. An object starts at the
@@ -367,6 +374,9 @@ class CubeWindow:
         cube.grab_landmark_weights = None
         cube.grab_residual_offset = None
         cube.grab_grip_offset = None
+        cube.grab_grip_fade_ms = None
+        cube.grab_depth_offset_m = None
+        cube.grab_hand_depth_m = None
         # 4.2: the Z baseline is part of the grab baseline. `depth_m` itself
         # FREEZES, exactly like position and orientation -- release means "stays
         # where it is", and it is now where it is in three axes.

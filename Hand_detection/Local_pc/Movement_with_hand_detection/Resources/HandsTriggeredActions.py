@@ -5,10 +5,12 @@ import os
 import time
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
+from . import CubeWindow as CubeWindowModule
 from .CubeWindow import CubeWindow
 # Palm chirality geometry, SHARED with LiveSnapDebug.py so the sign convention
 # cannot drift between them again (§13.6.1). Pure stdlib, no side effects.
 from . import owner_remap
+from . import object_extent
 from . import palm_depth
 from . import palm_geometry
 from . import palm_rotation
@@ -84,10 +86,36 @@ TRANSLATION_EPSILON_PX = 5.0
 # Grab radius (open item, `PART_ONE.md` §5 — "likely scaled to cube size",
 # still unresolved/tunable): distance from a cube's CENTER, in the same
 # pixel units as hand position, within which an unowned cube can be
-# snapped. 1.5x cube size as a starting point — verify by feel live and
-# adjust here, this is exactly the kind of value the project's own
-# discipline says needs live tuning, not a guess kept forever.
-GRAB_RADIUS_MULTIPLIER = 1.5
+# snapped. Verify by feel live and adjust here — this is exactly the kind of
+# value the project's own discipline says needs live tuning, not a guess kept
+# forever.
+#
+# ⭐⭐ TIGHTENED 1.5 -> 0.5 ON 2026-08-26, owner: *"the barycenter must be away
+# less than half of the maximum dimension shown by the cube to the camera in its
+# grab position for the grab to occur"*. ⭐ The REASON is `A1`: the grab radius is
+# an upper bound on the offset the object must then travel to reach the
+# fingertips, so shrinking the radius shrinks the re-positioning at its source
+# rather than smoothing it afterwards.
+#
+# ⚠ MEASURED COST, so the change in feel is not a surprise: over the four rig
+# takes recorded after the grip fix, 50 real grabs sat at a MEDIAN 0.74x the
+# cube's projected extent from the barycentre. At 0.5x, **only 22% of them would
+# have occurred**; at 0.75x, 50%; at 1.0x, 66%. The grab is now roughly 4.5x more
+# selective and wants deliberate aim.
+#
+# ⛔ IT IS THE IN-PLANE TEST ONLY, AND THAT IS THE POINT. The barycentre's x,y are
+# MEASURED in pixels; its z is ESTIMATED, and `T6`'s 2026-08-26 analysis put the
+# four palm spans 13-22% apart on depth at a single square pose. A world-space
+# sphere would fold that estimate into a hard pass/fail and refuse a cube the
+# operator is visibly touching. The axial test stays separate and deliberately
+# loose -- see `palm_depth.GRAB_Z_TOLERANCE_M`, which exists for exactly this.
+#
+# ⚠ `projected_size_of` is NOT orientation-aware: it is the nominal edge scaled by
+# depth, so this is half the FACE-ON extent. A tilted cube's true silhouette runs
+# to sqrt(2), and a corner-on one to sqrt(3) ~ 1.73x. If the rule should mean
+# "half of what is actually visible at this pose", the silhouette extent has to be
+# computed from the orientation -- noted, not silently assumed away.
+GRAB_RADIUS_MULTIPLIER = hand_state.GRAB_RADIUS_MULTIPLIER
 
 # ==========================================================================
 # ⭐⭐ 4.2 -- Z-AXIS TRANSLATION (§14.3), AND THE 3D SNAP GATE THAT COMES WITH IT
@@ -158,6 +186,11 @@ _hand_depth_trackers: Dict[str, palm_depth.HandDepthTracker] = {
 # production had already decided.
 _hand_depth: Dict[str, Optional[float]] = {h: None for h in TRACKED_HANDS}
 _hand_depth_valid: Dict[str, bool] = {h: False for h in TRACKED_HANDS}
+
+# ⭐ Previous frame's grip point per hand. A1's fade is spent in HAND MOVEMENT, so
+# it needs a speed, and the speed must come from the same point the object follows.
+_last_grip_px: Dict[str, Optional[Tuple[float, float]]] = {
+    h: None for h in TRACKED_HANDS}
 # ⚠ THE RATIO ITSELF IS DELIBERATELY NOT RECORDED. The cube's own `depth_m` is
 # recorded every frame and IS the outcome the ratio produced -- recording both
 # would put a second, per-hand view of the same quantity in the file, and the
@@ -603,7 +636,13 @@ def _try_snap(handedness: str, hand_pos: Tuple[float, float],
         if name in exclude:
             continue
         cube = cube_window.cubes[name]
-        grab_radius = cube_window.projected_size_of(cube) * GRAB_RADIUS_MULTIPLIER
+        # ⭐ THE FOOTPRINT, NOT THE NOMINAL EDGE (owner 2026-08-26): the radius is
+        # half the NARROWER axis of what the object actually projects to on
+        # screen, so it means the same thing at every orientation.
+        grab_radius = object_extent.grab_extent(
+            cube_window.projected_size_of(cube), cube.orientation,
+            cube.mesh.vertices, CubeWindowModule.CUBE_PERSPECTIVE_DISTANCE_RATIO,
+        ) * GRAB_RADIUS_MULTIPLIER
         cx, cy = cube_window.cube_center(name)
         dist = math.hypot(hand_pos[0] - cx, hand_pos[1] - cy)
         if dist > grab_radius:
@@ -1289,6 +1328,11 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     Skipped for a hand this frame if its world
     landmarks haven't arrived yet (only expected very briefly after
     connecting, since "hands_world" is sent every frame)."""
+    # ⚠ Declared here rather than at its assignment site: A1's grip-offset
+    # fade reads this clock earlier in the body, and Python requires the
+    # `global` to precede every use in the function.
+    global _last_frame_ms
+
     hands = (("Left", left_landmarks), ("Right", right_landmarks))
 
     # Optional session recording (VISION_RECORD=1). Opened lazily on the first
@@ -1448,6 +1492,10 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
         palm_pos = _hand_position(landmarks)
         hand_pos = fingertips.grip_position_px(
             _grip_trackers[handedness], landmarks, now_ms)
+        # ⭐ Stamp the previous frame's grip point BEFORE overwriting it: A1's fade
+        # is spent in hand MOVEMENT and needs the speed of this very point.
+        _prev_grip_px = _last_grip_px.get(handedness)
+        _last_grip_px[handedness] = hand_pos
 
         # ⭐ 4.2: this hand's ABSOLUTE depth, for the 3D snap gate. Updated every
         # frame whether or not the hand holds anything, for the same reason the
@@ -1583,7 +1631,26 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                     # object keeps ITS OWN depth at grab and moves only by how
                     # much the hand's span ratio changes afterwards -- so the
                     # grab frame is continuous in Z as well (ratio 1.0).
+                    # ⭐ A1-in-Z: anchor to the HAND's measured depth, so a grab
+                    # cannot ratchet the object into the near wall. Measured on
+                    # `2026-08-26_190912_f1_rig`: cube pinned at the 0.30 m floor
+                    # for 57.4% of held frames while the hand was NEVER nearer
+                    # than it. `fingertips.GRIP_ALIGN_DEPTH_AT_GRAB` carries the
+                    # full note.
+                    # ⛔ NO JUMP IN Z. The first version switched `cube.depth_m`
+                    # to the hand's depth right here and the object visibly stepped
+                    # at the instant of the grab (owner, 2026-08-26). The anchor is
+                    # WALKED there instead, on the same progress as x/y.
                     cube.grab_depth_m = cube.depth_m
+                    _hd_grab = _hand_depth[handedness]
+                    if (fingertips.GRIP_ALIGN_DEPTH_AT_GRAB
+                            and fingertips.USE_TIP_BARYCENTER
+                            and _hd_grab is not None):
+                        cube.grab_hand_depth_m = _hd_grab
+                        cube.grab_depth_offset_m = cube.depth_m - _hd_grab
+                    else:
+                        cube.grab_hand_depth_m = None
+                        cube.grab_depth_offset_m = None
                     _depth_ratio_trackers[handedness].freeze(landmarks)
                     if hand_quat_now is not None:
                         cube.grab_hand_orientation = hand_quat_now
@@ -1613,10 +1680,19 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                     # barycentre moves afterwards -- so the grab frame is
                     # continuous by construction, exactly as §14.1 and 4.2's
                     # depth ratio each are.
+                    # ⭐⭐ A1 (owner 2026-08-26): a ZERO offset makes the cube's
+                    # centre the fingertip barycentre itself. See
+                    # `fingertips.GRIP_ALIGN_AT_GRAB` for the 115 px measurement
+                    # that motivated it and the behaviour it trades away.
+                    # ⭐ A1 keeps the offset here -- the grab stays continuous --
+                    # and fades it to zero during the hold at a bounded rate, so
+                    # the object settles ON the barycentre without popping onto
+                    # it. See `fingertips.GRIP_ALIGN_RATE_PX_S`.
                     cube.grab_grip_offset = (
                         object_pos_at_grab[0] - hand_pos[0],
                         object_pos_at_grab[1] - hand_pos[1],
                     )
+                    cube.grab_grip_fade_ms = fingertips.GRIP_ALIGN_MOVING_MS
         if owned_cube is not None:
             cube = cube_window.cubes[owned_cube]
             # ⭐⭐ 4.2 -- Z FIRST, BEFORE THE X/Y TARGET IS APPLIED. The clamp and
@@ -1632,7 +1708,14 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             if Z_TRANSLATION and cube.grab_depth_m is not None:
                 _ratio, _ratio_valid = _depth_ratio_trackers[handedness].update(landmarks)
                 if _ratio_valid and _ratio > 1e-6:
-                    cube.depth_m = palm_geometry.clamp_depth(cube.grab_depth_m / _ratio)
+                    # ⭐ The anchor walks from the object's own depth at grab
+                    # towards the hand's: at grab the offset is the whole gap, so
+                    # this is today's value exactly and nothing moves.
+                    _anchor = cube.grab_depth_m
+                    if (cube.grab_hand_depth_m is not None
+                            and cube.grab_depth_offset_m is not None):
+                        _anchor = cube.grab_hand_depth_m + cube.grab_depth_offset_m
+                    cube.depth_m = palm_geometry.clamp_depth(_anchor / _ratio)
             # ⭐⭐ F1 STEP 2 -- THE OBJECT FOLLOWS THE FINGERTIP BARYCENTRE.
             # Owner: "if the fingertips move while the cube is grabbed, the cube's
             # transform follow the transform of the barycenter."
@@ -1651,6 +1734,20 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             # ⛔ The legacy blend is still computed above and still frozen at grab,
             # so `fingertips.USE_TIP_BARYCENTER = False` restores it exactly.
             if fingertips.USE_TIP_BARYCENTER and cube.grab_grip_offset is not None:
+                # ⭐⭐ A1's fade, mirroring the debug tool exactly (N6/`U6`).
+                # `_last_frame_ms` is still the PREVIOUS frame at this point.
+                _dt_align = (None if (now_ms is None or _last_frame_ms is None)
+                             else now_ms - _last_frame_ms)
+                # ⭐⭐ Spent in HAND MOVEMENT, not wall time, so a held-still hand
+                # never sees the object slide on its own (owner, 2026-08-26).
+                _prev_px = _prev_grip_px
+                _hand_step = (None if _prev_px is None else
+                              math.hypot(hand_pos[0] - _prev_px[0],
+                                         hand_pos[1] - _prev_px[1]))
+                (cube.grab_grip_offset, cube.grab_depth_offset_m,
+                 cube.grab_grip_fade_ms) = fingertips.decay_grip_offset(
+                    cube.grab_grip_offset, cube.grab_depth_offset_m,
+                    cube.grab_grip_fade_ms, _dt_align, _hand_step)
                 new_center = (
                     hand_pos[0] + cube.grab_grip_offset[0],
                     hand_pos[1] + cube.grab_grip_offset[1],
@@ -1710,7 +1807,8 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     # ⚠ AFTER the per-hand loop, never inside it: `_rotation_slerp_factor` needs
     # the PREVIOUS frame's clock, and stamping it per hand would hand the second
     # hand a dt of zero -- a blend factor of zero, i.e. a cube that never moves.
-    global _last_frame_ms
+    # ⚠ The `global` for this name is declared at the top of the function, because
+    # A1's offset fade READS it earlier in the same body.
     _last_frame_ms = now_ms
 
     # ⚠ WRITE BACK LAST, after every mutation this frame. Skipping it would make
@@ -1728,7 +1826,6 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
 
 def _publish_hand_input(hands, poses: Dict[str, dict], now_ms: float) -> None:
     """Hand this frame to the input system (`handinput`), for CONSUMERS ONLY.
-
     ⚠⚠ NOTHING ABOVE THIS LINE READS THE RESULT, BY DESIGN. Every value below was
     produced by the gesture logic that has already run this frame, so the actions
     describe what the game did rather than a parallel opinion about it. The day the

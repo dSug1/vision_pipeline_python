@@ -80,6 +80,55 @@ SUSTAINED_LOST = "SUSTAINED_LOST"
 # `HandsTriggeredActions.ROTATION_SLERP_TAU_MS`'s comment.
 ROTATION_SLERP_TAU_MS = 20.0
 
+# ⭐⭐ THE GRAB RADIUS LIVES HERE FOR THE SAME REASON tau DOES, and it had the same
+# problem: it was defined TWICE, once in each tool, both reading 1.5 -- so the
+# duplication stayed invisible until the moment one of them was tuned.
+#
+# Distance from a cube's CENTRE, in units of that cube's projected extent, within
+# which an unowned cube can be snapped.
+#
+# ⭐ 0.5 since 2026-08-26, owner: *"the barycenter must be away less than half of
+# the maximum dimension shown by the cube to the camera"*. The rationale, the
+# measured cost (only 22% of 50 real grabs survive the tightening) and the reason
+# it is an IN-PLANE test only are recorded at the reference in
+# `HandsTriggeredActions.GRAB_RADIUS_MULTIPLIER`.
+# ⛔⛔ 0.33 MADE THE GAME UNGRABBABLE, AND THE REASON IS A COMPOUNDING MISTAKE.
+#
+# The owner picked 0.33 on the rig slider and it felt right AT THE TIME. What was
+# not noticed -- by me -- is that the fraction was chosen while every cube was
+# still INFLATED by the depth ratchet: cubes were pinned at the 0.30 m floor and
+# rendering at 133 px instead of the ~80 px they take at the resting depth. So
+# 0.33 then meant 0.33 x 160 = 53 px, and 0.33 now means 0.33 x 96 = 32 px for the
+# large cube and 16 px for the small one.
+#
+# ⚠ Fixing the ratchet and tightening the multiplier in the same session multiplied
+# together: the grab region collapsed about 4x, and the owner reported "I can't
+# grab any more". ⛔ THE LESSON: a fraction settled live is only valid against the
+# quantity it was settled against. Re-measure a tuned fraction after ANY change to
+# what it multiplies.
+#
+# ⭐ 1.0 = "the barycentre must fall inside the object's projected outline", which
+# is a rule that means the same thing at every size and depth. At the resting depth
+# that is 96 px (large) / 48 px (small), comparable to the 120/60 the old rule gave.
+# The owner re-tunes from here with the slider, which now reaches past 100%.
+GRAB_RADIUS_MULTIPLIER = 1.0
+
+# ⛔⛔ OPEN DEFECT, FOUND 2026-08-26 BY RAISING THIS VALUE: at 1.0 the two
+# pipelines DISAGREE about whether a grab happens. `analysis/parity_replay.py` on
+# `2026-08-24_220415_prod_tau20` reports 41 divergences, the first being ownership
+# at frame 377 (production claims the large cube, the debug tool does not); at 0.33
+# it reports NONE.
+#
+# ⚠ It is NOT the `F1` path: both switches are off in that replay, so the grip
+# point, the trim and the depth walk are all inert. A wider radius simply brings
+# more cubes into contention and surfaces a difference that a narrow radius hid.
+# ⭐ Which is precisely what `U6` keeps `parity_replay` for -- the guard worked.
+#
+# ⛔ NOT diagnosed yet. Narrowed to: with both flags off the two tools compute the
+# same centre and the same hand position, so the difference has to be in
+# `projected_size_of` -> `cube.depth_m`, i.e. the two depth-ratio trackers drifting
+# apart over the take. Investigate before this value ships.
+
 # ⚠ A HITCH MUST NOT BECOME A POP: dt is clamped before the exponential, or a cube
 # teleports onto the hand on the first frame after a dropout -- undoing D3's
 # resync blend, a fix the owner has already accepted.

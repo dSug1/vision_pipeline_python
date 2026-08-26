@@ -37,19 +37,21 @@ fact and is why an earlier pass wrongly recommended accepting it.
 **The diagnosis is proven twice over and still stands; the remedy is not found.**
 → [`spec/ORIENTATION_DIAGNOSIS.md`](spec/ORIENTATION_DIAGNOSIS.md)
 
-**Next: `F1`'s LIVE TAKE — the mechanism is complete and unconfirmed.** Fingertip
-grip point, palm-frame rotation trim, 1€ jitter filter and live sliders are all
-built →
-[`spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](spec/F1_FINGERTIP_TRANSFORM_SPEC.md).
-Run **`f1_rig.bat`**: three panels on one camera — shipped control / fingertip
-grip / grip + trim — each one step apart, so a difference between two panels has
-one cause.
-⛔ **Both `F1` switches are OFF in the game** (`USE_TIP_BARYCENTER=False`,
-`TRIM_GAIN=0.0`) until that take says otherwise.
-⚠ **Owed regardless of the outcome**: the `A10` acceptance bar has never been run
-against `F1`, and §10.1's trim-resolution metric does not exist — without it `F1`
-can pass every existing metric and still not deliver the fine alignment it exists
-for.
+⭐⭐ **`F1` IS RIG-ACCEPTED (2026-08-26), AND STILL OFF IN THE GAME.** The owner
+ran four rig sessions: the **fingertip grip is accepted** (*"better than the palm
+grip"*), the jitter filter is settled at **tau = 70 ms**, and **`A1` shipped into
+both tools** — the object settles ON the fingertip barycentre instead of riding
+115 px beside it, and its depth is re-seated on the hand at each grab instead of
+ratcheting into the 0.30 m floor (where it had sat for 57% of every hold).
+⛔⛔ **The FIRST take was void**: two module-global gates left panels 1 and 2
+bit-identical, so the owner judged a comparison that was not running the feature.
+⭐ **A switch must be verified where it takes EFFECT, never where it is set.**
+⛔ **Both switches stay OFF in the game** — the `A10` bar has never been run
+against `F1`, §10.1's trim-resolution metric does not exist, and the trim's
+measured **21.2° lean against the shipped 32.9°** is damping until a **declared**
+take proves it is fidelity.
+→ [`spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](spec/F1_FINGERTIP_TRANSFORM_SPEC.md) ·
+[`../00_CORE/queue_notes/F1.md`](../00_CORE/queue_notes/F1.md)
 
 ⭐⭐ **`T6`'s analysis has RUN** — protocol §4.1/§4.2 and the depth arm §8.1/§8.2,
 over the six recorded takes (`analysis/t6_ratio_analysis.py`, no pipeline change).

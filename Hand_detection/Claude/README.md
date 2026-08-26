@@ -44,10 +44,11 @@ name.** They are the record, not the briefing.
 
 ## Where it stands, in five lines
 
-**Next: a LIVE TAKE, not a build.** `F1`'s mechanism is complete — fingertip
-grip, palm-frame rotation trim, 1€ jitter filter, sliders — and **unconfirmed**.
-Run `f1_rig.bat`: three panels on one camera, each one step apart.
-⛔ **Both `F1` switches are OFF in the game** until that take says otherwise.
+**`F1` is RIG-ACCEPTED (2026-08-26) and still OFF in the game.** The fingertip
+grip is accepted live, jitter settled at tau = 70 ms, and `A1` shipped — the object
+now settles ON the fingertip barycentre and its depth is re-seated on the hand at
+each grab. ⛔ The `A10` bar and §10.1's metric are still owed before either switch
+goes on.
 **`T6` has moved**: its six takes are analysed and the analysis re-verified — the
 ratio table must be **2-D**, and the **absolute depth estimator steps whenever
 rotation changes which palm span it selects** (the four disagree by 13–22% at the
