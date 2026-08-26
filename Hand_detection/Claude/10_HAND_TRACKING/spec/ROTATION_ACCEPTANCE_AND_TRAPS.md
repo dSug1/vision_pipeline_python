@@ -10,6 +10,32 @@ real**, §8 which take to use for which axis and which to distrust.
 ⚠ Cross-take absolute axis numbers are not comparable: the camera moved between
 recordings. Same-take A/B is sound.
 
+⛔⛔ **AMENDMENT 2026-08-26 — `edge_on_measure` IS BLIND TO PITCH.** §8's closing
+paragraph recommends the `Rsq`/`Lsq` HUD readout (`palm_geometry.edge_on_measure`)
+as *"a live operator aid worth reusing for any rotation take"*, saying it *"drops
+only when yaw/pitch leak in"*. ⚠ **The pitch half of that is wrong**, and the
+sentence is inside the VERBATIM block below, so it is corrected here instead of
+edited there.
+
+Measured on the six `T6` ratio-table takes, median at the **90° hold**:
+
+| axis | `edge_on_measure` @90° |
+|---|---|
+| yaw (takes 1, 3, 5) | **0.13 – 0.28** |
+| pitch (takes 2, 4, 6) | **0.94 – 1.00** — *higher* than at 0° |
+
+⭐ **The metric is not broken.** It measures knuckle-row squareness, which is
+exactly the condition under which the palm/back **sign** degenerates — and pitch
+does not foreshorten the knuckle row, so the sign is never in danger and `DR-2`
+correctly stays silent through a pitch sweep.
+
+⚠ **The consequence for an operator is real**: `Rsq`/`Lsq` **cannot judge a PITCH
+take**. Watching it while holding one means watching an instrument that cannot see
+the axis being rotated about. ✅ Use it for **yaw and roll**. For pitch there is no
+equivalent aid yet, which is worth remembering when reading §8's warning that the
+second pitch take's 3× axis error is *unexplained* — every pitch take in this
+corpus was held without a working squareness readout.
+
 ---
 
 <!-- PROVENANCE — machine-extracted, NOT edited.

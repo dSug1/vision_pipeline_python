@@ -115,11 +115,22 @@ recording them, and two are corrections to the method rather than results:
    ⭐ Proof: the depth-B pair, same distance and camera, a minute apart, differed
    by 5% between axes — which cannot be distance. Use the 0° hold; it is already
    recorded, so nothing needs re-taking.
-3. ⚠ **Take 6 (pitch, far) is shaped unlike the other five** and is unexplained.
-   ⭐ Worth naming because `t5i` already carries a second pitch take reading 3×
-   worse than the validated one, also unexplained after contamination, the noise
-   floor and the `acos` fold were all ruled out. **Two unexplained pitch anomalies
-   in one corpus is a pattern**, even if it is nothing.
+3. ⛔ **"Take 6 is the anomaly" — CLAIMED, THEN RETRACTED THE SAME DAY.** The
+   shape reported ("dips at 30°") did not exist; the 0° value had been read off a
+   console tail that had scrolled it away. ⭐⭐ Checked properly, take 6 is one of
+   only **two** takes that behaves as geometry requires: 0° and 180° are both
+   palm-square, so the depth estimate must RETURN at 180° — and **four of six peak
+   at 180° and never come back**, which geometry does not allow. That is the real
+   open question, and under-rotation is ruled out (`edge_on_measure` says all six
+   reached 180°). ⚠ The lesson is the cheap one: **do not read a number off a
+   truncated console when the file holds it.**
+4. ⭐ **`edge_on_measure` is BLIND TO PITCH** — 0.13–0.28 at yaw-90° but
+   **0.94–1.00** at pitch-90°. Not a defect: it measures the knuckle-row
+   squareness that governs the palm/back SIGN, and pitch does not foreshorten the
+   knuckle row, so `DR-2` correctly stays silent. ⚠ But the `Rsq`/`Lsq` HUD aid
+   therefore **cannot judge a pitch take**, and every pitch take in this corpus was
+   held without a working squareness readout — worth remembering next to the
+   still-unexplained 3× error on `t5i`'s second pitch take.
 
 ⭐⭐ **`U12` HAS ITS FIRST MEASURED DEPTHS.** Every depth this project has quoted
 came from the estimator; nothing had met a tape. The estimator is within about
