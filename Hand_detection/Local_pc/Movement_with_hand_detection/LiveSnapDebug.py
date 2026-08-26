@@ -485,7 +485,24 @@ def _update_snap_depth(hand_data_by_hand, frame_size):
     for hand in TRACKED_HANDS:
         d = hand_data_by_hand.get(hand)
         if d is None:
-            _snap_depth_trackers[hand].reset()
+            # ⛔⛔ THIS USED TO `reset()` THE TRACKER HERE, AND IT WAS THE 2026-08-26
+            # PARITY DIVERGENCE. A hand simply missing from one frame is not a hand
+            # that has DIED: production resets its absolute-depth estimator only on
+            # `SUSTAINED_LOST`, after the bridge window, alongside every other
+            # per-hand estimator. Resetting on the first missed frame threw away
+            # the state the bridge exists to coast on -- the same "resume from a
+            # cold start, a visible pop instead of the drop it replaced" that D2/D3
+            # were built to prevent.
+            #
+            # ⚠ HOW IT SURFACED: `parity_replay` reported 41 divergences the moment
+            # the grab radius went from 0.33 to 1.0, the first being OWNERSHIP at
+            # frame 377 -- production snapped, this tool snapped one frame LATER.
+            # Both tools agreed on the cube exactly (same centre, depth and
+            # projected size); they disagreed on the HAND's depth, because this
+            # tracker had been reset by a dropout and production's had not. A wider
+            # radius simply brought a cube into contention often enough for a
+            # one-frame difference in the axial gate to change the outcome.
+            # ⭐ The narrow radius was hiding it, not preventing it.
             _last_pixel_landmarks.pop(hand, None)
             continue
         _last_pixel_landmarks[hand] = d["pixel_landmarks"]
@@ -2072,6 +2089,11 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
             # would discard exactly what the bridge coasts on.
             if state.hand_state_trackers[handedness].tracking_state == hand_state.SUSTAINED_LOST:
                 state.hand_rotation_states[handedness] = None                         # §16.15: never fit against a dead track
+                # ⭐ 4.2, mirroring production exactly: the ABSOLUTE depth estimator
+                # belongs to the hand that just died, so it dies with it -- here,
+                # on the track's death, and NOT on the first frame the hand is
+                # missing. See `_update_snap_depth` for the divergence this fixed.
+                _snap_depth_trackers[handedness].reset()
                 # ⛔⛔ MISSING UNTIL 2026-08-22 -- production always did this and
                 # this tool never did. Owner, live: "when the palm exits and comes
                 # back with back, the back hand still grabs the cube for a short

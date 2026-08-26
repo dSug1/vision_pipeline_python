@@ -63,6 +63,37 @@ def main():
 
     # production drives a real CubeWindow; the debug tool drives its own arm.
     arm = D._make_arm("blend", 640, 480)
+    # ⛔⛔ THE SIXTH TIME THE SYMMETRY RULE HAS BITTEN, and the cause of the
+    # 2026-08-26 "41 divergences".
+    #
+    # Production's rotation blend is time-based UNCONDITIONALLY:
+    # `_rotation_slerp_factor` returns `1 - exp(-dt/tau)` with tau = 20 ms. The
+    # debug tool's arm DEFAULTS to `slerp_mode = "frame"` (the legacy fixed 0.35)
+    # and the live tool switches every arm to "time" at startup -- but this harness
+    # never did.
+    #
+    # ⚠ So it compared a 0.918-per-frame blend against a 0.35-per-frame one at
+    # 20 fps. Both converge on the same target, so the difference showed only as a
+    # TRANSIENT after each rotation change: 3.08 deg at the first grab, decaying
+    # over the following frames. Invisible until this harness began comparing
+    # orientation on the same day, and it then flipped an OWNERSHIP decision once
+    # the grab radius started depending on the object's projected footprint.
+    #
+    # ⭐ THREE separate harness asymmetries produced one "divergence": no rotation
+    # module, no slerp mode, and no orientation comparison to reveal either.
+    arm.slerp_mode = "time"
+    # ⛔⛔ AND ITS TIME CONSTANT, WHICH IS THE ACTUAL CAUSE. `CubeState` defaults
+    # `slerp_tau_ms = 149.0` -- the legacy value, deliberately kept as the dataclass
+    # default -- and the live tool overwrites it with `SLERP_TAU_MS` (the owner's
+    # 20 ms, settled in `L1`) on every arm at startup. This harness set neither.
+    #
+    # ⭐ PROVED, not guessed: with the slerp calls instrumented, the two tools'
+    # orientation TARGETS were bit-identical (0.0000 deg) on every frame. Only the
+    # blend factor differed -- production 0.955, debug 0.341 -- i.e. tau = 20 ms
+    # against tau ~120 ms. The cubes were converging on the same answer at
+    # different speeds, which is why the "divergence" was a transient that decayed
+    # after every rotation change instead of a persistent offset.
+    arm.slerp_tau_ms = D.SLERP_TAU_MS
     D.arms_first_panel[0] = arm
     P.configure_source_resolution(640, 480)
 
@@ -141,7 +172,19 @@ def main():
         # production's 3D snap gate against a 2D one and report a divergence
         # that exists only here.
         D._update_snap_depth(data, (640, 480))
-        D.update_hands(arm, data, now_ms=t)
+        # ⛔⛔ `rotation=` — THE FIFTH TIME THE SYMMETRY RULE HAS BITTEN, and the
+        # worst, because it was invisible for as long as this harness did not
+        # compare orientation. Production always fits Horn over the palm; the debug
+        # tool only does so when `update_hands` is HANDED a rotation module, and
+        # this harness never handed it one. So the debug arm's rotation reference
+        # was never frozen (`hand_rotation_states` stayed None) and its cubes were
+        # driven by the Gram-Schmidt fallback while production's used Horn.
+        #
+        # ⚠ It surfaced as a 3.0 deg orientation gap at frame 51 that later flipped
+        # an OWNERSHIP decision, once the grab radius started depending on the
+        # object's projected footprint. Both symptoms were the harness, not the
+        # pipelines. ⭐ `PRODUCTION_ROTATION` is exactly what the live tool passes.
+        D.update_hands(arm, data, rotation=D.PRODUCTION_ROTATION, now_ms=t)
 
         # --- compare
         for h in HANDS:
@@ -169,6 +212,33 @@ def main():
                 if _d > 0.0:
                     diffs.append((i, _n, "position", tuple(_c.position),
                                   tuple(arm.cubes[_n].position)))
+        # ⭐⭐ ORIENTATION PARITY -- added 2026-08-26, and it found a divergence the
+        # DAY it was added. This harness had compared ownership, the palm/back
+        # reading and (since step 2) POSITION, but never HOW THE OBJECT IS TURNED.
+        #
+        # ⛔ It was found the expensive way. Making the grab radius depend on the
+        # object's projected FOOTPRINT made the radius orientation-dependent, and a
+        # divergence that had been silent since frame 51 of this very take surfaced
+        # as an OWNERSHIP disagreement 326 frames later. The two tools had been
+        # rotating cubes differently the whole time and nothing was watching.
+        # ⭐ The lesson `U6` keeps restating: a quantity no harness compares is a
+        # quantity the two pipelines are free to disagree about.
+        for _n, _c in P.cube_window.cubes.items():
+            if _n not in arm.cubes:
+                continue
+            _pq, _dq = _c.orientation, arm.cubes[_n].orientation
+            # ⛔ COMPARE THE COMPONENTS, NOT THE ANGLE. `2*acos(dot)` is singular at
+            # dot = 1: a quaternion whose norm is one ULP off unity yields ~1e-6 deg
+            # out of arithmetic alone, so an angle threshold cannot distinguish
+            # "identical" from "very slightly different" no matter how it is tuned.
+            # ⭐ Exact equality is the honest test and it is achievable -- these are
+            # the same operations on the same inputs. The angle is computed only to
+            # REPORT a difference, never to detect one.
+            if tuple(_pq) != tuple(_dq):
+                _dot = abs(sum(a * b for a, b in zip(_pq, _dq)))
+                _ang = 2.0 * math.degrees(math.acos(max(-1.0, min(1.0, _dot))))
+                diffs.append((i, _n, "orientation_deg", round(_ang, 6), ""))
+
         pown = {n: c.owner for n, c in P.cube_window.cubes.items()}
         down = {n: c.owner for n, c in arm.cubes.items()}
         if set(pown) == set(down):
