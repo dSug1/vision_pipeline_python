@@ -26,25 +26,25 @@ The binding one, restated: **A10 — measure or revert.**
 
 ## ⭐⭐⭐ YOU ARE HERE (2026-08-25)
 
-**NEXT BUILD IS `F1`, AND IT IS NOW SPECIFIED** — the cube's transform (Vector3
-position *and* rotation quaternion) driven by the **fingertips**, palm demoted to
-a support role. The owner specified it 2026-08-25; the design, acceptance bar and
-build order are
-[`10_HAND_TRACKING/spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](../10_HAND_TRACKING/spec/F1_FINGERTIP_TRANSFORM_SPEC.md).
-⛔ Its one trap is respected rather than avoided: **not** a rigid-body fit over
-palm+tips — the tips enter as a **deformation in the palm's frame**, feeding a
-bounded trim that is **bit-identical to shipped Horn at gain 0**.
-⭐ **Step 0 is MEASURED** (`analysis/f1_tip_census.py`, 123 takes): the tip noise
-floor is **1.5 mm** and the feared held-state collapse did **not** happen — but
-two of the owner's four points need clamping, not building as written. The rigid
-tip residual swings **75–95° inside half a second** and that is the model being
-wrong, not noise; the plain barycentre drifts **1 cm median, 6 cm p95**.
-⭐ **Step 3 is SHIPPED and LIVE-CONFIRMED** in both tools (owner, 2026-08-25:
-*"debug working fine"*, *"production working fine"*). The back-of-hand snap rule
-is gone from both tools, `handinput` and the traces. Debug is also **measured**:
-**9 of 15 snaps happened back-of-hand**, 15 releases, nothing stranded.
-⚠ **Production recorded nothing** (`N4` — the drive slept); its evidence is the
-live verdict plus `parity_replay`'s NO DIVERGENCE, not numbers of its own.
+⭐⭐ **`F1`'s MECHANISM IS COMPLETE AND UNCONFIRMED. THE NEXT THING IS A LIVE
+TAKE, NOT A BUILD.** Steps 0/1/2/3/4/5 and the sliders are built and committed;
+the three-window rig is `f1_rig.bat` (panel 1 = shipped control, 2 = fingertip
+grip, 3 = grip + rotation trim, each one step apart).
+
+⛔ **Both `F1` switches are OFF in the game** (`USE_TIP_BARYCENTER=False`,
+`TRIM_GAIN=0.0`) so production is pre-`F1` and every change lives in the rig where
+it can be compared. Turning either on is a decision to make WITH the rig, not a
+default to inherit.
+
+⭐ **The six `T6` ratio-table takes are recorded too** — 1680 frames, all on-axis.
+Its next step is the ANALYSIS (protocol §4): desk work, no camera. ⛔ Read
+[`queue_notes/T6.md`](queue_notes/T6.md) first — the ratio the recording tool
+prints is contaminated by the sweep, and take 6 is unexplained.
+
+⚠ **Still owed on `F1` regardless of the take**: the `A10` acceptance bar has
+never been run against it (yaw / lean / pitch / roll / **jitter p95 25.41**), and
+the trim-resolution metric of §10.1 does not exist — without it `F1` can pass
+every existing metric and still not deliver the fine alignment it was built for.
 
 Last three landings: **`L1`** rotation lag fixed and shipped (τ = 20 ms);
 **`IS1`–`IS3`** the input system ✅ **SHIPPED** (`handinput/`, observes-only) —
@@ -105,7 +105,7 @@ remedy does not — [`10_HAND_TRACKING/spec/ORIENTATION_DIAGNOSIS.md`](../10_HAN
 | [T2](queue_notes/T2.md) | Pitch-plane crossing | HAND | pipeline | partly fixed — DR-2 closed the sign-flip half | 2.2, 1.5–1.7 |
 | [T3](queue_notes/T3.md) | Object jump / silent handover | HAND | pipeline | ✅✅ **fixed 2026-08-22** by the narrow remap, owner-accepted live | 2.1, N5 |
 | [T4](queue_notes/T4.md) | Yaw / palm-sinking in translation | HAND | pipeline | deferred | 1.4, 1.2, 4.1 |
-| [T6](queue_notes/T6.md) | Orientation from 2D (planar PnP) | HAND | perception | ⛔⛔ **built and A10-rejected 2026-08-24** — yaw got worse; code in `estimators()` only. ⭐⭐ **A 2D-RATIO-TABLE correction is OPEN and NOT covered by §2.0.12** (owner 2026-08-25) — clean depth-free index, yaw/pitch kept separate, declared ground truth. §2.0.9's refutation used a *contaminated* index so it does not carry. **Protocol + tool are ready**: `spec/RATIO_TABLE_CALIBRATION_PROTOCOL.md`, `tools/RecordRatioCalibration.py`. Owner runs it after `F1` | 4.2 |
+| [T6](queue_notes/T6.md) | Orientation from 2D (planar PnP) | HAND | perception | ⛔⛔ **built and A10-rejected 2026-08-24** — yaw got worse; code in `estimators()` only. ⭐⭐ **A 2D-RATIO-TABLE correction is OPEN and NOT covered by §2.0.12** (owner 2026-08-25) — clean depth-free index, yaw/pitch kept separate, declared ground truth. §2.0.9's refutation used a *contaminated* index so it does not carry. ✅ **ALL SIX TAKES RECORDED 2026-08-26** — 1680 frames, every one on-axis, 3 depths × 2 axes, right hand declared. ⚠ Grid is **30°** (7 positions), not the protocol's 25.71°: the owner could not set 25.71° by feel, and the declared angle IS the ground truth. ⛔ **Before analysing, read the dossier**: the ratio the tool prints is the take MEDIAN and is contaminated by the sweep — use the 0° hold. ⚠ Take 6 is shaped unlike the other five and is unexplained. **Next: the analysis, protocol §4 — desk work, no camera** | 4.2 |
 | [T6d](queue_notes/T6d.md) | The anisotropic 2×2 fit | HAND | perception | ⛔⛔ built, 4 live sessions, **owner-rejected 2026-08-24** — production never ran it | T6 |
 | [L1](queue_notes/L1.md) | Rotation smoothing — a **time constant** | HAND | responsiveness | ✅✅ **shipped 2026-08-24**, owner-settled live at τ = 20 ms | — |
 | [F1](queue_notes/F1.md) | ⭐⭐⭐ **The cube's transform from the FINGERTIPS** | HAND | perception + gesture | ⭐⭐⭐ **SPECIFIED + STEP 0 MEASURED + STEP 3 SHIPPED 2026-08-25** (⛔ live take owed). Design = **palm-frame deformation + bounded trim**, gain 0 ⇒ bit-identical to Horn; τ = 20 ms untouched; ⛔ contact-point arm dropped on a **patent** finding. **Census (`analysis/f1_tip_census.py`)**: tip noise floor **1.5 mm** ✅ workable (held only 5–10% worse) · ⛔ rigid tip residual **75–95° inside 0.5 s** — not noise, the rigid model is wrong ⇒ clamp far below it · ⛔ plain barycentre drifts **1 cm median / 6 cm p95** ⇒ `g_pos = 1` needs a clamp · ✅ collinearity floor 0.20 costs 1.9%. ⭐⭐ **Steps 1, 2 and 4 BUILT 2026-08-26** — 1€ filter, fingertip barycentre for snap+translation, and the palm-frame ROTATION TRIM (gain 0 = shipped Horn; a rigidly rotated hand yields **0.0000°** of trim). ⭐ **`f1_rig.bat` runs all three side by side on one camera** for the live take. ⛔ **Live take owed** — and until it happens **BOTH F1 switches are OFF in the game** (`USE_TIP_BARYCENTER=False`, `TRIM_GAIN=0.0`), so production is pre-F1 and every change lives in the rig where it can be compared. ⭐ **Step 1 landed 2026-08-26**: the **1€ filter** + 30 golden vectors, inert until step 2 (⚠ the vectors caught a real divergence from the paper immediately — the speed term used the filtered, not the raw, value). **Back-of-hand snap rule REMOVED** ✅ **live-confirmed both tools 2026-08-25**; debug measured **9 of 15 snaps back-of-hand** (⚠ re-opens `N8`; the rule was refusing **8.3%** of free-hand frames; ⚠ production recorded nothing — `N4`) → [`spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](../10_HAND_TRACKING/spec/F1_FINGERTIP_TRANSFORM_SPEC.md) | L1 ✅ |
@@ -200,7 +200,7 @@ remedy does not — [`10_HAND_TRACKING/spec/ORIENTATION_DIAGNOSIS.md`](../10_HAN
 | [U9](queue_notes/U9.md) | Play area — an object may never reach the edge | HAND | feature | ✅ shipped 2026-08-23; superseded by 4.2's world-space volume | — |
 | [U10](queue_notes/U10.md) | Camera privacy: policy + store disclosures (minors) | **SEC** | governance | open — before any store submission. Not a build | — |
 | [U11](queue_notes/U11.md) | Shipping-build hygiene; hard-disable dev capture | **SEC** | shipping | open — at package time, not now | U10 |
-| [U12](queue_notes/U12.md) | Start-of-game calibration (playability, FOV, camera tilt) | HAND | playability | open — build later, when a real game exists. ⚠ **not** the depth calibration 4.1 measured as unnecessary | 4.2, U3 |
+| [U12](queue_notes/U12.md) | Start-of-game calibration (playability, FOV, camera tilt) | HAND | playability | open — build later. ⭐⭐ **BUT IT NOW HAS ITS FIRST MEASURED DEPTHS** (2026-08-26): the estimator is within ~±6% of a tape across 0.35–0.70 m, and the bias **falls with distance** — which neither a scale bias nor an FOV error predicts, but an additive reference offset does. ⛔ A question, not a finding: 3 hand-held points vs a 2-parameter model. Do **not** adopt a correction yet | 4.2, U3 |
 | [IS1](queue_notes/IS1.md) | Input system — the package boundary | **INPUT** | platform | ✅✅ **SHIPPED 2026-08-25** — owner ran both tools, clean | — |
 | [IS2](queue_notes/IS2.md) | Input system — conformance as DATA | **INPUT** | platform | ✅✅ **SHIPPED 2026-08-25** | IS1 |
 | [IS3](queue_notes/IS3.md) | Input system — the action layer, wired as an OBSERVER | **INPUT** | platform | ✅✅ **SHIPPED 2026-08-25** — owner ran both tools back to back, clean | IS1 |

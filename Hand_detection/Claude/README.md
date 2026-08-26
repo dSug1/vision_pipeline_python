@@ -44,12 +44,13 @@ name.** They are the record, not the briefing.
 
 ## Where it stands, in five lines
 
-**Next build: `F1`** — the object's transform from the **fingertips**, owner to
-specify in its own conversation.
-**Open show-stopper**: the **yaw lean** (~27° at a 60–90° hand turn). Diagnosis
-proven; four remedies A10-rejected.
-**Just landed**: `L1` the rotation lag (τ = 20 ms) · `IS1`–`IS3` the input system
-(✅ shipped, owner ran both tools) · `SEC1` the security audit.
+**Next: a LIVE TAKE, not a build.** `F1`'s mechanism is complete — fingertip
+grip, palm-frame rotation trim, 1€ jitter filter, sliders — and **unconfirmed**.
+Run `f1_rig.bat`: three panels on one camera, each one step apart.
+⛔ **Both `F1` switches are OFF in the game** until that take says otherwise.
+**Also recorded**: the six `T6` ratio-table takes (1680 frames, all on-axis); its
+next step is the analysis, protocol §4, no camera needed.
+**Open show-stopper**: the **yaw lean** (~27° at a 60–90° hand turn).
 Full status: [`00_CORE/QUEUE.md`](00_CORE/QUEUE.md)'s YOU-ARE-HERE block.
 Full narrative: [`10_HAND_TRACKING/history/SESSION_LOG.md`](10_HAND_TRACKING/history/SESSION_LOG.md).
 

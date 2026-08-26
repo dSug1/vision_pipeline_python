@@ -68,6 +68,21 @@ import sys
 import time
 from datetime import datetime
 
+# ⛔⛔ THE CONSOLE IS cp1252 HERE, AND THIS GUARD IS NOT COSMETIC. On 2026-08-26 a
+# star in the declared-depth summary raised UnicodeEncodeError and killed the tool
+# **after the take was safely written but BEFORE it printed "wrote N frames"** --
+# so a complete, valid recording looked to the operator like a crash, and the
+# scale-bias line it had just computed was the last thing on screen. ⚠ The `| tail`
+# in the launch command reported exit code 0 on top of that, so nothing flagged it.
+#
+# ⚠ It would have recurred on EVERY remaining take that declares a depth, because
+# that print only runs when `--declared-depth-m` is given -- i.e. the bug was
+# dormant for takes 1 and 2 and armed for the other four.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, ValueError):
+    pass
+
 import cv2
 import mediapipe as mp
 from mediapipe.tasks import python

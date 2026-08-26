@@ -71,6 +71,73 @@ still says what it said, and now says where it was superseded.
 
 ---
 
+## 2026-08-26 — `F1`'s mechanism is complete; the six ratio-table takes are recorded
+
+**`F1` steps 1, 2, 4 and the sliders are BUILT** and committed (`05c316c`); the
+three-window rig `f1_rig.bat` is ready. ⛔ **Live take still owed** — and until it
+happens **both `F1` switches are OFF in the game** (`USE_TIP_BARYCENTER=False`,
+`TRIM_GAIN=0.0`), so production is pre-`F1` and every change lives in the rig
+where it can be compared. ⚠ Step 2 was briefly live in production while
+unconfirmed; the owner's last production sign-off predates it.
+
+⭐⭐ **The 1€ filter's golden vectors caught a real divergence from the paper on
+their first run** — the speed term was built from the last FILTERED value where
+the published algorithm uses the last RAW one. It converged and looked right,
+which is what would have made it expensive to find in a JS or Swift port. ⚠ Had
+the suite generated its expectations from the implementation, as golden vectors
+usually are, all three failing checks would have passed.
+
+⭐ **The trim's "not `PALM_AND_TIPS`" property is now a test, not a claim**: a
+rigidly rotated hand produces **0.0000°** of trim across 20 poses.
+
+⛔ **A divergence the slider wiring nearly introduced**: `TRIM gain %` first
+started at 100, which would have made the single-arm debug tool run the trim while
+production ran without it. ⚠ **`parity_replay` could not have caught it** — that
+harness never creates a trackbar, so the bug would have lived only in the live
+tool. Fixed by starting at production's 0 and having `--f1-rig` raise it.
+
+⭐ **`parity_replay` now guards POSITION**, which it never did — it compared
+ownership and palm facing but never where the object actually is. 0.0000 px over
+3026 samples, so the tolerance is zero deliberately.
+
+---
+
+**AND THE SIX `T6` RATIO-TABLE TAKES ARE RECORDED** — 1680 frames, every one
+on-axis, 3 depths × 2 axes, right hand declared. Three findings came out of
+recording them, and two are corrections to the method rather than results:
+
+1. ⛔ **The grid is 30°, not the protocol's 25.71°.** The owner could not set
+   25.71° by feel. The declared angle IS the ground truth, so a hittable grid
+   beats a tidy one — otherwise the table is built on a lie, which is `U7`'s
+   circularity in another costume.
+2. ⛔⛔ **The ratio the tool prints is NOT the scale bias.** It is the take median,
+   and the depth estimate climbs through every sweep as the palm foreshortens.
+   ⭐ Proof: the depth-B pair, same distance and camera, a minute apart, differed
+   by 5% between axes — which cannot be distance. Use the 0° hold; it is already
+   recorded, so nothing needs re-taking.
+3. ⚠ **Take 6 (pitch, far) is shaped unlike the other five** and is unexplained.
+   ⭐ Worth naming because `t5i` already carries a second pitch take reading 3×
+   worse than the validated one, also unexplained after contamination, the noise
+   floor and the `acos` fold were all ruled out. **Two unexplained pitch anomalies
+   in one corpus is a pattern**, even if it is nothing.
+
+⭐⭐ **`U12` HAS ITS FIRST MEASURED DEPTHS.** Every depth this project has quoted
+came from the estimator; nothing had met a tape. The estimator is within about
+**±6% on yaw across 0.35–0.70 m** — reassuring, and new. ⚠ But the bias **falls
+with distance** and pitch reads below yaw, which neither a scale bias nor an FOV
+error predicts and an **additive reference offset** does. ⛔ Recorded as a
+QUESTION: three hand-held points against a two-parameter model fit by arithmetic,
+not by evidence. The settling experiment is cheap and needs no re-recording.
+
+⚠ Two tool bugs fixed on the way, both the same shape — **a symbol in console
+output on a cp1252 terminal**. `--help` died outright in `LiveSnapDebug`, and
+`RecordRatioCalibration` crashed **after writing a take but before printing "wrote
+N frames"**, so a complete recording looked like a failure. ⛔ The second was
+dormant for takes 1–2 and armed for the other four, because that print only runs
+when a depth is declared. `| tail` reported exit code 0 over the traceback.
+
+---
+
 ## 2026-08-25 (night) — `F1` is specified, Step 0 is measured, rule 3 is gone
 
 **The owner specified `F1`** in eight points (fingertip barycentre drives the

@@ -129,9 +129,20 @@ gate this work. But it is worth far more than it costs:
   length shows up as a **depth-proportional** error rather than a constant one.
 
 ⚠ **Measure lens-front to palm centre, palm at 0°** (square to the camera), and
-use the same reference for all six. The tool prints `declared / estimated / ratio`
-when the take closes — **that ratio is the scale bias at that depth**, readable on
-the spot.
+use the same reference for all six.
+
+⛔⛔ **CORRECTED 2026-08-26, AFTER RECORDING ALL SIX.** The tool prints
+`declared / estimated / ratio` when a take closes and calls it the scale bias.
+**It is not.** That ratio uses the take's **median across all holds**, and the
+depth estimate **climbs through the sweep in every take** because the palm
+foreshortens as it rotates — so the printed number is the bias convolved with the
+sweep. ⭐ The proof is the depth-B pair: same distance, camera untouched, a minute
+apart, only the axis different — take-medians **1.048 (yaw)** vs **1.101 (pitch)**.
+Rotating about a different axis cannot change how far away you were standing.
+
+✅ **Use the 0° hold instead**, where the palm is square and unforeshortened. It is
+stored per position in every take, so this costs no re-recording. Take-median and
+0° disagree by **5–16%**, always in the same direction.
 
 ### Running one take
 
@@ -141,6 +152,12 @@ the spot.
 ```
 
 * **8 holds, 0° → 180°**, prompted one at a time.
+  ⛔⛔ **USE `--positions 7` INSTEAD — 30° steps.** The default 8 gives **25.71°**
+  steps, and the operator could not set 25.71° by feel (*"I missed the degrees"*,
+  2026-08-26). ⭐ The DECLARED angle is this table's ground truth: if the operator
+  cannot hit the number the file records, the table is built on a lie — the exact
+  circularity `U7` exists to prevent. **A hittable grid beats a tidy one.** All six
+  takes of 2026-08-26 are on the 30° grid.
 * **SPACE** starts/stops a hold · **R** redoes the current hold · **N** skips ·
   **ESC/Q** aborts.
 * Keep the palm centre inside the **green** reticle. Amber ≤ 50 px is salvageable;
