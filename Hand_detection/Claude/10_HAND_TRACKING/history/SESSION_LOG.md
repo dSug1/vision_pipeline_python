@@ -103,42 +103,49 @@ ownership and palm facing but never where the object actually is. 0.0000 px over
 ---
 
 **AND THE SIX `T6` RATIO-TABLE TAKES ARE RECORDED** — 1680 frames, every one
-on-axis, 3 depths × 2 axes, right hand declared. Three findings came out of
-recording them, and two are corrections to the method rather than results:
+on-axis, 3 depths × 2 axes, right hand declared.
 
-1. ⛔ **The grid is 30°, not the protocol's 25.71°.** The owner could not set
-   25.71° by feel. The declared angle IS the ground truth, so a hittable grid
-   beats a tidy one — otherwise the table is built on a lie, which is `U7`'s
-   circularity in another costume.
-2. ⛔⛔ **The ratio the tool prints is NOT the scale bias.** It is the take median,
-   and the depth estimate climbs through every sweep as the palm foreshortens.
-   ⭐ Proof: the depth-B pair, same distance and camera, a minute apart, differed
-   by 5% between axes — which cannot be distance. Use the 0° hold; it is already
-   recorded, so nothing needs re-taking.
-3. ⛔ **"Take 6 is the anomaly" — CLAIMED, THEN RETRACTED THE SAME DAY.** The
-   shape reported ("dips at 30°") did not exist; the 0° value had been read off a
-   console tail that had scrolled it away. ⭐⭐ Checked properly, take 6 is one of
-   only **two** takes that behaves as geometry requires: 0° and 180° are both
-   palm-square, so the depth estimate must RETURN at 180° — and **four of six peak
-   at 180° and never come back**, which geometry does not allow. That is the real
-   open question, and under-rotation is ruled out (`edge_on_measure` says all six
-   reached 180°). ⚠ The lesson is the cheap one: **do not read a number off a
-   truncated console when the file holds it.**
-4. ⭐ **`edge_on_measure` is BLIND TO PITCH** — 0.13–0.28 at yaw-90° but
-   **0.94–1.00** at pitch-90°. Not a defect: it measures the knuckle-row
-   squareness that governs the palm/back SIGN, and pitch does not foreshorten the
-   knuckle row, so `DR-2` correctly stays silent. ⚠ But the `Rsq`/`Lsq` HUD aid
-   therefore **cannot judge a pitch take**, and every pitch take in this corpus was
-   held without a working squareness readout — worth remembering next to the
-   still-unexplained 3× error on `t5i`'s second pitch take.
+⛔⛔ **CAVEAT ZERO, from the owner, and it governs everything else:** *"the
+distance to the camera was not very reliable and the hand very likely moved
+during the takes."* ⭐ **Fine for what the takes are FOR** — the ratio table
+indexes **foreshortening ratios**, which are **scale-free**, so a wandering hand
+does not touch them. ⛔ **Fatal to anything depth-derived**, and two claims built
+on exactly that were made and retracted in one afternoon:
 
-⭐⭐ **`U12` HAS ITS FIRST MEASURED DEPTHS.** Every depth this project has quoted
-came from the estimator; nothing had met a tape. The estimator is within about
-**±6% on yaw across 0.35–0.70 m** — reassuring, and new. ⚠ But the bias **falls
-with distance** and pitch reads below yaw, which neither a scale bias nor an FOV
-error predicts and an **additive reference offset** does. ⛔ Recorded as a
-QUESTION: three hand-held points against a two-parameter model fit by arithmetic,
-not by evidence. The settling experiment is cheap and needs no re-recording.
+* *"take 6 is the anomaly"* — the shape reported for it did not exist; the 0°
+  value had been read off a truncated console instead of the `meta.json` holding
+  it. ⚠ **Do not read a number off a console when the file has it.**
+* *"four of six peak at 180° and never return, which geometry forbids"* — ⛔ geometry
+  permits it perfectly well **if the hand moved**, and a hand drifting away across
+  a seven-pose sweep produces precisely a monotone climb. No estimator mystery.
+
+⭐ **Both would have survived if caveat zero had been asked for first.** The
+recurring lesson: *a trend measured along an axis the operator could not hold is a
+measurement of the operator, not of the pipeline.*
+
+**Two corrections to the METHOD did survive, and they are the durable output:**
+
+1. **The grid is 30°**, not the protocol's 25.71°. The owner could not set 25.71°
+   by feel, and the DECLARED angle is this table's ground truth — a table built on
+   an angle the operator cannot hit is `U7`'s circularity in another costume. **A
+   hittable grid beats a tidy one.**
+2. ⛔ **The ratio the recording tool PRINTS is not the scale bias.** It uses the
+   take median, and the depth estimate climbs through every sweep. Use the 0° hold
+   — already stored per position, so nothing needs re-recording.
+
+⭐ **And one measurement finding that is scale-free, so caveat zero cannot touch
+it**: `edge_on_measure` is **BLIND TO PITCH** — 0.13–0.28 at yaw-90° but
+**0.94–1.00** at pitch-90°. Not a defect: it measures the knuckle-row squareness
+that governs the palm/back SIGN, and pitch does not foreshorten the knuckle row,
+so `DR-2` correctly stays silent. ⚠ But the `Rsq`/`Lsq` HUD aid therefore **cannot
+judge a pitch take**, and every pitch take in this corpus was held without a
+working squareness readout — worth holding next to the still-unexplained 3× axis
+error on `t5i`'s second pitch take.
+
+⚠ **`U12` gets a tape measurement for the first time but not a usable one.** Only
+*"the estimator is in the right ballpark"* survives — genuinely new, never checked
+before. What `U12` actually needs is a **HELD** distance: the hand braced against
+something, a single 0° hold, no sweep. Rotation is what invites the arm to drift.
 
 ⚠ Two tool bugs fixed on the way, both the same shape — **a symbol in console
 output on a cp1252 terminal**. `--help` died outright in `LiveSnapDebug`, and

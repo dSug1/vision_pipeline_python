@@ -53,9 +53,12 @@ for.
 
 ⭐ **The six `T6` ratio-table takes are recorded** (1680 frames, all on-axis, 3
 depths × 2 axes). Next is the **analysis**, protocol §4 — desk work, no camera.
-⛔ Read [`../00_CORE/queue_notes/T6.md`](../00_CORE/queue_notes/T6.md) first: the
-ratio the recording tool prints is contaminated by the sweep, and take 6 is
-unexplained.
+⛔ Read [`../00_CORE/queue_notes/T6.md`](../00_CORE/queue_notes/T6.md) first, for
+its **caveat zero**: the owner reports the distance was unreliable and the hand
+moved during the takes. ⭐ Harmless for the ratio table — foreshortening ratios are
+**scale-free** — but it invalidates every depth-derived reading, and two claims
+built on one were retracted the same day. ⚠ Also: the ratio the recording tool
+prints is the take median and is contaminated by the sweep; use the 0° hold.
 
 **Open, deliberately not next**: the two-hand swap · `N8` cube-stealing
 palm-first (routed to `B5`) · `T1` back-of-hand rotation quality · `T4`
