@@ -1,9 +1,17 @@
 # `handinput` — the hand-tracking input system
 
-⭐ **A Unity-Input-System-shaped surface over this project's hand pipeline**, built
-so it can be lifted into another game, a browser build, or a lens. Actions with
-phases, callbacks with a context, a polling API, and a serialisable state
-contract. A consumer subscribes to events; it never sees a landmark.
+⭐ **Action-based input, in the style of OpenXR and Unity's Input System**, over
+this project's hand pipeline — built so it can be lifted into another game, a
+browser build, or a lens. Actions with phases, callbacks with a context, a
+polling API, and a serialisable state contract. A consumer subscribes to events;
+it never sees a landmark.
+
+⚠ This package is independent work and is **not** affiliated with, endorsed by,
+or derived from the code of Unity Technologies or the Khronos Group. Those names
+appear here only to say what the shape *is*. The pattern itself is older than
+both: semantic actions bound to physical controls is **DirectInput action
+mapping (2000)**, the phase machine is **`UIGestureRecognizer` (2010)**, and the
+closest living standard is **OpenXR's action system (2019)**.
 
 Built 2026-08-25 (queue rows **IS1 / IS2 / IS3**). ⚠ Read `Claude/README.md` for
 the project as a whole — this file covers the package only.
@@ -12,9 +20,10 @@ the project as a whole — this file covers the package only.
 
 ## 1. The one distinction that explains the whole design
 
-Unity ships **two** packages, and this is deliberately the first of them:
+The reference stacks split input from interaction into **two** layers — Unity
+ships them as two packages — and this is deliberately the first of them:
 
-| Unity | here | knows about your scene? |
+| the reference split | here | knows about your scene? |
 |---|---|---|
 | **Input System** — devices → actions → callbacks | ⭐ **this package** | ⛔ no |
 | **XR Interaction Toolkit** — grab, hold, arbitration | still in `HandsTriggeredActions.py` / `LiveSnapDebug.py` | ✅ yes |
@@ -60,7 +69,7 @@ hi.actions["tracked"].canceled     += on_hand_lost
 # once per frame, from YOUR loop
 hi.update(live.frame(time_ms, [live.observe(slot="Left", ...)], frame_size))
 
-# polling works too, exactly as Unity offers both
+# polling works too — both styles, as the reference stacks offer
 pose = hi.value("palm_pose", "Left")
 state = hi.state("Left")            # HandState v2, JSON-serialisable
 ```
@@ -85,7 +94,8 @@ hi.clear_rotation_reference("Left")          # at release
 
 ### Phases
 
-Unity's five: `Disabled` / `Waiting` / `Started` / `Performed` / `Canceled`.
+Five, using the same vocabulary Unity's Input System does:
+`Disabled` / `Waiting` / `Started` / `Performed` / `Canceled`.
 
 * **button** — rising edge → `started` then `performed`; ⭐ **nothing while held**;
   falling edge → `canceled`.

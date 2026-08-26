@@ -186,6 +186,12 @@ class Cube:
     # HandsTriggeredActions.py's `_compute_grab_weights` docstring.
     grab_landmark_weights: Optional[Dict[int, float]] = None
     grab_residual_offset: Optional[Tuple[float, float]] = None
+    # ⭐ F1 step 2: the object's offset from the FINGERTIP BARYCENTRE, frozen at
+    # grab. Same no-pop construction as `grab_residual_offset` above, against the
+    # grip point instead of the 9-landmark blend. ⚠ Cleared on release with
+    # everything else -- a stale one would re-anchor the NEXT grab of this object
+    # to where the fingers were during the previous one.
+    grab_grip_offset: Optional[Tuple[float, float]] = None
     # ⭐⭐ 4.2 -- Z-AXIS TRANSLATION (§14.3). `size` above is now the object's
     # extent AT THE REFERENCE DEPTH; `depth_m` is where it actually is, and
     # `projected_size` is what it occupies on screen. An object starts at the
@@ -360,6 +366,7 @@ class CubeWindow:
         cube.grab_cube_orientation = None
         cube.grab_landmark_weights = None
         cube.grab_residual_offset = None
+        cube.grab_grip_offset = None
         # 4.2: the Z baseline is part of the grab baseline. `depth_m` itself
         # FREEZES, exactly like position and orientation -- release means "stays
         # where it is", and it is now where it is in three axes.

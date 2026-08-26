@@ -4,7 +4,7 @@
 > that must be true before a store submission
 > **READ IF** · you are adding a dependency, a network call, a recording path, an
 > SDK, or preparing to package
-> **LAST VERIFIED** · 2026-08-25
+> **LAST VERIFIED** · 2026-08-26
 
 ⛔⛔ **The audience is ALL PUBLIC, INCLUDING YOUTH** (owner, 2026-08-23). That
 single decision makes **COPPA and GDPR-K live**, puts the build inside Google
@@ -51,6 +51,7 @@ today and are what protects the position.
 | [`SEC2`](../00_CORE/queue_notes/SEC2.md) | ⭐ **half done.** Measuring it corrected the row's own framing: the risk is not an attack, it is **reproducibility of the rig** — 24 of 26 packages float and had already drifted past what mediapipe 0.10.14 was built against (numpy 2.4.6, OpenCV 5.0). `requirements.lock.txt` now records the environment. Hash pinning + the **licence inventory `N13` needs** are packaging work |
 | [`SEC5`](../00_CORE/queue_notes/SEC5.md) | ⚠ both tools feed MediaPipe a **fake 33 ms clock**. ⛔ The first write-up **overstated its effect and was retracted the same day** (§18.4): the clock is wrong, the output effect is **unmeasured and may be nil**. ⚠ The corpus cannot settle it — **no pixels** — the test is two detectors on the same frames |
 | [`SEC4`](../00_CORE/queue_notes/SEC4.md) | the debug recorder buffers a whole session in RAM where production streams — not restructured on the eve of a live take |
+| [`SEC6`](../00_CORE/queue_notes/SEC6.md) | ⭐ **NEW 2026-08-26 — attribution must travel with the BINARY.** `THIRD_PARTY_NOTICES.md` + `licenses/` now exist at the repo root (1€ filter BSD-3 · MediaPipe + the model Apache-2.0 · `three` MIT). ⭐ **The BSD-3 copyright line was left blank rather than guessed, then FETCHED** — `Copyright 2023 Inria`, from `casiez/OneEuroFilter/python/LICENSE`; ⚠ **the repo-root path 404s**, which is the dead end that stalled it. ⚠ `handinput/export_package.py` does not copy the notices yet — harmless for a **source** export, a breach the moment one is minified |
 
 ⚠⚠ **`SEC5` carries the audit's own lesson, and it is worth more than the
 finding: a mechanism that sounded right stood as a recorded fact for one day. An
@@ -63,6 +64,7 @@ audit is not exempt from A10 because its other findings are code-shaped.**
 | [`U10`](../00_CORE/queue_notes/U10.md) | **write it down**: a privacy policy saying exactly what is true, per-store camera declarations (Steam / App Store / Google Play each differ), platform permission strings. ⚠ Not a build — do not start it as one |
 | [`U11`](../00_CORE/queue_notes/U11.md) | shipping-build hygiene: strip dead assets, hard-disable dev capture. At package time |
 | [`N13`](../00_CORE/queue_notes/N13.md) | the licence inventory the commercial release requires. ⭐ **The model licence is now CLOSED** — the Model Card states *"LICENSED UNDER Apache License, Version 2.0"*; evidence in [`evidence/`](evidence/) |
+| [`SEC6`](../00_CORE/queue_notes/SEC6.md) | ⭐⭐ **the distinction `N13` did not cover.** `N13` gates *may we take this dependency*; `SEC6` is *what must ship beside the binary*. BSD-3 clause 2 and Apache-2.0 §4(d) attach to **binary** redistribution — and the minifier erases a docstring notice in the same pass that creates the obligation. ⛔ Closes with `U11`, on a **built** artifact, not by inspection |
 
 ## Read
 

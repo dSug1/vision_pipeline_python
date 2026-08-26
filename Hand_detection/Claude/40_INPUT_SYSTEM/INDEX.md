@@ -4,7 +4,7 @@
 > **OWNS** · the package boundary between the hand pipeline and any consumer
 > **READ IF** · you are plugging the hand tracking into another game, a port or a
 > lens; or changing what the pipeline publishes
-> **LAST VERIFIED** · 2026-08-25
+> **LAST VERIFIED** · 2026-08-26
 
 > **Owner, 2026-08-24:** *"I want to be able to later ship independently this hand
 > detection system as an input system (for my game, or for any other purpose such
@@ -13,15 +13,40 @@
 
 ## What it is
 
-`Local_pc/Movement_with_hand_detection/handinput/` — five **actions**, Unity's
-five **phases**, `+=` **callbacks with a context**, a **polling** API, and
-`HandState` v2 as the serialisable contract. A consumer subscribes to events; it
-**never sees a landmark**.
+`Local_pc/Movement_with_hand_detection/handinput/` — **action-based input, in the
+style of OpenXR and Unity's Input System**: five **actions**, five **phases**,
+`+=` **callbacks with a context**, a **polling** API, and `HandState` v2 as the
+serialisable contract. A consumer subscribes to events; it **never sees a
+landmark**.
 
-⭐ **The distinction that explains the whole design.** Unity ships *two* packages
-and this is deliberately the first:
+⛔ **That description is a DECISION, not a phrasing preference** (2026-08-26,
+[`../00_CORE/DECISIONS.md`](../00_CORE/DECISIONS.md)). Earlier text here and in
+`handinput/README.md` called it *"Unity-Input-System-shaped"*, which invited two
+readings that are both wrong: that Unity's marks are being traded on, and that
+the architecture is Unity's to license. ⭐ **The prior art is much older than
+Unity's package (~2019)** — semantic actions bound to physical controls is
+**DirectInput action mapping (DirectX 8, 2000)**, the
+`Started`/`Performed`/`Canceled` machine is **`UIGestureRecognizer` (iOS 3.2,
+2010)**, and the closest living relative is **OpenXR's action system (Khronos,
+2019)**, which is royalty-free by Khronos IP policy. Naming OpenXR first is
+simply more accurate. ⚠ Unity's own package ships under the **Unity Companion
+License**, so its *code* was never copyable — but architecture is not
+copyrightable anyway (**CJEU C-406/10, SAS v. WPL**), and `handinput/` was
+written from scratch.
 
-| Unity | here | knows the scene? |
+⚠ **Where the old phrasing survives, it is because it CANNOT be edited**: it sits
+inside `<!-- VERBATIM -->` blocks in
+[`SPEC_17_input_system.md`](SPEC_17_input_system.md),
+[`queue_notes/IS1.md`](../00_CORE/queue_notes/IS1.md),
+[`queue_notes/IS3.md`](../00_CORE/queue_notes/IS3.md) and the session log. Each
+carries a dated pointer to this line instead. ⛔ And the **owner's own quote**
+above says *"mimicking the input system of Unity"* — a quote is never rewritten.
+
+⭐ **The distinction that explains the whole design.** The reference stacks split
+input from interaction — Unity ships them as *two* packages — and this is
+deliberately the first:
+
+| the reference split | here | knows the scene? |
 |---|---|---|
 | **Input System** — devices → actions → callbacks | ⭐ **this package** | ⛔ no |
 | **XR Interaction Toolkit** — grab, hold, arbitration | still in `HandsTriggeredActions.py` / `LiveSnapDebug.py` | ✅ yes |

@@ -12,6 +12,65 @@ block here is superseded and marked so.
 
 ---
 
+## 2026-08-26 — the licence questions, and a distribution duty nobody was discharging
+
+Two owner questions — *"is the 1euro filter license-free?"* and *"is the Unity
+input system architecture prior art or is it patented?"* — and neither answer was
+the interesting part.
+
+⭐ **1€ filter: clear, twice over.** BSD-3-Clause on the reference implementation,
+no known patent on the algorithm (published CHI 2012 by its authors, who
+distribute the code themselves; any 2011–12 filing would expire ~2031). ⭐ And the
+project already ships an **independent** implementation of the same filter without
+having noticed: MediaPipe's `landmarks_smoothing_calculator` carries a
+`OneEuroFilter` message, Apache-2.0, in the venv today. Google ships it
+commercially at scale in the dependency this pipeline is built on.
+
+⛔⛔ **THE FINDING IS DOWNSTREAM, AND IT IS `SEC6`.** `N13` is rigorous about
+*may we use this* — it killed `0.5`, it chased the model bundle to Google's own
+Model Card rather than accept a third-party assertion. Every one of those is an
+**acquisition** question. But permissive licences also impose a **distribution**
+duty, and the repo had **no `LICENSE`, no `THIRD_PARTY_NOTICES`, and attribution
+living only in source docstrings**. ⭐ **That is compliant today and stops being
+compliant at exactly the step the project is committed to taking**: BSD-3 clause 2
+and Apache-2.0 §4(d) attach to *binary* redistribution, and the minifier erases
+the docstring in the same pass that creates the obligation. `THIRD_PARTY_NOTICES.md`
++ `licenses/` now exist ([`SEC6`](../../00_CORE/queue_notes/SEC6.md)).
+
+⚠⚠ **One line was deliberately left BLANK rather than guessed — and the blank is
+why it is now RIGHT.** The 1€ upstream copyright holder could not be read without
+network access, so it was marked pending instead of written from recollection: a
+guessed copyright line in a notices file is `SEC5`'s failure mode with worse
+consequences, because the file *looks* authoritative. ⭐ It was then **fetched and
+filled the same day — `Copyright 2023 Inria`** — and the fetch turned up something
+a guess would have buried: **the licence is at `casiez/OneEuroFilter/python/LICENSE`,
+not the repo root, which 404s.** The path is now recorded so the next person does
+not repeat the dead end.
+
+⭐⭐ **Unity's input system is prior art several times over, and it is not
+Unity's.** Semantic actions bound to physical controls is **DirectInput action
+mapping (DirectX 8, 2000)**; the `Started`/`Performed`/`Canceled` machine is
+**`UIGestureRecognizer` (iOS 3.2, 2010)**; callback-with-context is `EventArgs`
+(2002) and DOM `Event` (1998); the closest living relative is **OpenXR's action
+system (Khronos, 2019)**, royalty-free by Khronos IP policy. Unity's package
+shipped ~2019, *after* most of it. ⚠ Its **code** is under the Unity Companion
+License and was never copyable — but architecture is not copyrightable anyway
+(**CJEU C-406/10, SAS v. WPL**, 2012), and `handinput/` was written from scratch.
+⭐ The description became **"action-based input, in the style of OpenXR and Unity's
+Input System"** (owner instruction; `DECISIONS.md`), which is both safer and more
+accurate.
+
+⛔ **The rename could only be applied in TWO files, and that is the doc
+architecture working, not failing.** `handinput/README.md` and
+[`../../40_INPUT_SYSTEM/INDEX.md`](../../40_INPUT_SYSTEM/INDEX.md) are live text.
+Every other occurrence sits inside a `<!-- VERBATIM -->` block — `SPEC_17`,
+`IS1`, `IS3`, and this log — or is the **owner's own quote** (*"mimicking the
+input system of Unity"*), which is never rewritten. Each carries a dated pointer
+to the new wording instead. ⭐ Nothing was rewritten to look tidier; the record
+still says what it said, and now says where it was superseded.
+
+---
+
 ## 2026-08-25 (night) — `F1` is specified, Step 0 is measured, rule 3 is gone
 
 **The owner specified `F1`** in eight points (fingertip barycentre drives the

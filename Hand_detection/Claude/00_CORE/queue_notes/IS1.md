@@ -35,3 +35,25 @@ suites, `verify_handinput.py` **96 checks**, `verify_hardening.py` **51 checks**
 ⚠ Status moved **BUILT → SHIPPED**. It rests on those two live sessions plus the
 owner's instruction; if the HUD looked wrong on screen, revert this line first.
 
+---
+
+## ⛔ Appended 2026-08-26 — the wording above is SUPERSEDED (it could not be edited)
+
+The block above describes the package as **"Unity-Input-System-shaped"** and as
+having **"Unity's five phases"**. ⛔ **That wording is superseded.** The current
+description, on owner instruction, is:
+
+> **action-based input, in the style of OpenXR and Unity's Input System**
+
+⚠ **The text above was NOT edited, and must not be** — it is inside a
+`<!-- VERBATIM -->` block, byte-verified by
+`_archive/migration/verify_split.py`. A pointer is the only correct remedy.
+
+⭐ **Why the change, in one line:** the prior art is far older than Unity's
+package (~2019) — **DirectInput action mapping (2000)**, **`UIGestureRecognizer`
+(2010)**, **OpenXR's action system (2019, royalty-free by Khronos IP policy)** —
+so naming OpenXR first is more accurate as well as safer. Unity's *code* is under
+the Unity Companion License and was never copyable; architecture is not
+copyrightable anyway (**CJEU C-406/10, SAS v. WPL**). Full reasoning:
+[`../DECISIONS.md`](../DECISIONS.md) (2026-08-26) and
+[`../../40_INPUT_SYSTEM/INDEX.md`](../../40_INPUT_SYSTEM/INDEX.md).

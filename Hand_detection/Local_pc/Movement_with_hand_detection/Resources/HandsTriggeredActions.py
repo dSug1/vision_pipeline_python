@@ -16,6 +16,8 @@ from . import hand_state
 from . import hand_tracks
 from . import session_paths
 from . import capture_drive
+from . import fingertips
+from . import tip_trim
 
 # ⭐⭐ THE INPUT SYSTEM (2026-08-25). `handinput` turns this frame's per-hand facts
 # into Unity-shaped ACTIONS with phases and callbacks -- the pluggable surface a
@@ -130,6 +132,20 @@ Z_TRANSLATION = True
 # the grab, unknown hand size cancels exactly). The ABSOLUTE tracker answers the
 # snap gate's question, which has no grab to baseline against, and pays for that
 # with a per-user scale bias `GRAB_Z_TOLERANCE_M` is sized to absorb.
+# ⭐ F1 step 2: the filtered fingertip grip point, per hand. Follows the TRACK,
+# not the slot -- bound and written back alongside every other per-hand object, so
+# a relabel carries it with the hand and a NEW track gets a fresh one.
+_grip_trackers: Dict[str, fingertips.GripTracker] = {
+    h: fingertips.GripTracker() for h in TRACKED_HANDS
+}
+
+# ⭐ F1 step 4: the fingertip ROTATION trim, per hand. ⚠ Frozen at the GRAB (not
+# per track, unlike the Horn reference above it), because the trim answers "how
+# far have the fingers turned the object since I picked it up".
+_tip_trims: Dict[str, tip_trim.TipTrim] = {
+    h: tip_trim.TipTrim() for h in TRACKED_HANDS
+}
+
 _depth_ratio_trackers: Dict[str, palm_depth.DepthRatioTracker] = {
     h: palm_depth.DepthRatioTracker() for h in TRACKED_HANDS
 }
@@ -893,7 +909,8 @@ class _HandBundle:
     __slots__ = ("palm_facing", "tracking", "rotation_state",
                  "last_known_thumb_outward",
                  "resync_blend_left", "reliability_alpha",
-                 "depth_ratio_tracker", "hand_depth_tracker")
+                 "depth_ratio_tracker", "hand_depth_tracker", "grip_tracker",
+                 "tip_trim")
 
     def __init__(self):
         self.palm_facing = palm_geometry.PalmFacingTracker()
@@ -903,6 +920,8 @@ class _HandBundle:
         self.resync_blend_left = 0
         self.reliability_alpha = 1.0
         self.depth_ratio_tracker = palm_depth.DepthRatioTracker()
+        self.grip_tracker = fingertips.GripTracker()
+        self.tip_trim = tip_trim.TipTrim()
         self.hand_depth_tracker = palm_depth.HandDepthTracker()
 
 
@@ -947,6 +966,8 @@ def _new_bundle_for(slot: str) -> "_HandBundle":
     # FRESH estimators, never the slot's current ones: a returning hand must
     # re-baseline its depth, not inherit where the previous hand was.
     b.depth_ratio_tracker = palm_depth.DepthRatioTracker()
+    b.grip_tracker = fingertips.GripTracker()
+    b.tip_trim = tip_trim.TipTrim()
     b.hand_depth_tracker = palm_depth.HandDepthTracker()
     return b
 
@@ -983,6 +1004,8 @@ def _bind_track_state(now_ms: float) -> None:
         _resync_blend_left[slot] = bundle.resync_blend_left
         _last_hand_reliability_alpha[slot] = bundle.reliability_alpha
         _depth_ratio_trackers[slot] = bundle.depth_ratio_tracker
+        _grip_trackers[slot] = bundle.grip_tracker
+        _tip_trims[slot] = bundle.tip_trim
         _hand_depth_trackers[slot] = bundle.hand_depth_tracker
 
 
@@ -997,6 +1020,8 @@ def _writeback_track_state(now_ms: float) -> None:
         bundle.resync_blend_left = _resync_blend_left[slot]
         bundle.reliability_alpha = _last_hand_reliability_alpha[slot]
         bundle.depth_ratio_tracker = _depth_ratio_trackers[slot]
+        bundle.grip_tracker = _grip_trackers[slot]
+        bundle.tip_trim = _tip_trims[slot]
         bundle.hand_depth_tracker = _hand_depth_trackers[slot]
     _track_registry.evict(now_ms)
 
@@ -1382,6 +1407,7 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                 # A baseline outliving its track is §16.15's rule again, and a
                 # held absolute depth would gate the NEXT hand's first snap.
                 _depth_ratio_trackers[handedness].reset()
+                _tip_trims[handedness].reset()
                 _hand_depth_trackers[handedness].reset()
                 _hand_depth[handedness] = None
                 _hand_depth_valid[handedness] = False
@@ -1407,7 +1433,21 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
         tracking.set_orientation_valid(_orientation_valid)
         _last_known_thumb_outward[handedness] = thumb_outward
 
-        hand_pos = _hand_position(landmarks)
+        # ⭐⭐ F1 STEP 2 -- TWO POSITIONS NOW, AND THEY MEAN DIFFERENT THINGS.
+        #
+        #   palm_pos : the palm centre. UNCHANGED, and it is what `handinput`
+        #              publishes as `palm_pose`. ⛔ That action means the PALM and
+        #              keeps meaning the palm -- silently redefining a shipped
+        #              action would break consumers without changing a signature.
+        #   hand_pos : the GRIP point -- the filtered fingertip barycentre --
+        #              used for snap proximity and translation, per the owner's
+        #              request ("instead of the palm we use the fingertips
+        #              barycenter"). Falls back to the palm centre when the tips
+        #              are not all visible, and IS the palm centre while
+        #              `fingertips.USE_TIP_BARYCENTER` is False.
+        palm_pos = _hand_position(landmarks)
+        hand_pos = fingertips.grip_position_px(
+            _grip_trackers[handedness], landmarks, now_ms)
 
         # ⭐ 4.2: this hand's ABSOLUTE depth, for the 3D snap gate. Updated every
         # frame whether or not the hand holds anything, for the same reason the
@@ -1470,7 +1510,7 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
         # ⭐ handinput: the pose this frame ACTUALLY produced, before any of it
         # reaches a cube. `hand_quat_now` is the same quaternion the grab-delta
         # maths uses below, so an event consumer and the cube see one reading.
-        _hi_pose[handedness] = {"position_px": hand_pos, "orientation": hand_quat_now,
+        _hi_pose[handedness] = {"position_px": palm_pos, "orientation": hand_quat_now,
                                 "landmarks_px": landmarks}
 
         owned_cube = _cube_for_hand(handedness, now_ms)
@@ -1531,6 +1571,7 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             # would leave the NEXT grab baselined against a span measured before
             # the object was ever picked up -- an instant, silent Z jump.
             _depth_ratio_trackers[handedness].reset()
+            _tip_trims[handedness].reset()
             if can_snap:
                 owned_cube = _try_snap(handedness, hand_pos,
                                        hand_depth_m=_hand_depth[handedness],
@@ -1547,6 +1588,11 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                     if hand_quat_now is not None:
                         cube.grab_hand_orientation = hand_quat_now
                         cube.grab_cube_orientation = cube.orientation
+                        # ⭐ F1 step 4: the trim's reference is the GRAB, so
+                        # `R_trim(grab) = I` and the object cannot pop at the
+                        # instant it is picked up -- the same construction the
+                        # orientation baseline above and 4.2's depth ratio use.
+                        _tip_trims[handedness].freeze(world_landmarks, hand_quat_now)
                     # Translation-pivot fix (§14.1/§14.1.1): capture the
                     # object's position from its own PRE-EXISTING center --
                     # BEFORE this frame's translation update below touches
@@ -1560,6 +1606,16 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                     cube.grab_residual_offset = (
                         object_pos_at_grab[0] - weighted_at_grab[0],
                         object_pos_at_grab[1] - weighted_at_grab[1],
+                    )
+                    # ⭐ F1 step 2: the same NO-POP construction, against the grip
+                    # point instead of the 9-landmark blend. The object keeps
+                    # wherever it visually was and moves only by how much the
+                    # barycentre moves afterwards -- so the grab frame is
+                    # continuous by construction, exactly as §14.1 and 4.2's
+                    # depth ratio each are.
+                    cube.grab_grip_offset = (
+                        object_pos_at_grab[0] - hand_pos[0],
+                        object_pos_at_grab[1] - hand_pos[1],
                     )
         if owned_cube is not None:
             cube = cube_window.cubes[owned_cube]
@@ -1577,11 +1633,34 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                 _ratio, _ratio_valid = _depth_ratio_trackers[handedness].update(landmarks)
                 if _ratio_valid and _ratio > 1e-6:
                     cube.depth_m = palm_geometry.clamp_depth(cube.grab_depth_m / _ratio)
-            weighted_now = _weighted_position(cube.grab_landmark_weights, landmarks)
-            new_center = (
-                weighted_now[0] + cube.grab_residual_offset[0],
-                weighted_now[1] + cube.grab_residual_offset[1],
-            )
+            # ⭐⭐ F1 STEP 2 -- THE OBJECT FOLLOWS THE FINGERTIP BARYCENTRE.
+            # Owner: "if the fingertips move while the cube is grabbed, the cube's
+            # transform follow the transform of the barycenter."
+            #
+            # ⚠⚠ THIS REPLACES §14.1's 9-LANDMARK INVERSE-DISTANCE BLEND, which was
+            # live-verified and is not being discarded lightly. The blend already
+            # CONTAINED all five tips; what changes is the weighting, and with it
+            # how much finger articulation reaches the object. ⛔ Measured, before
+            # the live take: the barycentre drifts a median 1 cm / p95 6 cm within
+            # half a second from re-gripping alone (`analysis/f1_tip_census.py`).
+            # That may be right -- a real held object does move when you shift your
+            # grip -- but if it is not, the fix is spec §4.3's palm-frame clamp in
+            # step 4, NOT more filtering, which would trade the wander for lag and
+            # keep both.
+            #
+            # ⛔ The legacy blend is still computed above and still frozen at grab,
+            # so `fingertips.USE_TIP_BARYCENTER = False` restores it exactly.
+            if fingertips.USE_TIP_BARYCENTER and cube.grab_grip_offset is not None:
+                new_center = (
+                    hand_pos[0] + cube.grab_grip_offset[0],
+                    hand_pos[1] + cube.grab_grip_offset[1],
+                )
+            else:
+                weighted_now = _weighted_position(cube.grab_landmark_weights, landmarks)
+                new_center = (
+                    weighted_now[0] + cube.grab_residual_offset[0],
+                    weighted_now[1] + cube.grab_residual_offset[1],
+                )
             if _resync_blend_left[handedness] > 0:
                 # D3: walk the cube back to the hand over a few frames instead of
                 # teleporting it there on the first frame after a bridge. `t`
@@ -1606,7 +1685,24 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                     # so the delta still starts at identity, no pop.
                     cube.grab_hand_orientation = hand_quat_now
                     cube.grab_cube_orientation = cube.orientation
-                delta = _quat_multiply(hand_quat_now, _quat_conjugate(cube.grab_hand_orientation))
+                # ⭐⭐ F1 STEP 4 -- THE FINGERTIP TRIM ENTERS HERE, AND ONLY HERE.
+                # Owner: "fingertips shall also be used for rotation quaternion
+                # control TO THE EXTENT THEY ARE ROBUST ENOUGH" -- the second half
+                # is `tip_trim`'s conditioning fade, not a constant share.
+                #
+                #     q_eff = R_palm(t) . R_trim(t)
+                #     delta = q_eff(t) . q_eff(grab)^-1
+                #
+                # and because `R_trim(grab)` is the identity, `q_eff(grab)` IS
+                # `grab_hand_orientation` -- so nothing about the baseline changes.
+                # ⛔ At TRIM_GAIN = 0 this returns the identity OBJECT and the two
+                # lines below are byte-for-byte today's expression.
+                _trim_q = _tip_trims[handedness].update(
+                    world_landmarks, hand_quat_now,
+                    tip_trim.palm_span_m(world_landmarks), now_ms)
+                _q_eff = (hand_quat_now if _trim_q is tip_trim.IDENTITY
+                          else _quat_multiply(hand_quat_now, _trim_q))
+                delta = _quat_multiply(_q_eff, _quat_conjugate(cube.grab_hand_orientation))
                 target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
                 cube.orientation = _quat_slerp(cube.orientation, target_quat,
                                                _rotation_slerp_factor(now_ms))

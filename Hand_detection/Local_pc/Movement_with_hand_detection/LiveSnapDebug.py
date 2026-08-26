@@ -54,6 +54,9 @@ from Resources import palm_rotation as _PRot
 from Resources import palm_depth as _PDepth  # noqa: E402  (4.1/M9, read-only)
 from Resources import session_paths  # noqa: E402  (tag sanitising, shared with production)
 from Resources import capture_drive  # noqa: E402  (drive wake/retry, shared with production)
+from Resources import fingertips  # noqa: E402  (F1 step 2, shared with production)
+from Resources import tip_trim  # noqa: E402  (F1 step 4, shared with production)
+from Resources import one_euro  # noqa: E402  (F1 step 1, the jitter filter)
 
 # ⭐⭐ WHAT PRODUCTION ACTUALLY RUNS, since 2026-08-17.
 # `Resources/HandsTriggeredActions.py` now drives cube orientation with Horn
@@ -135,7 +138,7 @@ def _publish_hand_input(state, hand_data_by_hand, pose_out, now_ms):
 # ⭐ WHAT REPLACED IT AS THE THING TO TUNE: the rotation smoothing. It is the only
 # filter left in the rotation path (the predictive orientation filter was removed
 # the same day as dead code) and it is therefore the whole of the felt lag.
-SLIDER_WIN = "Rotation smoothing"
+SLIDER_WIN = "Rotation smoothing + F1 fingertips"
 
 # ⭐ Measured on `2026-08-24_205729_t6d_ab_ghost`, every arm fed identical input,
 # lag read by shift-aligning against an unsmoothed replay of the same take:
@@ -159,9 +162,44 @@ SLIDER_WIN = "Rotation smoothing"
 # time, so today's behaviour stays reachable and this stays an A/B.
 SLERP_TAU_MAX_MS = 150
 
+# ⭐⭐ F1's KNOBS, added 2026-08-26 -- the owner asked for "a threshold with a
+# slider to set the filter value" and this is that, in a form that does not lie.
+#
+# ⛔⛔ EVERY SLIDER'S DISPLAYED INTEGER **IS** THE APPLIED VALUE IN ITS STATED
+# UNIT. That is the rule the discrete ladder broke above, and it cost a take: the
+# owner read "3 ms" off a control that was applying 20 ms. So the fingertip filter
+# is exposed as a TIME CONSTANT IN MILLISECONDS -- the same unit as SMOOTH ms and
+# the one the owner already reasons in -- rather than as the 1€ filter's cutoff
+# frequency, which has no natural integer scale. The conversion is exact:
+#
+#       tau = 1 / (2*pi*fc)      <=>      fc = 1 / (2*pi*tau)
+#
+# ⚠ The two `x1000` / `%` labels carry their scale IN THE NAME for the same
+# reason: `beta` is ~0.02 and a gain is a fraction, and neither is integer-natural.
+JITTER_TAU_MAX_MS = 400
+TRIM_GAIN_MAX_PCT = 100
+TRIM_MAX_DEG_MAX = 30
+
 SLIDERS = (
     # ⛔ 0 = NO smoothing: the cube goes exactly where Horn says, every frame.
     ("SMOOTH ms", SLERP_TAU_MAX_MS, 20, lambda n: float(n)),
+    # ⛔ 0 = the fingertip filter OFF, and off is BIT-EXACT (the input value is
+    # returned unchanged), so this position is genuinely today-without-F1's-filter
+    # rather than an approximation of it.
+    ("JITTER tau ms", JITTER_TAU_MAX_MS, 133, lambda n: float(n)),
+    # `beta`: how fast the cutoff opens with speed. Higher = less lag when moving.
+    ("SPEED b x1000", 200, 20, lambda n: n / 1000.0),
+    # ⚠ DRIVES ONLY THE ARM THAT HAS THE TRIM ON. In the three-window rig panels
+    # 1 and 2 pin their gain to 0.0 explicitly, so sweeping this moves panel 3 and
+    # leaves the controls alone -- which is what keeps the rig one-variable.
+    #
+    # ⛔⛔ IT STARTS AT 0, MATCHING PRODUCTION, AND `--f1-rig` RAISES IT.
+    # Starting it at 100 made the ordinary single-arm debug tool run the trim
+    # while production ran without it -- i.e. the two tools would differ in normal
+    # use, which is the exact divergence `U6` keeps `parity_replay` around to
+    # prevent. The rig is where the trim is meant to be ON, so the rig turns it on.
+    ("TRIM gain %", TRIM_GAIN_MAX_PCT, 0, lambda n: n / 100.0),
+    ("TRIM max deg", TRIM_MAX_DEG_MAX, 10, lambda n: float(n)),
 )
 
 # ⭐ OWNER'S CHOICE, 2026-08-24, settled live: **20 ms**. Reached by sweeping the
@@ -170,6 +208,12 @@ SLIDERS = (
 # hand_state`: this block sits above it, and N6 matters more than import order.
 from Resources import hand_state as _HS_const  # noqa: E402
 SLERP_TAU_MS = _HS_const.ROTATION_SLERP_TAU_MS
+
+# ⭐ F1's live values, mirrored here so `--no-sliders` still runs. Seeded from the
+# module defaults rather than repeated as literals (N6: a tuning constant lives in
+# ONE module), and converted into the ms the slider speaks.
+JITTER_TAU_MS = 1000.0 / (2.0 * math.pi * one_euro.MIN_CUTOFF_HZ)
+JITTER_BETA = one_euro.BETA
 
 
 
@@ -396,10 +440,15 @@ def _update_snap_depth(hand_data_by_hand, frame_size):
 # before the arms run. Today that is DR-2's PalmFacingTracker. Keeping it out of
 # the per-arm bundle is what preserves the rig's one-variable property.
 class _UpstreamBundle:
-    __slots__ = ("palm_facing",)
+    __slots__ = ("palm_facing", "grip_tracker")
 
     def __init__(self):
         self.palm_facing = palm_geometry.PalmFacingTracker()
+        # ⭐ F1 step 2. Upstream for the same reason DR-2 is: no grab dependency,
+        # and every arm must see the same grip point or the rig gains a second
+        # variable. A NEW track gets a fresh one -- a returning hand must not
+        # inherit the previous hand's filter history.
+        self.grip_tracker = fingertips.GripTracker()
 
 
 _upstream_registry = hand_tracks.TrackRegistry(_UpstreamBundle)
@@ -424,6 +473,7 @@ def _bind_upstream_track_state(now_ms):
             continue                      # no identity -> leave it alone
         _upstream_bound[slot] = b
         _palm_facing_trackers[slot] = b.palm_facing
+        _grip_trackers[slot] = b.grip_tracker
     _upstream_registry.evict(now_ms)
 
 
@@ -460,6 +510,13 @@ _hand_identity_tracker = hand_identity.HandIdentityTracker()
 # in HandsTriggeredActions.py (queue item 2.2). Same shared class, so the debug tool
 # and the game apply an identical edge-on policy.
 _palm_facing_trackers = {h: palm_geometry.PalmFacingTracker() for h in ("Left", "Right")}
+
+# ⭐ F1 step 2: the filtered fingertip grip point, per hand. ⚠ UPSTREAM AND
+# SHARED ACROSS ARMS, like `_palm_facing_trackers` and unlike the per-arm depth
+# ratio trackers: it has no grab dependency, so giving each arm its own would
+# add a second difference between panels and destroy the rig's one-variable
+# property. Mirrors production's `_grip_trackers`.
+_grip_trackers = {h: fingertips.GripTracker() for h in ("Left", "Right")}
 
 # D1/D2/D3 tracking state (queue Phase D, spec §2.1/§2.2) lives on CubeState, NOT
 # here -- see the `bridge_window_ms` block there. It has to be per-arm so the
@@ -510,7 +567,8 @@ BRIDGE_MODES = ("off", "on", "blend")
 BRIDGE_ARM_COLOURS = {"off": (128, 128, 128), "on": (0, 200, 255), "blend": (0, 255, 128)}
 
 
-def _make_arm(mode, width, height, ownership="track", coast_ms=None):
+def _make_arm(mode, width, height, ownership="track", coast_ms=None,
+              use_tips=None, trim_gain=None):
     """One arm of a comparison: its own cubes, trackers, window and counters.
 
     `coast_ms` overrides D2's bridge window for this arm only -- the U5 coast rig
@@ -525,10 +583,28 @@ def _make_arm(mode, width, height, ownership="track", coast_ms=None):
         resync_blend_frames=RESYNC_BLEND_FRAMES if mode == "blend" else 0,
         arm_label=mode,
         ownership=ownership,
+        use_tips=use_tips,
+        trim_gain=trim_gain,
     )
 
 
 def _arm_title(state):
+    # ⭐ F1 rig panels name the STEP, not the bridge mode -- all three are "blend",
+    # so without this the three windows are indistinguishable. Same complaint the
+    # ownership and T6d rigs each had to fix.
+    if state.use_tips is not None or state.trim_gain is not None:
+        _tips = bool(state.use_tips)
+        # ⚠ None means "follow the live global", NOT zero. Reading it as zero
+        # would title panel 3 "STEP 2" while it was running the trim -- a panel
+        # whose label contradicts what it is doing is the T6d/ownership-rig
+        # complaint all over again.
+        _gain = tip_trim.TRIM_GAIN if state.trim_gain is None else state.trim_gain
+        if not _tips and _gain == 0.0:
+            return "1. STEP 0 -- palm anchor, no trim   [SHIPPED / CONTROL]"
+        if _tips and _gain == 0.0:
+            return "2. STEP 2 -- FINGERTIP barycentre drives snap + translation"
+        return ("3. STEP 4 -- step 2 + FINGERTIP TRIM  "
+                "[gain %.2f, max %.0f deg]" % (_gain, tip_trim.TRIM_MAX_DEG))
     return {
         "off": "1. OFF -- pre-D2 control (release on frame 1)",
         "on": f"2. ON -- D2 bridge {state.bridge_window_ms:.0f} ms, NO blend",
@@ -570,9 +646,36 @@ def _make_slerp_ab_arms(width, height):
     return [before, after]
 
 
+# ⭐⭐ F1's THREE-WINDOW RIG. One camera, one detection, one identity resolution,
+# one shared grip filter -- the panels differ ONLY in which F1 step is switched on,
+# which is what makes a difference between them attributable.
+#
+#   1  STEP 0  baseline   palm centre drives snap+translation, no fingertip trim.
+#                         ⭐ This is the SHIPPED pipeline and it is the control.
+#   2  STEP 2  grip       the fingertip BARYCENTRE drives snap + translation.
+#   3  STEP 4  grip+trim  step 2, plus the fingertip ROTATION trim.
+#
+# ⚠ Panel 3 differs from panel 2 by the TRIM ALONE, and panel 2 from panel 1 by
+# the GRIP POINT alone -- so each pair isolates one step. Reading 3 against 1
+# answers "is F1 better than today"; reading 3 against 2 answers "does the trim
+# earn its place", which `T6d` shows is a separate question with a different answer.
+def _make_f1_rig(width, height):
+    return [
+        _make_arm("blend", width, height, use_tips=False, trim_gain=0.0),
+        _make_arm("blend", width, height, use_tips=True, trim_gain=0.0),
+        # ⚠ `trim_gain=None` means "follow the module global", which is what the
+        # TRIM sliders drive -- so sweeping them moves THIS panel and leaves the
+        # two controls above pinned at 0.0. That is what keeps the rig
+        # one-variable while still being tunable live.
+        _make_arm("blend", width, height, use_tips=True, trim_gain=None),
+    ]
+
+
 def _arm_layout(n, width, height, ownership_ab=False, coast_ab=False,
-                slerp_ab=False):
+                slerp_ab=False, f1_rig=False):
     """The comparison rig, or None for the ordinary single-arm view."""
+    if f1_rig:
+        return _make_f1_rig(width, height)
     if slerp_ab:
         return _make_slerp_ab_arms(width, height)
     if coast_ab:
@@ -810,6 +913,8 @@ class Cube:
     # exactly continuous (no pop) -- see _compute_grab_weights' docstring.
     grab_landmark_weights: Optional[Dict[int, float]] = None
     grab_residual_offset: Optional[Tuple[float, float]] = None
+    # ⭐ F1 step 2, mirroring production's Cube.
+    grab_grip_offset: Optional[Tuple[float, float]] = None
     # B4 alternative anchor (Resources/palm_anchor.py): the frozen metric offset
     # in the PALM's own frame. Used instead of the two fields above when
     # update_hands is given an `anchor`; None for §14.1's incumbent path.
@@ -859,6 +964,18 @@ class CubeState:
     bridge_window_ms: float = hand_state.BRIDGE_WINDOW_MS
     resync_blend_frames: int = 3
     arm_label: str = "blend"
+    # ⭐⭐ F1 PER-ARM CONFIG -- what makes a three-window rig possible on ONE
+    # camera. Defaults mirror the module globals, so an arm that does not set them
+    # behaves exactly as production does.
+    #   use_tips  : step 2 -- fingertip barycentre drives snap + translation
+    #   trim_gain : step 4 -- fingertip ROTATION trim (0.0 = shipped Horn)
+    # ⚠ The GRIP TRACKER stays shared and upstream: every arm sees the same
+    # filtered barycentre and only differs in whether it USES it. Giving each arm
+    # its own filter would add a second variable and break the rig.
+    use_tips: bool = None
+    trim_gain: float = None
+    tip_trims: Dict[str, object] = field(
+        default_factory=lambda: {h: tip_trim.TipTrim() for h in TRACKED_HANDS})
     # ⭐ 4.1/T3 A/B: "track" keys ownership on the stable DR-1 id (what shipped),
     # "label" reproduces the OLD handedness keying so the two can be compared
     # live on ONE camera and ONE detection -- the only difference between the
@@ -995,6 +1112,7 @@ class CubeState:
         cube.grab_cube_orientation = None
         cube.grab_landmark_weights = None
         cube.grab_residual_offset = None
+        cube.grab_grip_offset = None
         cube.grab_anchor_state = None
         cube.grab_depth_m = None    # 4.2: depth freezes in place, like position
 
@@ -1437,41 +1555,106 @@ def _create_sliders():
     unlabelled one, because it invites a confident wrong reading.
     """
     cv2.namedWindow(SLIDER_WIN, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(SLIDER_WIN, 520, 170)
+    cv2.resizeWindow(SLIDER_WIN, 520, 400)
     for name, maxv, start, _ in SLIDERS:
         cv2.createTrackbar(name, SLIDER_WIN, start, maxv, lambda _v: None)
 
 
+def _tau_ms_to_cutoff_hz(tau_ms):
+    """tau (ms) -> the 1€ filter's cutoff (Hz). Exact inverse of 1/(2*pi*fc)."""
+    return 1.0 / (2.0 * math.pi * (tau_ms / 1000.0))
+
+
 def _read_sliders() -> None:
-    """Copy the trackbar into `SLERP_TAU_MS`.
+    """Copy every trackbar into the value it controls.
 
     ⚠ Swallows the window-gone error rather than letting it end a live take: the
     owner may close the panel mid-session, and the last value is the right thing
-    to carry on with.
+    to carry on with. ⛔ Reads ALL sliders or none -- a partial read would leave
+    the tool in a state no slider position describes.
     """
-    global SLERP_TAU_MS
+    global SLERP_TAU_MS, JITTER_TAU_MS, JITTER_BETA
     try:
-        SLERP_TAU_MS = SLIDERS[0][3](cv2.getTrackbarPos(SLIDERS[0][0], SLIDER_WIN))
+        vals = [spec[3](cv2.getTrackbarPos(spec[0], SLIDER_WIN)) for spec in SLIDERS]
     except cv2.error:
         return
+    SLERP_TAU_MS, JITTER_TAU_MS, JITTER_BETA, _gain, _maxdeg = vals
+
+    # ⭐ The fingertip filter is SHARED across arms by design, so configuring it
+    # here configures every panel at once -- which is correct: the arms differ in
+    # whether they USE the grip point, never in how it is filtered.
+    _enabled = JITTER_TAU_MS > 0.0
+    for _t in _grip_trackers.values():
+        if _enabled:
+            _t.configure(min_cutoff_hz=_tau_ms_to_cutoff_hz(JITTER_TAU_MS),
+                         beta=JITTER_BETA, enabled=True)
+        else:
+            # ⚠ Disable WITHOUT touching the cutoff: there is no meaningful
+            # cutoff at tau = 0, and writing a placeholder would be a trap for
+            # whoever later flips the flag without re-reading this.
+            _t.configure(enabled=False)
+
+    # ⚠ The module GLOBAL, not a per-arm value: arms that pin their gain (the rig
+    # controls, at 0.0) are unaffected, and arms that leave it None follow this.
+    tip_trim.TRIM_GAIN = _gain
+    tip_trim.TRIM_MAX_DEG = _maxdeg
+
 
 
 def _draw_slider_panel(open_: bool):
     """The panel's own canvas: the value in the unit the owner reasons about."""
     if not open_ or cv2.getWindowProperty(SLIDER_WIN, cv2.WND_PROP_VISIBLE) < 1:
         return
-    canvas = np.zeros((110, 520, 3), dtype=np.uint8)
-    cv2.putText(canvas, f"smoothing tau = {SLERP_TAU_MS:.0f} ms", (10, 34),
+    canvas = np.zeros((250, 520, 3), dtype=np.uint8)
+    cv2.putText(canvas, f"smoothing tau = {SLERP_TAU_MS:.0f} ms", (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (120, 255, 255), 2, cv2.LINE_AA)
     note = ("no smoothing -- the cube goes exactly where Horn says"
             if SLERP_TAU_MS <= 0 else
             "TODAY's behaviour (== the shipped per-frame 0.35)"
             if SLERP_TAU_MS >= 149 else
             "below one frame (64 ms): the lag is gone, this trades jitter only")
-    cv2.putText(canvas, note, (10, 62), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
+    cv2.putText(canvas, note, (10, 54), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
                 (170, 170, 170), 1, cv2.LINE_AA)
     cv2.putText(canvas, "0 = none    20 = owner's setting    149 = today",
-                (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1, cv2.LINE_AA)
+                (10, 76), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1, cv2.LINE_AA)
+
+    # ⭐ F1's block. Every line prints the APPLIED value, and the fingertip filter
+    # prints its cutoff too -- the slider speaks ms because that is the unit the
+    # owner reasons in, but the algorithm's own parameter is the Hz, and a take
+    # should be readable off a screenshot in both.
+    cv2.line(canvas, (10, 90), (510, 90), (60, 60, 60), 1)
+    if JITTER_TAU_MS <= 0:
+        jl = "fingertip filter OFF  (bit-exact: the raw barycentre)"
+        jc = (120, 120, 255)
+    else:
+        jl = (f"fingertip jitter: tau {JITTER_TAU_MS:.0f} ms "
+              f"(fc {_tau_ms_to_cutoff_hz(JITTER_TAU_MS):.2f} Hz)  "
+              f"beta {JITTER_BETA:.3f}")
+        jc = (120, 255, 200)
+    cv2.putText(canvas, jl, (10, 116), cv2.FONT_HERSHEY_SIMPLEX, 0.52, jc, 1,
+                cv2.LINE_AA)
+    cv2.putText(canvas, "lower tau = twitchier but no lag;  higher = calmer at rest",
+                (10, 138), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
+                cv2.LINE_AA)
+
+    if tip_trim.TRIM_GAIN <= 0:
+        tl = "fingertip TRIM OFF  (rotation is shipped Horn, exactly)"
+        tc = (120, 120, 255)
+    else:
+        tl = (f"fingertip trim: gain {tip_trim.TRIM_GAIN:.2f}  "
+              f"max {tip_trim.TRIM_MAX_DEG:.0f} deg")
+        tc = (120, 255, 200)
+    cv2.putText(canvas, tl, (10, 172), cv2.FONT_HERSHEY_SIMPLEX, 0.52, tc, 1,
+                cv2.LINE_AA)
+    cv2.putText(canvas, "census: real finger motion is ~16 deg median over 0.5 s,",
+                (10, 194), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
+                cv2.LINE_AA)
+    cv2.putText(canvas, "so a max far above ~15 stops being a TRIM and starts",
+                (10, 214), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
+                cv2.LINE_AA)
+    cv2.putText(canvas, "following the fingers -- which is the A10-dead arm.",
+                (10, 234), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
+                cv2.LINE_AA)
     try:
         cv2.imshow(SLIDER_WIN, canvas)
     except cv2.error:
@@ -1744,7 +1927,19 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
         thumb_outward = data["thumb_outward"]
         state.last_known_thumb_outward[handedness] = thumb_outward
 
-        hand_pos = _hand_position(data["pixel_landmarks"])
+        # ⭐⭐ F1 STEP 2 -- two positions, mirroring production exactly (see its
+        # comment). `palm_pos` stays the palm and is what `handinput` publishes as
+        # `palm_pose`; `hand_pos` is the filtered fingertip GRIP point and drives
+        # snap proximity and translation.
+        palm_pos = _hand_position(data["pixel_landmarks"])
+        # ⭐ The grip point is computed ONCE per frame from the SHARED tracker, and
+        # each arm then chooses whether to use it -- so the filter history is
+        # identical across panels and the only difference is the choice itself.
+        _grip = fingertips.grip_position_px(
+            _grip_trackers[handedness], data["pixel_landmarks"], now_ms)
+        _use_tips = (fingertips.USE_TIP_BARYCENTER if state.use_tips is None
+                     else state.use_tips)
+        hand_pos = _grip if _use_tips else palm_pos
         raw_quat, conditioning_norm = _hand_orientation_quaternion(data["world_landmarks"])
         state.last_hand_reliability_alpha[handedness] = _reliability_alpha(conditioning_norm)
         # ⭐ RAW straight through -- Horn replaces it below on every frame it
@@ -1776,7 +1971,7 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
         # cube. ⚠ `pose_out` is None for every arm but the first -- see
         # `update_hands_all`, which explains why an A/B must not publish twice.
         if pose_out is not None:
-            pose_out[handedness] = {"position_px": hand_pos,
+            pose_out[handedness] = {"position_px": palm_pos,
                                     "orientation": hand_quat_now}
 
         owned = _cube_for_hand(state, handedness, now_ms)
@@ -1804,6 +1999,7 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
             # at several sites and a forgotten one would leave the next grab
             # baselined against a span measured before the object was picked up).
             state.depth_ratio_trackers[handedness].reset()
+            state.tip_trims[handedness].reset()
             if can_snap:
                 owned = _try_snap(state, handedness, hand_pos,
                                   hand_depth_m=_hand_depth_m,
@@ -1816,6 +2012,11 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                     state.depth_ratio_trackers[handedness].freeze(data["pixel_landmarks"])
                     cube.grab_hand_orientation = hand_quat_now
                     cube.grab_cube_orientation = cube.orientation
+                    # ⭐ F1 step 4, mirroring production: the trim's reference is
+                    # the GRAB, so R_trim(grab) = I and there is no pop.
+                    if hand_quat_now is not None:
+                        state.tip_trims[handedness].freeze(
+                            data["world_landmarks"], hand_quat_now)
                     # Object position at the instant of grab -- captured
                     # from the cube's own pre-existing center, BEFORE this
                     # frame's translation update below touches it, so this
@@ -1846,6 +2047,12 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                             object_pos_at_grab[0] - weighted_at_grab[0],
                             object_pos_at_grab[1] - weighted_at_grab[1],
                         )
+                        # ⭐ F1 step 2, mirroring production: the same no-pop
+                        # construction against the grip point.
+                        cube.grab_grip_offset = (
+                            object_pos_at_grab[0] - hand_pos[0],
+                            object_pos_at_grab[1] - hand_pos[1],
+                        )
         if owned is not None:
             cube = state.cubes[owned]
             # ⭐⭐ 4.2 -- Z FIRST, before the X/Y target is applied: the clamp and
@@ -1863,11 +2070,20 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                                           data["pixel_landmarks"],
                                           data["world_landmarks"])
             else:
-                weighted_now = _weighted_position(cube.grab_landmark_weights, data["pixel_landmarks"])
-                new_center = (
-                    weighted_now[0] + cube.grab_residual_offset[0],
-                    weighted_now[1] + cube.grab_residual_offset[1],
-                )
+                # ⭐⭐ F1 STEP 2 -- the object follows the fingertip barycentre.
+                # Identical to production; `parity_replay` is what keeps it so.
+                if fingertips.USE_TIP_BARYCENTER and cube.grab_grip_offset is not None:
+                    new_center = (
+                        hand_pos[0] + cube.grab_grip_offset[0],
+                        hand_pos[1] + cube.grab_grip_offset[1],
+                    )
+                else:
+                    weighted_now = _weighted_position(
+                        cube.grab_landmark_weights, data["pixel_landmarks"])
+                    new_center = (
+                        weighted_now[0] + cube.grab_residual_offset[0],
+                        weighted_now[1] + cube.grab_residual_offset[1],
+                    )
             if new_center is not None and state.resync_blend_left[handedness] > 0:
                 # D3, mirroring production: walk back to the hand over a few
                 # frames instead of teleporting on the first frame after a bridge.
@@ -1881,7 +2097,15 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                 # derived from it with the projected extent, so an object moving
                 # in Z grows about its own centre, not its corner.
                 state.set_target_center(owned, new_center)
-            delta = _quat_multiply(hand_quat_now, _quat_conjugate(cube.grab_hand_orientation))
+            # ⭐⭐ F1 STEP 4 -- the fingertip trim, per arm. Identical maths to
+            # production; `parity_replay` is what keeps them identical.
+            _gain = tip_trim.TRIM_GAIN if state.trim_gain is None else state.trim_gain
+            _trim_q = state.tip_trims[handedness].update(
+                data["world_landmarks"], hand_quat_now,
+                tip_trim.palm_span_m(data["world_landmarks"]), now_ms, gain=_gain)
+            _q_eff = (hand_quat_now if _trim_q is tip_trim.IDENTITY
+                      else _quat_multiply(hand_quat_now, _trim_q))
+            delta = _quat_multiply(_q_eff, _quat_conjugate(cube.grab_hand_orientation))
             target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
             # Slerp was temporarily disabled 2026-08-01 to isolate and
             # diagnose the back-toward-camera noise from any smoothing
@@ -2040,6 +2264,18 @@ def main():
                         help="1 (default) = mirror production, one window. "
                              "3 = the D2/D3 bridging comparison rig, all three "
                              "arms side by side off one camera.")
+    parser.add_argument("--f1-rig", dest="f1_rig", action="store_true",
+                        # ⚠ ASCII ONLY IN HELP TEXT: argparse prints to the
+                        # console, and a cp1252 terminal raises UnicodeEncodeError
+                        # on a star -- `--help` died outright until this was
+                        # stripped. The comments in this file may use symbols; the
+                        # HELP STRINGS may not.
+                        help="F1's THREE-WINDOW RIG on one camera: panel 1 = "
+                             "STEP 0 (shipped palm anchor, the control), panel 2 = "
+                             "STEP 2 (fingertip barycentre drives snap and "
+                             "translation), panel 3 = STEP 4 (step 2 plus the "
+                             "fingertip rotation trim). Panels differ by ONE step "
+                             "each, so a difference is attributable.")
     parser.add_argument("--scale", type=float, default=0.62,
                         help="per-panel display scale for --arms 3")
     parser.add_argument("--gap", type=int, default=8, help="pixels between panels")
@@ -2108,7 +2344,7 @@ def main():
         raise RuntimeError("Could not read an initial frame from the webcam.")
     height, width = frame.shape[:2]
     arms = (_arm_layout(args.arms, width, height, args.ownership_ab, args.coast_ab,
-                        args.slerp_ab)
+                        args.slerp_ab, args.f1_rig)
             or [_make_arm(args.bridge, width, height)])
     # ⭐⭐ THE UNIT CHANGE (owner, 2026-08-24: *"change the unit first"*). Every LIVE
     # arm smooths on a time constant in milliseconds instead of a fixed per-frame
@@ -2164,6 +2400,10 @@ def main():
     if args.sliders:
         _create_sliders()
         cv2.setTrackbarPos(SLIDERS[0][0], SLIDER_WIN, int(round(SLERP_TAU_MS)))
+        if args.f1_rig:
+            # ⭐ The rig exists to show the trim, so it starts with the trim ON --
+            # while the ordinary single-arm view stays at production's 0.
+            cv2.setTrackbarPos("TRIM gain %", SLIDER_WIN, TRIM_GAIN_MAX_PCT)
 
     timestamp_ms = 0
     print("[LiveSnapDebug] Running -- press 'q' or close a window to stop.")

@@ -27,6 +27,7 @@ Run from the parent directory:
     .venv/Scripts/python.exe analysis/parity_replay.py <session>
 """
 import json
+import math
 import os
 import sys
 
@@ -154,6 +155,20 @@ def main():
             dl = arm.last_known_thumb_outward[h]
             if pl != dl:
                 diffs.append((i, h, "last_thumb_outward", pl, dl))
+        # ⭐⭐ POSITION PARITY -- added 2026-08-26 with `F1` step 2, because until
+        # then this harness compared OWNERSHIP and the palm/back reading but never
+        # WHERE THE OBJECT ACTUALLY IS. Step 2 moved translation onto the fingertip
+        # barycentre in both tools, which is exactly the kind of change that can
+        # agree about who holds a cube while disagreeing about where it is drawn.
+        # ⚠ Measured EXACT on first run -- 0.0000 px over 3026 samples across two
+        # takes -- so the tolerance is zero deliberately. If this ever needs
+        # loosening, that is a finding, not a maintenance task.
+        for _n, _c in P.cube_window.cubes.items():
+            if _n in arm.cubes:
+                _d = math.dist(_c.position, arm.cubes[_n].position)
+                if _d > 0.0:
+                    diffs.append((i, _n, "position", tuple(_c.position),
+                                  tuple(arm.cubes[_n].position)))
         pown = {n: c.owner for n, c in P.cube_window.cubes.items()}
         down = {n: c.owner for n, c in arm.cubes.items()}
         if set(pown) == set(down):

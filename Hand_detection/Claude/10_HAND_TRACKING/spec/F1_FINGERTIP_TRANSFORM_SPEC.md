@@ -611,12 +611,13 @@ paid for once.
 | step | what | gate |
 |---|---|---|
 | 0 | ✅ **DONE 2026-08-25** — §9's four measurements | `analysis/f1_tip_census.py`; results in §9 |
-| 1 | 1€ filter, transliterated + golden vectors, on the tip barycentre only | filter OFF ⇒ bit-identical |
-| 2 | `c_tips` replaces the palm centre for snap and translation (§4, §5.1) | `parity_replay`, then a live look |
+| 1 | ✅ **LANDED 2026-08-26** — 1€ filter transliterated + 30 golden vectors (`Resources/one_euro.py`) | off ⇒ **bit-exact** (`is`, not `==`) · stdlib-only · ⭐ the vectors caught a real divergence from the paper on the first run |
+| 2 | ✅ **BUILT 2026-08-26** — `c_tips` replaces the palm centre for snap and translation (§4, §5.1). ⚠ `g_pos = 1`; the §4.3 clamp waits for step 4's palm frame | off-state proved against a real recording (0.0068 px, = recorder rounding) · `parity_replay` now guards POSITION too, 0.0000 px · ⛔ **live take owed** |
 | 3 | ✅ **SHIPPED 2026-08-25** — back-of-hand snap rule + its state removed (§5.3) | 26/26 suites · traces regenerated · `parity_replay` NO DIVERGENCE / 2978 frames · `N8` re-opened. ⛔ **live take owed** |
-| 4 | The palm-frame trim (§3), gain slider defaulting to **0** | ⛔ gain 0 ⇒ **bit-identical to shipped Horn**, proved by replay |
-| 5 | Conditioning fades (§6.2) | floors from step 0, not from taste |
-| 6 | Live take, both tools, back to back | ⭐ *visibly* better, per §10.2's bar |
+| 4 | ✅ **BUILT 2026-08-26** — the palm-frame trim (`Resources/tip_trim.py`), gain defaults to **0** | ⛔ gain 0 returns the IDENTITY OBJECT · ⭐ a rigidly rotated hand produces **0.0000°** of trim over 20 poses — the not-`PALM_AND_TIPS` property, tested · clamp 10° + 60°/s · ⛔ **live take owed** |
+| 5 | ✅ **FOLDED INTO STEP 4** — the owner asked for the tips *"to the extent they are robust enough"*, which IS the fade, so it shipped with the trim rather than after it | floors are the census's: `spread ≥ 0.20` (1.89% of frames), plus a fist guard |
+| 5b | ✅ **SLIDERS WIRED 2026-08-26** — jitter (as a **tau in ms**, 0 = off), `beta`, trim gain and trim clamp. ⛔ Gain starts at production's 0; only `--f1-rig` raises it | a start of 100 would have made single-arm debug differ from production — and `parity_replay` could not have caught it |
+| 6 | ⭐⭐ **THE RIG IS READY** — `f1_rig.bat` / `--f1-rig`: three panels on one camera, STEP 0 / STEP 2 / STEP 4, each one step apart | ⭐ *visibly* better, per §10.2's bar |
 
 ⭐ Steps 1–3 are the owner's specification with no fusion in them at all, and
 each is independently shippable. Step 4 is the one that could regress jitter, and
