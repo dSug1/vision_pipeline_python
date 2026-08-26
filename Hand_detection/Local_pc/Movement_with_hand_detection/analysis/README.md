@@ -682,6 +682,41 @@ same JSONL schema, so every script here reads a production take unchanged.
 | `patch_meta.py` | one-off used for the deleted `palm_back` take; kept as a template |
 | `inspect_labels.py` | dump recorded handedness labels + thumb geometry per known-ground-truth clip |
 
+### T6 — the 2D-ratio calibration takes (2026-08-26)
+
+| script | purpose | findings |
+|---|---|---|
+| `t6_ratio_analysis.py` | protocol §4.1/§4.2 (the ratio table and its cross-talk) and §8.1/§8.2/§8.2b (the depth arm) over the six on-axis takes | ⭐⭐ **at the SQUARE pose the four rigid palm spans imply depths 13–22% apart** — one frame, so drift cannot enter — and `min` over them *is* the absolute estimator, so it **steps whenever rotation changes which span wins**. The relative anchor carries **+4.6% … +13.0%** false depth under rotation, the absolute one **+10.8% … +26.6%** |
+
+⭐ **Everything it prints is normalised within a take to that take's own 0° hold,**
+so `T6`'s caveat zero (the standing distance was not held) cannot reach any of it.
+
+⛔ **FOUR metric bugs were found in this harness — two by inspecting its own output
+before publishing, and two more in a VERIFICATION PASS the owner asked for after
+the numbers had already been written up.** The same failure mode this page opens
+with, and the last two are the instructive ones:
+
+| bug | symptom that exposed it |
+|---|---|
+| `response = (max-min)/median` over the full sweep | `Rwl = w/l` divides by a span that projects to ~0 at the 90° **pitch** hold, so the "response" measured the singularity (read 2.880). Replaced by a **log-space 0°→90° excursion** |
+| the same metric applied to a **signed** ratio | `Rbow` crosses zero mid-sweep, so `|median|` sits near zero and the quotient explodes regardless of how little the bow moved |
+| the absolute-depth column **re-implemented** `HandDepthTracker` instead of stepping it | it published a reading at the 90° yaw hold where the shipped class **refuses outright** — found only by stepping the real class |
+| ⛔⛔ a "distance-free" statistic that was **distance-SQUARED** | `max4 = k` but `abs/0° = 1/k` under a pure retreat, so the RATIO goes as `1/k²`. A 10% retreat with no rotation fabricates 1.23. The **product** is the invariant. **Caught by testing the algebra on a synthetic pure-distance case rather than re-reading the output** |
+
+⚠ The first version also printed a confident **"YES x3.7 — separates"** for a ratio
+that in fact moves hugely under **both** axes. ⭐ **A separation test must compare
+excursions, not the ratio of two large numbers** — and once it did, the honest answer
+arrived: magnitude does **not** separate yaw from pitch (as orthography predicts),
+but the excursion's **sign** splits them 3/3 on single-axis takes.
+
+⛔ **A finding was also RETRACTED in the verification pass**: "the takes bound the
+operator's drift at ≤7%" assumed palm-on and back-on project the same spans. At the
+180° hold **three of the four spans come back 8–30% short** and `max4` reports the
+one that does not — so "it returned" only meant "one span returned", which a ~12%
+retreat produces just as readily. ⭐ **The lesson that generalises: a `max` over
+several noisy estimates cannot be used to bound anything, because it reports the
+luckiest one.**
+
 ---
 
 ## Two metrics, and why both are mandatory

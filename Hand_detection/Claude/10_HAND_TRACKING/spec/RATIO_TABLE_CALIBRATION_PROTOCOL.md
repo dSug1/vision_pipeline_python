@@ -226,6 +226,68 @@ Look for: **8 positions**, each with `on_axis_frames` at the target and a
 
 ---
 
+### ⭐⭐ Appended 2026-08-26 — A DEPTH ARM, AND A CORRECTION TO STEP 7
+
+**Owner, 2026-08-26:** *"an unreliable depth should not be a problem to compute
+and use physiological length ratios. We can still use these 6 takes' data to try
+to improve z-depth issues."* ⭐ Both halves are right, and the second one adds
+work this section did not have.
+
+⛔ **STEP 7 AS WRITTEN CANNOT WORK — and not because of caveat zero.** The
+absolute estimator is `z = focal * NOMINAL_SPAN_M / px` (`palm_depth.py`). A wrong
+`CAMERA_HFOV_DEG` and a hand that is not the median size enter that expression as
+**one multiplicative constant each, at every distance**. They are algebraically
+**degenerate**: both predict a *constant* `estimated / declared` ratio, so the
+step's stated discriminator — *constant ⇒ user scale, drifting ⇒ HFOV* — does not
+separate them however well the distance is held.
+
+⭐ **That is good news for `U12`, not bad.** Only the **product**
+`focal × NOMINAL_SPAN_M` is identifiable from a hand alone, so `U12` stores **one
+number** and never needs to know which factor it is correcting. Splitting them
+would need an independent cue (a known-size object in frame, or a real intrinsic
+calibration), and nothing downstream needs the split.
+
+⚠ **What a depth-DRIFTING ratio would actually indict** is neither of those: it
+would indict the **thin-object assumption**. The knuckle row bows **10.6 mm**, a
+fixed physical offset that is ~3% of 0.35 m but ~1.5% of 0.70 m. ⛔ Untestable on
+these takes under caveat zero — noted so the next person does not read "drift ⇒
+HFOV" and act on it.
+
+### ⭐ 8. THE DEPTH ARM — scale-free, and it uses all six takes
+
+⭐⭐ **The premise, in one line: distance shrinks every palm span PROPORTIONALLY,
+rotation shrinks them ANISOTROPICALLY.** That is `palm_depth.py`'s own note, and
+it is exactly what this table indexes — so the ratio table and a rotation-robust
+depth anchor are **the same measurement**, read twice.
+
+⭐ Everything below is **normalised within a take to its own 0° hold**, so the true
+standing distance never enters and caveat zero does not reach it.
+
+| # | what | why it is worth doing here |
+|---|---|---|
+| **8.1** | `max4` anchor vs **declared angle**, per take, normalised to that take's 0° hold | `palm_depth.py` admits *"~9% false depth during rotation"*, but that came from a CV over an **unlabelled** rotation take. These are the first takes that carry a **declared angle**, so the bias becomes a **curve** instead of a scalar — and a curve can be inverted |
+| **8.2** | Is the climb FORESHORTENING or the ARM? | Foreshortening is **symmetric about 90°** and must **return at 180°** (palm and back are both square). Drift is **monotone and take-specific**. Six normalised curves, two axes × three distances: what superposes is the estimator, what departs is the arm. ⭐ This settles the retracted *"four takes peak at 180°"* question **as a measurement** instead of leaving it as two plausible stories |
+| **8.2b** | ⭐⭐ **RAN 2026-08-26, and it is the test that works.** At the SQUARE 0° hold, what depth does each of the four spans imply **on its own**? | ⛔ **8.2's return test FAILED on its premise** — at 180° three of the four spans come back 8–30% short and `max4` reports the only one that does not, so it bounds nothing. 8.2b needs **one frame**, which makes it drift-proof outright: the four spans disagree by **13–22%**, `min` over them **is** the absolute estimator, and its output therefore **steps whenever rotation changes which span wins** |
+| **8.3** | ⭐⭐ **Invert it.** Table gives angle from scale-free 2D ratios → angle predicts each span's foreshortening → de-foreshorten → an anchor that holds still while the hand turns | This is the actual z-depth improvement, and it is `A10`-shaped: identical recorded input, before/after **CV against the shipped 0.056 (yaw) / 0.085 (pitch)** |
+| **8.4** | Gate the second-order hold on **inter-span ratio** rather than absolute size | `palm_depth.py` proposes exactly this as *"the scale-invariant fix, if this ever needs to generalise"*, and `MIN_SPAN_FRACTION = 0.50` is documented as conflating *far away* with *collapsed*. These takes are the right data because the angle is **declared** |
+
+⛔ **8.1–8.2 are measurement and cost nothing.** 8.3 changes an estimator and is
+`A10`-gated like anything else. 8.4 is a proposal until 8.1 says the shipped
+anchor's rotation bias is worth removing.
+
+✅ **8.1, 8.2 and 8.2b RAN on 2026-08-26** — `analysis/t6_ratio_analysis.py`.
+Results, the two claims retracted the same day, and the four metric bugs the
+harness was found to contain are in
+[`../../00_CORE/queue_notes/T6.md`](../../00_CORE/queue_notes/T6.md).
+⭐ **8.3 is now the priority and its target is sharper than when it was written**:
+not "de-foreshorten the anchor" in general, but **remove the per-span nominal
+disagreement that makes `min` step** — and the relative form already shows it can
+be done from a per-grab baseline, so `CONSTRAINTS` §8 (no calibration step) is not
+in the way.
+
+⚠ **Order matters**: 8.x depends on §4.2's table existing, except 8.1 and 8.2,
+which depend on nothing and can be run first.
+
 ## 5. Acceptance — the bar is VISIBLE, not measured
 
 ⛔ **`T6d` had the best numbers of any correction attempted and was still

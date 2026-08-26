@@ -48,8 +48,10 @@ name.** They are the record, not the briefing.
 grip, palm-frame rotation trim, 1€ jitter filter, sliders — and **unconfirmed**.
 Run `f1_rig.bat`: three panels on one camera, each one step apart.
 ⛔ **Both `F1` switches are OFF in the game** until that take says otherwise.
-**Also recorded**: the six `T6` ratio-table takes (1680 frames, all on-axis); its
-next step is the analysis, protocol §4, no camera needed.
+**`T6` has moved**: its six takes are analysed and the analysis re-verified — the
+ratio table must be **2-D**, and the **absolute depth estimator steps whenever
+rotation changes which palm span it selects** (the four disagree by 13–22% at the
+square pose). Next is §4.3 / §8.3, no camera needed.
 **Open show-stopper**: the **yaw lean** (~27° at a 60–90° hand turn).
 Full status: [`00_CORE/QUEUE.md`](00_CORE/QUEUE.md)'s YOU-ARE-HERE block.
 Full narrative: [`10_HAND_TRACKING/history/SESSION_LOG.md`](10_HAND_TRACKING/history/SESSION_LOG.md).

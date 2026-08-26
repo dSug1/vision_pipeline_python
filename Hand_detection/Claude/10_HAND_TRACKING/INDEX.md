@@ -51,8 +51,20 @@ against `F1`, and §10.1's trim-resolution metric does not exist — without it 
 can pass every existing metric and still not deliver the fine alignment it exists
 for.
 
-⭐ **The six `T6` ratio-table takes are recorded** (1680 frames, all on-axis, 3
-depths × 2 axes). Next is the **analysis**, protocol §4 — desk work, no camera.
+⭐⭐ **`T6`'s analysis has RUN** — protocol §4.1/§4.2 and the depth arm §8.1/§8.2,
+over the six recorded takes (`analysis/t6_ratio_analysis.py`, no pipeline change).
+Two results change what happens next. **The ratio table must be 2-D**: magnitude
+cannot separate yaw from pitch (orthography forbids it) though the excursion's
+**sign** splits them 3/3 on single-axis takes. And **the depth arm paid before the
+rotation arm did**: at the **square** pose the four rigid palm spans imply depths
+**13–22% apart** — drift-free, since they read the same frame — and `min` over
+them *is* the absolute estimator, so its output **steps whenever rotation changes
+which span wins**. ⛔ The snap gate reads it: a within-take excursion of **0.161 m
+against a 0.15 m tolerance**. ⭐ The relative form is immune and the fix needs no
+calibration step. ⚠ A verification pass **retracted two claims the same day** — a
+drift bound whose premise the spans refute, and a "distance-free" ratio that was
+distance-squared; see the dossier.
+**Next: §4.3 the transfer test, §8.3 the inversion** — both still `analysis/` work.
 ⛔ Read [`../00_CORE/queue_notes/T6.md`](../00_CORE/queue_notes/T6.md) first, for
 its **caveat zero**: the owner reports the distance was unreliable and the hand
 moved during the takes. ⭐ Harmless for the ratio table — foreshortening ratios are
