@@ -1259,11 +1259,9 @@ class CubeState:
     # smoothed -- see `_slerp_factor_for`.
     last_target_quat: object = None
     last_target_speed_deg_s: object = None
-    # ⭐ Fast-attack / slow-release envelope of the RAW target's speed. A turn
-    # starts at zero speed, so thresholding the instantaneous value leaves the first
-    # frames of a deliberate rotation fully damped -- which is the onset lag the
-    # owner felt. The envelope releases on the first fast frame instead.
-    last_speed_env: object = None
+    # ⚠ The steady damper's envelope is NOT here: it belongs to the HAND, not the
+    # arm, and lives in `_steady_env` so both tools key it identically. Keeping a
+    # per-arm copy is what made `parity_replay` diverge at frame 260.
     # ⭐⭐ THE LAG A/B (owner, 2026-08-24: *"the cube is lagging the hand and this
     # feels very uncomfortable"*). "frame" = today's FIXED PER-FRAME factor; "time"
     # = a real exponential with a time constant in MILLISECONDS.
@@ -2108,7 +2106,36 @@ def _draw_slider_panel(open_: bool):
 _SLERP_MAX_DT_MS = _HS_const.ROTATION_SLERP_MAX_DT_MS
 
 
-def _slerp_factor_for(state: CubeState, now_ms) -> float:
+# ⛔⛔ THE ENVELOPE BELONGS TO THE HAND, AND IS STAMPED ONCE PER HAND PER FRAME.
+# `parity_replay` caught the first version diverging at frame 260, and there were
+# two faults behind it, both worth stating because either would recur:
+#   1. the two tools KEYED IT DIFFERENTLY -- per ARM in the debug tool, per HAND
+#      here -- so with two hands the tools could not agree by construction;
+#   2. both stamped it INSIDE the per-cube loop, so a hand holding two cubes
+#      stamped twice a frame, and the second stamp measured the gap between two
+#      DIFFERENT cubes' targets rather than any elapsed time.
+# ⭐ It is now fed from `hand_quat_now` -- the HAND's own orientation -- which is a
+# property of the hand alone and is the same in both tools whatever it is holding.
+_steady_env = {}
+_steady_prev_hand_quat = {}
+
+
+def _stamp_steady_speed(handedness, hand_quat, now_ms, prev_ms):
+    """Feed this HAND's RAW rotation speed into its envelope. ⭐ Mirrors
+    `HandsTriggeredActions._stamp_steady_speed` exactly (N6 in spirit: one rule,
+    and `parity_replay` is what proves the two copies agree)."""
+    if hand_quat is None:
+        return
+    prev = _steady_prev_hand_quat.get(handedness)
+    if prev is not None and now_ms is not None and prev_ms is not None:
+        dt = max(1e-3, min(now_ms - prev_ms, _SLERP_MAX_DT_MS))
+        speed = _PRot.quat_angle_deg(prev, hand_quat) * 1000.0 / dt
+        _steady_env[handedness] = _HS_const.steady_speed_envelope(
+            _steady_env.get(handedness), speed, dt)
+    _steady_prev_hand_quat[handedness] = hand_quat
+
+
+def _slerp_factor_for(state: CubeState, now_ms, handedness=None) -> float:
     """This frame's blend factor for `state` -- fixed per-frame, or time-based.
 
     ⭐ `mode == "frame"` returns the module constant untouched, so every existing
@@ -2125,8 +2152,8 @@ def _slerp_factor_for(state: CubeState, now_ms) -> float:
     # ⛔ The speed comes from the RAW TARGET, never from the cube's own smoothed
     # orientation. Measuring the output would be self-referential -- damping lowers
     # the apparent speed, which raises the damping -- and the cube would lock solid.
-    # ⚠ The ENVELOPE, not the instantaneous speed -- see `CubeState.last_speed_env`.
-    tau = _HS_const.steady_tau_ms(tau, getattr(state, "last_speed_env", None))
+    # ⚠ The HAND's envelope, keyed exactly as production keys it.
+    tau = _HS_const.steady_tau_ms(tau, _steady_env.get(handedness))
     return 1.0 - math.exp(-dt / tau)
 
 
@@ -2442,6 +2469,11 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                 if _d is not None:
                     hand_quat_now = _d
 
+        # ⭐ ONCE PER HAND, PER FRAME -- the SAME point production stamps it, from the
+        # same quantity. Anything else and `parity_replay` diverges, which is how the
+        # per-arm version was caught.
+        _stamp_steady_speed(handedness, hand_quat_now, now_ms, state.last_frame_ms)
+
         # ⭐ 4.2: this frame's absolute hand depth, stamped upstream by
         # `_update_snap_depth` so one estimator serves every arm. ABSENT means a
         # caller that predates 4.2 -> pre-4.2 2D gating, deliberately.
@@ -2664,7 +2696,7 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                     _PRot.quat_angle_deg(_pt, target_quat) * 1000.0 / _dtm)
             state.last_target_quat = target_quat
             cube.orientation = _quat_slerp(cube.orientation, target_quat,
-                                           _slerp_factor_for(state, now_ms))
+                                           _slerp_factor_for(state, now_ms, handedness))
 
     # ⚠ AFTER the slerp, never before it: `_slerp_factor_for` needs the PREVIOUS
     # frame's clock to form dt, and stamping it earlier would make dt zero and the

@@ -1275,6 +1275,16 @@ def on_hands_world_frame(left_world: List[Tuple[float, float, float]], right_wor
     _latest_world_landmarks["Right"] = right_world
 
 
+# ⛔⛔ THE ENVELOPE BELONGS TO THE HAND, AND IS STAMPED ONCE PER HAND PER FRAME.
+# `parity_replay` caught the first version diverging at frame 260, and there were
+# two faults behind it, both worth stating because either would recur:
+#   1. the two tools KEYED IT DIFFERENTLY -- per ARM in the debug tool, per HAND
+#      here -- so with two hands the tools could not agree by construction;
+#   2. both stamped it INSIDE the per-cube loop, so a hand holding two cubes
+#      stamped twice a frame, and the second stamp measured the gap between two
+#      DIFFERENT cubes' targets rather than any elapsed time.
+# ⭐ It is now fed from `hand_quat_now` -- the HAND's own orientation -- which is a
+# property of the hand alone and is the same in both tools whatever it is holding.
 # ⭐⭐ THE STEADY DAMPER'S STATE, per hand. Production did not apply the damper at
 # all until 2026-08-27 -- `hand_state` owned the rule and only the debug tool called
 # it, so setting the constants would have silently done nothing here.
@@ -1317,20 +1327,22 @@ def _quat_angle_deg(a, b) -> float:
     return math.degrees(2.0 * math.acos(d))
 
 
-def _stamp_steady_speed(handedness: str, target_quat, now_ms: Optional[float]) -> None:
-    """Feed this hand's RAW target speed into its envelope.
+def _stamp_steady_speed(handedness: str, hand_quat, now_ms: Optional[float]) -> None:
+    """Feed this HAND's RAW rotation speed into its envelope. Once per hand, per frame.
 
     ⛔ RAW, never the cube's smoothed orientation: measuring the output is
     self-referential -- damping lowers the apparent speed, which raises the damping
     -- and the cube locks solid. `hand_state.steady_tau_ms` states the same rule.
     """
+    if hand_quat is None:
+        return
     prev = _steady_prev_target.get(handedness)
     if prev is not None and now_ms is not None and _last_frame_ms is not None:
         dt = min(max(1e-3, now_ms - _last_frame_ms), ROTATION_SLERP_MAX_DT_MS)
-        speed = _quat_angle_deg(prev, target_quat) * 1000.0 / dt
+        speed = _quat_angle_deg(prev, hand_quat) * 1000.0 / dt
         _steady_env[handedness] = hand_state.steady_speed_envelope(
             _steady_env.get(handedness), speed, dt)
-    _steady_prev_target[handedness] = target_quat
+    _steady_prev_target[handedness] = hand_quat
 
 
 def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: List[Tuple[float, float]],
@@ -1601,6 +1613,11 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                 if _d is not None:          # None = degenerate fit: keep the filtered value
                     hand_quat_now = _d
 
+        # ⭐ ONCE PER HAND, PER FRAME, from the HAND's own orientation -- before any
+        # cube is touched, so a hand holding two cubes stamps exactly once and the
+        # debug tool can do the identical thing at the identical point.
+        _stamp_steady_speed(handedness, hand_quat_now, now_ms)
+
         # ⭐ handinput: the pose this frame ACTUALLY produced, before any of it
         # reaches a cube. `hand_quat_now` is the same quaternion the grab-delta
         # maths uses below, so an event consumer and the cube see one reading.
@@ -1860,7 +1877,6 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                           else _quat_multiply(hand_quat_now, _trim_q))
                 delta = _quat_multiply(_q_eff, _quat_conjugate(cube.grab_hand_orientation))
                 target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
-                _stamp_steady_speed(handedness, target_quat, now_ms)
                 cube.orientation = _quat_slerp(cube.orientation, target_quat,
                                                _rotation_slerp_factor(now_ms, handedness))
 
