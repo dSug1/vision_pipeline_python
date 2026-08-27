@@ -293,7 +293,23 @@ SLIDERS = (
     # useful range to explore is roughly 100-240.
     # ⚠ 0 freezes depth outright -- reachable on purpose, like every other slider
     # here, because a hidden floor teaches the wrong thing about where the limit is.
-    ("Z rate %/s", 400, 200, lambda n: n / 100.0),
+    # ⛔⛔ PARKED 2026-08-27 (owner: *"there is no need for z rate %/s slider"*).
+    # The value was SETTLED at the shipped 2.00 and the work since has all been
+    # rotation, which this does not touch.
+    #
+    # ⚠ IT WAS ALSO A PARITY LEAK, and that is the stronger reason. This slider
+    # writes `_PDepth.RATE_LIMIT_PER_S`, a module BOTH tools import (N6), so while it
+    # sat off 2.00 the debug tool ran a depth rate production does not. Measured
+    # across the last four takes: **4.0 / 0.51 / 0.42 / 2.0** -- three of them
+    # off-spec, and nothing in the session was about depth. Parking pins it at the
+    # module's own constant, which is production's, so `U6` has nothing to catch.
+    # ⭐ The rotation verdicts are unaffected: depth rate drives Z TRANSLATION and
+    # cannot reach an orientation estimator. Recorded rather than assumed.
+    #
+    # ⭐ To revive: restore the line below, add `DEPTH_RATE_PER_S` back to the
+    # `_read_sliders` unpack, and restore the two lines flagged "Z rate parked".
+    # Nothing else was removed -- same treatment as JITTER/SPEED above.
+    #   ("Z rate %/s", 400, 200, lambda n: n / 100.0),
     # ⛔ PARKED 2026-08-26 alongside the two above -- the owner retired it after
     # revisiting an earlier preference for a raised clamp.
     #   ("TRIM max deg", TRIM_MAX_DEG_MAX, 10, lambda n: float(n)),
@@ -743,6 +759,16 @@ def _arm_title(state):
         ("   [ROTATION: %s]" % getattr(state.rotation, "name", "?"))
         if getattr(state, "rotation", None) is not None else "")
 
+
+# ⭐⭐ HIDE THE CAMERA STREAM, KEEP THE LANDMARKS. Owner, 2026-08-27.
+# ⛔ DISPLAY ONLY. Detection still runs on the real frame -- `rgb_frame` is built
+# before any of this and is untouched -- so the landmarks, the cubes, the recording
+# and every estimator see exactly what they saw before. Toggling this cannot change
+# a measurement, which is the whole point of putting it at draw time.
+# ⭐ Why it is useful: on a video background the eye tracks the HAND and forgives
+# the cube. On black there is nothing to compare against but the cube's own motion,
+# which is what a jitter or lean judgement actually needs.
+HIDE_VIDEO = False
 
 COAST_MS_ARMS = (150.0, 300.0, 450.0)
 
@@ -1786,8 +1812,8 @@ def _read_sliders() -> None:
     # ⚠ THREE sliders now -- three others are parked (see `SLIDERS`). The parked
     # values are NOT re-read here; they keep their module defaults.
     (SLERP_TAU_MS, _gain, GRAB_RADIUS_MULTIPLIER, GRIP_ALIGN_MOVING_MS,
-     GRIP_ALIGN_MASK_RATIO, SLANT_AXIS_GAIN, POSE_BLEND, GRAB_Z_TOLERANCE_M,
-     DEPTH_RATE_PER_S) = vals
+     GRIP_ALIGN_MASK_RATIO, SLANT_AXIS_GAIN, POSE_BLEND,
+     GRAB_Z_TOLERANCE_M) = vals
     # ⚠ Same shared-module reasoning as the three below: an estimator built with
     # `gain=None` reads this attribute at call time. ⛔ Production never constructs
     # `SlantAxisHorn` at all, so this cannot reach it -- but `parity_replay` is the
@@ -1864,7 +1890,10 @@ def settled_values() -> dict:
         "pose_blend": _SlantPose.BLEND,
         "pose_smooth_tau_ms": _SlantPose.SMOOTH_TAU_MS,
         "grab_z_margin_m": GRAB_Z_TOLERANCE_M,
-        "depth_rate_per_s": DEPTH_RATE_PER_S,
+        # ⚠ Read from the MODULE, not the local. The slider is parked, so the
+        # module's constant is the only truth, and logging a stale local would
+        # quietly claim a value nothing was running.
+        "depth_rate_per_s": _PDepth.RATE_LIMIT_PER_S,
         "jitter_tau_ms": JITTER_TAU_MS,
         "jitter_beta": JITTER_BETA,
     }
@@ -2695,6 +2724,12 @@ def main():
                         help="1 (default) = mirror production, one window. "
                              "3 = the D2/D3 bridging comparison rig, all three "
                              "arms side by side off one camera.")
+    parser.add_argument("--no-video", dest="no_video", action="store_true",
+                        # ASCII ONLY IN HELP TEXT -- see the note on --f1-rig.
+                        help="Draw the landmarks and cubes on BLACK instead of the "
+                             "camera picture. Display only: detection, recording and "
+                             "every estimator are untouched. Press 'v' to toggle it "
+                             "live.")
     parser.add_argument("--pose-rig", dest="pose_rig", action="store_true",
                         # ASCII ONLY IN HELP TEXT -- see the note on --f1-rig.
                         help="The owner's strategy, three windows on one camera: "
@@ -2858,8 +2893,13 @@ def main():
                            int(round(GRIP_ALIGN_MASK_RATIO * 100)))
         cv2.setTrackbarPos("GRAB z margin cm", SLIDER_WIN,
                            int(round(GRAB_Z_TOLERANCE_M * 100)))
-        cv2.setTrackbarPos("Z rate %/s", SLIDER_WIN,
-                           int(round(DEPTH_RATE_PER_S * 100)))
+        # ⛔ Z rate parked -- no trackbar to position.
+        #   cv2.setTrackbarPos("Z rate %/s", SLIDER_WIN,
+        #                      int(round(DEPTH_RATE_PER_S * 100)))
+        if args.no_video:
+            globals()["HIDE_VIDEO"] = True
+        print("[LiveSnapDebug] camera stream %s -- press 'v' to toggle."
+              % ("HIDDEN (landmarks + cubes on black)" if HIDE_VIDEO else "shown"))
         if args.pose_rig:
             # ⛔ STARTS AT 100%, NOT PART WAY. The middle of this slider is measured
             # WORSE than either end (yaw lean 53.7 at 50% against 27.2 at 0 and 8.6 at
@@ -3218,7 +3258,13 @@ def main():
                 })
 
             for i, arm in enumerate(arms):
-                panel = frame if len(arms) == 1 else frame.copy()
+                if HIDE_VIDEO:
+                    # ⚠ A FRESH canvas per arm, always. Sharing one would let the
+                    # first panel's cubes appear on the second -- the panels differ
+                    # only in what they draw, which is exactly what a rig compares.
+                    panel = np.zeros_like(frame)
+                else:
+                    panel = frame if len(arms) == 1 else frame.copy()
                 for handedness, normalized in normalized_by_hand.items():
                     data = hand_data_by_hand[handedness]
                     _draw_hand(
@@ -3242,6 +3288,12 @@ def main():
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 break
+            if key == ord("v"):
+                # ⚠ `global` is not needed at module scope in this function, but the
+                # name IS module-level, so rebind it there rather than shadowing.
+                globals()["HIDE_VIDEO"] = not HIDE_VIDEO
+                print("[LiveSnapDebug] camera stream %s ('v' toggles)"
+                      % ("HIDDEN -- landmarks and cubes only" if HIDE_VIDEO else "shown"))
             if any(cv2.getWindowProperty(n, cv2.WND_PROP_VISIBLE) < 1 for n in windows):
                 break
             if args.duration and (time.perf_counter() - t0) >= args.duration:
