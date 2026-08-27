@@ -1832,7 +1832,14 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     # `CubeWindow` and is commented there as load-bearing.
     # ⚠ `hands` is this frame's ((name, landmarks), ...) pairs -- the SAME tuple the
     # logic above consumed, so what is drawn cannot disagree with what was decided.
-    cube_window.set_hand_landmarks({name: lms for name, lms in hands if lms})
+    # ⭐ Depths alongside, so `CubeWindow` can order hands against cubes. `_hand_depth`
+    # is THIS frame's estimate, already computed for the grab gate -- reused rather
+    # than recomputed, so the picture cannot disagree with the decision.
+    # ⚠ A hand whose depth is unknown sorts BEHIND everything (`depth_order`), which
+    # is the safe direction: it cannot wrongly cover an object.
+    cube_window.set_hand_landmarks(
+        {name: lms for name, lms in hands if lms},
+        {name: _hand_depth.get(name) for name, lms in hands if lms})
 
     cube_window.pump_and_draw()
 

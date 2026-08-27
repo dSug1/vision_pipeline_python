@@ -5,6 +5,11 @@ try:                                    # imported, never copied (N6)
 except ImportError:                     # pragma: no cover - direct import
     import hand_anatomy
 
+try:                                    # imported, never copied (N6)
+    from . import depth_order
+except ImportError:                     # pragma: no cover
+    import depth_order
+
 from . import palm_geometry
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
@@ -260,6 +265,10 @@ class CubeWindow:
         # ⚠ Display only. Nothing downstream reads this; it is replaced wholesale
         # each frame and an empty dict simply draws no hands.
         self._hand_landmarks: Dict[str, list] = {}
+        # ⚠ Per-hand depth in metres, alongside the landmarks. Absent or None means
+        # "unknown", which `depth_order` sorts FARTHEST -- so a hand whose depth
+        # estimate has dropped out is covered by the cubes rather than covering them.
+        self._hand_depths: Dict[str, float] = {}
         # ⭐ Owner, 2026-08-27. Same key ('l') and same default (ON) as the debug
         # tool's, so the habit transfers. ⛔ DISPLAY ONLY -- the landmarks are still
         # received, still drive every decision, and are still recorded; this changes
@@ -465,19 +474,23 @@ class CubeWindow:
             pygame.draw.polygon(self.screen, color, int_pts)
             pygame.draw.polygon(self.screen, edge_color, int_pts, edge_width)
 
-    def set_hand_landmarks(self, by_hand: Dict[str, list]) -> None:
+    def set_hand_landmarks(self, by_hand: Dict[str, list],
+                           depths: Optional[Dict[str, float]] = None) -> None:
         """This frame's landmarks per hand, in webcam-frame pixels. DISPLAY ONLY.
 
         ⚠ Called before `pump_and_draw`. Passing `{}` (or never calling it) simply
         draws no hands, so a caller that predates this keeps working unchanged.
+        ⭐ `depths` is metres from the camera per hand. Omitting it is legal and
+        means every hand is at unknown depth, i.e. behind everything.
         """
         self._hand_landmarks = by_hand or {}
+        self._hand_depths = depths or {}
 
-    def _draw_hand_landmarks(self) -> None:
-        """⛔ MUST BE CALLED BEFORE THE CUBES. That ordering IS the occlusion."""
+    def _draw_one_hand(self, name: str) -> None:
+        """One hand's skeleton. Depth ordering is the CALLER's job (`pump_and_draw`)."""
         if not self.show_landmarks:
             return
-        for pts in self._hand_landmarks.values():
+        for _n, pts in ((name, self._hand_landmarks.get(name)),):
             if not pts or len(pts) < 21:
                 continue
             try:
@@ -515,12 +528,24 @@ class CubeWindow:
             return
 
         self.screen.fill((30, 30, 30))
-        # ⛔ ORDER IS LOAD-BEARING: hands first, cubes second. The cubes are opaque,
-        # so this is what makes a cube OCCLUDE the hand behind it. Swapping these two
-        # lines would draw the skeleton on top of the object it is holding.
-        self._draw_hand_landmarks()
-        for cube in self.cubes.values():
-            self._draw_object_3d(cube)
+        # ⭐⭐ DEPTH-ORDERED OCCLUSION, ONE RULE FOR EVERYTHING (owner, 2026-08-27:
+        # *"every object introduced in the game should be subject to depth-ordered
+        # occlusion and should generate depth-ordered occlusion"*).
+        # ⛔ Hands and cubes go into ONE list and are painted farthest-first, so a
+        # cube covers a hand behind it, a hand covers a cube behind IT, and the two
+        # cubes finally occlude EACH OTHER -- which they never did before, because
+        # they were drawn in dict order.
+        # ⭐ A new object type joins by appending one `(depth_m, callable)` pair. It
+        # needs to know nothing about what else is on screen, which is the point of
+        # putting the rule in `depth_order` instead of here.
+        drawables = [(c.depth_m, (lambda o=c: self._draw_object_3d(o)))
+                     for c in self.cubes.values()]
+        if self.show_landmarks:
+            drawables += [(self._hand_depths.get(n),
+                           (lambda h=n: self._draw_one_hand(h)))
+                          for n in self._hand_landmarks]
+        for draw in depth_order.order(drawables):
+            draw()
         pygame.display.flip()
         self.clock.tick(60)
 

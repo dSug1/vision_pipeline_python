@@ -59,6 +59,7 @@ from Resources import tip_trim  # noqa: E402  (F1 step 4, shared with production
 from Resources import one_euro  # noqa: E402  (F1 step 1, the jitter filter)
 from Resources import palm_slant_axis as _SlantAxis  # noqa: E402  (T6 axis correction)
 from Resources import palm_slant_pose as _SlantPose  # noqa: E402  (T6 halves 1+2)
+from Resources import depth_order  # noqa: E402  (the game's one occlusion rule, N6)
 
 # ⭐⭐ WHAT PRODUCTION ACTUALLY RUNS, since 2026-08-17.
 # `Resources/HandsTriggeredActions.py` now drives cube orientation with Horn
@@ -2700,8 +2701,16 @@ def _draw_cubes(frame, state: CubeState):
     # ⭐ So the cube reports WHICH PIXELS IT COVERS, and the caller paints the
     # landmarks everywhere except there. The cube keeps its transparency over the
     # VIDEO and is fully opaque to the HAND, which is what was asked for.
-    mask = np.zeros(frame.shape[:2], dtype=np.uint8)
-    for cube in state.cubes.values():
+    # ⭐⭐ ONE MASK PER CUBE, NOT ONE FOR ALL. A single combined mask can only say
+    # "some cube covers this pixel", which is enough to hide a hand behind
+    # everything and useless for putting a hand BETWEEN two cubes.
+    masks = []
+    # ⛔ AND THE CUBES ARE NOW SORTED AMONG THEMSELVES. They used to be painted in
+    # dict order, so the two cubes did not occlude each other at all -- whichever
+    # happened to be second won, regardless of which was actually nearer.
+    for cube in depth_order.order([(c.depth_m, c) for c in state.cubes.values()]):
+        mask = np.zeros(frame.shape[:2], dtype=np.uint8)
+        masks.append((cube.depth_m, mask))
         # 4.2: the PROJECTED extent, everywhere. `position` is the top-left of
         # what is drawn, so using `size` here would offset the centre at any
         # depth other than the reference one.
@@ -2722,11 +2731,12 @@ def _draw_cubes(frame, state: CubeState):
             size = int(round(state.projected_size_of(cube)))
             x, y = int(cube.position[0]), int(cube.position[1])
             cv2.rectangle(frame, (x, y), (x + size, y + size), SNAP_BORDER_COLOR, SNAP_BORDER_WIDTH)
-    # ⭐ The pixels the cubes cover, for the caller to keep the landmarks out of.
+    # ⭐ `[(depth_m, mask), ...]`, farthest first -- one entry per cube, so a caller
+    # can ask "which cubes are NEARER than this hand" and mask against only those.
     # ⚠ The snap highlight above is deliberately NOT in the mask: it is a HUD
     # annotation, not part of the object's body, and masking the hand out from under
     # a 3-px border would leave a visible notch in the skeleton.
-    return mask
+    return masks
 
 
 def build_detector():
@@ -3309,17 +3319,33 @@ def main():
                 # the landmarks are painted only where no cube is.
                 # ⚠ The mask must come from the cube pass, so nothing between these
                 # two blocks may draw on `panel`.
-                cube_mask = _draw_cubes(panel, arm)
+                cube_masks = _draw_cubes(panel, arm)
                 if normalized_by_hand and SHOW_LANDMARKS:
-                    hands_layer = panel.copy()
+                    # ⭐⭐ DEPTH-ORDERED, PER HAND. Each hand is masked against only
+                    # the cubes that are actually NEARER than it, so a hand in front
+                    # of one cube and behind another is drawn correctly against both.
+                    # ⛔ It cannot be done by draw order here the way production does
+                    # it: this tool alpha-blends the cube on purpose, and a blend lets
+                    # whatever is beneath show THROUGH. Masking is what makes the cube
+                    # transparent to the VIDEO and opaque to the HAND.
                     for handedness, normalized in normalized_by_hand.items():
                         data = hand_data_by_hand[handedness]
+                        _hd = data.get("hand_depth")
+                        _hand_z = _hd[0] if _hd else None
+                        blocker = None
+                        for _cz, _m in cube_masks:
+                            if depth_order.occludes(_cz, _hand_z):
+                                blocker = _m if blocker is None \
+                                    else cv2.bitwise_or(blocker, _m)
+                        layer = panel.copy()
                         _draw_hand(
-                            hands_layer, normalized, handedness, data["thumb_outward"],
+                            layer, normalized, handedness, data["thumb_outward"],
                             arm.last_hand_reliability_alpha[handedness], width, height,
                         )
-                    # keep the hand layer only OUTSIDE the cubes
-                    np.copyto(panel, hands_layer, where=(cube_mask == 0)[:, :, None])
+                        if blocker is None:
+                            np.copyto(panel, layer)
+                        else:
+                            np.copyto(panel, layer, where=(blocker == 0)[:, :, None])
                 _draw_bridge_hud(panel, arm, height)
                 if args.slerp_ab and i == 1:
                     _draw_ab_divergence(panel, arms[0], arm, height)
