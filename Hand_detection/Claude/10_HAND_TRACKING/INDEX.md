@@ -57,6 +57,18 @@ track** — three were missing that reset.
 ⛔ **`F1` did NOT fix the yaw lean.** The apparent improvement was the trim's
 constant offset, and it is gone. The show-stopper stands.
 
+✅✅ **RENDERING WAS REBUILT AND SHIPPED (2026-08-27) — see [`../00_CORE/queue_notes/R1.md`](../00_CORE/queue_notes/R1.md).** Depth-ordered
+occlusion as ONE rule for every object, per-landmark and PER-SEGMENT bone occlusion,
+a SOLID near-face occluder, and ⭐ **landmarks in PRODUCTION for the first time**.
+⛔⛔ The defect the owner spotted by eye — every fingertip in front of a held cube —
+was OUR logic: cube **x,y** from the FINGERTIPS, cube **z** from the PALM. Fixed.
+⭐⭐ **AND IT PRODUCED A YAW FINDING FOR FREE**: the palm quad's z spread is 0.0658 m
+face-on and 0.0681 m at 90° — essentially CONSTANT — so Horn's z input carries almost
+no yaw information at all. `T6`'s 24.9° result by an independent route.
+⭐ A FREEZE damper ships for rotation AND translation (`RELEASE 60 / FREEZE 1`);
+three earlier designs were live-rejected, and a directional-coherence gate was built
+twice and removed twice — a good measure, a bad trigger.
+
 ⭐⭐⭐ **`T6` BECAME A REGRESSION, AND THE RATIO TABLE IS DEAD.** `Rwl` measures
 compression along one fixed direction, so it carries `cos(yaw)/cos(pitch)` — one
 number, two unknowns, a **lossy projection**. That is why §4.1's cross-talk was

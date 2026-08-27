@@ -1378,3 +1378,68 @@ Optional and parallelisable at any time: **0.4** (predictor eval harness, S1) an
 ---
 
 <!-- VERBATIM-END -->
+
+
+---
+
+# 2026-08-27 — rendering rebuilt and shipped; `T6`'s two estimators live-rejected
+
+⭐ Two threads ran in one session. One shipped, one died. Full dossiers:
+[`../../00_CORE/queue_notes/R1.md`](../../00_CORE/queue_notes/R1.md) and
+[`../../00_CORE/queue_notes/T6.md`](../../00_CORE/queue_notes/T6.md).
+
+## What shipped (`R1`)
+
+`depth_order.py` — ONE occlusion rule for every object, per-landmark depth,
+per-segment bone occlusion, a SOLID near-face occluder, landmarks in PRODUCTION for
+the first time, `l`/`v` display toggles, the cube's depth anchored on the fingertip
+barycentre, and a FREEZE damper for rotation AND translation at `RELEASE 60 /
+FREEZE 1`.
+
+## What died (`T6`)
+
+Both orientation builds, live-rejected the day they were built — the axis
+correction (*"discontinuities everywhere"*) and the owner's own halves 1+2
+(*"much worse than panel 1"*). ⭐⭐ **The scores were GOOD**: halves 1+2 produced the
+best yaw this project has measured (lean 27.2° → **8.6°**) and were rejected
+anyway, because the per-frame orientation jump p95 went 12.6° → 30.3°. **The tail
+decides the feel, every time.**
+
+## ⭐⭐⭐ The method rules earned, and they generalise
+
+1. **A corpus whose MOTION does not match the product's cannot validate an
+   estimator for the product.** Every `T6` take is an OPEN hand holding a declared
+   angle; the game GRIPS. Every offline score in that row was earned on a motion
+   the product never performs. ⚠ The gap was named out loud before the first wiring
+   and then not closed — twice. Sibling of `B4`.
+2. **Measure the channel you are about to change, not the one that is easy.** The
+   damper's first metric was per-frame axis WANDER on smooth instructed sweeps —
+   the one motion that cannot make a gate chatter. It read "no jitter cost" for a
+   build the owner rejected on sight.
+3. **A good MEASURE is not automatically a good TRIGGER.** The Frobenius coherence
+   separates still from slow-turning better than anything else tried, and still
+   loses as a release test, because it answers "moving somehow" when the question
+   is "moving how much".
+4. **Ordering can be a defect.** The palm/back occlusion asymmetry was not
+   MediaPipe's `z` — it was the cube taking its **x,y** from the fingertips and its
+   **z** from the palm.
+
+## ⚠ Mistakes worth not repeating
+
+* A **verify FAIL was committed** once before being fixed. The suite is only worth
+  running if a FAIL stops the commit.
+* **Two claims retracted**: palm-forward fingertip `z` (an artifact of splitting a
+  TWO-HAND take by a chirality-dependent cue — `U7`'s error class again) and the
+  whole-hand depth-reversal hypothesis (refuted by a chirality check needing no
+  ground truth).
+* **Stripping code broke two PRE-EXISTING constants** unrelated to the removal.
+  Restored verbatim from git. ⭐ When deleting a block, diff what left.
+* Two dead subsystems were found **computing every frame with the result
+  discarded**. Parking means removing the cost, not just the effect.
+
+## ⭐ What `T6` gave the yaw question on its way out
+
+The palm quad's own `z` spread measures **0.0658 m face-on and 0.0681 m at 90°** —
+essentially constant, where it should run from ~0 to ~its own width. **Horn's `z`
+input carries almost no yaw information at all.** That is the 24.9° finding by an
+independent route, and the yaw lean remains UNFIXED.
