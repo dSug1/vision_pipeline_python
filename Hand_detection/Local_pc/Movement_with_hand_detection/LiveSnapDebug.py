@@ -2438,10 +2438,16 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                     # at the instant of the grab (owner, 2026-08-26). The anchor is
                     # now WALKED there, on the same progress as the in-plane offset.
                     cube.grab_depth_m = cube.depth_m
+                    # ⭐⭐ THE GRIP POINT'S depth, not the palm's -- the same shared
+                    # helper production calls (N6), so the two tools converge the
+                    # object on the same place. `grab_depth_offset_m` decays to zero,
+                    # so this value is what the object ends up at.
+                    _grip_depth_m = fingertips.grip_depth_m(
+                        _hand_depth_m, data.get("world_landmarks"))
                     if (fingertips.GRIP_ALIGN_DEPTH_AT_GRAB and _use_tips
-                            and _hand_depth_m is not None):
-                        cube.grab_hand_depth_m = _hand_depth_m
-                        cube.grab_depth_offset_m = cube.depth_m - _hand_depth_m
+                            and _grip_depth_m is not None):
+                        cube.grab_hand_depth_m = _grip_depth_m
+                        cube.grab_depth_offset_m = cube.depth_m - _grip_depth_m
                     else:
                         cube.grab_hand_depth_m = None
                         cube.grab_depth_offset_m = None

@@ -1643,7 +1643,17 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                     # at the instant of the grab (owner, 2026-08-26). The anchor is
                     # WALKED there instead, on the same progress as x/y.
                     cube.grab_depth_m = cube.depth_m
-                    _hd_grab = _hand_depth[handedness]
+                    # ⭐⭐ THE GRIP POINT'S depth, not the palm's. `grab_depth_offset_m`
+                    # DECAYS to zero (`decay_grip_offset`), so the anchor -- and with
+                    # it the object -- converges on THIS value. It used to converge on
+                    # the palm, which is why a palm-forward grip put every fingertip
+                    # in front of the object it was supposedly holding.
+                    # ⛔ NO JUMP AT GRAB, still: the offset below is measured against
+                    # the same value, so the two shift together and cancel at t=0. The
+                    # walk does the moving, exactly as it did before.
+                    _hd_grab = fingertips.grip_depth_m(
+                        _hand_depth[handedness],
+                        _latest_world_landmarks.get(handedness))
                     if (fingertips.GRIP_ALIGN_DEPTH_AT_GRAB
                             and fingertips.USE_TIP_BARYCENTER
                             and _hd_grab is not None):

@@ -377,6 +377,68 @@ class GripTracker:
         return self._last
 
 
+# ⭐⭐ THE AXIAL HALF OF THE GRIP POINT (owner, 2026-08-27).
+#
+# ⛔⛔ THE DEFECT IT FIXES, and the owner found it by looking rather than by
+# measuring: *"in the palm and 80 degrees yaw tilted hand, the fingertips are all in
+# front of the cube except the thumb: this cannot be, since the cube should follow
+# the barycenter of the fingertips."*
+#
+# They were right, and it was an inconsistency in OUR logic, not in MediaPipe:
+#
+#     cube x,y  =  the FINGERTIP barycentre   (`grip_position_px`, F1 step 2)
+#     cube z    =  a PALM-derived depth       (`palm_depth`, spans 0-5-9-13-17)
+#
+# The object sat at the fingertips laterally and at the PALM's depth axially. Grip
+# palm-forward and the fingers wrap TOWARD the camera -- measured 3.6 cm nearer than
+# the hand's own origin -- so every tip lands in front of the cube. Turn the hand
+# over and the same fingers are 3.7 cm FARTHER, so they all land behind it and the
+# occlusion looks right. Same code, opposite appearance.
+#
+# ⭐ This returns the offset that makes the two halves agree.
+TIP_DEPTH_OFFSET = True
+
+
+def tip_depth_offset_m(world_landmarks):
+    """How far the fingertip barycentre sits in FRONT of the hand's own origin, in
+    metres. Negative = nearer the camera. `None` when it cannot be computed.
+
+    ⚠ MediaPipe's world `z` is per-landmark and relative to the hand's origin, so
+    this is a RELATIVE offset and carries no absolute depth of its own. It is added
+    to whatever absolute depth the caller already trusts (`palm_depth`), which keeps
+    the two concerns separate and keeps this function free of any calibration.
+
+    ⛔ It uses the SAME `TIPS` the barycentre uses, thumb included. Dropping the
+    thumb here while `grip_position_px` keeps it would reintroduce exactly the
+    inconsistency this exists to remove.
+    """
+    if not TIP_DEPTH_OFFSET or not world_landmarks:
+        return None
+    if len(world_landmarks) <= max(TIPS):
+        return None
+    zs = []
+    for t in TIPS:
+        w = world_landmarks[t]
+        if w is None or len(w) < 3 or w[2] != w[2]:
+            return None
+        zs.append(float(w[2]))
+    return sum(zs) / len(zs)
+
+
+def grip_depth_m(hand_depth_m, world_landmarks):
+    """The GRIP POINT's absolute depth: the hand's depth plus the tip offset.
+
+    ⭐ This is what an object held in the fingers should converge to, and it is
+    what `cube.grab_hand_depth_m` now anchors on.
+    ⚠ Falls back to `hand_depth_m` unchanged whenever the offset is unavailable --
+    i.e. exactly today's behaviour, never a guess.
+    """
+    if hand_depth_m is None:
+        return None
+    off = tip_depth_offset_m(world_landmarks)
+    return hand_depth_m if off is None else hand_depth_m + off
+
+
 def grip_position_px(tracker, landmarks, now_ms, use_tips=None):
     """⭐ THE ONE ENTRY POINT both tools call. Palm centre when the step is off.
 
