@@ -52,6 +52,12 @@ IMAGE frame. The first run of the harness compared them directly, measured the
 hand's ROLL, and reported the claim refuted. The palm's own in-image roll (the
 knuckle row 5->17, `t5j`'s depth-free method) maps one to the other.
 
+⛔⛔ REJECTED ONCE ALREADY, AND THE FIX IS IN THIS FILE. The first live take was
+rejected on feel -- *"no consistency in the rotation axis, discontinuities
+everywhere"* -- and the cause was two HARD GATES here, not the signal: 114 toggles
+in one take, jolt p95 29.7 deg, per-frame axis jump 1.90x worse than Horn at p95
+while the MEDIAN improved. They are now one continuous fade (`confidence()`).
+
 ⭐ GAIN 0 IS BIT-EXACT HORN -- the input quaternion is returned unchanged, not an
 approximation of it. That is the `tip_trim` acceptance-gate pattern, and it is
 what lets an A/B arm be honest.
@@ -83,10 +89,56 @@ DEFAULT_GAIN = 0.0
 # ⛔ Production never constructs this class at all, so this global cannot reach it.
 GAIN = DEFAULT_GAIN
 
-# ⚠ Below this the palm/back sign is meaningless, so the branch cannot be trusted
-# and neither can the correction. Reuses `edge_on_measure`, the codebase's ONE
-# definition of edge-on -- a second threshold here would be a second definition.
-EDGE_ON_FLOOR = 0.15
+# ⛔⛔ THESE REPLACED A HARD GATE, AND THE HARD GATE IS WHY THE FIRST LIVE TAKE
+# WAS REJECTED. Owner, 2026-08-27: *"the feel is very bad. there is no consistency
+# in the rotation axis, discontinuities everywhere"*. Measured on that take
+# (`analysis/t6_discontinuity_census.py`): **114 gate toggles**, each switching the
+# correction on or off WHOLE, jolt p95 **29.7 deg**, max 61.8 -- and the per-frame
+# axis jump p95 went 21.4 -> 40.6, i.e. **1.90x worse** than shipped Horn.
+#
+# ⚠ The median IMPROVED (2.39 -> 2.03) while the p95 doubled. That is the profile
+# that averages well and feels broken, and it is exactly what the sweep-based
+# `wander` metric could not see: a smooth instructed sweep never makes a gate chatter.
+#
+# ⭐⭐ AND THE STRATEGY SPEC HAD ALREADY SAID SO: §1.3(a)'s rule is *"fade, do not
+# gate"*. It was applied to `authority` and then ignored for these two, which is the
+# whole defect.
+#
+# ⭐ ONE FADE NOW COVERS BOTH, and it is geometrically necessary rather than tuned:
+# a hand can only cross from palm-facing to back-facing BY PASSING THROUGH EDGE-ON.
+# So fading on `edge_on_measure` fades the branch transition too -- it is §1.3(b)'s
+# remedy 1 ("the solution pair can only exchange through the degenerate zone") and
+# §1.3(c)'s edge-on band, expressed as one continuous quantity instead of two
+# switches. ⛔ No time constant is involved, so this costs NO lag (`L1`).
+EDGE_FADE_ZERO = 0.15       # was the hard threshold; now where authority reaches 0
+EDGE_FADE_FULL = 0.45       # ...and where it reaches 1
+
+# ⚠ Kept as the name of the geometric floor, unchanged in value, because other
+# code and the golden vectors refer to "the" edge-on threshold.
+EDGE_ON_FLOOR = EDGE_FADE_ZERO
+
+# ⛔⛔ THE FADE ABOVE WAS NOT ENOUGH, AND THE MEASUREMENT SAID SO PLAINLY.
+# Replacing the two hard gates cut the toggle JOLT (p95 29.7 -> 15.2 deg, max 61.8
+# -> 22.0) but barely moved the thing the owner actually feels: per-frame axis jump
+# p95 40.6 -> 39.2, still **1.84x** shipped Horn. ⭐ So the gates were NOT the
+# dominant cause; the TARGET ITSELF is noisy on a gripping hand -- tilt moves 7.8
+# deg p95 frame to frame, sigma 0.11.
+#
+# ⭐⭐ WHAT IS SMOOTHED, AND WHY IT IS NOT `L1` ALL OVER AGAIN. The low-pass is on
+# the CORRECTION -- a small angular offset applied to Horn's axis -- and NOT on the
+# rotation. Horn still answers at full speed every frame, so the cube tracks the
+# hand with no added lag; only the corrective nudge is damped. Lagging a nudge and
+# lagging the motion are different costs, and only the second is what the owner
+# called unbearable.
+#
+# ⚠ TIME-BASED, NOT PER-FRAME. `L1` measured a fixed per-frame factor's settling
+# time moving with the ROOM LIGHTING (111 ms at 48 ms/frame, 149 ms at 64). A time
+# constant does not care what the camera is doing.
+SMOOTH_TAU_MS = 0.0         # 0 = off. Set by the debug slider; swept offline first.
+
+# ⚠ A long gap is a NEW pose, not a slow one. Without this a 2-second dropout
+# would apply a single enormous smoothing step and snap the correction on.
+SMOOTH_MAX_DT_MS = 200.0
 
 
 def knuckle_roll_deg(px):
@@ -108,6 +160,49 @@ def _axis_angle(q):
 def _quat(axis, ang):
     s = math.sin(ang * 0.5)
     return PR._qnorm((math.cos(ang * 0.5), axis[0] * s, axis[1] * s, axis[2] * s))
+
+
+def rotate_axis_by(q, delta_deg):
+    """Rotate `q`'s axis IN THE IMAGE PLANE by `delta_deg`. Angle untouched.
+
+    ⭐ The primitive the smoother needs: `steer_axis` takes a FRACTION of the way to
+    a target, which cannot express "apply the correction I damped last frame".
+    """
+    if q is None or delta_deg is None or delta_deg == 0.0:
+        return q
+    aa = _axis_angle(q)
+    if aa is None:
+        return q
+    (nx, ny, nz), ang = aa
+    r = math.hypot(nx, ny)
+    if r < 1e-6:
+        return q
+    new = math.atan2(ny, nx) + math.radians(delta_deg)
+    return _quat((r * math.cos(new), r * math.sin(new), nz), ang)
+
+
+def steer_offset_deg(q, target_deg):
+    """Signed degrees from `q`'s in-image axis to `target_deg`, in [-90, 90].
+
+    ⛔ THE SIGN TRAP lives here now. `target_deg` is an AXIS (mod 180) with no
+    direction; picking the far representative would flip the rotation axis and turn
+    the cube BACKWARDS -- worse than the lean being corrected.
+    """
+    if q is None or target_deg is None:
+        return None
+    aa = _axis_angle(q)
+    if aa is None:
+        return None
+    (nx, ny, _nz), _ang = aa
+    if math.hypot(nx, ny) < 1e-6:
+        return None
+    cur = math.degrees(math.atan2(ny, nx))
+    d = ((target_deg - cur + 180.0) % 360.0) - 180.0
+    if d > 90.0:
+        d -= 180.0
+    elif d < -90.0:
+        d += 180.0
+    return d
 
 
 def steer_axis(q, target_deg, amount):
@@ -158,6 +253,7 @@ class SlantAxisHorn:
         self.last_sigma = 1.0
         self.last_authority = 0.0
         self.last_applied = 0.0
+        self.last_confidence = 0.0
         self.frames_back_branch = 0
         self.frames_edge_on = 0
 
@@ -169,6 +265,26 @@ class SlantAxisHorn:
         ownership rigs each had to fix."""
         g = self.gain if self._pinned else GAIN
         return "slantaxis_%s_g%.2f%s" % (self.horn.name, g, "" if self._pinned else "*")
+
+    def confidence(self, px, state):
+        """0..1 — how far the correction may be trusted THIS frame, continuously.
+
+        ⛔ Replaces two hard switches. Off-branch it is 0, but the hand cannot GET
+        off-branch without passing through edge-on, where the fade has already
+        brought it to 0 — so the transition is smooth rather than a 30 deg step.
+        """
+        if state is None:
+            return 0.0
+        sa = PG.signed_palm_area(px)
+        if state.get("sign0") is not None and sa is not None:
+            if (sa > 0.0) != state["sign0"]:
+                self.frames_back_branch += 1
+                return 0.0
+        eo = PG.edge_on_measure(px)
+        c = PS.smoothstep(eo, EDGE_FADE_ZERO, EDGE_FADE_FULL)
+        if c < 1.0:
+            self.frames_edge_on += 1
+        return c
 
     def freeze(self, px, world):
         st = self.horn.freeze(px, world)
@@ -184,11 +300,20 @@ class SlantAxisHorn:
         # outliving its hand is §16.15's rule.
         sa = PG.signed_palm_area(px)
         st["sign0"] = (sa > 0.0) if sa is not None else None
+        # ⚠ The smoother's memory belongs to THIS grab, like every other per-grab
+        # baseline here (§16.15). A correction carried over from a dead hand would
+        # be applied to a pose that never produced it.
+        st["applied_deg"] = 0.0
+        st["last_ms"] = None
         return st
 
-    def delta(self, state, px, world):
+    def delta(self, state, px, world, now_ms=None):
+        """⚠ `now_ms` is INJECTED, never read here -- the same contract `hand_state`
+        states for itself. The module stays clock-free and a replay is deterministic,
+        because recordings carry `tCapture`."""
         q = self.horn.delta(state, px, world)
         self.last_applied = 0.0
+        self.last_confidence = 0.0
         gain = GAIN if self.gain is None else self.gain
         if q is None or state is None or gain <= 0.0:
             return q
@@ -201,17 +326,13 @@ class SlantAxisHorn:
         if auth <= 0.0 or tilt is None:
             return q
 
-        # ⛔ The fold. Off the grab's branch, the tilt INVERTS (46.6 vs Horn's 11.3),
-        # so hand the frame back to Horn untouched rather than correct it backwards.
-        sa = PG.signed_palm_area(px)
-        if state.get("sign0") is not None and sa is not None:
-            if (sa > 0.0) != state["sign0"]:
-                self.frames_back_branch += 1
-                return q
-        # ⚠ ...and near edge-on the sign that selects the branch is itself
-        # meaningless, so the guard above cannot be trusted either.
-        if PG.edge_on_measure(px) < EDGE_ON_FLOOR:
-            self.frames_edge_on += 1
+        # ⛔ The fold, and the edge-on band, as ONE continuous fade rather than two
+        # switches. Off the grab's branch the tilt INVERTS (46.6 vs Horn's 11.3), so
+        # the correction must vanish there -- but it must vanish SMOOTHLY, which the
+        # first version did not, and that is what the owner felt.
+        conf = self.confidence(px, state)
+        self.last_confidence = conf
+        if conf <= 0.0:
             return q
 
         roll = knuckle_roll_deg(px)
@@ -220,9 +341,30 @@ class SlantAxisHorn:
         # the two frames, reconciled -- see the module header
         target = (tilt + (roll - state["roll0"])) % 180.0
 
-        amount = gain * auth
-        self.last_applied = amount
-        return steer_axis(q, target, amount)
+        want = steer_offset_deg(q, target)
+        if want is None:
+            return q
+        want *= gain * auth * conf
+
+        # ⭐ The low-pass, on the CORRECTION only. Horn's own answer is untouched.
+        dt = None
+        if now_ms is not None and state.get("last_ms") is not None:
+            dt = min(max(0.0, now_ms - state["last_ms"]), SMOOTH_MAX_DT_MS)
+        if now_ms is not None:
+            state["last_ms"] = now_ms
+        if SMOOTH_TAU_MS > 0.0 and dt is not None and dt > 0.0:
+            a = 1.0 - math.exp(-dt / SMOOTH_TAU_MS)
+            applied = state.get("applied_deg", 0.0)
+            applied += a * (want - applied)
+        else:
+            # ⚠ No timestamp, or smoothing off: apply it straight. Harnesses that
+            # predate `now_ms` therefore reproduce the ORIGINAL behaviour exactly,
+            # rather than silently getting a different one.
+            applied = want
+        state["applied_deg"] = applied
+
+        self.last_applied = applied
+        return rotate_axis_by(q, applied)
 
     def step(self, state, px, world):
         return self.horn.step(state, px, world)

@@ -58,6 +58,7 @@ from Resources import fingertips  # noqa: E402  (F1 step 2, shared with producti
 from Resources import tip_trim  # noqa: E402  (F1 step 4, shared with production)
 from Resources import one_euro  # noqa: E402  (F1 step 1, the jitter filter)
 from Resources import palm_slant_axis as _SlantAxis  # noqa: E402  (T6 axis correction)
+from Resources import palm_slant_pose as _SlantPose  # noqa: E402  (T6 halves 1+2)
 
 # ⭐⭐ WHAT PRODUCTION ACTUALLY RUNS, since 2026-08-17.
 # `Resources/HandsTriggeredActions.py` now drives cube orientation with Horn
@@ -254,6 +255,18 @@ SLIDERS = (
     # jitter cost -- but T6d was rejected for FEELING wrong while scoring fine, so
     # the slider exists to let the hand decide, not the table.
     ("SLANT axis %", 100, 0, lambda n: n / 100.0),
+    # ⭐⭐ THE OWNER'S OWN STRATEGY, as a whole estimator: the regression fitted
+    # from the six takes (HALF 1) on a canonical frozen at the grab (HALF 2).
+    # ⛔ 0% is bit-exact shipped Horn. 100% is the strategy running alone.
+    # ⛔⛔ THE MIDDLE IS A TRAP AND THE MEASUREMENT SAYS SO: yaw lean reads 27.2 at
+    # 0%, **53.7 at 50%**, and 8.6 at 100%. Slerping between two orientations that
+    # disagree lands on an axis worse than EITHER, so this control is all-or-nothing.
+    # ⚠ Left reachable anyway -- a slider whose bad region is hidden teaches the
+    # wrong thing about where the limit is, which is the GRAB radius rule.
+    # ⚠ Measured cost: per-frame orientation jump p95 12.6 -> 30.3, i.e. 2.4x
+    # shipped Horn, while the MEDIAN improves (2.98 -> 2.41). Smoother most of the
+    # time, worse in the tail. That is a feel question, which is why it has a slider.
+    ("POSE blend %", 100, 0, lambda n: n / 100.0),
     # ⭐⭐ THE AXIAL HALF OF THE GRAB GATE, owner 2026-08-26: "currently, the margin
     # is too wide". In CENTIMETRES so the displayed integer is the applied value.
     # ⚠ It is deliberately SEPARATE from the in-plane radius and always has been:
@@ -795,9 +808,35 @@ def _make_slant_rig(width, height):
     ]
 
 
+def _make_pose_rig(width, height):
+    """⭐⭐ THE OWNER'S STRATEGY, THREE PANELS: control, palm feature, finger feature.
+
+        1  shipped Horn, PINNED to blend 0  -- bit-exact production, the control
+        2  halves 1+2 on the PALM quad      -- follows the POSE slider
+        3  halves 1+2 on the FINGER set     -- follows the POSE slider
+
+    ⚠ Panels 2 and 3 differ ONLY in which landmarks the regression reads, which is
+    the open question the takes cannot answer: the finger set is 2.4x steadier on an
+    OPEN hand -- which is all the takes contain -- and measured up to 60x worse on a
+    GRIPPING one. Offline on the owner's own grabbing take the finger arm scores
+    2.2x Horn's jump against the palm arm's 2.4x, and neither is under 1.0. The game
+    grips, so this is settled with a hand.
+    """
+    return [
+        _make_arm("blend", width, height,
+                  rotation=_SlantPose.SlantPoseHorn("palm", blend=0.0)),
+        _make_arm("blend", width, height,
+                  rotation=_SlantPose.SlantPoseHorn("palm", blend=None)),
+        _make_arm("blend", width, height,
+                  rotation=_SlantPose.SlantPoseHorn("fingers", blend=None)),
+    ]
+
+
 def _arm_layout(n, width, height, ownership_ab=False, coast_ab=False,
-                slerp_ab=False, f1_rig=False, slant_rig=False):
+                slerp_ab=False, f1_rig=False, slant_rig=False, pose_rig=False):
     """The comparison rig, or None for the ordinary single-arm view."""
+    if pose_rig:
+        return _make_pose_rig(width, height)
     if slant_rig:
         return _make_slant_rig(width, height)
     if f1_rig:
@@ -1739,7 +1778,7 @@ def _read_sliders() -> None:
     """
     global SLERP_TAU_MS, JITTER_TAU_MS, JITTER_BETA, GRAB_RADIUS_MULTIPLIER
     global GRIP_ALIGN_MOVING_MS, GRIP_ALIGN_MASK_RATIO, GRAB_Z_TOLERANCE_M
-    global DEPTH_RATE_PER_S, SLANT_AXIS_GAIN
+    global DEPTH_RATE_PER_S, SLANT_AXIS_GAIN, POSE_BLEND
     try:
         vals = [spec[3](cv2.getTrackbarPos(spec[0], SLIDER_WIN)) for spec in SLIDERS]
     except cv2.error:
@@ -1747,13 +1786,14 @@ def _read_sliders() -> None:
     # ⚠ THREE sliders now -- three others are parked (see `SLIDERS`). The parked
     # values are NOT re-read here; they keep their module defaults.
     (SLERP_TAU_MS, _gain, GRAB_RADIUS_MULTIPLIER, GRIP_ALIGN_MOVING_MS,
-     GRIP_ALIGN_MASK_RATIO, SLANT_AXIS_GAIN, GRAB_Z_TOLERANCE_M,
+     GRIP_ALIGN_MASK_RATIO, SLANT_AXIS_GAIN, POSE_BLEND, GRAB_Z_TOLERANCE_M,
      DEPTH_RATE_PER_S) = vals
     # ⚠ Same shared-module reasoning as the three below: an estimator built with
     # `gain=None` reads this attribute at call time. ⛔ Production never constructs
     # `SlantAxisHorn` at all, so this cannot reach it -- but `parity_replay` is the
     # thing that proves that, not this comment.
     _SlantAxis.GAIN = SLANT_AXIS_GAIN
+    _SlantPose.BLEND = POSE_BLEND
     # ⚠ The SHARED module global, like TRIM gain above: `decay_grip_offset` reads
     # it internally, and the two tools cannot run at once (one camera, DSHOW is
     # exclusive), so there is no window in which they could disagree.
@@ -1810,6 +1850,19 @@ def settled_values() -> dict:
         "grab_radius_x_footprint": GRAB_RADIUS_MULTIPLIER,
         "grip_align_moving_ms": GRIP_ALIGN_MOVING_MS,
         "grip_align_mask_ratio": GRIP_ALIGN_MASK_RATIO,
+        # ⛔⛔ MISSING FROM THE FIRST `--slant-rig` TAKE (2026-08-27), which is why
+        # that take cannot be interpreted: the session ran, the owner swept the
+        # slider, and the recording does not say what gain panel 2 was on. `T6d`'s
+        # own note already warned that the PARAMETER LOG is the point of recording
+        # an A/B session, and this row still managed to lose one take to it.
+        # ⭐ Read from the module, not from the local: it is the value the estimator
+        # actually consults at call time, so it cannot drift from what ran.
+        "slant_axis_gain": _SlantAxis.GAIN,
+        # ⚠ In the log from the start this time. The first `--slant-rig` take was
+        # lost because its gain was not recorded; a second A/B losing the same way
+        # would be inexcusable.
+        "pose_blend": _SlantPose.BLEND,
+        "pose_smooth_tau_ms": _SlantPose.SMOOTH_TAU_MS,
         "grab_z_margin_m": GRAB_Z_TOLERANCE_M,
         "depth_rate_per_s": DEPTH_RATE_PER_S,
         "jitter_tau_ms": JITTER_TAU_MS,
@@ -1841,6 +1894,29 @@ def _draw_slider_panel(open_: bool):
                 (170, 170, 170), 1, cv2.LINE_AA)
     cv2.putText(canvas, "0 = none    20 = owner's setting    149 = today",
                 (10, 76), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1, cv2.LINE_AA)
+
+    # ⭐⭐ T6's LEAN CONTROL. Printed as its own line because it is the one thing
+    # `--slant-rig` exists to judge, and because the first take of that rig was lost
+    # to nobody being able to say afterwards what it had been set to.
+    cv2.putText(canvas, f"slant axis gain = {_SlantAxis.GAIN * 100:.0f}%", (10, 98),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (120, 255, 255), 2, cv2.LINE_AA)
+    _snote = ("0 = SHIPPED HORN, bit-exact -- panel 2 equals panel 1"
+              if _SlantAxis.GAIN <= 0 else
+              "full: the axis goes where the palm's squash says"
+              if _SlantAxis.GAIN >= 1.0 else
+              "part-way between shipped Horn and the corrected axis")
+    cv2.putText(canvas, _snote, (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
+                (170, 170, 170), 1, cv2.LINE_AA)
+
+    cv2.putText(canvas, f"pose blend = {_SlantPose.BLEND * 100:.0f}%", (10, 142),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (120, 255, 255), 2, cv2.LINE_AA)
+    _pnote = ("0 = SHIPPED HORN, bit-exact"
+              if _SlantPose.BLEND <= 0 else
+              "100% = the regression + freeze-at-grab, running alone"
+              if _SlantPose.BLEND >= 1.0 else
+              "!! MIDDLE IS WORSE THAN EITHER END -- measured 53.7 deg lean at 50%")
+    cv2.putText(canvas, _pnote, (10, 164), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
+                (170, 170, 170), 1, cv2.LINE_AA)
 
     # ⭐ F1's block. Every line prints the APPLIED value, and the fingertip filter
     # prints its cutoff too -- the slider speaks ms because that is the unit the
@@ -2619,6 +2695,16 @@ def main():
                         help="1 (default) = mirror production, one window. "
                              "3 = the D2/D3 bridging comparison rig, all three "
                              "arms side by side off one camera.")
+    parser.add_argument("--pose-rig", dest="pose_rig", action="store_true",
+                        # ASCII ONLY IN HELP TEXT -- see the note on --f1-rig.
+                        help="The owner's strategy, three windows on one camera: "
+                             "panel 1 = shipped Horn (bit-exact control), panel 2 = "
+                             "the six-take regression on a grab-frozen canonical, "
+                             "palm landmarks; panel 3 = the same on the finger set. "
+                             "The POSE slider drives panels 2 and 3. Measured yaw "
+                             "lean 27.2 -> 8.6 deg; per-frame orientation jump p95 "
+                             "12.6 -> 30.3, i.e. smoother in the median and worse in "
+                             "the tail.")
     parser.add_argument("--slant-rig", dest="slant_rig", action="store_true",
                         # ASCII ONLY IN HELP TEXT -- see the note on --f1-rig.
                         help="T6's LEAN A/B, two windows on one camera: panel 1 = "
@@ -2707,7 +2793,7 @@ def main():
         raise RuntimeError("Could not read an initial frame from the webcam.")
     height, width = frame.shape[:2]
     arms = (_arm_layout(args.arms, width, height, args.ownership_ab, args.coast_ab,
-                        args.slerp_ab, args.f1_rig, args.slant_rig)
+                        args.slerp_ab, args.f1_rig, args.slant_rig, args.pose_rig)
             or [_make_arm(args.bridge, width, height)])
     # ⭐⭐ THE UNIT CHANGE (owner, 2026-08-24: *"change the unit first"*). Every LIVE
     # arm smooths on a time constant in milliseconds instead of a fixed per-frame
@@ -2774,6 +2860,13 @@ def main():
                            int(round(GRAB_Z_TOLERANCE_M * 100)))
         cv2.setTrackbarPos("Z rate %/s", SLIDER_WIN,
                            int(round(DEPTH_RATE_PER_S * 100)))
+        if args.pose_rig:
+            # ⛔ STARTS AT 100%, NOT PART WAY. The middle of this slider is measured
+            # WORSE than either end (yaw lean 53.7 at 50% against 27.2 at 0 and 8.6 at
+            # 100), because blending two orientations that disagree lands between them
+            # on an axis neither would have chosen. Opening at 50% would show the
+            # owner the worst version of their own strategy.
+            cv2.setTrackbarPos("POSE blend %", SLIDER_WIN, 100)
         if args.slant_rig:
             # ⭐ The rig exists to show the AXIS CORRECTION, so it starts with the
             # correction ON -- while the ordinary single-arm view stays at

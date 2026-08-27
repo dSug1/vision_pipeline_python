@@ -91,7 +91,7 @@ SLANT_NOISE_FLOOR = 0.94
 SLANT_FULL = 0.80
 
 
-def _smoothstep(x, zero_at, one_at):
+def smoothstep(x, zero_at, one_at):
     """0 at `zero_at`, 1 at `one_at`, smooth between. ⚠ DESCENDING here --
     authority rises as sigma FALLS, and the first version of this function assumed
     the ascending convention and returned a hard step, backwards. The golden
@@ -102,6 +102,12 @@ def _smoothstep(x, zero_at, one_at):
     t = (x - zero_at) / span
     t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
     return t * t * (3.0 - 2.0 * t)
+
+
+# ⚠ The private name is kept so nothing that already imports it breaks. It is
+# PUBLIC now because `palm_slant_axis` needs the same curve, and N6 says imported
+# never copied -- a second hand-rolled smoothstep is a second thing to get wrong.
+_smoothstep = smoothstep
 
 
 def _points(landmarks, indices):
@@ -188,7 +194,7 @@ def authority(sigma):
     """
     if sigma is None or sigma != sigma:
         return 0.0
-    return _smoothstep(sigma, SLANT_NOISE_FLOOR, SLANT_FULL)
+    return smoothstep(sigma, SLANT_NOISE_FLOOR, SLANT_FULL)
 
 
 def tilt_delta(a, b):
