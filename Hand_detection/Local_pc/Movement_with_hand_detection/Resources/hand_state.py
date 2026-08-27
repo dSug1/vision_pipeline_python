@@ -104,7 +104,10 @@ ROTATION_SLERP_TAU_MS = 20.0
 #
 # ⛔ `extra_ms = 0` IS TODAY'S BEHAVIOUR, BIT-EXACT. The slider's left end is
 # production.
-ROTATION_STEADY_EXTRA_MS = 0.0
+# ✅ SET BY THE OWNER 2026-08-27 after six live sessions: 4500 / 80.
+# ⚠ This is no longer "off by default" -- production damps too. The
+# acceptance gate stands: 0 still reproduces the old behaviour bit-exactly.
+ROTATION_STEADY_EXTRA_MS = 4500.0
 
 # ⛔⛔ THE RELEASE IS A HARD-EDGED RAMP, NOT A HYPERBOLA (owner, 2026-08-27:
 # *"we need a more abrupt cut-off because I don't want any quaternion slerp as soon
@@ -120,7 +123,7 @@ ROTATION_STEADY_EXTRA_MS = 0.0
 # a HELD-STILL hand's raw target already moves 2.53 deg/frame -- about 38 deg/s at
 # 15 fps. A release threshold under that would be tripped by the very jitter the
 # damper exists to remove, and the damping would flicker on and off.
-ROTATION_STEADY_RELEASE_DEG_S = 90.0
+ROTATION_STEADY_RELEASE_DEG_S = 80.0
 
 # Below this fraction of the release speed the damping is at FULL strength. The gap
 # between the two is the whole width of the ramp -- narrow, on purpose.

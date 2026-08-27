@@ -1275,17 +1275,47 @@ def on_hands_world_frame(left_world: List[Tuple[float, float, float]], right_wor
     _latest_world_landmarks["Right"] = right_world
 
 
-def _rotation_slerp_factor(now_ms: Optional[float]) -> float:
+# ⭐⭐ THE STEADY DAMPER'S STATE, per hand. Production did not apply the damper at
+# all until 2026-08-27 -- `hand_state` owned the rule and only the debug tool called
+# it, so setting the constants would have silently done nothing here.
+# ⚠ Per HAND, not per frame: two hands turning at different speeds must not share
+# one envelope, or the still one inherits the moving one's release.
+_steady_env: Dict[str, Optional[float]] = {h: None for h in TRACKED_HANDS}
+_steady_prev_target: Dict[str, Optional[tuple]] = {h: None for h in TRACKED_HANDS}
+
+
+def _rotation_slerp_factor(now_ms: Optional[float], handedness: Optional[str] = None) -> float:
     """This frame's blend factor from the elapsed time since the last frame.
 
     ⚠ Falls back to the equivalent of the old fixed factor on the FIRST frame,
     where there is no dt yet -- a guess would be the one thing worse than the
     behaviour being replaced.
+    ⭐ `handedness` selects that hand's steady-damper envelope. Omitting it keeps
+    the undamped behaviour, so any caller that predates the damper is unchanged.
     """
     if now_ms is None or _last_frame_ms is None:
         return 1.0 - math.exp(-1.0)          # one time constant's worth, ~0.632
     dt = min(max(0.0, now_ms - _last_frame_ms), ROTATION_SLERP_MAX_DT_MS)
-    return 1.0 - math.exp(-dt / max(1.0, ROTATION_SLERP_TAU_MS))
+    tau = max(1.0, ROTATION_SLERP_TAU_MS)
+    if handedness is not None:
+        tau = hand_state.steady_tau_ms(tau, _steady_env.get(handedness))
+    return 1.0 - math.exp(-dt / tau)
+
+
+def _stamp_steady_speed(handedness: str, target_quat, now_ms: Optional[float]) -> None:
+    """Feed this hand's RAW target speed into its envelope.
+
+    ⛔ RAW, never the cube's smoothed orientation: measuring the output is
+    self-referential -- damping lowers the apparent speed, which raises the damping
+    -- and the cube locks solid. `hand_state.steady_tau_ms` states the same rule.
+    """
+    prev = _steady_prev_target.get(handedness)
+    if prev is not None and now_ms is not None and _last_frame_ms is not None:
+        dt = min(max(1e-3, now_ms - _last_frame_ms), ROTATION_SLERP_MAX_DT_MS)
+        speed = quat_angle_deg(prev, target_quat) * 1000.0 / dt
+        _steady_env[handedness] = hand_state.steady_speed_envelope(
+            _steady_env.get(handedness), speed, dt)
+    _steady_prev_target[handedness] = target_quat
 
 
 def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: List[Tuple[float, float]],
@@ -1815,8 +1845,9 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                           else _quat_multiply(hand_quat_now, _trim_q))
                 delta = _quat_multiply(_q_eff, _quat_conjugate(cube.grab_hand_orientation))
                 target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
+                _stamp_steady_speed(handedness, target_quat, now_ms)
                 cube.orientation = _quat_slerp(cube.orientation, target_quat,
-                                               _rotation_slerp_factor(now_ms))
+                                               _rotation_slerp_factor(now_ms, handedness))
 
     # ⚠ AFTER the per-hand loop, never inside it: `_rotation_slerp_factor` needs
     # the PREVIOUS frame's clock, and stamping it per hand would hand the second

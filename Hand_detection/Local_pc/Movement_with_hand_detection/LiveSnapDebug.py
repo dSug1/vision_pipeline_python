@@ -280,7 +280,10 @@ SLIDERS = (
     # would advance ~1.3% per frame, about 18% of the motion in a full second. That
     # is not a defect to fix, it is what "fully steady" costs, and it is why the two
     # sliders have to be judged together.
-    ("STEADY ms", 5000, 0, lambda n: float(n)),
+    # ⚠ STARTS AT THE SHIPPED VALUE, not at 0. Production now damps too, so a
+    # slider opening at 0 would make the debug tool differ from the game in
+    # ordinary use -- the exact divergence `U6` keeps `parity_replay` for.
+    ("STEADY ms", 5000, 4500, lambda n: float(n)),
     # ⭐⭐ WHERE THE DAMPING LETS GO, in deg/s of hand rotation. Owner, 2026-08-27:
     # *"I don't want any quaternion slerp as soon as I start a hand rotation"*.
     # ⛔ ABOVE this the extra damping is EXACTLY ZERO -- the cube is on today's tau
@@ -290,7 +293,7 @@ SLIDERS = (
     # 2.53 deg/frame -- about 38 deg/s at 15 fps -- so a threshold under that would
     # be tripped by the very jitter the damper removes, and the damping would
     # flicker on and off.
-    ("RELEASE deg/s", 400, 90, lambda n: float(n)),
+    ("RELEASE deg/s", 400, 80, lambda n: float(n)),
     ("SLANT axis %", 100, 0, lambda n: n / 100.0),
     # ⭐⭐ THE OWNER'S OWN STRATEGY, as a whole estimator: the regression fitted
     # from the six takes (HALF 1) on a canonical frozen at the grab (HALF 2).
