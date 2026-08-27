@@ -57,6 +57,7 @@ from Resources import capture_drive  # noqa: E402  (drive wake/retry, shared wit
 from Resources import fingertips  # noqa: E402  (F1 step 2, shared with production)
 from Resources import tip_trim  # noqa: E402  (F1 step 4, shared with production)
 from Resources import one_euro  # noqa: E402  (F1 step 1, the jitter filter)
+from Resources import palm_slant_axis as _SlantAxis  # noqa: E402  (T6 axis correction)
 
 # ⭐⭐ WHAT PRODUCTION ACTUALLY RUNS, since 2026-08-17.
 # `Resources/HandsTriggeredActions.py` now drives cube orientation with Horn
@@ -237,6 +238,22 @@ SLIDERS = (
     # ⚠ 0 is reachable and means the cube NEVER re-centres — informative rather
     # than hidden. The owner's stated floor, 0.05, is position 5.
     ("WALK % of hand", 100, 25, lambda n: n / 100.0),
+    # ⭐⭐ T6's AXIS CORRECTION -- how much of the way to steer Horn's rotation
+    # axis toward the one the palm's own foreshortening implies. This is the LEAN
+    # control: the owner called the lean a show-stopper, and this is the first
+    # thing measured to reduce it.
+    # ⛔ 0% IS BIT-EXACT SHIPPED HORN, not an approximation of it -- the golden
+    # vectors assert the quaternion is returned as the SAME OBJECT. So the left end
+    # of this slider is today's production behaviour, exactly.
+    # ⚠ DRIVES ONLY THE ARM THAT FOLLOWS THE GLOBAL. In `--slant-rig` panel 1 is
+    # pinned to 0.0 and ignores this, so sweeping it moves panel 2 alone -- the same
+    # one-variable discipline the TRIM slider follows.
+    # ⭐ Measured on the clean sweeps, lean med: yaw 22.0 -> 16.2 (50%) -> 13.6
+    # (75%) -> 13.5 (100%); pitch 14.8 -> 10.0 (100%). ⚠ Wander p95 is flat on yaw
+    # (19.8 -> 19.6) and IMPROVES on pitch (45.0 -> 22.1), so there is no measured
+    # jitter cost -- but T6d was rejected for FEELING wrong while scoring fine, so
+    # the slider exists to let the hand decide, not the table.
+    ("SLANT axis %", 100, 0, lambda n: n / 100.0),
     # ⭐⭐ THE AXIAL HALF OF THE GRAB GATE, owner 2026-08-26: "currently, the margin
     # is too wide". In CENTIMETRES so the displayed integer is the applied value.
     # ⚠ It is deliberately SEPARATE from the in-plane radius and always has been:
@@ -656,7 +673,7 @@ BRIDGE_ARM_COLOURS = {"off": (128, 128, 128), "on": (0, 200, 255), "blend": (0, 
 
 
 def _make_arm(mode, width, height, ownership="track", coast_ms=None,
-              use_tips=None, trim_gain=None):
+              use_tips=None, trim_gain=None, rotation=None):
     """One arm of a comparison: its own cubes, trackers, window and counters.
 
     `coast_ms` overrides D2's bridge window for this arm only -- the U5 coast rig
@@ -673,6 +690,7 @@ def _make_arm(mode, width, height, ownership="track", coast_ms=None,
         ownership=ownership,
         use_tips=use_tips,
         trim_gain=trim_gain,
+        rotation=rotation,
     )
 
 
@@ -759,9 +777,29 @@ def _make_f1_rig(width, height):
     ]
 
 
+def _make_slant_rig(width, height):
+    """⭐⭐ T6's LEAN A/B: shipped Horn vs Horn-with-the-axis-corrected.
+
+    One camera, one detection, ONE variable -- the rotation estimator. Everything
+    else (bridge mode, ownership, grip, trim) is identical by construction.
+
+    ⛔ Panel 1 is PINNED to gain 0.0, which the golden vectors assert is bit-exact
+    shipped Horn. So the left window is today's production behaviour, not an
+    approximation of it, and any difference the owner sees has exactly one cause.
+    ⚠ Panel 2 takes `gain=None` = follow the SLANT slider, so sweeping the slider
+    moves the right panel and leaves the control alone.
+    """
+    return [
+        _make_arm("blend", width, height, rotation=_SlantAxis.SlantAxisHorn(gain=0.0)),
+        _make_arm("blend", width, height, rotation=_SlantAxis.SlantAxisHorn(gain=None)),
+    ]
+
+
 def _arm_layout(n, width, height, ownership_ab=False, coast_ab=False,
-                slerp_ab=False, f1_rig=False):
+                slerp_ab=False, f1_rig=False, slant_rig=False):
     """The comparison rig, or None for the ordinary single-arm view."""
+    if slant_rig:
+        return _make_slant_rig(width, height)
     if f1_rig:
         return _make_f1_rig(width, height)
     if slerp_ab:
@@ -1701,7 +1739,7 @@ def _read_sliders() -> None:
     """
     global SLERP_TAU_MS, JITTER_TAU_MS, JITTER_BETA, GRAB_RADIUS_MULTIPLIER
     global GRIP_ALIGN_MOVING_MS, GRIP_ALIGN_MASK_RATIO, GRAB_Z_TOLERANCE_M
-    global DEPTH_RATE_PER_S
+    global DEPTH_RATE_PER_S, SLANT_AXIS_GAIN
     try:
         vals = [spec[3](cv2.getTrackbarPos(spec[0], SLIDER_WIN)) for spec in SLIDERS]
     except cv2.error:
@@ -1709,7 +1747,13 @@ def _read_sliders() -> None:
     # ⚠ THREE sliders now -- three others are parked (see `SLIDERS`). The parked
     # values are NOT re-read here; they keep their module defaults.
     (SLERP_TAU_MS, _gain, GRAB_RADIUS_MULTIPLIER, GRIP_ALIGN_MOVING_MS,
-     GRIP_ALIGN_MASK_RATIO, GRAB_Z_TOLERANCE_M, DEPTH_RATE_PER_S) = vals
+     GRIP_ALIGN_MASK_RATIO, SLANT_AXIS_GAIN, GRAB_Z_TOLERANCE_M,
+     DEPTH_RATE_PER_S) = vals
+    # ⚠ Same shared-module reasoning as the three below: an estimator built with
+    # `gain=None` reads this attribute at call time. ⛔ Production never constructs
+    # `SlantAxisHorn` at all, so this cannot reach it -- but `parity_replay` is the
+    # thing that proves that, not this comment.
+    _SlantAxis.GAIN = SLANT_AXIS_GAIN
     # ⚠ The SHARED module global, like TRIM gain above: `decay_grip_offset` reads
     # it internally, and the two tools cannot run at once (one camera, DSHOW is
     # exclusive), so there is no window in which they could disagree.
@@ -2575,6 +2619,14 @@ def main():
                         help="1 (default) = mirror production, one window. "
                              "3 = the D2/D3 bridging comparison rig, all three "
                              "arms side by side off one camera.")
+    parser.add_argument("--slant-rig", dest="slant_rig", action="store_true",
+                        # ASCII ONLY IN HELP TEXT -- see the note on --f1-rig.
+                        help="T6's LEAN A/B, two windows on one camera: panel 1 = "
+                             "shipped Horn (bit-exact), panel 2 = Horn with its "
+                             "rotation AXIS steered by the palm's foreshortening. "
+                             "The SLANT slider drives panel 2 only. Measured lean: "
+                             "yaw 22.0 -> 13.6 deg, pitch 14.8 -> 10.0 deg, with no "
+                             "rise in per-frame axis wander.")
     parser.add_argument("--f1-rig", dest="f1_rig", action="store_true",
                         # ⚠ ASCII ONLY IN HELP TEXT: argparse prints to the
                         # console, and a cp1252 terminal raises UnicodeEncodeError
@@ -2655,7 +2707,7 @@ def main():
         raise RuntimeError("Could not read an initial frame from the webcam.")
     height, width = frame.shape[:2]
     arms = (_arm_layout(args.arms, width, height, args.ownership_ab, args.coast_ab,
-                        args.slerp_ab, args.f1_rig)
+                        args.slerp_ab, args.f1_rig, args.slant_rig)
             or [_make_arm(args.bridge, width, height)])
     # ⭐⭐ THE UNIT CHANGE (owner, 2026-08-24: *"change the unit first"*). Every LIVE
     # arm smooths on a time constant in milliseconds instead of a fixed per-frame
@@ -2722,6 +2774,16 @@ def main():
                            int(round(GRAB_Z_TOLERANCE_M * 100)))
         cv2.setTrackbarPos("Z rate %/s", SLIDER_WIN,
                            int(round(DEPTH_RATE_PER_S * 100)))
+        if args.slant_rig:
+            # ⭐ The rig exists to show the AXIS CORRECTION, so it starts with the
+            # correction ON -- while the ordinary single-arm view stays at
+            # production's 0, which is what keeps the two tools identical in normal
+            # use (`U6`). 75% is where the measured lean stops improving: yaw 16.2
+            # at 50%, 13.6 at 75%, 13.5 at 100%, so the last quarter buys 0.1 deg.
+            # ⚠ It is a STARTING POINT, not a recommendation. The owner rejected
+            # `T6d` for feeling wrong while scoring fine, so the number that ships
+            # is whichever one the hand settles on, not this one.
+            cv2.setTrackbarPos("SLANT axis %", SLIDER_WIN, 75)
         if args.f1_rig:
             # ⭐ The rig exists to show the trim, so it starts with the trim ON --
             # while the ordinary single-arm view stays at production's 0.

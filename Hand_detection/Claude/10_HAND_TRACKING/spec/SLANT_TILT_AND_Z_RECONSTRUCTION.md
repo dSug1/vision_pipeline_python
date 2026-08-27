@@ -90,7 +90,8 @@ reads `7°` between neighbours reading `151°` and `177°`, because `σ₂/σ₁
 there is almost no compression at all.
 
 ✅ **BUILT** as `palm_slant.authority()`, `SLANT_NOISE_FLOOR = 0.94` →
-`SLANT_FULL = 0.80`, floor measured not chosen.
+`SLANT_FULL = 0.80`, floor measured not chosen. ⭐ And it is load-bearing in the
+shipped correction: the steer is `gain × authority`, never a bare gain.
 ⭐ **Remedy: fade, do not gate.** A near-square palm has little bias to correct, so
 the correction's *authority* should rise with the slant — `smoothstep` on
 `(1 − σ₂/σ₁)`, exactly the pattern `tip_trim` already uses for `spread`/`scale`.
@@ -255,9 +256,16 @@ live look in both tools (`§10.2` gate 5 — a live take closes it, not a harnes
    It cost the generality of this strategy and was worth knowing first.
 3. ✅ **The estimator** — `Resources/palm_slant.py` + `analysis/verify_palm_slant.py`,
    2026-08-27. ⚠ Built and gated; **wired to nothing**.
-4. ⏭ **NEXT: where the correction enters.** Blending against Horn changes the
-   shipped rotation path, so it needs its own `A10`, measured **against**
-   `planar_pnp`'s rejection. The sign ambiguity (§1.3(b)) and the edge-on reuse of
-   `DR-2`'s band are unimplemented and gate this step.
+4. ✅✅ **WHERE THE CORRECTION ENTERS — ANSWERED, AND NOT WHERE §1.1 EXPECTED.**
+   ⛔ §1.1's `tan θ = tan(slant)·cos(tilt)` inverts the slant into an ANGLE. `t5f`
+   measured the angle as **already fine** (*"the cube turns about as far as the
+   hand"*) and the **AXIS** as the defect. ⭐ So the shipped correction keeps Horn's
+   angle and steers only its in-image axis direction — which needs **no `σ` → angle
+   table at all**, and therefore does not wait on `U12`.
+   `Resources/palm_slant_axis.py`: yaw lean 22.0° → 13.6°, pitch 14.8° → 10.0°,
+   axis wander flat-to-improved. ✅ §1.3(b)'s sign ambiguity is handled by remedy 2
+   (the existing palm/back cue) and §1.3(c)'s edge-on band by reusing
+   `edge_on_measure`, as both said to. ⏭ The remaining gate is §1.5's item 3, the
+   live look — `slant_rig.bat`.
 5. ⏸ Strategy B only if A's orientation is good enough to build a `z` on — and
    the floor above is a direct argument that it may not be.

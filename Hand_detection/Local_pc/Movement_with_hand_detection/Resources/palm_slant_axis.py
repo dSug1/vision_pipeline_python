@@ -76,6 +76,13 @@ except ImportError:                         # pragma: no cover - direct import
 # `parity_replay` around to catch. The rig turns it on; the module does not.
 DEFAULT_GAIN = 0.0
 
+# ⭐ The LIVE global the debug sliders drive, and ONLY they. An estimator built
+# with `gain=None` follows this; one built with a number pins itself and ignores it.
+# ⚠ Exactly the `trim_gain=None` idiom the `F1` rig already uses, for the same
+# reason: a rig needs one panel pinned OFF and one panel swept, on one camera.
+# ⛔ Production never constructs this class at all, so this global cannot reach it.
+GAIN = DEFAULT_GAIN
+
 # ⚠ Below this the palm/back sign is meaningless, so the branch cannot be trusted
 # and neither can the correction. Reuses `edge_on_measure`, the codebase's ONE
 # definition of edge-on -- a second threshold here would be a second definition.
@@ -144,14 +151,24 @@ class SlantAxisHorn:
 
     def __init__(self, indices=None, mode="ref", gain=DEFAULT_GAIN):
         self.horn = PR.Horn(PR.PALM_LANDMARKS if indices is None else indices, mode)
-        self.gain = float(gain)
-        self.name = "slantaxis_%s_g%.2f" % (self.horn.name, self.gain)
+        # ⚠ None = follow the live module global; a number PINS this arm.
+        self.gain = None if gain is None else float(gain)
+        self._pinned = self.gain is not None
         # observability, for the panel and for the A/B -- never used in the maths
         self.last_sigma = 1.0
         self.last_authority = 0.0
         self.last_applied = 0.0
         self.frames_back_branch = 0
         self.frames_edge_on = 0
+
+    @property
+    def name(self):
+        """⭐ Reports the EFFECTIVE gain, not the constructed one, so the debug
+        panel's label tracks the slider instead of saying "live" forever. A panel
+        whose label contradicts what it is doing is the complaint the `T6d` and
+        ownership rigs each had to fix."""
+        g = self.gain if self._pinned else GAIN
+        return "slantaxis_%s_g%.2f%s" % (self.horn.name, g, "" if self._pinned else "*")
 
     def freeze(self, px, world):
         st = self.horn.freeze(px, world)
@@ -172,7 +189,8 @@ class SlantAxisHorn:
     def delta(self, state, px, world):
         q = self.horn.delta(state, px, world)
         self.last_applied = 0.0
-        if q is None or state is None or self.gain <= 0.0:
+        gain = GAIN if self.gain is None else self.gain
+        if q is None or state is None or gain <= 0.0:
             return q
 
         tr = state.get("slant")
@@ -202,7 +220,7 @@ class SlantAxisHorn:
         # the two frames, reconciled -- see the module header
         target = (tilt + (roll - state["roll0"])) % 180.0
 
-        amount = self.gain * auth
+        amount = gain * auth
         self.last_applied = amount
         return steer_axis(q, target, amount)
 

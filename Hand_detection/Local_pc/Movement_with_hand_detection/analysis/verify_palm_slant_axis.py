@@ -144,7 +144,7 @@ def main():
     src = io.open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "..", "Resources", "palm_slant_axis.py"), encoding="utf-8").read()
     ok("gain is applied as gain * authority, never bare",
-       "self.gain * auth" in src)
+       "gain * auth" in src)
     ok("the back branch returns Horn untouched", "self.frames_back_branch += 1" in src)
 
     print("\n--- 7. the port contract (CONSTRAINTS section 2) ---")

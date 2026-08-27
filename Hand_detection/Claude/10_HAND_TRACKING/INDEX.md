@@ -81,10 +81,18 @@ is nearly vertical as `σ → 1`. Roll invariance survives (~7–8° across 40�
 roll); small tilts do not. ⭐ **Large-angle correction, NOT a replacement for
 Horn** — which still covers the yaw lean, worst at 60–90°.
 ✅✅ **THE ESTIMATOR IS BUILT** (2026-08-27): `Resources/palm_slant.py`, stdlib-only
-/numpy-free/clock-free, authority fade in from the start, golden vectors passing,
-`A10` and `parity_replay` unchanged. ⚠ **It is wired to nothing** — where the
-correction enters the shipped rotation path is the open question, and it needs its
-own `A10` measured **against** `planar_pnp`'s rejection.
+/numpy-free/clock-free, authority fade in from the start, golden vectors passing.
+⭐⭐⭐ **AND THE CORRECTION FOLLOWED THE SAME DAY, BECAUSE `t5f`'s WORDING
+REFRAMED THE DEFECT**: *"the cube turns about as far as the hand — AXIS is not"*.
+The row had been aiming at the ANGLE, which was already fine, and which is the half
+needing the per-user thickness table. ⭐ **The AXIS needs no table, so `U12` is off
+the critical path.** `affine_svd`'s major direction IS the in-image rotation axis
+(10.4° vs Horn's 22.8°). ✅ `Resources/palm_slant_axis.py` keeps Horn's ANGLE and
+steers only its axis: **yaw lean 22.0° → 13.6°, pitch 14.8° → 10.0°, with no rise
+in axis wander**. `gain 0` is bit-exact Horn; production untouched; parity clean.
+⛔ Two harness bugs printed the OPPOSITE verdict first — a canonical frozen on
+`frames[0]` of a SWEEP, and `tilt` scored against an image-frame truth when it lives
+in the palm's frame. ⏭ **Next is the owner's live look: `slant_rig.bat`.**
 → [`spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md`](spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md)
 · [`../00_CORE/queue_notes/T6.md`](../00_CORE/queue_notes/T6.md)
 
@@ -104,7 +112,7 @@ yaw/palm-sink · `N12` pitch-crossing jump · `U5` occlusion coast.
 | ⭐⭐ **judge `F1`** — the transform from the fingertips | [`spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](spec/F1_FINGERTIP_TRANSFORM_SPEC.md) — the owner's specification, the palm-frame-deformation design, the acceptance bar, and the build order (all steps ✅ built; **the take is what is left**) |
 | understand the yaw lean before touching rotation | [`spec/ORIENTATION_DIAGNOSIS.md`](spec/ORIENTATION_DIAGNOSIS.md) |
 | **measure** a rotation change without being fooled | [`spec/ROTATION_ACCEPTANCE_AND_TRAPS.md`](spec/ROTATION_ACCEPTANCE_AND_TRAPS.md) — the baselines to beat, the six traps, the takes to use |
-| ⭐⭐ **fix orientation or touch the world landmarks** | [`spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md`](spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md) — drafted 2026-08-27; ✅ **Strategy A's estimator BUILT the same day** (`Resources/palm_slant.py`), ⚠ **wired to nothing**; Strategy B untouched. ⛔ Read its top note first: a measured **17–20° false-tilt floor** makes this a large-angle correction, not a replacement for Horn. Why the ratio table is a **lossy projection** (one number, two unknowns), the **bijective** slant/tilt replacement measured on the takes, remedies for its three degeneracies, and a strategy to repair `z` upstream. ⛔ Carries a **patent finding**: resolving the planar two-fold ambiguity via orientation sensors or viewing-angle range is patented |
+| ⭐⭐ **fix orientation or touch the world landmarks** | [`spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md`](spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md) — drafted 2026-08-27; ✅✅ **Strategy A is BUILT AND WIRED to a live A/B rig the same day** — `Resources/palm_slant.py` + `Resources/palm_slant_axis.py`, `slant_rig.bat`; Strategy B untouched. ⭐ The shipped form corrects the **AXIS**, not the angle, so it needs no per-user table. ⛔ Read its top note first: a measured **17–20° false-tilt floor** makes this a large-angle correction, not a replacement for Horn. Why the ratio table is a **lossy projection** (one number, two unknowns), the **bijective** slant/tilt replacement measured on the takes, remedies for its three degeneracies, and a strategy to repair `z` upstream. ⛔ Carries a **patent finding**: resolving the planar two-fold ambiguity via orientation sensors or viewing-angle range is patented |
 | ⭐ **ANALYSE the 2D-ratio takes** (✅ all six recorded 2026-08-26) | [`spec/RATIO_TABLE_CALIBRATION_PROTOCOL.md`](spec/RATIO_TABLE_CALIBRATION_PROTOCOL.md) §4 — the analysis order and the decision thresholds. ⛔ Its two recording-time corrections are in the protocol and in [`../00_CORE/queue_notes/T6.md`](../00_CORE/queue_notes/T6.md) |
 | know how snap / translate / rotate / release behave and why | [`spec/SPEC_13_snap_rotate_release.md`](spec/SPEC_13_snap_rotate_release.md), [`spec/SPEC_14_manipulation.md`](spec/SPEC_14_manipulation.md) |
 | know the forward design below the gesture layer | [`spec/PERCEPTION_LAYER_SPEC.md`](spec/PERCEPTION_LAYER_SPEC.md) — ⚠ **read its §0.1 amendment log before any module body** |
