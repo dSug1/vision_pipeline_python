@@ -271,19 +271,6 @@ SLIDERS = (
     # choice: the take exited at exactly 400.0, so the useful range had not been
     # bracketed. A slider whose maximum is the answer has not been explored yet --
     # the same reason GRAB radius runs to 300%.
-    # ⚠ RANGE 1000 -> 5000 (owner, 2026-08-27: *"I want to test a cube fully
-    # steady"*). ⭐ 5000 ms is alpha = 0.013, i.e. the cube covers 1.3% of the gap
-    # per frame: measured white-noise attenuation 8%, predicted residual jitter
-    # 0.35 deg/frame against a 4.30 deg raw.
-    # ⛔ AND AT THAT SETTING THE *RELEASE* THRESHOLD BECOMES THE WHOLE STORY, because
-    # anything below it is effectively FROZEN -- a slow deliberate turn at 50 deg/s
-    # would advance ~1.3% per frame, about 18% of the motion in a full second. That
-    # is not a defect to fix, it is what "fully steady" costs, and it is why the two
-    # sliders have to be judged together.
-    # ⚠ STARTS AT THE SHIPPED VALUE, not at 0. Production now damps too, so a
-    # slider opening at 0 would make the debug tool differ from the game in
-    # ordinary use -- the exact divergence `U6` keeps `parity_replay` for.
-    ("STEADY ms", 5000, 4500, lambda n: float(n)),
     # ⭐⭐ WHERE THE DAMPING LETS GO, in deg/s of hand rotation. Owner, 2026-08-27:
     # *"I don't want any quaternion slerp as soon as I start a hand rotation"*.
     # ⛔ ABOVE this the extra damping is EXACTLY ZERO -- the cube is on today's tau
@@ -310,17 +297,6 @@ SLIDERS = (
     # gate below is what makes 1 sufficient -- it does the noise rejection the second
     # frame used to do, without costing a frame of onset.
     ("FREEZE frames", 2, 1, lambda n: int(n)),
-    # ⭐⭐ THE FROBENIUS GATE. 0 = OFF (and then nothing is computed).
-    # ⛔ THE SCALE IS NOT A PERCENTAGE. The correlation runs -1..+1, so position `n`
-    # means threshold `-1 + n/50`: **50 is 0.0**, the principled threshold, because a
-    # STILL hand correlates NEGATIVE (its steps reverse) and a turning hand POSITIVE.
-    # 1 is nearly -1 (passes almost always), 100 is +1 (passes almost never).
-    # ⚠ SHIPS OFF, and the reason is measured rather than cautious: as a trigger it
-    # loses to the plain speed threshold at every stillness ceiling, because the
-    # tails overlap (still p90 +0.65 against slow p25 -0.04) -- a hand that nearly
-    # pauses mid-turn IS a still hand for that frame. It is here to be re-tested by
-    # hand, not because it is expected to win.
-    ("FROB gate", 100, 0, lambda n: None if n <= 0 else -1.0 + n / 50.0),
     ("SLANT axis %", 100, 0, lambda n: n / 100.0),
     # ⭐⭐ THE OWNER'S OWN STRATEGY, as a whole estimator: the regression fitted
     # from the six takes (HALF 1) on a canonical frozen at the grab (HALF 2).
@@ -1285,10 +1261,9 @@ class CubeState:
     # ⚠ The RAW target's angular speed, deg/s, for the steady damper. Raw, not
     # smoothed -- see `_slerp_factor_for`.
     last_target_quat: object = None
-    last_target_speed_deg_s: object = None
     # ⚠ The steady damper's envelope is NOT here: it belongs to the HAND, not the
-    # arm, and lives in `_steady_env` so both tools key it identically. Keeping a
-    # per-arm copy is what made `parity_replay` diverge at frame 260.
+    # arm, and lives in `_steady_frozen` so both tools key it identically. Keeping
+    # a per-arm copy is what made `parity_replay` diverge at frame 260.
     # ⭐⭐ THE LAG A/B (owner, 2026-08-24: *"the cube is lagging the hand and this
     # feels very uncomfortable"*). "frame" = today's FIXED PER-FRAME factor; "time"
     # = a real exponential with a time constant in MILLISECONDS.
@@ -1889,8 +1864,8 @@ def _read_sliders() -> None:
     """
     global SLERP_TAU_MS, JITTER_TAU_MS, JITTER_BETA, GRAB_RADIUS_MULTIPLIER
     global GRIP_ALIGN_MOVING_MS, GRIP_ALIGN_MASK_RATIO, GRAB_Z_TOLERANCE_M
-    global DEPTH_RATE_PER_S, SLANT_AXIS_GAIN, POSE_BLEND, STEADY_EXTRA_MS
-    global STEADY_RELEASE_DEG_S, STEADY_FREEZE_FRAMES, STEADY_FROB
+    global DEPTH_RATE_PER_S, SLANT_AXIS_GAIN, POSE_BLEND
+    global STEADY_RELEASE_DEG_S, STEADY_FREEZE_FRAMES
     try:
         vals = [spec[3](cv2.getTrackbarPos(spec[0], SLIDER_WIN)) for spec in SLIDERS]
     except cv2.error:
@@ -1898,15 +1873,12 @@ def _read_sliders() -> None:
     # ⚠ THREE sliders now -- three others are parked (see `SLIDERS`). The parked
     # values are NOT re-read here; they keep their module defaults.
     (SLERP_TAU_MS, _gain, GRAB_RADIUS_MULTIPLIER, GRIP_ALIGN_MOVING_MS,
-     GRIP_ALIGN_MASK_RATIO, STEADY_EXTRA_MS, STEADY_RELEASE_DEG_S,
-     STEADY_FREEZE_FRAMES, STEADY_FROB, SLANT_AXIS_GAIN, POSE_BLEND,
-     GRAB_Z_TOLERANCE_M) = vals
+     GRIP_ALIGN_MASK_RATIO, STEADY_RELEASE_DEG_S, STEADY_FREEZE_FRAMES,
+     SLANT_AXIS_GAIN, POSE_BLEND, GRAB_Z_TOLERANCE_M) = vals
     _HS_const.ROTATION_STEADY_RELEASE_DEG_S = STEADY_RELEASE_DEG_S
     _HS_const.ROTATION_STEADY_FREEZE_FRAMES = STEADY_FREEZE_FRAMES
-    _HS_const.FROBENIUS_THRESHOLD = STEADY_FROB
     # ⚠ Shared module, same reasoning as the others: both tools read it at call
     # time and can never run at once. ⛔ It stays 0 in production unless set there.
-    _HS_const.ROTATION_STEADY_EXTRA_MS = STEADY_EXTRA_MS
     # ⚠ Same shared-module reasoning as the three below: an estimator built with
     # `gain=None` reads this attribute at call time. ⛔ Production never constructs
     # `SlantAxisHorn` at all, so this cannot reach it -- but `parity_replay` is the
@@ -1976,10 +1948,8 @@ def settled_values() -> dict:
         # an A/B session, and this row still managed to lose one take to it.
         # ⭐ Read from the module, not from the local: it is the value the estimator
         # actually consults at call time, so it cannot drift from what ran.
-        "steady_extra_ms": _HS_const.ROTATION_STEADY_EXTRA_MS,
         "steady_release_deg_s": _HS_const.ROTATION_STEADY_RELEASE_DEG_S,
         "steady_freeze_frames": _HS_const.ROTATION_STEADY_FREEZE_FRAMES,
-        "steady_frob_gate": _HS_const.FROBENIUS_THRESHOLD,
         "slant_axis_gain": _SlantAxis.GAIN,
         # ⚠ In the log from the start this time. The first `--slant-rig` take was
         # lost because its gain was not recorded; a second A/B losing the same way
@@ -2148,19 +2118,16 @@ _SLERP_MAX_DT_MS = _HS_const.ROTATION_SLERP_MAX_DT_MS
 #      DIFFERENT cubes' targets rather than any elapsed time.
 # ⭐ It is now fed from `hand_quat_now` -- the HAND's own orientation -- which is a
 # property of the hand alone and is the same in both tools whatever it is holding.
-_steady_env = {}
 _steady_prev_hand_quat = {}
 _steady_frozen = {}
 _steady_run = {}
-_steady_prev_pts = {}
-_steady_prev_deltas = {}
 # ⭐ TRANSLATION's own freeze state -- same rule, same numbers, separate flag,
 # because a hand can turn without travelling and the reverse.
 _steady_pos_frozen = {}
 _steady_pos_run = {}
 
 
-def _stamp_steady_speed(handedness, hand_quat, now_ms, prev_ms, landmarks=None,
+def _stamp_steady_speed(handedness, hand_quat, now_ms, prev_ms,
                         grip_px=None, prev_grip_px=None):
     """Feed this HAND's RAW rotation speed into its envelope. ⭐ Mirrors
     `HandsTriggeredActions._stamp_steady_speed` exactly (N6 in spirit: one rule,
@@ -2171,35 +2138,17 @@ def _stamp_steady_speed(handedness, hand_quat, now_ms, prev_ms, landmarks=None,
     if prev is not None and now_ms is not None and prev_ms is not None:
         dt = max(1e-3, min(now_ms - prev_ms, _SLERP_MAX_DT_MS))
         speed = _PRot.quat_angle_deg(prev, hand_quat) * 1000.0 / dt
-        _steady_env[handedness] = _HS_const.steady_speed_envelope(
-            _steady_env.get(handedness), speed, dt)
-        # ⚠ RAW per-frame speed, not the envelope -- see production's copy.
-        # ⛔ COMPUTED ONLY WHEN THE GATE IS ON. Its predecessor ran 21
-        # landmarks of arithmetic every frame in both tools and threw the
-        # answer away, because the threshold was zero.
-        _coh = None
-        if _HS_const.FROBENIUS_THRESHOLD is not None:
-            _coh, _deltas = _HS_const.frobenius_coherence(
-                landmarks, _steady_prev_pts.get(handedness), _steady_prev_deltas.get(handedness))
-            _steady_prev_deltas[handedness] = _deltas
-        # ⭐ The owner's mechanism: fast ENOUGH and moving ONE WAY. Direction
-        # rejects the jitter magnitude cannot; magnitude rejects the slow drift
-        # direction cannot. Together, ONE frame is enough -- which is the point,
-        # because the two-frame trigger made the rotation jerky.
         _steady_frozen[handedness], _steady_run[handedness] = _HS_const.steady_hold_update(
-            _steady_frozen.get(handedness, True), _steady_run.get(handedness, 0), speed,
-            coherence=_coh)
-        # ⭐ TRANSLATION, same rule, grip speed in px/s -- see production's copy.
+            _steady_frozen.get(handedness, True), _steady_run.get(handedness, 0), speed)
+        # ⭐ TRANSLATION, same rule, grip speed in px/s -- mirrors production.
         if _HS_const.TRANSLATION_STEADY and grip_px is not None and prev_grip_px is not None:
             _pspeed = math.hypot(grip_px[0]-prev_grip_px[0],
                                  grip_px[1]-prev_grip_px[1]) * 1000.0 / dt
             (_steady_pos_frozen[handedness],
              _steady_pos_run[handedness]) = _HS_const.steady_hold_update(
                 _steady_pos_frozen.get(handedness, True),
-                _steady_pos_run.get(handedness, 0), _pspeed, coherence=_coh)
+                _steady_pos_run.get(handedness, 0), _pspeed)
     _steady_prev_hand_quat[handedness] = hand_quat
-    if landmarks:
-        _steady_prev_pts[handedness] = landmarks
 
 
 def _slerp_factor_for(state: CubeState, now_ms, handedness=None) -> float:
@@ -2219,13 +2168,11 @@ def _slerp_factor_for(state: CubeState, now_ms, handedness=None) -> float:
     # ⛔ The speed comes from the RAW TARGET, never from the cube's own smoothed
     # orientation. Measuring the output would be self-referential -- damping lowers
     # the apparent speed, which raises the damping -- and the cube would lock solid.
-    # ⛔ FREEZE MODE WINS OUTRIGHT when it is on -- factor exactly 0.0.
-    if _HS_const.ROTATION_STEADY_FREEZE_FRAMES > 0:
-        if _steady_frozen.get(handedness, True):
-            return 0.0
-    else:
-        # ⚠ The HAND's envelope, keyed exactly as production keys it.
-        tau = _HS_const.steady_tau_ms(tau, _steady_env.get(handedness))
+    # ⛔ FROZEN is exactly 0.0 -- still BY CONSTRUCTION, not merely slow. Above the
+    # threshold the cube runs at the shipped tau and nothing else.
+    if (_HS_const.ROTATION_STEADY_FREEZE_FRAMES > 0
+            and _steady_frozen.get(handedness, True)):
+        return 0.0
     return 1.0 - math.exp(-dt / tau)
 
 
@@ -2545,7 +2492,7 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
         # same quantity. Anything else and `parity_replay` diverges, which is how the
         # per-arm version was caught.
         _stamp_steady_speed(handedness, hand_quat_now, now_ms, state.last_frame_ms,
-                            data.get("pixel_landmarks"), hand_pos, _prev_grip_px)
+                            hand_pos, _prev_grip_px)
 
         # ⭐ 4.2: this frame's absolute hand depth, stamped upstream by
         # `_update_snap_depth` so one estimator serves every arm. ABSENT means a

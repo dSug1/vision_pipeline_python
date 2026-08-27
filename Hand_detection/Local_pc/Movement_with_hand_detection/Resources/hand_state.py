@@ -86,120 +86,23 @@ ROTATION_SLERP_TAU_MS = 20.0
 #
 #     grip point moves   3.50 px/frame median      <- the input
 #     cube POSITION      3.39 px/frame median      <- tracks it to 0.1 px
-#     cube ORIENTATION   4.30 deg/frame median, p95 15.40   <- THE JITTER
-#     cube size (depth)  1.25 px median, p95 6.57 (8% of an 80 px cube)
+#     cube ORIENTATION   4.30 deg/frame median     <- THE JITTER
 #
-# ⛔ So position is NOT the problem -- damping it would only lag translation. The
-# shimmer is ORIENTATION, 4.3 deg every frame at 15 fps, and it is already smoothed
-# at tau = 20 ms.
+# ⛔ So position was never the problem: the cube follows the grip point to within a
+# tenth of a pixel, and damping it would only lag translation. The shimmer is
+# ORIENTATION, 4.3 deg every frame at 15 fps.
 #
-# ⭐ RAISING tau IS NOT THE ANSWER, and `L1` is why: a fixed time constant lags
-# genuine motion exactly as much as it damps jitter, and the owner rejected that
-# trade once already (*"the cube is lagging the hand and this feels very
-# uncomfortable"*). This makes tau ADAPTIVE instead -- the 1-euro idea applied to
-# the slerp already shipped:
+# ⛔⛔ WHAT THIS IS *NOT*, AND THE HISTORY IS WORTH ONE PARAGRAPH BECAUSE EACH
+# STEP WAS BUILT, MEASURED AND REJECTED. A fixed longer tau was rejected by `L1`
+# (it lags real motion as much as it damps jitter). An ADAPTIVE tau with a
+# fast-attack speed envelope was built next and rejected by the owner -- *"damping
+# is not stillness"*: even at 4500 ms the blend factor is 0.015, so the cube still
+# creeps 1.5% of the gap every frame and wanders over a long hold. Both are gone;
+# what survives is a HARD FREEZE.
 #
-#     barely turning  ->  tau rises      -> the shimmer is held still
-#     really turning  ->  tau collapses  -> today's responsiveness, unchanged
-#
-# ⛔ `extra_ms = 0` IS TODAY'S BEHAVIOUR, BIT-EXACT. The slider's left end is
-# production.
-# ✅ SET BY THE OWNER 2026-08-27 after six live sessions: 4500 / 80.
-# ⚠ This is no longer "off by default" -- production damps too. The
-# acceptance gate stands: 0 still reproduces the old behaviour bit-exactly.
-ROTATION_STEADY_EXTRA_MS = 4500.0
-
-# ⛔⛔ THE RELEASE IS A HARD-EDGED RAMP, NOT A HYPERBOLA (owner, 2026-08-27:
-# *"we need a more abrupt cut-off because I don't want any quaternion slerp as soon
-# as I start a hand rotation"*).
-#
-# The first shape was `extra / (1 + speed/knee)`, which never fully lets go: at
-# 600 ms of extra and a brisk 300 deg/s it still left ~120 ms of tau, and that is
-# the "lengthy slerp" felt at the START of a turn. ⭐ Now the extra damping is
-# ramped to EXACTLY ZERO by `RELEASE_DEG_S`, so above that speed the cube is on
-# today's tau and nothing else.
-#
-# ⚠ THE FLOOR IS SET BY THE NOISE, and it is why this cannot simply be tiny:
-# a HELD-STILL hand's raw target already moves 2.53 deg/frame -- about 38 deg/s at
-# 15 fps. A release threshold under that would be tripped by the very jitter the
-# damper exists to remove, and the damping would flicker on and off.
-ROTATION_STEADY_RELEASE_DEG_S = 60.0
-
-# Below this fraction of the release speed the damping is at FULL strength. The gap
-# between the two is the whole width of the ramp -- narrow, on purpose.
-ROTATION_STEADY_HOLD_FRACTION = 0.45
-
-# ⭐⭐ THE SPEED ENVELOPE: INSTANT ATTACK, SLOW RELEASE. This is what makes the
-# cut-off feel immediate rather than merely sharp.
-#
-# ⛔ A turn STARTS at zero speed. Any threshold on the instantaneous speed is
-# therefore still fully damped for the first frame or two of a deliberate rotation
-# -- exactly the onset lag being complained about. So the envelope jumps to any new
-# maximum AT ONCE and only falls back gradually: one fast frame releases the damper,
-# and it re-engages only after the hand has genuinely settled.
-#
-# ⛔⛔ THE ENVELOPE'S DECAY RATE IS NOW ITS OWN NUMBER, IN deg/s PER SECOND.
-# It used to be "one whole RELEASE threshold per ENVELOPE_MS", which quietly COUPLED
-# the release slider to two opposing effects: raising it lifted the bar (more
-# damping) AND sped up the decay (less damping). Owner, 2026-08-27: *"I did not see
-# much effect for the release when I varied it"* -- that cancellation is why.
-# ⭐ Decoupled, the RELEASE slider now does exactly one thing.
-# ⭐⭐ AND IT IS FAST, WHICH IS THE WHOLE FIX. Owner, 2026-08-27: *"I felt the
-# 600 ms did not dampen as much as previously"* -- correct, and the cause was NOT
-# the attack. A held-still hand's raw target exceeds 160 deg/s on 5.4% of frames
-# from jitter alone, and at the original 640 each of those spikes released the
-# damping for ~350 ms. Measured duty cycle: full damping only 80.3% of the time.
-#
-# ⭐ A real turn RE-ATTACKS EVERY FRAME, so it stays released no matter how fast
-# this decays; only an ISOLATED spike decays away. Making the release last about one
-# frame therefore costs the onset nothing and buys back all the damping:
-#
-#     decay    full damping   released   onset following
-#      640         80.3%        12.5%         96%
-#     3000         88.1%         6.1%         97%
-#     6000         88.6%         5.7%         97%   <- shipped
-#   no envelope at all           88.6%/5.6%    (onset 81%)
-#
-# ⛔ i.e. the damping is now indistinguishable from having no envelope, while the
-# onset keeps the envelope's full benefit. ⚠ Raising it further changes nothing --
-# 12000 measures identically, so this is the knee, not a maximum.
-ROTATION_STEADY_DECAY_DEG_S2 = 6000.0
-
-# (the old ROTATION_STEADY_ENVELOPE_MS is gone: the decay rate above replaced it,
-# and a constant nothing reads is a constant that drifts from the truth.)
-
-
-def steady_speed_envelope(previous_env, speed_deg_s, dt_ms):
-    """Fast-attack, fast-release envelope of the raw target's angular speed.
-
-    ⛔⛔ A WINDOWED (multi-frame) SPEED WAS TRIED HERE AND IS THE WRONG ANSWER.
-    It rejects the noise beautifully -- median speed 23 -> 9 deg/s -- and it
-    DESTROYS the thing the envelope exists for: onset following collapsed from 96%
-    to 10%, because averaging the first fast frame with two quiet ones puts it back
-    under the threshold. ⭐ At the very first frame of a turn there is genuinely no
-    information separating it from a noise spike; only the NEXT frame can tell.
-    Every dual-threshold variant was measured too and none recovered it, because the
-    noise (p95 163 deg/s) overlaps the onset speeds (>121 deg/s).
-    ⚠ So the attack stays instant and per-frame, and the noise is dealt with by
-    making the RELEASE fast instead -- see `ROTATION_STEADY_DECAY_DEG_S2`.
-
-    ⚠ `previous_env` None starts the envelope AT the speed, not at zero -- starting
-    low would apply full damping to a hand that is already moving.
-    """
-    if speed_deg_s is None or speed_deg_s != speed_deg_s:
-        return previous_env
-    sp = max(0.0, float(speed_deg_s))
-    if previous_env is None:
-        return sp
-    if sp >= previous_env:
-        return sp                                  # instant attack
-    if dt_ms is None or dt_ms <= 0.0:
-        return previous_env
-    # linear release at its OWN rate, independent of the release threshold
-    step = ROTATION_STEADY_DECAY_DEG_S2 * (float(dt_ms) / 1000.0)
-    fell = previous_env - step
-    return sp if fell < sp else fell
-
+# ⭐ The object does not move AT ALL below the threshold -- blend factor exactly
+# 0.0, still by construction rather than by being slow -- and moves at the shipped
+# `ROTATION_SLERP_TAU_MS` above it. There is no middle.
 
 # ⭐⭐⭐ FREEZE MODE (owner, 2026-08-27): *"I want absolutely no movement when the
 # cube should be steady, and immediate release when the hands move (maybe with a
@@ -225,179 +128,6 @@ def steady_speed_envelope(previous_env, speed_deg_s, dt_ms):
 # ✅ SETTLED BY THE OWNER 2026-08-27: RELEASE 60 / FREEZE 1 / COHERENCE 0, after nine live
 # sessions. ⚠ 1 frame, not 2: the two-frame trigger was rejected for making the
 # rotation jerky, and the coherence gate below is what makes one frame enough.
-ROTATION_STEADY_FREEZE_FRAMES = 1      # 0 = off (smooth ramp); N = freeze, N-frame trigger
-
-
-# ⭐⭐⭐ WHOLE-HAND DIRECTIONAL COHERENCE, as a single matrix operation.
-#
-# The question that produced it (owner, 2026-08-27): *"are there matrix operations
-# which can be done at frame N, N+1 and N+2 to check that there is an overall
-# direction of all the landmarks at N+2 which is not random noise at each
-# landmark?"* There are, and this is the one that measured best.
-#
-# Stack the two displacement fields and take their normalised inner product:
-#
-#     D1 = P(N+1) - P(N)      D2 = P(N+2) - P(N+1)
-#     coherence = <D1, D2>_F / (||D1||_F . ||D2||_F)
-#
-# ⭐ ONE PASS, NO SVD, NO NUMPY -- it is a dot product over 21 points, so it ports
-# by transliteration like everything else here.
-#
-# ⭐⭐ IT REPLACED A PER-LANDMARK SIGN VOTE, and the improvement is structural
-# rather than a tuned constant. The vote gave every landmark ONE BINARY SAY, so a
-# point that barely moved cast a coin flip with the same weight as one that swung
-# 5 px. The Frobenius form weights by magnitude, which is exactly what the vote
-# threw away. Measured on four takes:
-#
-#     measure                        still     slow turn    separation
-#     per-landmark sign vote         0.353       0.810         0.98
-#     Frobenius correlation         -0.260      +0.538         1.01
-#     dominant-direction energy      0.762       0.818         0.33
-#     rigid residual (Kabsch fit)    0.831       0.856         0.12
-#
-# ⭐ The sign is the real prize: a STILL hand comes out NEGATIVE, because
-# consecutive noise steps anti-correlate -- a landmark goes one way and comes back,
-# which is precisely the effect being detected. So ZERO is a principled threshold
-# where the vote needed an arbitrary 0.6.
-#
-# ⛔ IT IS STILL OFF BY DEFAULT, and the reason is measured, not assumed: it does
-# not beat a plain speed threshold as a TRIGGER. The tails overlap badly (still p90
-# +0.65 against slow p25 -0.04), because a hand that nearly pauses mid-turn IS a
-# still hand for that frame. Frontier, best slow-turn following at each stillness
-# ceiling: <=5% 61.6% speed-only vs none qualifying with the gate; <=15% 80.1% vs
-# 78.9%.
-#
-# ⚠ The dominant-direction energy (Tomasi & Kanade's rank constraint, IJCV 1992)
-# and the rigid residual (Kabsch 1976) were measured too and are much weaker -- 0.33
-# and 0.12 separation. Recorded so the obvious formulations are not re-tried blind.
-# Full comparison: `analysis/global_coherence.py`.
-#
-# ⛔ `None` = OFF, and when it is off NOTHING IS COMPUTED. The predecessor ran its
-# 21-landmark arithmetic every frame in both tools and threw the answer away.
-FROBENIUS_THRESHOLD = None
-
-
-def frobenius_coherence(points, prev_points, prev_deltas):
-    """(correlation in [-1,1], deltas) for D1 = prev step, D2 = this step.
-
-    ⚠ Returns the deltas so the caller can hand them back next frame; this module
-    holds no state of its own. `None` on the first frame of a hand, when there is no
-    previous step to correlate against.
-    """
-    if not points or not prev_points or len(points) != len(prev_points):
-        return None, None
-    d2 = []
-    for i in range(len(points)):
-        d2.append((points[i][0] - prev_points[i][0],
-                   points[i][1] - prev_points[i][1]))
-    if not prev_deltas or len(prev_deltas) != len(d2):
-        return None, d2
-    num = ss1 = ss2 = 0.0
-    for i in range(len(d2)):
-        ax, ay = prev_deltas[i]
-        bx, by = d2[i]
-        num += ax * bx + ay * by
-        ss1 += ax * ax + ay * ay
-        ss2 += bx * bx + by * by
-    # ⚠ Squared magnitudes multiplied then rooted ONCE, so this needs no `math`
-    # import -- `verify_hand_state` asserts the module imports nothing.
-    den2 = ss1 * ss2
-    if den2 <= 1e-24:
-        return None, d2
-    return num / (den2 ** 0.5), d2
-
-
-# ⭐⭐ TRANSLATION USES THE SAME RULE AND THE SAME NUMBERS (owner, 2026-08-27:
-# *"can you implement the same for translation (same values as the sliders for
-# translation, to avoid growing the number of sliders)"*).
-#
-# ⭐ IT IS NOT A COINCIDENCE THAT ONE THRESHOLD SERVES BOTH, it was measured. The
-# grip point's speed in PIXELS/S and the hand's rotation speed in DEGREES/S have
-# nearly the same distribution while a cube is held:
-#
-#             p50      p75      p90
-#   rotation   27       64      177   deg/s
-#   grip       26       53      117   px/s
-#
-# So `RELEASE = 80` freezes below 36 in either unit, and covers 81.8% of the frames
-# where the hand is rotationally still. ⚠ If the camera resolution or the working
-# distance changes the pixel figures move and the rotation ones do not -- at which
-# point this shared threshold needs re-measuring, not re-deriving.
-#
-# ⛔ `steady_hold_update` is deliberately UNIT-AGNOSTIC: it compares a speed to a
-# threshold and counts frames. Feeding it px/s instead of deg/s is the whole port.
-# The COHERENCE input is literally the same number for both -- the hand either is
-# or is not moving one way, and that fact does not belong to one channel.
-TRANSLATION_STEADY = True
-
-
-def steady_hold_update(frozen, run, speed_deg_s, release_deg_s=None,
-                       trigger_frames=None, hold_fraction=ROTATION_STEADY_HOLD_FRACTION,
-                       coherence=None):
-    """Advance the freeze state machine. Returns `(frozen, run)`.
-
-    FROZEN  -> needs `trigger_frames` CONSECUTIVE frames at or above the release
-               speed to let go. One fast frame is not enough; that is the point.
-    MOVING  -> refreezes as soon as the speed drops below the HOLD level, which is
-               lower than the release level, so the two thresholds hysterese and the
-               state cannot chatter on a speed hovering at the boundary.
-
-    ⚠ `speed_deg_s` is the RAW target's speed, never the smoothed output -- the
-    same rule `steady_tau_ms` states, and for the same reason.
-    """
-    n = int(ROTATION_STEADY_FREEZE_FRAMES if trigger_frames is None else trigger_frames)
-    if n <= 0:
-        return False, 0                      # mode off: never frozen
-    hi = float(ROTATION_STEADY_RELEASE_DEG_S if release_deg_s is None else release_deg_s)
-    lo = hi * max(0.0, min(1.0, float(hold_fraction)))
-    if speed_deg_s is None or speed_deg_s != speed_deg_s:
-        return frozen, 0                     # unknown speed changes nothing
-    sp = max(0.0, float(speed_deg_s))
-    # ⭐ Both tests must pass to release: fast ENOUGH and moving ONE WAY.
-    # ⛔ AN AND-GATE CAN ONLY REDUCE RELEASES, which is why this cannot help the SLOW
-    # case however it is tuned -- measured, and the reason it ships off. An OR form
-    # ("fast, OR slower but coherent") was built and measured too: still worse,
-    # 71.4% against 79.5% slow-turn following at equal stillness.
-    ok = sp >= hi
-    # ⚠ `None` threshold = gate off, and then `coherence` is not even computed.
-    if ok and FROBENIUS_THRESHOLD is not None and coherence is not None:
-        ok = coherence >= FROBENIUS_THRESHOLD
-    if frozen:
-        run = run + 1 if ok else 0
-        return (False, 0) if run >= n else (True, run)
-    return (True, 0) if sp < lo else (False, 0)
-
-
-def steady_tau_ms(base_tau_ms, speed_deg_s,
-                  extra_ms=None, release_deg_s=None,
-                  hold_fraction=ROTATION_STEADY_HOLD_FRACTION):
-    """The effective smoothing time constant for this frame.
-
-    ⛔⛔ `speed_deg_s` MUST BE MEASURED FROM THE RAW TARGET, never from the
-    smoothed output. Measuring the output makes it self-referential: damping lowers
-    the apparent speed, which raises the damping, which lowers it further -- and the
-    cube locks solid and never moves again. This is the one way to get this function
-    badly wrong, so it is stated here rather than left to the caller to notice.
-
-    ⚠ An unknown speed is treated as FAST (no extra damping). Unknown must not
-    mean "hold still", or a dropout would freeze the object.
-    """
-    base = max(1.0, float(base_tau_ms))
-    extra = ROTATION_STEADY_EXTRA_MS if extra_ms is None else float(extra_ms)
-    if extra <= 0.0 or speed_deg_s is None or speed_deg_s != speed_deg_s:
-        return base
-    hi = float(ROTATION_STEADY_RELEASE_DEG_S if release_deg_s is None else release_deg_s)
-    if hi <= 0.0:
-        return base
-    lo = hi * max(0.0, min(1.0, float(hold_fraction)))
-    sp = max(0.0, float(speed_deg_s))
-    if sp >= hi:
-        return base                       # ⭐ fully released: today's tau, exactly
-    if sp <= lo:
-        return base + extra               # fully held
-    t = (sp - lo) / (hi - lo)
-    return base + extra * (1.0 - t * t * (3.0 - 2.0 * t))
-
 # ⭐⭐ THE GRAB RADIUS LIVES HERE FOR THE SAME REASON tau DOES, and it had the same
 # problem: it was defined TWICE, once in each tool, both reading 1.5 -- so the
 # duplication stayed invisible until the moment one of them was tuned.
@@ -431,45 +161,106 @@ def steady_tau_ms(base_tau_ms, speed_deg_s,
 # The owner re-tunes from here with the slider, which now reaches past 100%.
 GRAB_RADIUS_MULTIPLIER = 1.0
 
-# ⛔⛔ OPEN DEFECT, FOUND 2026-08-26 BY RAISING THIS VALUE: at 1.0 the two
-# pipelines DISAGREE about whether a grab happens. `analysis/parity_replay.py` on
-# `2026-08-24_220415_prod_tau20` reports 41 divergences, the first being ownership
-# at frame 377 (production claims the large cube, the debug tool does not); at 0.33
-# it reports NONE.
-#
-# ⚠ It is NOT the `F1` path: both switches are off in that replay, so the grip
-# point, the trim and the depth walk are all inert. A wider radius simply brings
-# more cubes into contention and surfaces a difference that a narrow radius hid.
-# ⭐ Which is precisely what `U6` keeps `parity_replay` for -- the guard worked.
-#
-# ⛔ NOT diagnosed yet. Narrowed to: with both flags off the two tools compute the
-# same centre and the same hand position, so the difference has to be in
-# `projected_size_of` -> `cube.depth_m`, i.e. the two depth-ratio trackers drifting
-# apart over the take. Investigate before this value ships.
-
 # ⚠ A HITCH MUST NOT BECOME A POP: dt is clamped before the exponential, or a cube
 # teleports onto the hand on the first frame after a dropout -- undoing D3's
 # resync blend, a fix the owner has already accepted.
 ROTATION_SLERP_MAX_DT_MS = 200.0
 
+# ⛔⛔ THE RELEASE THRESHOLD IS THE ONLY REAL DIAL, and that was measured against
+# the alternatives rather than assumed. Speed-only beats every variant at every
+# stillness level; see `analysis/steady_tuning_sweep.py`. On 6038 frames of natural
+# use:
+#
+#     RELEASE   moves when STILL   follows a SLOW turn
+#        50           10.2%              87.2%
+#        60            6.0%              77.6%     <- settled by the owner
+#        70            3.3%              70.3%
+#        80            1.4%              62.0%
+#
+# ⚠ THE UNITS ARE SHARED WITH TRANSLATION ON PURPOSE -- deg/s for rotation, px/s
+# for the grip point -- because the two distributions nearly coincide while a cube
+# is held (p50 27 vs 26, p75 64 vs 53). If the camera or working distance changes,
+# the pixel figures move and the degree ones do not, and this needs RE-MEASURING
+# rather than re-deriving.
+ROTATION_STEADY_RELEASE_DEG_S = 60.0
 
-# ⭐⭐ THE FRAME INTERVAL, COMPUTED ONCE AND SHARED. Owner, 2026-08-27: *"the dt
-# will probably also be used somewhere else in the game later on"* -- so it lands
-# as a named, reusable quantity rather than being re-derived at each call site.
+# ⭐ Hysteresis: it releases at RELEASE and refreezes at this fraction of it, so a
+# speed hovering at the boundary cannot chatter between the two states.
+ROTATION_STEADY_HOLD_FRACTION = 0.45
+
+ROTATION_STEADY_FREEZE_FRAMES = 1      # 0 = off (smooth ramp); N = freeze, N-frame trigger
+
+
+# ⛔⛔ A DIRECTIONAL-COHERENCE GATE WAS BUILT TWICE AND REMOVED TWICE. Do not
+# rebuild it without new evidence. Both forms are recorded in
+# `analysis/global_coherence.py`, which still runs:
 #
-# ⛔ WHY IT LIVES HERE AND NOT IN THE ESTIMATORS. The estimator layer is
-# CLOCK-FREE BY CONTRACT (`CONSTRAINTS` §2): it is transliterated to JS/Swift/
-# Kotlin, and a wall-clock read is the first thing that does not port. So no
-# estimator may ask what time it is -- the CALLER, which already owns the frame
-# loop and its timestamps, computes the interval and passes it down as a plain
-# number. That keeps every estimator deterministic under replay, which is what
-# `analysis/parity_replay.py` and every golden-vector suite depend on.
+#     measure                        still     slow turn    separation
+#     per-landmark sign vote         0.353       0.810         0.98
+#     Frobenius correlation         -0.260      +0.538         1.01
+#     dominant-direction energy      0.762       0.818         0.33
+#     rigid residual (Kabsch fit)    0.831       0.856         0.12
 #
-# ⚠ THE CLAMP IS THE POINT, NOT A DETAIL. After a dropout, a coast or a stalled
-# frame the raw interval can be hundreds of milliseconds, and every consumer of dt
-# scales something by it -- a blend factor, a rate limit, a fade. Unclamped, one
-# hitch becomes one large visible jump, which is precisely the pop `D2`/`D3` exist
-# to prevent. Clamping here means no consumer has to remember to.
+# ⭐ The Frobenius form is a genuinely good MEASURE -- a still hand reads NEGATIVE
+# because consecutive noise steps anti-correlate, so zero is a principled threshold.
+# ⛔ It is a bad TRIGGER, and that is a property of the question rather than of the
+# implementation: coherence says the hand is moving SOMEHOW, and the freeze needs to
+# know HOW MUCH. A drifting still hand is coherent; a hand pausing mid-turn is not.
+# Measured on 6038 frames of natural use, it cost 7-11 points of slow-turn following
+# for about 1 point of stillness, at every setting.
+
+# ⭐⭐ TRANSLATION USES THE SAME RULE AND THE SAME NUMBERS (owner, 2026-08-27:
+# *"can you implement the same for translation (same values as the sliders for
+# translation, to avoid growing the number of sliders)"*).
+#
+# ⭐ IT IS NOT A COINCIDENCE THAT ONE THRESHOLD SERVES BOTH, it was measured. The
+# grip point's speed in PIXELS/S and the hand's rotation speed in DEGREES/S have
+# nearly the same distribution while a cube is held:
+#
+#             p50      p75      p90
+#   rotation   27       64      177   deg/s
+#   grip       26       53      117   px/s
+#
+# So `RELEASE = 80` freezes below 36 in either unit, and covers 81.8% of the frames
+# where the hand is rotationally still. ⚠ If the camera resolution or the working
+# distance changes the pixel figures move and the rotation ones do not -- at which
+# point this shared threshold needs re-measuring, not re-deriving.
+#
+# ⛔ `steady_hold_update` is deliberately UNIT-AGNOSTIC: it compares a speed to a
+# threshold and counts frames. Feeding it px/s instead of deg/s is the whole port.
+# The COHERENCE input is literally the same number for both -- the hand either is
+# or is not moving one way, and that fact does not belong to one channel.
+TRANSLATION_STEADY = True
+
+
+def steady_hold_update(frozen, run, speed_deg_s, release_deg_s=None,
+                       trigger_frames=None, hold_fraction=ROTATION_STEADY_HOLD_FRACTION):
+    """Advance the freeze state machine. Returns `(frozen, run)`.
+
+    FROZEN  -> needs `trigger_frames` CONSECUTIVE frames at or above the release
+               speed to let go. One fast frame is not enough; that is the point.
+    MOVING  -> refreezes as soon as the speed drops below the HOLD level, which is
+               lower than the release level, so the two thresholds hysterese and the
+               state cannot chatter on a speed hovering at the boundary.
+
+    ⚠ `speed_deg_s` is the RAW target's speed, never the smoothed output -- the
+    output is self-referential and the cube would lock solid.
+    """
+    n = int(ROTATION_STEADY_FREEZE_FRAMES if trigger_frames is None else trigger_frames)
+    if n <= 0:
+        return False, 0                      # mode off: never frozen
+    hi = float(ROTATION_STEADY_RELEASE_DEG_S if release_deg_s is None else release_deg_s)
+    lo = hi * max(0.0, min(1.0, float(hold_fraction)))
+    if speed_deg_s is None or speed_deg_s != speed_deg_s:
+        return frozen, 0                     # unknown speed changes nothing
+    sp = max(0.0, float(speed_deg_s))
+    ok = sp >= hi
+    if frozen:
+        run = run + 1 if ok else 0
+        return (False, 0) if run >= n else (True, run)
+    return (True, 0) if sp < lo else (False, 0)
+
+
 def frame_dt_ms(now_ms, last_ms, max_dt_ms=ROTATION_SLERP_MAX_DT_MS):
     """Milliseconds since the previous frame, clamped. None when unknowable.
 
