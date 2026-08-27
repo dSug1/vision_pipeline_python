@@ -2149,9 +2149,14 @@ _steady_frozen = {}
 _steady_run = {}
 _steady_prev_pts = {}
 _steady_prev_deltas = {}
+# ⭐ TRANSLATION's own freeze state -- same rule, same numbers, separate flag,
+# because a hand can turn without travelling and the reverse.
+_steady_pos_frozen = {}
+_steady_pos_run = {}
 
 
-def _stamp_steady_speed(handedness, hand_quat, now_ms, prev_ms, landmarks=None):
+def _stamp_steady_speed(handedness, hand_quat, now_ms, prev_ms, landmarks=None,
+                        grip_px=None, prev_grip_px=None):
     """Feed this HAND's RAW rotation speed into its envelope. ⭐ Mirrors
     `HandsTriggeredActions._stamp_steady_speed` exactly (N6 in spirit: one rule,
     and `parity_replay` is what proves the two copies agree)."""
@@ -2175,6 +2180,14 @@ def _stamp_steady_speed(handedness, hand_quat, now_ms, prev_ms, landmarks=None):
         _steady_frozen[handedness], _steady_run[handedness] = _HS_const.steady_hold_update(
             _steady_frozen.get(handedness, True), _steady_run.get(handedness, 0), speed,
             coherence=_coh)
+        # ⭐ TRANSLATION, same rule, grip speed in px/s -- see production's copy.
+        if _HS_const.TRANSLATION_STEADY and grip_px is not None and prev_grip_px is not None:
+            _pspeed = math.hypot(grip_px[0]-prev_grip_px[0],
+                                 grip_px[1]-prev_grip_px[1]) * 1000.0 / dt
+            (_steady_pos_frozen[handedness],
+             _steady_pos_run[handedness]) = _HS_const.steady_hold_update(
+                _steady_pos_frozen.get(handedness, True),
+                _steady_pos_run.get(handedness, 0), _pspeed, coherence=_coh)
     _steady_prev_hand_quat[handedness] = hand_quat
     if landmarks:
         _steady_prev_pts[handedness] = landmarks
@@ -2523,7 +2536,7 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
         # same quantity. Anything else and `parity_replay` diverges, which is how the
         # per-arm version was caught.
         _stamp_steady_speed(handedness, hand_quat_now, now_ms, state.last_frame_ms,
-                            data.get("pixel_landmarks"))
+                            data.get("pixel_landmarks"), hand_pos, _prev_grip_px)
 
         # ⭐ 4.2: this frame's absolute hand depth, stamped upstream by
         # `_update_snap_depth` so one estimator serves every arm. ABSENT means a
@@ -2699,6 +2712,13 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                         hand_pos[0] + cube.grab_grip_offset[0],
                         hand_pos[1] + cube.grab_grip_offset[1],
                     )
+                    # ⛔ FROZEN: no movement at all, mirroring production exactly.
+                    if (_HS_const.ROTATION_STEADY_FREEZE_FRAMES > 0
+                            and _HS_const.TRANSLATION_STEADY
+                            and _steady_pos_frozen.get(handedness, False)):
+                        _sz = state.projected_size_of(cube)
+                        new_center = (cube.position[0] + _sz / 2.0,
+                                      cube.position[1] + _sz / 2.0)
                 else:
                     weighted_now = _weighted_position(
                         cube.grab_landmark_weights, data["pixel_landmarks"])

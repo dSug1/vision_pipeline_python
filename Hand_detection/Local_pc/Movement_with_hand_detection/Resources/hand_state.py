@@ -222,7 +222,10 @@ def steady_speed_envelope(previous_env, speed_deg_s, dt_ms):
 # hand creeps below the threshold the gap accumulates and is paid back as a JUMP on
 # release. That is inherent to "absolutely no movement" and is the reason this is a
 # mode rather than the default.
-ROTATION_STEADY_FREEZE_FRAMES = 0      # 0 = off (smooth ramp); N = freeze, N-frame trigger
+# ✅ SETTLED BY THE OWNER 2026-08-27: 4500 / 80 / 1 / 0.60, after eight live
+# sessions. ⚠ 1 frame, not 2: the two-frame trigger was rejected for making the
+# rotation jerky, and the coherence gate below is what makes one frame enough.
+ROTATION_STEADY_FREEZE_FRAMES = 1      # 0 = off (smooth ramp); N = freeze, N-frame trigger
 
 
 # ⭐⭐⭐ PER-LANDMARK DIRECTIONAL COHERENCE -- the owner's mechanism, 2026-08-27:
@@ -255,7 +258,7 @@ ROTATION_STEADY_FREEZE_FRAMES = 0      # 0 = off (smooth ramp); N = freeze, N-fr
 # i.e. the same noise rejection with no second frame, and far more of the real
 # turning caught.
 COHERENCE_MIN_PX = 0.75        # below this a landmark has no meaningful direction
-COHERENCE_FRACTION = 0.0       # 0 = gate OFF. 0.6 is the measured working value.
+COHERENCE_FRACTION = 0.60      # 0 = gate OFF. ✅ 0.60 settled by the owner.
 
 
 def landmark_coherence(points, prev_points, prev_deltas, min_px=COHERENCE_MIN_PX):
@@ -287,6 +290,30 @@ def landmark_coherence(points, prev_points, prev_deltas, min_px=COHERENCE_MIN_PX
         if dx * prev_deltas[i][0] + dy * prev_deltas[i][1] > 0.0:
             agree += 1
     return (agree / float(moving) if moving else 0.0), deltas
+
+
+# ⭐⭐ TRANSLATION USES THE SAME RULE AND THE SAME NUMBERS (owner, 2026-08-27:
+# *"can you implement the same for translation (same values as the sliders for
+# translation, to avoid growing the number of sliders)"*).
+#
+# ⭐ IT IS NOT A COINCIDENCE THAT ONE THRESHOLD SERVES BOTH, it was measured. The
+# grip point's speed in PIXELS/S and the hand's rotation speed in DEGREES/S have
+# nearly the same distribution while a cube is held:
+#
+#             p50      p75      p90
+#   rotation   27       64      177   deg/s
+#   grip       26       53      117   px/s
+#
+# So `RELEASE = 80` freezes below 36 in either unit, and covers 81.8% of the frames
+# where the hand is rotationally still. ⚠ If the camera resolution or the working
+# distance changes the pixel figures move and the rotation ones do not -- at which
+# point this shared threshold needs re-measuring, not re-deriving.
+#
+# ⛔ `steady_hold_update` is deliberately UNIT-AGNOSTIC: it compares a speed to a
+# threshold and counts frames. Feeding it px/s instead of deg/s is the whole port.
+# The COHERENCE input is literally the same number for both -- the hand either is
+# or is not moving one way, and that fact does not belong to one channel.
+TRANSLATION_STEADY = True
 
 
 def steady_hold_update(frozen, run, speed_deg_s, release_deg_s=None,

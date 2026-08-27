@@ -1300,6 +1300,11 @@ _steady_run: Dict[str, int] = {h: 0 for h in TRACKED_HANDS}
 # than in `hand_state`, which owns the rule and keeps no state of its own.
 _steady_prev_pts: Dict[str, Optional[list]] = {h: None for h in TRACKED_HANDS}
 _steady_prev_deltas: Dict[str, Optional[list]] = {h: None for h in TRACKED_HANDS}
+# ⭐ The TRANSLATION half: same rule, same numbers, its own state. Separate from the
+# rotation state because a hand can be turning without travelling and the reverse --
+# sharing one flag would freeze the wrong channel.
+_steady_pos_frozen: Dict[str, bool] = {h: True for h in TRACKED_HANDS}
+_steady_pos_run: Dict[str, int] = {h: 0 for h in TRACKED_HANDS}
 
 
 def _rotation_slerp_factor(now_ms: Optional[float], handedness: Optional[str] = None) -> float:
@@ -1341,7 +1346,7 @@ def _quat_angle_deg(a, b) -> float:
 
 
 def _stamp_steady_speed(handedness: str, hand_quat, now_ms: Optional[float],
-                        landmarks=None) -> None:
+                        landmarks=None, grip_px=None, prev_grip_px=None) -> None:
     """Feed this HAND's RAW rotation speed into its envelope. Once per hand, per frame.
 
     ⛔ RAW, never the cube's smoothed orientation: measuring the output is
@@ -1370,6 +1375,14 @@ def _stamp_steady_speed(handedness: str, hand_quat, now_ms: Optional[float],
         _steady_frozen[handedness], _steady_run[handedness] = hand_state.steady_hold_update(
             _steady_frozen.get(handedness, True), _steady_run.get(handedness, 0), speed,
             coherence=_coh)
+        # ⭐ TRANSLATION, on the same rule with the grip point's speed in px/s.
+        if hand_state.TRANSLATION_STEADY and grip_px is not None and prev_grip_px is not None:
+            _pspeed = math.hypot(grip_px[0] - prev_grip_px[0],
+                                 grip_px[1] - prev_grip_px[1]) * 1000.0 / dt
+            (_steady_pos_frozen[handedness],
+             _steady_pos_run[handedness]) = hand_state.steady_hold_update(
+                _steady_pos_frozen.get(handedness, True),
+                _steady_pos_run.get(handedness, 0), _pspeed, coherence=_coh)
     _steady_prev_target[handedness] = hand_quat
     if landmarks:
         _steady_prev_pts[handedness] = landmarks
@@ -1646,7 +1659,8 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
         # ⭐ ONCE PER HAND, PER FRAME, from the HAND's own orientation -- before any
         # cube is touched, so a hand holding two cubes stamps exactly once and the
         # debug tool can do the identical thing at the identical point.
-        _stamp_steady_speed(handedness, hand_quat_now, now_ms, landmarks)
+        _stamp_steady_speed(handedness, hand_quat_now, now_ms, landmarks,
+                            hand_pos, _prev_grip_px)
 
         # ⭐ handinput: the pose this frame ACTUALLY produced, before any of it
         # reaches a cube. `hand_quat_now` is the same quaternion the grab-delta
@@ -1858,6 +1872,16 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                     hand_pos[0] + cube.grab_grip_offset[0],
                     hand_pos[1] + cube.grab_grip_offset[1],
                 )
+                # ⛔ FROZEN: the object does not move AT ALL, the same way the
+                # rotation does not. ⚠ Applied to `new_center` rather than by
+                # skipping the block, so the offset walk above still runs -- freezing
+                # the alignment as well would strand a cube grabbed off-centre.
+                if (hand_state.ROTATION_STEADY_FREEZE_FRAMES > 0
+                        and hand_state.TRANSLATION_STEADY
+                        and _steady_pos_frozen.get(handedness, False)):
+                    _sz = cube_window.projected_size_of(cube)
+                    new_center = (cube.position[0] + _sz / 2.0,
+                                  cube.position[1] + _sz / 2.0)
             else:
                 weighted_now = _weighted_position(cube.grab_landmark_weights, landmarks)
                 new_center = (
