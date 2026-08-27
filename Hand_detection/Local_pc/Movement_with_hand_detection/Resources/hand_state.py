@@ -57,12 +57,6 @@ contract as `palm_geometry.py` / `hand_blocks.py` / `hand_identity.py`. Golden
 vectors before the port exists (U3).
 """
 
-# ⚠ The module's FIRST stdlib import: `steady_speed_envelope`'s decay is
-# time-based, which needs `exp` (`L1` -- a per-frame factor's feel moves with the
-# camera). Everything else here is pure arithmetic, which is why there was nothing
-# to import until now. ✅ `math` is stdlib, so the port contract is unaffected.
-import math
-
 
 # The three values of `quality.trackingState` (spec §2, added 2026-08-21).
 TRACKING = "TRACKING"
@@ -138,8 +132,18 @@ ROTATION_STEADY_HOLD_FRACTION = 0.45
 # ⛔ A turn STARTS at zero speed. Any threshold on the instantaneous speed is
 # therefore still fully damped for the first frame or two of a deliberate rotation
 # -- exactly the onset lag being complained about. So the envelope jumps to any new
-# maximum AT ONCE and only decays back down over this time constant: one fast frame
-# releases the damper, and it re-engages only after the hand has genuinely settled.
+# maximum AT ONCE and only falls back gradually: one fast frame releases the damper,
+# and it re-engages only after the hand has genuinely settled.
+#
+# ⭐ How long the envelope takes to fall by one whole RELEASE threshold. A LINEAR
+# release, not an exponential one, and that is deliberate twice over:
+#   ✅ it keeps this module's "imports NOTHING" property, which
+#      `verify_hand_state.py` asserts as a port-contract check and which an `exp`
+#      would have quietly cost (it did: the first version failed that vector);
+#   ⭐ and a fixed rate gives a PREDICTABLE hold time, which is what an envelope
+#      follower wants -- an exponential tail lingers unevenly depending on how fast
+#      the turn was.
+# ⚠ Still TIME-based, never per-frame (`L1`): the step is rate x dt.
 ROTATION_STEADY_ENVELOPE_MS = 250.0
 
 
@@ -159,8 +163,10 @@ def steady_speed_envelope(previous_env, speed_deg_s, dt_ms,
         return sp                                  # instant attack
     if dt_ms is None or dt_ms <= 0.0 or tau_ms <= 0.0:
         return previous_env
-    a = 1.0 - math.exp(-float(dt_ms) / float(tau_ms))
-    return previous_env + a * (sp - previous_env)  # slow release
+    # linear release: one whole RELEASE threshold per `tau_ms` of elapsed time
+    step = ROTATION_STEADY_RELEASE_DEG_S * (float(dt_ms) / float(tau_ms))
+    fell = previous_env - step
+    return sp if fell < sp else fell
 
 
 def steady_tau_ms(base_tau_ms, speed_deg_s,
