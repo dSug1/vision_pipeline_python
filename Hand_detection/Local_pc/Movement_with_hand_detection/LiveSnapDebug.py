@@ -267,7 +267,11 @@ SLIDERS = (
     # ⭐ Measured target: orientation moves 4.30 deg/frame median while held, which
     # at 15 fps is the shimmer. Position needs nothing -- the cube tracks the grip
     # point to within 0.1 px, so damping it would only lag translation.
-    ("STEADY ms", 400, 0, lambda n: float(n)),
+    # ⚠ RANGE RAISED 400 -> 1000 (owner, 2026-08-27). 400 was the STOP, not a
+    # choice: the take exited at exactly 400.0, so the useful range had not been
+    # bracketed. A slider whose maximum is the answer has not been explored yet --
+    # the same reason GRAB radius runs to 300%.
+    ("STEADY ms", 1000, 0, lambda n: float(n)),
     ("SLANT axis %", 100, 0, lambda n: n / 100.0),
     # ⭐⭐ THE OWNER'S OWN STRATEGY, as a whole estimator: the regression fitted
     # from the six takes (HALF 1) on a canonical frozen at the grab (HALF 2).
