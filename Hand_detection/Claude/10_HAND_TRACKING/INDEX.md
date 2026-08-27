@@ -74,6 +74,17 @@ per frame against palm-5's 0.004–0.070, so the fingers keep their own channel.
 ⛔ **Two retractions**: the "pitch collapse" and §4.3's pitch verdict — the
 established z-free truth under-reports pitch too, so the DECLARATION is the
 outlier, and the takes cannot ground-truth the 30–60° band.
+⛔⛔ **AND THE SCOPE IS NARROWER THAN THOSE NUMBERS SUGGEST.** Scored against
+independent, depth-free truth, `σ` reads **0.94–0.96 on a hand that barely moved**
+— a **17–20° static false-tilt floor** from landmark noise alone, because `arccos`
+is nearly vertical as `σ → 1`. Roll invariance survives (~7–8° across 40–103° of
+roll); small tilts do not. ⭐ **Large-angle correction, NOT a replacement for
+Horn** — which still covers the yaw lean, worst at 60–90°.
+✅✅ **THE ESTIMATOR IS BUILT** (2026-08-27): `Resources/palm_slant.py`, stdlib-only
+/numpy-free/clock-free, authority fade in from the start, golden vectors passing,
+`A10` and `parity_replay` unchanged. ⚠ **It is wired to nothing** — where the
+correction enters the shipped rotation path is the open question, and it needs its
+own `A10` measured **against** `planar_pnp`'s rejection.
 → [`spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md`](spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md)
 · [`../00_CORE/queue_notes/T6.md`](../00_CORE/queue_notes/T6.md)
 
@@ -93,7 +104,7 @@ yaw/palm-sink · `N12` pitch-crossing jump · `U5` occlusion coast.
 | ⭐⭐ **judge `F1`** — the transform from the fingertips | [`spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](spec/F1_FINGERTIP_TRANSFORM_SPEC.md) — the owner's specification, the palm-frame-deformation design, the acceptance bar, and the build order (all steps ✅ built; **the take is what is left**) |
 | understand the yaw lean before touching rotation | [`spec/ORIENTATION_DIAGNOSIS.md`](spec/ORIENTATION_DIAGNOSIS.md) |
 | **measure** a rotation change without being fooled | [`spec/ROTATION_ACCEPTANCE_AND_TRAPS.md`](spec/ROTATION_ACCEPTANCE_AND_TRAPS.md) — the baselines to beat, the six traps, the takes to use |
-| ⭐⭐ **fix orientation or touch the world landmarks** | [`spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md`](spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md) — drafted 2026-08-27, NOT built. Why the ratio table is a **lossy projection** (one number, two unknowns), the **bijective** slant/tilt replacement measured on the takes, remedies for its three degeneracies, and a strategy to repair `z` upstream. ⛔ Carries a **patent finding**: resolving the planar two-fold ambiguity via orientation sensors or viewing-angle range is patented |
+| ⭐⭐ **fix orientation or touch the world landmarks** | [`spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md`](spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md) — drafted 2026-08-27; ✅ **Strategy A's estimator BUILT the same day** (`Resources/palm_slant.py`), ⚠ **wired to nothing**; Strategy B untouched. ⛔ Read its top note first: a measured **17–20° false-tilt floor** makes this a large-angle correction, not a replacement for Horn. Why the ratio table is a **lossy projection** (one number, two unknowns), the **bijective** slant/tilt replacement measured on the takes, remedies for its three degeneracies, and a strategy to repair `z` upstream. ⛔ Carries a **patent finding**: resolving the planar two-fold ambiguity via orientation sensors or viewing-angle range is patented |
 | ⭐ **ANALYSE the 2D-ratio takes** (✅ all six recorded 2026-08-26) | [`spec/RATIO_TABLE_CALIBRATION_PROTOCOL.md`](spec/RATIO_TABLE_CALIBRATION_PROTOCOL.md) §4 — the analysis order and the decision thresholds. ⛔ Its two recording-time corrections are in the protocol and in [`../00_CORE/queue_notes/T6.md`](../00_CORE/queue_notes/T6.md) |
 | know how snap / translate / rotate / release behave and why | [`spec/SPEC_13_snap_rotate_release.md`](spec/SPEC_13_snap_rotate_release.md), [`spec/SPEC_14_manipulation.md`](spec/SPEC_14_manipulation.md) |
 | know the forward design below the gesture layer | [`spec/PERCEPTION_LAYER_SPEC.md`](spec/PERCEPTION_LAYER_SPEC.md) — ⚠ **read its §0.1 amendment log before any module body** |

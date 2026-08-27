@@ -1,12 +1,24 @@
 # SLANT/TILT ORIENTATION, AND REPAIRING `z` AT THE SOURCE
 
-> **STATUS** · drafted 2026-08-27, **not built** · **OWNS** · the two strategies that
-> come out of `T6` §4.3's split verdict
+> **STATUS** · drafted 2026-08-27 · **Strategy A's ESTIMATOR IS BUILT** the same day
+> (`Resources/palm_slant.py` + golden vectors); **not wired to anything, and
+> Strategy B is untouched** · **OWNS** · the two strategies that come out of `T6`
+> §4.3's split verdict
 > **READ IF** · you are about to touch orientation estimation or the world landmarks
 > **BACKGROUND** · [`../../00_CORE/queue_notes/T6.md`](../../00_CORE/queue_notes/T6.md)
 > §4.3, and [`RATIO_TABLE_CALIBRATION_PROTOCOL.md`](RATIO_TABLE_CALIBRATION_PROTOCOL.md)
 
-⛔ **Both strategies are drafts. Nothing here is measured except where it says so.**
+⛔ **Strategy B is still a draft. Nothing here is measured except where it says so.**
+
+⚠⚠ **§1.3(a)'s floor is now MEASURED, and it narrowed the scope of this whole
+document.** MediaPipe's landmark noise alone puts `σ` at **0.94–0.96 on a hand that
+has barely moved**, i.e. **17–20° of false tilt at rest**, because `arccos` is nearly
+vertical as `σ → 1`. Averaging the canonical over 31 frames recovers only 3°.
+⭐ So Strategy A is a **LARGE-ANGLE CORRECTION, not a replacement for Horn** — which
+is fine for what `T6` exists for (the yaw lean is worst at 60–90°, where the curve is
+steep) but is a real ceiling, and §1.5's acceptance criteria must be read with it.
+Measurement and consequences: [`../../00_CORE/queue_notes/T6.md`](../../00_CORE/queue_notes/T6.md),
+step 3 and step 2.
 
 ---
 
@@ -77,6 +89,8 @@ isotropic and the tilt direction is noise. Visible in the table above: pitch at 
 reads `7°` between neighbours reading `151°` and `177°`, because `σ₂/σ₁ = 0.940`
 there is almost no compression at all.
 
+✅ **BUILT** as `palm_slant.authority()`, `SLANT_NOISE_FLOOR = 0.94` →
+`SLANT_FULL = 0.80`, floor measured not chosen.
 ⭐ **Remedy: fade, do not gate.** A near-square palm has little bias to correct, so
 the correction's *authority* should rise with the slant — `smoothstep` on
 `(1 − σ₂/σ₁)`, exactly the pattern `tip_trim` already uses for `spread`/`scale`.
@@ -84,6 +98,9 @@ That turns the degeneracy into a non-event rather than a decision, and it is
 already a shipped, understood mechanism in this codebase.
 ⚠ The floor must be MEASURED from the six takes (where does the tilt stabilise?),
 not chosen. The table above suggests it is somewhere between 0.94 and 0.86.
+⭐ **RESOLVED 2026-08-27: 0.94**, and NOT from the six takes — they structurally
+cannot show it (medians over 40-frame holds at large declared angles). It came from
+`roll_card_axis_check_b` against `t5j`'s depth-free in-image ground truth.
 
 **(b) SIGN — the two-fold ambiguity.** `cos(slant)` cannot distinguish tilting
 toward from tilting away, and tilt is only defined mod 180°. This is the classical
@@ -230,8 +247,17 @@ live look in both tools (`§10.2` gate 5 — a live take closes it, not a harnes
 
 ## 3. Sequencing
 
-1. ⭐ **Cross-check the pitch collapse** against the established pitch harness.
-   Everything above leans on it, and it came from a one-day-old instrument.
-2. Measure Strategy A's slant floor and tilt stability from the six takes — free.
-3. Strategy A end to end, scored on declared angles.
-4. Strategy B only if A's orientation is good enough to build a `z` on.
+1. ✅ **Cross-check the pitch collapse** against the established pitch harness.
+   ⛔ **DONE, and the claim was RETRACTED**: the established z-free witness
+   under-reports pitch too, so the **declaration** is the outlier, not Horn. The
+   takes cannot ground-truth the 30–60° band at all.
+2. ✅ **Slant floor and tilt stability** — done, see the ⚠⚠ note at the top.
+   It cost the generality of this strategy and was worth knowing first.
+3. ✅ **The estimator** — `Resources/palm_slant.py` + `analysis/verify_palm_slant.py`,
+   2026-08-27. ⚠ Built and gated; **wired to nothing**.
+4. ⏭ **NEXT: where the correction enters.** Blending against Horn changes the
+   shipped rotation path, so it needs its own `A10`, measured **against**
+   `planar_pnp`'s rejection. The sign ambiguity (§1.3(b)) and the edge-on reuse of
+   `DR-2`'s band are unimplemented and gate this step.
+5. ⏸ Strategy B only if A's orientation is good enough to build a `z` on — and
+   the floor above is a direct argument that it may not be.
