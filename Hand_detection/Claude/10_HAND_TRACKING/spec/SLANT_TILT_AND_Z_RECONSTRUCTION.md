@@ -266,6 +266,6 @@ live look in both tools (`§10.2` gate 5 — a live take closes it, not a harnes
    axis wander flat-to-improved. ✅ §1.3(b)'s sign ambiguity is handled by remedy 2
    (the existing palm/back cue) and §1.3(c)'s edge-on band by reusing
    `edge_on_measure`, as both said to. ⏭ The remaining gate is §1.5's item 3, the
-   live look — `slant_rig.bat`.
+   live look — `slant_rig.bat` (ARCHIVED 2026-08-27 to `_archive/launchers/`; the `--slant-rig` flag is still live).
 5. ⏸ Strategy B only if A's orientation is good enough to build a `z` on — and
    the floor above is a direct argument that it may not be.
