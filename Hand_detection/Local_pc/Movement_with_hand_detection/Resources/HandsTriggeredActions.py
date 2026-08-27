@@ -1302,6 +1302,21 @@ def _rotation_slerp_factor(now_ms: Optional[float], handedness: Optional[str] = 
     return 1.0 - math.exp(-dt / tau)
 
 
+def _quat_angle_deg(a, b) -> float:
+    """Angle between two unit quaternions, in degrees.
+
+    ⚠ Local because this module has `_quat_multiply`/`_quat_conjugate` but no angle
+    helper, and the first version of `_stamp_steady_speed` called a
+    `quat_angle_deg` that does not exist here -- a NameError on the first held
+    frame. ⛔ `abs(dot)` because q and -q are the SAME rotation; without it a
+    hemisphere flip reads as a 180 deg jump and would release the damper every time.
+    """
+    d = abs(sum(x * y for x, y in zip(a, b)))
+    if d > 1.0:
+        d = 1.0
+    return math.degrees(2.0 * math.acos(d))
+
+
 def _stamp_steady_speed(handedness: str, target_quat, now_ms: Optional[float]) -> None:
     """Feed this hand's RAW target speed into its envelope.
 
@@ -1312,7 +1327,7 @@ def _stamp_steady_speed(handedness: str, target_quat, now_ms: Optional[float]) -
     prev = _steady_prev_target.get(handedness)
     if prev is not None and now_ms is not None and _last_frame_ms is not None:
         dt = min(max(1e-3, now_ms - _last_frame_ms), ROTATION_SLERP_MAX_DT_MS)
-        speed = quat_angle_deg(prev, target_quat) * 1000.0 / dt
+        speed = _quat_angle_deg(prev, target_quat) * 1000.0 / dt
         _steady_env[handedness] = hand_state.steady_speed_envelope(
             _steady_env.get(handedness), speed, dt)
     _steady_prev_target[handedness] = target_quat
