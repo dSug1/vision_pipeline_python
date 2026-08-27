@@ -44,18 +44,14 @@ name.** They are the record, not the briefing.
 
 ## Where it stands, in five lines
 
-✅✅ **`F1` is SHIPPED (2026-08-27)** — the object is carried by the fingertip
-barycentre, settles onto it only while the hand moves, and is grabbed inside its
-projected footprint. ⛔ The rotation **trim was removed**: §10.1 measured it
-non-monotonic in the declared finger angle at every setting.
-**Next build: `T6` §4.3, the transfer test** — the protocol's own deciding test,
-desk work, no camera.
-**`T6` became a regression.** The ratio table is dead (it is a lossy projection);
-**slant/tilt fitted from the six takes beats Horn on both axes**, is bijective, and
-the owner's freeze-at-grab architecture is validated. Next: an empirical
-composition fit, then build the estimator, then score it where the ground truth
-owes nothing to a declared angle.
-**Open show-stopper**: the **yaw lean** (~27° at a 60–90° hand turn).
+✅✅ **`F1` and the rendering rebuild `R1` are SHIPPED (2026-08-27)** — the object is
+carried by the fingertip barycentre, grabbed inside its projected footprint, and
+occludes the hand by one depth rule in both tools. ⛔ The rotation **trim was
+removed**, and `T6`'s two orientation builds were **live-rejected**: better on the
+lean, worse on the tail — which has decided every verdict.
+**Open show-stopper**: the **yaw lean** (~27° at a 60–90° hand turn), still unfixed.
+**The next build is NOT chosen.** ⭐ By [`00_CORE/DECISIONS.md`](00_CORE/DECISIONS.md)
+the **platform decision** is now due — it was sequenced right after `F1`, and `F1` shipped.
 Full status: [`00_CORE/QUEUE.md`](00_CORE/QUEUE.md)'s YOU-ARE-HERE block.
 Full narrative: [`10_HAND_TRACKING/history/SESSION_LOG.md`](10_HAND_TRACKING/history/SESSION_LOG.md).
 

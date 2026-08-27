@@ -10,6 +10,184 @@ block here is superseded and marked so.
 
 ⚠ New entries go **above** the verbatim block below, never inside it.
 
+⚠ **2026-08-28 — the three `2026-08-27` blocks were RE-ORDERED, not rewritten.** Two
+sat below the 08-26 entries and one had been appended *below* the verbatim block;
+newest-first is restored, the entry bodies are byte-identical, and
+`verify_split.py`'s VERBATIM range is unchanged.
+
+---
+
+## 2026-08-27 (evening) — rendering rebuilt and shipped; `T6`'s two estimators live-rejected
+
+⭐ Two threads ran in one session. One shipped, one died. Full dossiers:
+[`../../00_CORE/queue_notes/R1.md`](../../00_CORE/queue_notes/R1.md) and
+[`../../00_CORE/queue_notes/T6.md`](../../00_CORE/queue_notes/T6.md).
+
+### What shipped (`R1`)
+
+`depth_order.py` — ONE occlusion rule for every object, per-landmark depth,
+per-segment bone occlusion, a SOLID near-face occluder, landmarks in PRODUCTION for
+the first time, `l`/`v` display toggles, the cube's depth anchored on the fingertip
+barycentre, and a FREEZE damper for rotation AND translation at `RELEASE 60 /
+FREEZE 1`.
+
+### What died (`T6`)
+
+Both orientation builds, live-rejected the day they were built — the axis
+correction (*"discontinuities everywhere"*) and the owner's own halves 1+2
+(*"much worse than panel 1"*). ⭐⭐ **The scores were GOOD**: halves 1+2 produced the
+best yaw this project has measured (lean 27.2° → **8.6°**) and were rejected
+anyway, because the per-frame orientation jump p95 went 12.6° → 30.3°. **The tail
+decides the feel, every time.**
+
+### ⭐⭐⭐ The method rules earned, and they generalise
+
+1. **A corpus whose MOTION does not match the product's cannot validate an
+   estimator for the product.** Every `T6` take is an OPEN hand holding a declared
+   angle; the game GRIPS. Every offline score in that row was earned on a motion
+   the product never performs. ⚠ The gap was named out loud before the first wiring
+   and then not closed — twice. Sibling of `B4`.
+2. **Measure the channel you are about to change, not the one that is easy.** The
+   damper's first metric was per-frame axis WANDER on smooth instructed sweeps —
+   the one motion that cannot make a gate chatter. It read "no jitter cost" for a
+   build the owner rejected on sight.
+3. **A good MEASURE is not automatically a good TRIGGER.** The Frobenius coherence
+   separates still from slow-turning better than anything else tried, and still
+   loses as a release test, because it answers "moving somehow" when the question
+   is "moving how much".
+4. **Ordering can be a defect.** The palm/back occlusion asymmetry was not
+   MediaPipe's `z` — it was the cube taking its **x,y** from the fingertips and its
+   **z** from the palm.
+
+### ⚠ Mistakes worth not repeating
+
+* A **verify FAIL was committed** once before being fixed. The suite is only worth
+  running if a FAIL stops the commit.
+* **Two claims retracted**: palm-forward fingertip `z` (an artifact of splitting a
+  TWO-HAND take by a chirality-dependent cue — `U7`'s error class again) and the
+  whole-hand depth-reversal hypothesis (refuted by a chirality check needing no
+  ground truth).
+* **Stripping code broke two PRE-EXISTING constants** unrelated to the removal.
+  Restored verbatim from git. ⭐ When deleting a block, diff what left.
+* Two dead subsystems were found **computing every frame with the result
+  discarded**. Parking means removing the cost, not just the effect.
+
+### ⭐ What `T6` gave the yaw question on its way out
+
+The palm quad's own `z` spread measures **0.0658 m face-on and 0.0681 m at 90°** —
+essentially constant, where it should run from ~0 to ~its own width. **Horn's `z`
+input carries almost no yaw information at all.** That is the 24.9° finding by an
+independent route, and the yaw lean remains UNFIXED.
+
+---
+
+## 2026-08-27 (day) — the ratio table dies, a regression replaces it, and the owner's architecture is validated
+
+⭐⭐⭐ **`T6` STOPPED BEING A TABLE.** The owner's bijectivity question is what
+killed it: `Rwl` measures compression along ONE fixed direction, so under combined
+rotation it carries `cos(yaw)/cos(pitch)` — one number, two unknowns. ⛔ That is a
+**lossy projection**, not a weak ratio, and no pair of fixed lengths recovers what
+it discards. It explains §4.1's cross-talk of ~1.0 and §4.3's dead yaw transfer at
+a stroke.
+
+⭐ **The replacement is fitted, not derived** — the owner's second correction:
+*"start from regression from the data directly."* Every closed form tried omitted
+something real (thickness, the knuckle bow, perspective) and the data refused it. A
+regression absorbs all of them because they are present in the frames it is fitted
+to. Slant/tilt from the trimmed affine SVD, **beating Horn on both axes: yaw 8.7°
+vs 11.5°, pitch 17.6° vs 30.7°** — and bijective by construction.
+
+⭐⭐ **AND THE OWNER'S ARCHITECTURE IS VALIDATED**: freeze a matrix at grab,
+compose, invert, subtract. It works for a reason that was not obvious — **the
+cube's rotation is already grab-relative, so the absolute error at grab cancels.**
+⛔ The composition must be MULTIPLICATIVE (`σ_abs = σ_rel × σ₀`); done additively it
+scores 20.3° on yaw, worse than Horn. The composition IS the trick.
+
+⛔⛔ **FOUR THINGS I GOT WRONG AND THE OWNER CAUGHT OR THE DATA DID:**
+
+1. **"There is no reason it should lose on the back half"** — right. The cause was
+   my own data partition: splitting exclusively at 90° left the back branch with
+   three angles, so a hold-out had to EXTRAPOLATE and clamped at exactly 30.0°. I
+   had blamed `T1` (back-of-hand quality) from plausibility. Sharing the 90° knot
+   fixed it: yaw 12.3° → 8.7°.
+2. **Leave-one-DEPTH-out scored 1.2° and was meaningless** — the 30° grid means the
+   held-out angle is present at the other depths, so a monotone fit BINS to it.
+   Caught before reporting. Only holding out the ANGLE asks it to interpolate.
+3. **The exact-C1 cubic mend was rejected by measurement** — it fixed the
+   extrapolation but cost the front half badly (yaw 60°: 1.7° → 6.4°). Two
+   parameters per branch cannot follow the real curve. ⭐ Flexibility was doing more
+   work than smoothness.
+4. **The "pitch collapse" was retracted** — the established z-free ground truth
+   under-reports pitch too, so the DECLARATION is the outlier, and §4.3's pitch
+   verdict went with it. The takes cannot ground-truth the 30–60° band at all.
+
+⭐⭐ **THE FINDING THAT OUTLIVES THE ROW: the landmark set matters more than the
+model.** No-thumb + 25% trim halves the cross-take feature spread against the
+palm-5 that every earlier attempt used (0.067 vs 0.162). ⛔ **But it does not
+survive a gripping hand** — under grip the finger feature jitters 0.013–0.458 per
+frame against palm-5's 0.004–0.070. So palm-only for orientation, fingers as their
+own channel, which is the split the owner proposed independently.
+
+⚠ **One assumption is still smuggled in**: the multiplicative composition
+re-imports the orthographic `cos` model the regression exists to avoid. The
+empirical fix — a 2-D fit on hold PAIRS — is next and needs no new take.
+
+---
+
+## 2026-08-27 (dawn) — `F1` ships, the trim is removed, and parity takes six fixes
+
+✅✅ **`F1` SHIPPED**: the object is carried by the **fingertip barycentre**,
+settles onto it with a walk that only advances while the hand moves and never
+out-runs it, has its depth **anchored to the hand at every grab**, and is picked up
+only inside the object's **projected footprint**. Settled live over two evenings.
+
+⛔⛔ **THE ROTATION TRIM WAS REMOVED, AND THAT IS THE RESULT WORTH REMEMBERING.**
+`§10.1` — a metric the project did not have, built this session with its own
+recorder — measured the trim **non-monotonic in the declared finger angle at every
+gain and clamp**: 15.71° / 12.56° / 20.29° for a declared 10 / 20 / 40. At 20° of
+finger rotation it moved the object LESS than at 10°. The clamp had been masking
+that by pinning every answer to exactly 10.00°.
+
+⚠ **It retracts the rig's headline.** The 21.2°-vs-32.9° lean improvement was a
+constant 10° offset that happened to sit in a helpful direction — not the fingers
+steering the cube. ⛔ A lower number is not a better answer when the thing producing
+it cannot be aimed. ⭐ Step 0's `M2` had already named the cause a day earlier: the
+rigid fit over five non-rigid points *tumbles*.
+
+⚠⚠ **The owner asked for the trim removed TWICE and was refused both times**, on
+the grounds that it would discard a measured improvement. The improvement was real
+and was not what it appeared to be. ⭐ The metric they asked for is what settled it
+— which is the entire argument for building §10.1 rather than shipping on feel.
+
+✅ **`A10` reproduces exactly** — yaw 14.5°/1.13 · pitch 5.5°/0.74 · roll 6.7°/1.02
+· **jitter p95 25.41°**. With the trim at gain 0 the rotation channel is
+byte-for-byte the shipped pipeline; measured anyway rather than argued. ⛔ Its
+harness had been crashing partway through the sweep on an aborted take, so the
+takes after it had never been measured and nothing flagged the half-run.
+
+✅ **`parity_replay` NO DIVERGENCE on four takes, after SIX fixes.**
+⭐⭐ **The reusable finding: every per-hand estimator must die with its track.**
+Three were missing that reset in the debug tool — absolute depth (reset a frame too
+early instead), the tip trim (invisible until the gain went to 1.0), and the
+relative depth baseline, which carried a **6% depth error** into the next grab and
+moved the object through the play-area clamp.
+⛔ The other three were HARNESS asymmetries, all the same rule that file had
+already recorded as having bitten four times: it never compared **orientation**,
+never passed **`rotation=`**, and never set **`slerp_mode`/`slerp_tau_ms`** (so it
+compared τ = 20 ms against the legacy 149 ms default).
+
+⭐ Two instruments were corrected only AFTER doing their job: the port-contract
+guard that refused a `now_ms` argument (the fix was a caller-supplied `dt`, not a
+weaker guard), and the orientation comparison, which now tests exact component
+equality because `2·acos(dot)` is singular at dot = 1.
+
+⭐ **`hand_state.frame_dt_ms`** lands as a shared, clamped frame interval — the
+owner expects to need `dt` elsewhere, and the estimator layer may not read a clock.
+It replaces a per-frame depth rate limit whose real meaning moved with the room's
+brightness: the `L1` defect, second occurrence.
+
+⭐ **Next: `T6` §4.3, the transfer test** — the protocol's own deciding test.
+
 ---
 
 ## 2026-08-26 — the licence questions, and a distribution duty nobody was discharging
@@ -225,115 +403,6 @@ both record tools and the parity harness. Owner ran both: *"debug working fine"*
 ⚠ **`N8` is re-opened and widened** — rule 3 had been suppressing part of it
 incidentally (it refused **8.3%** of free-hand frames). ⛔ Not to be answered with
 a facing gate; still routed to `B5` + `4.4`.
-
----
-
-## 2026-08-27 (late) — the ratio table dies, a regression replaces it, and the owner's architecture is validated
-
-⭐⭐⭐ **`T6` STOPPED BEING A TABLE.** The owner's bijectivity question is what
-killed it: `Rwl` measures compression along ONE fixed direction, so under combined
-rotation it carries `cos(yaw)/cos(pitch)` — one number, two unknowns. ⛔ That is a
-**lossy projection**, not a weak ratio, and no pair of fixed lengths recovers what
-it discards. It explains §4.1's cross-talk of ~1.0 and §4.3's dead yaw transfer at
-a stroke.
-
-⭐ **The replacement is fitted, not derived** — the owner's second correction:
-*"start from regression from the data directly."* Every closed form tried omitted
-something real (thickness, the knuckle bow, perspective) and the data refused it. A
-regression absorbs all of them because they are present in the frames it is fitted
-to. Slant/tilt from the trimmed affine SVD, **beating Horn on both axes: yaw 8.7°
-vs 11.5°, pitch 17.6° vs 30.7°** — and bijective by construction.
-
-⭐⭐ **AND THE OWNER'S ARCHITECTURE IS VALIDATED**: freeze a matrix at grab,
-compose, invert, subtract. It works for a reason that was not obvious — **the
-cube's rotation is already grab-relative, so the absolute error at grab cancels.**
-⛔ The composition must be MULTIPLICATIVE (`σ_abs = σ_rel × σ₀`); done additively it
-scores 20.3° on yaw, worse than Horn. The composition IS the trick.
-
-⛔⛔ **FOUR THINGS I GOT WRONG AND THE OWNER CAUGHT OR THE DATA DID:**
-
-1. **"There is no reason it should lose on the back half"** — right. The cause was
-   my own data partition: splitting exclusively at 90° left the back branch with
-   three angles, so a hold-out had to EXTRAPOLATE and clamped at exactly 30.0°. I
-   had blamed `T1` (back-of-hand quality) from plausibility. Sharing the 90° knot
-   fixed it: yaw 12.3° → 8.7°.
-2. **Leave-one-DEPTH-out scored 1.2° and was meaningless** — the 30° grid means the
-   held-out angle is present at the other depths, so a monotone fit BINS to it.
-   Caught before reporting. Only holding out the ANGLE asks it to interpolate.
-3. **The exact-C1 cubic mend was rejected by measurement** — it fixed the
-   extrapolation but cost the front half badly (yaw 60°: 1.7° → 6.4°). Two
-   parameters per branch cannot follow the real curve. ⭐ Flexibility was doing more
-   work than smoothness.
-4. **The "pitch collapse" was retracted** — the established z-free ground truth
-   under-reports pitch too, so the DECLARATION is the outlier, and §4.3's pitch
-   verdict went with it. The takes cannot ground-truth the 30–60° band at all.
-
-⭐⭐ **THE FINDING THAT OUTLIVES THE ROW: the landmark set matters more than the
-model.** No-thumb + 25% trim halves the cross-take feature spread against the
-palm-5 that every earlier attempt used (0.067 vs 0.162). ⛔ **But it does not
-survive a gripping hand** — under grip the finger feature jitters 0.013–0.458 per
-frame against palm-5's 0.004–0.070. So palm-only for orientation, fingers as their
-own channel, which is the split the owner proposed independently.
-
-⚠ **One assumption is still smuggled in**: the multiplicative composition
-re-imports the orthographic `cos` model the regression exists to avoid. The
-empirical fix — a 2-D fit on hold PAIRS — is next and needs no new take.
-
----
-
-## 2026-08-27 — `F1` ships, the trim is removed, and parity takes six fixes
-
-✅✅ **`F1` SHIPPED**: the object is carried by the **fingertip barycentre**,
-settles onto it with a walk that only advances while the hand moves and never
-out-runs it, has its depth **anchored to the hand at every grab**, and is picked up
-only inside the object's **projected footprint**. Settled live over two evenings.
-
-⛔⛔ **THE ROTATION TRIM WAS REMOVED, AND THAT IS THE RESULT WORTH REMEMBERING.**
-`§10.1` — a metric the project did not have, built this session with its own
-recorder — measured the trim **non-monotonic in the declared finger angle at every
-gain and clamp**: 15.71° / 12.56° / 20.29° for a declared 10 / 20 / 40. At 20° of
-finger rotation it moved the object LESS than at 10°. The clamp had been masking
-that by pinning every answer to exactly 10.00°.
-
-⚠ **It retracts the rig's headline.** The 21.2°-vs-32.9° lean improvement was a
-constant 10° offset that happened to sit in a helpful direction — not the fingers
-steering the cube. ⛔ A lower number is not a better answer when the thing producing
-it cannot be aimed. ⭐ Step 0's `M2` had already named the cause a day earlier: the
-rigid fit over five non-rigid points *tumbles*.
-
-⚠⚠ **The owner asked for the trim removed TWICE and was refused both times**, on
-the grounds that it would discard a measured improvement. The improvement was real
-and was not what it appeared to be. ⭐ The metric they asked for is what settled it
-— which is the entire argument for building §10.1 rather than shipping on feel.
-
-✅ **`A10` reproduces exactly** — yaw 14.5°/1.13 · pitch 5.5°/0.74 · roll 6.7°/1.02
-· **jitter p95 25.41°**. With the trim at gain 0 the rotation channel is
-byte-for-byte the shipped pipeline; measured anyway rather than argued. ⛔ Its
-harness had been crashing partway through the sweep on an aborted take, so the
-takes after it had never been measured and nothing flagged the half-run.
-
-✅ **`parity_replay` NO DIVERGENCE on four takes, after SIX fixes.**
-⭐⭐ **The reusable finding: every per-hand estimator must die with its track.**
-Three were missing that reset in the debug tool — absolute depth (reset a frame too
-early instead), the tip trim (invisible until the gain went to 1.0), and the
-relative depth baseline, which carried a **6% depth error** into the next grab and
-moved the object through the play-area clamp.
-⛔ The other three were HARNESS asymmetries, all the same rule that file had
-already recorded as having bitten four times: it never compared **orientation**,
-never passed **`rotation=`**, and never set **`slerp_mode`/`slerp_tau_ms`** (so it
-compared τ = 20 ms against the legacy 149 ms default).
-
-⭐ Two instruments were corrected only AFTER doing their job: the port-contract
-guard that refused a `now_ms` argument (the fix was a caller-supplied `dt`, not a
-weaker guard), and the orientation comparison, which now tests exact component
-equality because `2·acos(dot)` is singular at dot = 1.
-
-⭐ **`hand_state.frame_dt_ms`** lands as a shared, clamped frame interval — the
-owner expects to need `dt` elsewhere, and the estimator layer may not read a clock.
-It replaces a per-frame depth rate limit whose real meaning moved with the room's
-brightness: the `L1` defect, second occurrence.
-
-⭐ **Next: `T6` §4.3, the transfer test** — the protocol's own deciding test.
 
 ---
 
@@ -1378,68 +1447,3 @@ Optional and parallelisable at any time: **0.4** (predictor eval harness, S1) an
 ---
 
 <!-- VERBATIM-END -->
-
-
----
-
-# 2026-08-27 — rendering rebuilt and shipped; `T6`'s two estimators live-rejected
-
-⭐ Two threads ran in one session. One shipped, one died. Full dossiers:
-[`../../00_CORE/queue_notes/R1.md`](../../00_CORE/queue_notes/R1.md) and
-[`../../00_CORE/queue_notes/T6.md`](../../00_CORE/queue_notes/T6.md).
-
-## What shipped (`R1`)
-
-`depth_order.py` — ONE occlusion rule for every object, per-landmark depth,
-per-segment bone occlusion, a SOLID near-face occluder, landmarks in PRODUCTION for
-the first time, `l`/`v` display toggles, the cube's depth anchored on the fingertip
-barycentre, and a FREEZE damper for rotation AND translation at `RELEASE 60 /
-FREEZE 1`.
-
-## What died (`T6`)
-
-Both orientation builds, live-rejected the day they were built — the axis
-correction (*"discontinuities everywhere"*) and the owner's own halves 1+2
-(*"much worse than panel 1"*). ⭐⭐ **The scores were GOOD**: halves 1+2 produced the
-best yaw this project has measured (lean 27.2° → **8.6°**) and were rejected
-anyway, because the per-frame orientation jump p95 went 12.6° → 30.3°. **The tail
-decides the feel, every time.**
-
-## ⭐⭐⭐ The method rules earned, and they generalise
-
-1. **A corpus whose MOTION does not match the product's cannot validate an
-   estimator for the product.** Every `T6` take is an OPEN hand holding a declared
-   angle; the game GRIPS. Every offline score in that row was earned on a motion
-   the product never performs. ⚠ The gap was named out loud before the first wiring
-   and then not closed — twice. Sibling of `B4`.
-2. **Measure the channel you are about to change, not the one that is easy.** The
-   damper's first metric was per-frame axis WANDER on smooth instructed sweeps —
-   the one motion that cannot make a gate chatter. It read "no jitter cost" for a
-   build the owner rejected on sight.
-3. **A good MEASURE is not automatically a good TRIGGER.** The Frobenius coherence
-   separates still from slow-turning better than anything else tried, and still
-   loses as a release test, because it answers "moving somehow" when the question
-   is "moving how much".
-4. **Ordering can be a defect.** The palm/back occlusion asymmetry was not
-   MediaPipe's `z` — it was the cube taking its **x,y** from the fingertips and its
-   **z** from the palm.
-
-## ⚠ Mistakes worth not repeating
-
-* A **verify FAIL was committed** once before being fixed. The suite is only worth
-  running if a FAIL stops the commit.
-* **Two claims retracted**: palm-forward fingertip `z` (an artifact of splitting a
-  TWO-HAND take by a chirality-dependent cue — `U7`'s error class again) and the
-  whole-hand depth-reversal hypothesis (refuted by a chirality check needing no
-  ground truth).
-* **Stripping code broke two PRE-EXISTING constants** unrelated to the removal.
-  Restored verbatim from git. ⭐ When deleting a block, diff what left.
-* Two dead subsystems were found **computing every frame with the result
-  discarded**. Parking means removing the cost, not just the effect.
-
-## ⭐ What `T6` gave the yaw question on its way out
-
-The palm quad's own `z` spread measures **0.0658 m face-on and 0.0681 m at 90°** —
-essentially constant, where it should run from ~0 to ~its own width. **Horn's `z`
-input carries almost no yaw information at all.** That is the 24.9° finding by an
-independent route, and the yaw lean remains UNFIXED.

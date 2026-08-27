@@ -24,64 +24,62 @@ The binding one, restated: **A10 — measure or revert.**
 
 ---
 
-## ⭐⭐⭐ YOU ARE HERE (2026-08-27, late)
+## ⭐⭐⭐ YOU ARE HERE (2026-08-27, evening)
 
 ✅✅ **`F1` IS SHIPPED AND LIVE** — fingertip grip, `A1`'s motion-masked walk, depth
 anchoring at grab, footprint grab radius. ⛔ **The rotation TRIM was REMOVED**:
 §10.1 measured it non-monotonic in the declared finger angle at every gain and
 clamp. `A10` reproduces exactly, `parity_replay` clean on four takes.
 
-⭐⭐⭐ **AND `T6` TURNED INTO SOMETHING BETTER THAN A RATIO TABLE.**
+✅✅ **`R1` IS SHIPPED TO BOTH TOOLS** — depth-ordered occlusion as ONE rule for every
+object, per-landmark and per-SEGMENT bone occlusion, a SOLID near-face occluder, and
+⭐ **landmarks drawn in PRODUCTION for the first time**. A **FREEZE** damper ships for
+rotation AND translation (`RELEASE 60 / FREEZE 1`) — *damping is not stillness*, and
+three softer designs were live-rejected before it. ⛔ The defect the owner found by
+eye was OUR logic: cube **x,y** from the fingertips, cube **z** from the palm.
 
-**What was killed:** the ratio table itself. `Rwl` measures compression along ONE
-fixed direction, so under combined rotation it carries `cos(yaw)/cos(pitch)` — one
-number, two unknowns. ⛔ A **lossy projection**, not a weak ratio, which is why
-§4.1 measured cross-talk near 1.0 and §4.3's transfer came out dead on yaw.
+⛔⛔ **`T6` IS SPENT. BOTH LIVE BUILDS WERE OWNER-REJECTED THE DAY THEY WERE BUILT.**
+The ratio table died first (`Rwl` is a **lossy projection** — one number, two
+unknowns), and the slant/tilt regression that replaced it scored genuinely better
+than Horn on both axes. Then the axis correction drew *"the feel is very bad …
+discontinuities everywhere"*, and the owner's own halves 1+2 drew *"much worse than
+panel 1 … lot of jumps, lot of jitter"*.
 
-**What replaced it:** a **regression fitted from the takes**, on the classical
-**slant/tilt** pair from the trimmed affine SVD. Bijective by construction —
-monotone fit per branch, palm/back sign picks the branch, tilt picks the axis.
+⭐⭐ **THE SCORES WERE GOOD, WHICH IS THE POINT.** Halves 1+2 produced the best yaw
+this project has ever measured — **lean 27.2° → 8.6°** — and were rejected anyway,
+because per-frame orientation jump p95 went **12.6° → 30.3°** while the MEDIAN
+improved. **Smoother most of the time, occasionally much worse; the tail decides the
+feel, every time.** Three 2-D-shape estimators have now died of exactly that.
 
-| | MODEL | HORN |
-|---|---|---|
-| yaw (leave-one-angle-out) | **8.7°** | 11.5° |
-| pitch | **17.6°** | 30.7° |
-| yaw, canonical frozen at an arbitrary pose | **10.6°** | 11.7° |
-| pitch, same | **17.4°** | 25.9° |
+⭐⭐⭐ **THE METHOD RULE THIS COST, and it outlives the row: A CORPUS WHOSE MOTION
+DOES NOT MATCH THE PRODUCT'S CANNOT VALIDATE AN ESTIMATOR FOR THE PRODUCT.** All six
+`T6` takes are OPEN hands; the game GRIPS. Every offline score in that row was earned
+on a motion the product never performs, and the gap was named before the first wiring
+and not closed — twice.
 
-⭐ **THE OWNER'S ARCHITECTURE IS VALIDATED**: freeze a matrix at grab, compose
-**multiplicatively** (`σ_abs = σ_rel × σ₀`), invert, subtract. It works because the
-cube's rotation is ALREADY grab-relative, so the absolute error at grab cancels.
-⛔ Composed additively it scores 20.3° — worse than Horn. The composition is the
-whole trick.
+⛔ **THE GATE ON ANY FOURTH ATTEMPT OF THIS SHAPE**: demonstrate a per-frame
+orientation jump **at or under shipped Horn's, on a GRABBING take, BEFORE** any lean
+number is quoted. Nothing in this family has come within 1.8x. **The lean score is
+not the gate and never was.**
 
-⭐ **Three findings that outlive the row:**
-* **The landmark set matters more than the model** — no-thumb + 25% trim halves the
-  cross-take feature spread against the palm-5 every earlier attempt used.
-* ⛔ **But the finger gain does NOT survive a gripping hand**: under grip the
-  finger feature jitters 0.013–0.458 per frame against palm-5's 0.004–0.070. So
-  **palm-only for orientation, fingers as their own channel** — which is exactly
-  the split the owner proposed.
-* ⛔ **The pitch collapse was RETRACTED**, and with it §4.3's pitch verdict: the
-  established z-free ground truth under-reports pitch too, so the DECLARATION is
-  the outlier. The takes cannot ground-truth the 30–60° band at all.
+✅ **Nothing was reverted** — both builds defaulted to gain 0, production never
+constructed them, `parity_replay` is clean. `Resources/palm_slant.py`,
+`palm_slant_axis.py`, `palm_slant_pose.py` and their harnesses are kept and
+regenerable. ⭐ Strategy B (reconstruct `z` from a validated orientation) is
+**untouched and now unsupported**: it needs an orientation that survives live, and
+none does.
 
-⭐⭐⭐ **NEXT, IN ORDER — all desk work, no new take:**
-1. **Remove the last assumption.** The multiplicative composition re-imports the
-   orthographic `cos` model the regression exists to avoid. Fit
-   `(σ_rel, σ₀) → angle` **empirically** from hold PAIRS instead. Existing data.
-2. **Build the estimator** — `Resources/palm_slant.py`, stdlib-only and clock-free
-   per `CONSTRAINTS` §2, with golden vectors in the same change (§3).
-3. ⭐ **Validate it on INDEPENDENT takes with INDEPENDENT truth.** `t5j` grounds
-   roll by the in-image knuckle-row angle — no depth, no declaration — and `t5h`
-   carries the jitter bar. Scoring the new estimator there escapes the declared
-   angles entirely, which is the weakness every `T6` number still carries.
-4. Only then `A10`, `parity_replay`, and a live look in both tools.
-5. **Then Strategy B** — reconstruct `z` from the validated orientation, repairing
-   one input instead of the four consumers that each patch around it.
+⛔ **Still the owner's show-stopper: the yaw lean** (~27° at a 60–90° turn). `F1` did
+not fix it — the apparent improvement was the trim's constant offset, now removed.
 
-⛔ Still the owner's show-stopper: the **yaw lean**. `F1` did not fix it — the
-apparent improvement was the trim's constant offset, now removed.
+⭐⭐⭐ **THE NEXT BUILD IS NOT CHOSEN — it is the owner's call.** What is actually
+ready, with nothing blocking it:
+* ⭐ **The PLATFORM decision is DUE.** [`DECISIONS.md`](DECISIONS.md) sequenced it
+  *right after `F1`*, and `F1` has shipped. Everything renderer-shaped waits on it —
+  `U2`, `U12`, `T7`, the game layer — and `IS4` is its prerequisite.
+* **`B5` + `4.4`** — the grab signal from the finger arcs and the hand-open release
+  trigger, ONE project, and `N8` (⚠ re-opened and widened by `F1`) rides on it.
+* **`T1` / `T4` / `N12`** — the open pipeline defects, deliberately not next.
 
 ⭐ The full block, and every superseded one back to 2026-08-03, is
 [`10_HAND_TRACKING/history/SESSION_LOG.md`](../10_HAND_TRACKING/history/SESSION_LOG.md) — newest first.
