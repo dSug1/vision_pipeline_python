@@ -730,3 +730,76 @@ Judging an orientation filter needs **both** families, because each alone is gam
 
 Attempt 1 looked like a triumph on the first (>60: 589 → 0) while sitting **37°**
 from the truth on the second. **Any future orientation work must report both.**
+
+
+---
+
+# ⭐⭐ INDEX BROUGHT UP TO DATE (2026-08-27)
+
+Owner: *"there are lots of scripts and I am not sure they all belong here"*. An
+audit answered that, and the answer is mostly reassuring — but the reason the
+folder FELT unaccountable is real: **39 of the 123 scripts here, a third of the
+folder, were in no index at all.** That is fixed below.
+
+⭐ **What the audit found.** Every script was checked against every `.md`, `.py`,
+`.bat` and `.json` in the project. **Only four are never mentioned anywhere else**,
+and all four are legitimate: three are `verify_*` gates (they are run directly, so
+nothing needs to reference them) and one was written the same day. ⛔ **Nothing here
+is dead code.** The rest are the evidence trail the docs cite by path, so deleting
+them would break `REJECTED.md`, the queue notes and the postmortems.
+
+⚠ **The one thing actually removed was `__pycache__`** (~2.2 MB across four
+directories, git-ignored, regenerates). It still held `.pyc` files for modules that
+no longer exist at the root — stale by weeks.
+
+## Shipping gates — golden vectors (run before any port, `CONSTRAINTS` §3)
+
+`verify_block_predictor` · `verify_capture_drive` · `verify_dead_track_reset_parity`
+· `verify_debug_update_hands` · `verify_depth_order` · `verify_f1_grip_offstate` ·
+`verify_grip_align` · `verify_hand_tracks` · `verify_no_frozen_cube` ·
+`verify_object_extent` · `verify_offscreen_identity` · `verify_one_euro` ·
+`verify_palm_slant` · `verify_palm_slant_axis` · `verify_palm_slant_pose` ·
+`verify_planar_pnp` · `verify_state_follows_hand` · `verify_tip_trim`
+
+⭐ These are not investigations. Each is the artifact a JS/Swift/Kotlin port must
+reproduce, and each is dependency-free by design — no numpy, no camera, no
+recordings, no clock.
+
+## `parity_replay.py` — infrastructure, not an investigation
+
+Drives production's `on_hands_frame` and the debug tool's `update_hands` from the
+SAME recorded frames and names the first divergence. ⭐ Run it after ANY change that
+touches both tools; it is the guard `U6` exists for.
+
+## The `T6` orientation family (2026-08-26 → 27) — all measured, all live-REJECTED
+
+| script | what it answered |
+|---|---|
+| `t6_regression_fit.py` | the fitted `σ → angle` curves that replaced the dead ratio table |
+| `t6_composition_fit.py` | is the owner's freeze-at-grab composition multiplicative? (the data kept `α=β=1`) |
+| `t6_transfer_test.py` | does a table built at one depth serve another? (yaw: no) |
+| `t6_emit_table.py` | writes the fits out as `Resources/palm_slant_table.py` |
+| `t6_tilt_is_the_axis.py` | is `tilt` the in-image rotation axis? (yes — 10.4° vs Horn's 22.8°) |
+| `t6_axis_correction_ab.py` | the axis correction, `A10`-scored |
+| `t6_discontinuity_census.py` | ⛔ **why the owner rejected it** — 114 gate toggles, p95 jump 1.9x Horn |
+| `t6_smoothing_sweep.py` | can a time constant rescue it? (**no tau works**) |
+| `t6_pose_ab.py` | the owner's halves 1+2, scored on lean AND jitter together |
+| `occlusion_palm_vs_back.py` | why the per-landmark occlusion differs by hand side |
+
+⛔ **Read [`../../../Claude/10_HAND_TRACKING/REJECTED.md`](../../../Claude/10_HAND_TRACKING/REJECTED.md)
+before re-proposing anything this family touched.** Three estimators scored better
+on the lean and worse on the jitter tail, and the tail decided every verdict.
+
+## `F1` fingertips
+
+`f1_tip_census.py` (tip noise floor, 1.5 mm median) · `f1_trim_resolution.py`
+(§10.1 — the measurement that REMOVED the trim)
+
+## Older one-offs, kept for the audit trail
+
+`b2_block_separability` · `b3_block_gate_eval` · `b3_full_eval` · `b4_anchor_ab` ·
+`b4_orbit_and_sink_audit` · `calibrate_floors` · `m9_depth_anchors` · `u5_coast_ab`
+
+⚠ These predate the 2026-08-03 audit at the top of this file. **Its warnings apply
+to them**: several measured a pipeline that no longer exists. Read §"Bug 5" before
+quoting any number they print.
