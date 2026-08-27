@@ -269,11 +269,17 @@ class CubeWindow:
         # "unknown", which `depth_order` sorts FARTHEST -- so a hand whose depth
         # estimate has dropped out is covered by the cubes rather than covering them.
         self._hand_depths: Dict[str, float] = {}
+        # ⚠ Per-JOINT depth, one list per hand. Absent falls back to the hand's
+        # single depth, which is the coarser object-level behaviour rather than none.
+        self._hand_depths_per_landmark: Dict[str, list] = {}
         # ⭐ Owner, 2026-08-27. Same key ('l') and same default (ON) as the debug
         # tool's, so the habit transfers. ⛔ DISPLAY ONLY -- the landmarks are still
         # received, still drive every decision, and are still recorded; this changes
         # nothing but whether they are painted.
         self.show_landmarks = True
+        # ⚠ Rebuilt every frame by `_draw_object_3d`. A stale silhouette would
+        # occlude against where an object USED to be.
+        self._silhouettes = []
         large_size = cube_size * 2
         small_size = cube_size
         self.cubes: Dict[str, Cube] = {
@@ -467,6 +473,13 @@ class CubeWindow:
 
         visible_faces.sort(key=lambda f: f[0], reverse=True)  # farthest (largest z) first, nearest last/on top
 
+        # ⭐ The projected SILHOUETTE, for the per-landmark occlusion test. Convex,
+        # because a cube is -- which is what `point_in_convex` requires.
+        # ⚠ Taken from the vertices this method just projected, so the occluder and
+        # the drawing cannot disagree about where the object is.
+        self._silhouettes.append(
+            (depth_order.convex_hull([xy for xy, _z in projected]), obj.depth_m))
+
         edge_color = SNAP_BORDER_COLOR if obj.owner is not None else CUBE_EDGE_COLOR
         edge_width = SNAP_BORDER_WIDTH if obj.owner is not None else 1
         for _avg_z, color, pts in visible_faces:
@@ -475,7 +488,8 @@ class CubeWindow:
             pygame.draw.polygon(self.screen, edge_color, int_pts, edge_width)
 
     def set_hand_landmarks(self, by_hand: Dict[str, list],
-                           depths: Optional[Dict[str, float]] = None) -> None:
+                           depths: Optional[Dict[str, float]] = None,
+                           per_landmark: Optional[Dict[str, list]] = None) -> None:
         """This frame's landmarks per hand, in webcam-frame pixels. DISPLAY ONLY.
 
         ⚠ Called before `pump_and_draw`. Passing `{}` (or never calling it) simply
@@ -485,23 +499,48 @@ class CubeWindow:
         """
         self._hand_landmarks = by_hand or {}
         self._hand_depths = depths or {}
+        self._hand_depths_per_landmark = per_landmark or {}
 
     def _draw_one_hand(self, name: str) -> None:
-        """One hand's skeleton. Depth ordering is the CALLER's job (`pump_and_draw`)."""
+        """One hand's skeleton, occluded PER LANDMARK and PER BONE SEGMENT.
+
+        ⭐⭐ Owner, 2026-08-27. The object-level rule cannot describe a gripping
+        hand: some fingers are in front of the cube and some behind, and a single
+        bone can cross from one to the other halfway along its length.
+        ⛔ So each JOINT is tested at its own depth, and each BONE is split into the
+        pieces of it that are still in front. `depth_order` owns the geometry so the
+        debug tool does exactly the same thing.
+        """
         if not self.show_landmarks:
             return
-        for _n, pts in ((name, self._hand_landmarks.get(name)),):
-            if not pts or len(pts) < 21:
+        pts = self._hand_landmarks.get(name)
+        if not pts or len(pts) < 21:
+            return
+        try:
+            fpts = [(float(p[0]), float(p[1])) for p in pts]
+        except (TypeError, IndexError):
+            return
+        depths = self._hand_depths_per_landmark.get(name) or []
+        if len(depths) < len(fpts):
+            # ⚠ No per-landmark depth this frame: fall back to the HAND's one depth
+            # for every joint. That is the object-level behaviour, which is correct,
+            # just coarser -- never a reason to skip drawing the hand.
+            hd = self._hand_depths.get(name)
+            depths = [hd] * len(fpts)
+
+        occ = self._silhouettes
+        for a, b in hand_anatomy.HAND_CONNECTIONS:
+            if a >= len(fpts) or b >= len(fpts):
                 continue
-            try:
-                ipts = [(int(p[0]), int(p[1])) for p in pts]
-            except (TypeError, IndexError):
-                continue
-            for a, b in hand_anatomy.HAND_CONNECTIONS:
+            for s0, s1 in depth_order.segment_runs(fpts[a], depths[a],
+                                                   fpts[b], depths[b], occ):
                 pygame.draw.line(self.screen, LANDMARK_CONNECTION_COLOR,
-                                 ipts[a], ipts[b], LANDMARK_LINE_WIDTH)
-            for xy in ipts:
-                pygame.draw.circle(self.screen, LANDMARK_COLOR, xy, LANDMARK_RADIUS)
+                                 (int(s0[0]), int(s0[1])), (int(s1[0]), int(s1[1])),
+                                 LANDMARK_LINE_WIDTH)
+        for i, (x, y) in enumerate(fpts):
+            if depth_order.point_visible(x, y, depths[i], occ):
+                pygame.draw.circle(self.screen, LANDMARK_COLOR, (int(x), int(y)),
+                                   LANDMARK_RADIUS)
 
     def pump_and_draw(self) -> None:
         """Process window events and redraw both cubes. Called once per
@@ -538,14 +577,20 @@ class CubeWindow:
         # ⭐ A new object type joins by appending one `(depth_m, callable)` pair. It
         # needs to know nothing about what else is on screen, which is the point of
         # putting the rule in `depth_order` instead of here.
-        drawables = [(c.depth_m, (lambda o=c: self._draw_object_3d(o)))
-                     for c in self.cubes.values()]
+        # ⛔⛔ THE SILHOUETTES MUST EXIST BEFORE ANY HAND IS TESTED, and they are
+        # produced by `_draw_object_3d`. With per-landmark occlusion the object-level
+        # sort is no longer enough on its own: a hand drawn BEFORE a cube would be
+        # tested against a silhouette list that does not yet contain it.
+        # ⭐ So the cubes are projected first into `_silhouettes` and painted in
+        # depth order, and the hands are drawn last, testing every joint and bone
+        # against all of them. A hand joint NEARER than a cube still shows over it,
+        # because the test is by depth and not by draw order.
+        self._silhouettes = []
+        for cube in depth_order.order([(c.depth_m, c) for c in self.cubes.values()]):
+            self._draw_object_3d(cube)
         if self.show_landmarks:
-            drawables += [(self._hand_depths.get(n),
-                           (lambda h=n: self._draw_one_hand(h)))
-                          for n in self._hand_landmarks]
-        for draw in depth_order.order(drawables):
-            draw()
+            for name in self._hand_landmarks:
+                self._draw_one_hand(name)
         pygame.display.flip()
         self.clock.tick(60)
 

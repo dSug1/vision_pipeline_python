@@ -11,6 +11,7 @@ from .CubeWindow import CubeWindow
 # cannot drift between them again (§13.6.1). Pure stdlib, no side effects.
 from . import owner_remap
 from . import object_extent
+from . import depth_order
 from . import palm_depth
 from . import palm_geometry
 from . import palm_rotation
@@ -1839,7 +1840,14 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     # is the safe direction: it cannot wrongly cover an object.
     cube_window.set_hand_landmarks(
         {name: lms for name, lms in hands if lms},
-        {name: _hand_depth.get(name) for name, lms in hands if lms})
+        {name: _hand_depth.get(name) for name, lms in hands if lms},
+        # ⭐ PER-JOINT depth = the hand's own depth plus MediaPipe's world z offset.
+        # ⚠ `_latest_world_landmarks` is whatever the last world packet carried; it
+        # may lag the pixel landmarks by a frame, which is harmless for deciding
+        # in-front-or-behind and is why this is not gated on the two matching.
+        {name: depth_order.landmark_depths(_latest_world_landmarks.get(name),
+                                           _hand_depth.get(name))
+         for name, lms in hands if lms})
 
     cube_window.pump_and_draw()
 

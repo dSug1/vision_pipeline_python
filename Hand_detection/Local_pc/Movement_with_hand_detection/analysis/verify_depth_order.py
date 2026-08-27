@@ -74,7 +74,68 @@ def main():
             good = False
     ok("occludes() and order() never contradict", good)
 
-    print("\n--- 6. the port contract (CONSTRAINTS section 2) ---")
+    print("\n--- 6. per-landmark and per-segment occlusion ---")
+    SQ = [(10.0, 10.0), (30.0, 10.0), (30.0, 30.0), (10.0, 30.0)]
+    ok("convex_hull of a square is 4 points", len(DO.convex_hull(SQ)) == 4)
+    ok("an interior point does not enter the hull",
+       len(DO.convex_hull(SQ + [(20.0, 20.0)])) == 4)
+    ok("point_in_convex: inside", DO.point_in_convex(SQ, 20.0, 20.0))
+    ok("point_in_convex: outside", not DO.point_in_convex(SQ, 5.0, 20.0))
+    ok("point_in_convex: a degenerate poly is never inside",
+       not DO.point_in_convex([(0.0, 0.0), (1.0, 1.0)], 0.5, 0.5))
+    ok("hull winding does not matter",
+       DO.point_in_convex(list(reversed(SQ)), 20.0, 20.0))
+
+    occ = [(SQ, 0.50)]
+    ok("a NEARER landmark shows through the occluder",
+       DO.point_visible(20.0, 20.0, 0.30, occ))
+    ok("a FARTHER landmark is hidden", not DO.point_visible(20.0, 20.0, 0.90, occ))
+    ok("outside the polygon it is visible at any depth",
+       DO.point_visible(5.0, 20.0, 0.90, occ))
+    ok("an unknown landmark depth is hidden", not DO.point_visible(20.0, 20.0, None, occ))
+    ok("no occluders -> always visible", DO.point_visible(20.0, 20.0, 9.0, []))
+
+    print("\n--- 6b. a bone CROSSING the cube is split, not dropped ---")
+    runs = DO.segment_runs((0.0, 20.0), 0.20, (40.0, 20.0), 0.80, occ)
+    ok("a crossing bone yields a visible run", len(runs) >= 1, "%d run(s)" % len(runs))
+    # ⛔ THE FIRST VERSION OF THIS CHECK ASSERTED THE WRONG THING and failed a
+    # correct implementation: it expected the last run to stop short of x=40, but the
+    # square only spans x=10..30, so beyond x=30 the bone LEAVES the occluder and is
+    # rightly visible again. The property that actually matters is the HOLE in the
+    # middle, where the bone is both inside the square and behind it.
+    ok("the visible part starts at the NEAR end", abs(runs[0][0][0]) < 1e-9,
+       "starts at x=%.2f" % runs[0][0][0])
+    ok("the bone is cut into TWO runs with a gap between them", len(runs) == 2,
+       "runs %r" % (runs,))
+    gap = (runs[0][1][0], runs[1][0][0]) if len(runs) == 2 else (0.0, 0.0)
+    ok("the gap is where it is INSIDE the square AND behind it",
+       gap[0] >= 19.0 and gap[1] <= 31.0 and gap[1] > gap[0],
+       "hidden from x=%.2f to x=%.2f" % gap)
+    ok("it is visible again after leaving the square",
+       abs(runs[-1][1][0] - 40.0) < 1e-9)
+    ok("a wholly-in-front bone is ONE run over its whole length",
+       DO.segment_runs((0.0, 20.0), 0.1, (40.0, 20.0), 0.1, occ)
+       == [((0.0, 20.0), (40.0, 20.0))])
+    ok("a wholly-behind bone crossing the square is broken in TWO",
+       len(DO.segment_runs((0.0, 20.0), 0.9, (40.0, 20.0), 0.9, occ)) == 2)
+    ok("a bone entirely clear of the square is untouched",
+       DO.segment_runs((0.0, 50.0), 0.9, (40.0, 50.0), 0.9, occ)
+       == [((0.0, 50.0), (40.0, 50.0))])
+    ok("no occluders -> one run, no subdivision cost",
+       DO.segment_runs((0.0, 0.0), 1.0, (5.0, 5.0), 2.0, []) == [((0.0, 0.0), (5.0, 5.0))])
+
+    print("\n--- 6c. landmark_depths: built from the hand depth, never guessed ---")
+    w = [(0.0, 0.0, -0.03), (0.0, 0.0, 0.02), (0.0, 0.0, 0.0)]
+    got = DO.landmark_depths(w, 0.50)
+    ok("depth = hand depth + world z",
+       all(abs(a - b) < 1e-9 for a, b in zip(got, [0.47, 0.52, 0.50])), "%r" % (got,))
+    ok("unknown hand depth -> one None PER LANDMARK, not a bare None",
+       DO.landmark_depths(w, None) == [None, None, None])
+    ok("empty input -> empty list", DO.landmark_depths([], 0.5) == [])
+    ok("a malformed landmark falls back to the hand depth",
+       DO.landmark_depths([(0.0, 0.0)], 0.5) == [0.5])
+
+    print("\n--- 7. the port contract (CONSTRAINTS section 2) ---")
     src = io.open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "..", "Resources", "depth_order.py"), encoding="utf-8").read()
     body = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))

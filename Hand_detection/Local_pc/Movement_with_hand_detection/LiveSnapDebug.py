@@ -60,6 +60,7 @@ from Resources import one_euro  # noqa: E402  (F1 step 1, the jitter filter)
 from Resources import palm_slant_axis as _SlantAxis  # noqa: E402  (T6 axis correction)
 from Resources import palm_slant_pose as _SlantPose  # noqa: E402  (T6 halves 1+2)
 from Resources import depth_order  # noqa: E402  (the game's one occlusion rule, N6)
+from Resources import hand_anatomy  # noqa: E402  (HAND_CONNECTIONS, shared with production)
 
 # ⭐⭐ WHAT PRODUCTION ACTUALLY RUNS, since 2026-08-17.
 # `Resources/HandsTriggeredActions.py` now drives cube orientation with Horn
@@ -776,6 +777,11 @@ HIDE_VIDEO = False
 # ⛔ DISPLAY ONLY, like `HIDE_VIDEO`: detection, recording and every estimator are
 # upstream of the draw and cannot see this.
 SHOW_LANDMARKS = True
+
+# ⚠ Deliberately the SAME colours production uses, so a hand looks the same in both
+# tools. They used to be MediaPipe's default style here and custom there.
+LANDMARK_COLOR = (255, 200, 90)             # BGR here; RGB in CubeWindow
+LANDMARK_CONNECTION_COLOR = (170, 130, 60)
 
 COAST_MS_ARMS = (150.0, 300.0, 450.0)
 
@@ -2595,15 +2601,13 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
     _writeback_track_state(state, _bound, now_ms)
 
 
-def _draw_hand(frame, normalized_landmarks, handedness, thumb_outward, reliability_alpha, width, height):
-    hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
-    for lm in normalized_landmarks:
-        hand_landmarks_proto.landmark.append(landmark_pb2.NormalizedLandmark(x=lm.x, y=lm.y, z=lm.z))
-    solutions.drawing_utils.draw_landmarks(
-        frame, hand_landmarks_proto, solutions.hands.HAND_CONNECTIONS,
-        solutions.drawing_styles.get_default_hand_landmarks_style(),
-        solutions.drawing_styles.get_default_hand_connections_style(),
-    )
+def _draw_hand_labels(frame, normalized_landmarks, handedness, thumb_outward,
+                      reliability_alpha, width, height):
+    """The per-hand HUD text only. ⛔ The SKELETON moved to `_draw_hand_occluded`
+    2026-08-27: MediaPipe's `draw_landmarks` paints a whole hand in one call and
+    cannot be told that half a bone is behind a cube. The text is not geometry and
+    is deliberately never occluded -- a label hidden by the object it describes
+    would be worse than useless."""
     xs = [lm.x for lm in normalized_landmarks]
     ys = [lm.y for lm in normalized_landmarks]
     text_x, text_y = int(min(xs) * width), int(min(ys) * height) - 10
@@ -2631,7 +2635,29 @@ def _draw_hand(frame, normalized_landmarks, handedness, thumb_outward, reliabili
                     cv2.FONT_HERSHEY_DUPLEX, 0.6, color, 2, cv2.LINE_AA)
 
 
-def _draw_cube_3d(overlay, cube: Cube, screen_center: Tuple[float, float], mask=None):
+def _draw_hand_occluded(frame, pts, depths, occluders):
+    """The skeleton, joint by joint and bone segment by bone segment.
+
+    ⭐ Replaces MediaPipe's `draw_landmarks` for the SKELETON ITSELF, because that
+    helper draws a whole hand in one call and cannot be told a bone is half hidden.
+    The connection table comes from `hand_anatomy` (N6) so this is the same topology
+    production draws, not a second copy of it.
+    ⚠ The LABELS still go through the old path -- they are HUD text, not geometry,
+    and nothing occludes them.
+    """
+    for a, b in hand_anatomy.HAND_CONNECTIONS:
+        if a >= len(pts) or b >= len(pts):
+            continue
+        for s0, s1 in depth_order.segment_runs(pts[a], depths[a],
+                                               pts[b], depths[b], occluders):
+            cv2.line(frame, (int(s0[0]), int(s0[1])), (int(s1[0]), int(s1[1])),
+                     LANDMARK_CONNECTION_COLOR, 2, cv2.LINE_AA)
+    for i, (x, y) in enumerate(pts):
+        if depth_order.point_visible(x, y, depths[i], occluders):
+            cv2.circle(frame, (int(x), int(y)), 3, LANDMARK_COLOR, -1, cv2.LINE_AA)
+
+
+def _draw_cube_3d(overlay, cube: Cube, screen_center: Tuple[float, float], sink=None):
     """Real rotating 3D object (2026-08-01, replaces the old flat-rect +
     axis-gizmo placeholder) -- ported from production CubeWindow.py's
     `_draw_object_3d`, same fixed-camera-distance perspective projection
@@ -2676,12 +2702,11 @@ def _draw_cube_3d(overlay, cube: Cube, screen_center: Tuple[float, float], mask=
         int_pts = np.array([[int(x), int(y)] for x, y in pts], dtype=np.int32)
         cv2.fillConvexPoly(overlay, int_pts, color)
         cv2.polylines(overlay, [int_pts], True, CUBE_EDGE_COLOR, 1, cv2.LINE_AA)
-        # ⭐ THE SAME polygons, into the coverage mask. Taken from the drawing
-        # itself rather than recomputed from the footprint, so the mask cannot
-        # disagree with what is on screen -- a separately-derived mask would drift
-        # the moment the projection changed.
-        if mask is not None:
-            cv2.fillConvexPoly(mask, int_pts, 255)
+        # ⭐ THE SAME projected points the faces were drawn from, collected for the
+        # silhouette hull. Taken from the drawing itself rather than recomputed from
+        # the footprint, so the occluder cannot disagree with what is on screen.
+        if sink is not None:
+            sink.extend((float(x), float(y)) for x, y in pts)
 
 
 def _draw_cubes(frame, state: CubeState):
@@ -2701,22 +2726,26 @@ def _draw_cubes(frame, state: CubeState):
     # ⭐ So the cube reports WHICH PIXELS IT COVERS, and the caller paints the
     # landmarks everywhere except there. The cube keeps its transparency over the
     # VIDEO and is fully opaque to the HAND, which is what was asked for.
-    # ⭐⭐ ONE MASK PER CUBE, NOT ONE FOR ALL. A single combined mask can only say
-    # "some cube covers this pixel", which is enough to hide a hand behind
-    # everything and useless for putting a hand BETWEEN two cubes.
-    masks = []
+    # ⭐⭐ ONE SILHOUETTE PER CUBE. Replaced the pixel masks 2026-08-27 when the
+    # occlusion went PER LANDMARK: a mask answers "is this pixel covered", which was
+    # enough while a whole hand was hidden or not, but the per-joint test needs to
+    # ask about arbitrary points along a bone, and `depth_order` already owns that
+    # geometry -- so production and this tool now run the SAME test instead of two
+    # implementations that could disagree.
+    sils = []
     # ⛔ AND THE CUBES ARE NOW SORTED AMONG THEMSELVES. They used to be painted in
     # dict order, so the two cubes did not occlude each other at all -- whichever
     # happened to be second won, regardless of which was actually nearer.
     for cube in depth_order.order([(c.depth_m, c) for c in state.cubes.values()]):
-        mask = np.zeros(frame.shape[:2], dtype=np.uint8)
-        masks.append((cube.depth_m, mask))
+        pts_for_hull = []
         # 4.2: the PROJECTED extent, everywhere. `position` is the top-left of
         # what is drawn, so using `size` here would offset the centre at any
         # depth other than the reference one.
         size = state.projected_size_of(cube)
         screen_center = (cube.position[0] + size / 2, cube.position[1] + size / 2)
-        _draw_cube_3d(overlay, cube, screen_center, mask)
+        _draw_cube_3d(overlay, cube, screen_center, pts_for_hull)
+        if pts_for_hull:
+            sils.append((depth_order.convex_hull(pts_for_hull), cube.depth_m))
     cv2.addWeighted(overlay, CUBE_ALPHA, frame, 1 - CUBE_ALPHA, 0, frame)
     # ⚠ RESTORED 2026-08-25: this loop was removed as COLLATERAL by `febd3fa`,
     # the commit that stripped T6d's A/B rig out of this tool. It sat directly
@@ -2731,12 +2760,12 @@ def _draw_cubes(frame, state: CubeState):
             size = int(round(state.projected_size_of(cube)))
             x, y = int(cube.position[0]), int(cube.position[1])
             cv2.rectangle(frame, (x, y), (x + size, y + size), SNAP_BORDER_COLOR, SNAP_BORDER_WIDTH)
-    # ⭐ `[(depth_m, mask), ...]`, farthest first -- one entry per cube, so a caller
-    # can ask "which cubes are NEARER than this hand" and mask against only those.
+    # ⭐ `[(polygon, depth_m), ...]` -- `depth_order`'s occluder shape exactly, so a
+    # caller hands it straight to `point_visible` / `segment_runs`.
     # ⚠ The snap highlight above is deliberately NOT in the mask: it is a HUD
     # annotation, not part of the object's body, and masking the hand out from under
     # a 3-px border would leave a visible notch in the skeleton.
-    return masks
+    return sils
 
 
 def build_detector():
@@ -3319,33 +3348,31 @@ def main():
                 # the landmarks are painted only where no cube is.
                 # ⚠ The mask must come from the cube pass, so nothing between these
                 # two blocks may draw on `panel`.
-                cube_masks = _draw_cubes(panel, arm)
+                cube_sils = _draw_cubes(panel, arm)
                 if normalized_by_hand and SHOW_LANDMARKS:
-                    # ⭐⭐ DEPTH-ORDERED, PER HAND. Each hand is masked against only
-                    # the cubes that are actually NEARER than it, so a hand in front
-                    # of one cube and behind another is drawn correctly against both.
-                    # ⛔ It cannot be done by draw order here the way production does
-                    # it: this tool alpha-blends the cube on purpose, and a blend lets
-                    # whatever is beneath show THROUGH. Masking is what makes the cube
-                    # transparent to the VIDEO and opaque to the HAND.
+                    # ⭐⭐ PER-LANDMARK, PER-SEGMENT (owner, 2026-08-27), through the
+                    # SAME `depth_order` geometry production uses -- so the two tools
+                    # cannot drift on what "behind the cube" means.
+                    # ⛔ The mask-and-composite approach this replaced could only
+                    # hide a WHOLE hand. A gripping hand has fingers on both sides of
+                    # the cube, and a single bone can cross from one to the other
+                    # halfway along, which no whole-hand mask can express.
                     for handedness, normalized in normalized_by_hand.items():
                         data = hand_data_by_hand[handedness]
                         _hd = data.get("hand_depth")
                         _hand_z = _hd[0] if _hd else None
-                        blocker = None
-                        for _cz, _m in cube_masks:
-                            if depth_order.occludes(_cz, _hand_z):
-                                blocker = _m if blocker is None \
-                                    else cv2.bitwise_or(blocker, _m)
-                        layer = panel.copy()
-                        _draw_hand(
-                            layer, normalized, handedness, data["thumb_outward"],
-                            arm.last_hand_reliability_alpha[handedness], width, height,
-                        )
-                        if blocker is None:
-                            np.copyto(panel, layer)
-                        else:
-                            np.copyto(panel, layer, where=(blocker == 0)[:, :, None])
+                        _lm_z = depth_order.landmark_depths(
+                            data.get("world_landmarks"), _hand_z)
+                        _px = [(lm.x * width, lm.y * height) for lm in normalized]
+                        if len(_lm_z) < len(_px):
+                            # ⚠ No world landmarks this frame: every joint takes the
+                            # hand's single depth. Coarser, never absent.
+                            _lm_z = [_hand_z] * len(_px)
+                        _draw_hand_occluded(panel, _px, _lm_z, cube_sils)
+                        _draw_hand_labels(panel, normalized, handedness,
+                                          data["thumb_outward"],
+                                          arm.last_hand_reliability_alpha[handedness],
+                                          width, height)
                 _draw_bridge_hud(panel, arm, height)
                 if args.slerp_ab and i == 1:
                     _draw_ab_divergence(panel, arms[0], arm, height)
