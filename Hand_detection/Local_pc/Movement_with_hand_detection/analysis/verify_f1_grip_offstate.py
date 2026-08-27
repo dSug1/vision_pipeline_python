@@ -27,6 +27,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from Resources import palm_depth                             # noqa: E402
 from Resources import object_extent                          # noqa: E402
 from Resources import fingertips                               # noqa: E402
 from Resources import HandsTriggeredActions as P               # noqa: E402
@@ -96,6 +97,13 @@ def recorded_cubes(row):
 # `hand_state.py` and by a live take -- a tightened radius CANNOT be validated
 # against recordings made under the old one, because the grabs it removes are
 # exactly the ones the recording contains.
+# ⚠⚠ THREE THINGS ARE NOW PINNED HERE (grab radius, grab rule, depth rate limit).
+# Each is defensible on its own -- every one is a deliberate behaviour change made
+# after this take was recorded -- but together they mean this file tests the `F1`
+# SWITCH and increasingly little else. ⛔ It is not a general regression net any
+# more, and should not be read as one. The general net is `parity_replay` plus the
+# golden-vector suites; if a fourth pin is ever needed, re-baseline against a NEW
+# recording instead of adding it.
 RECORDING_ERA_GRAB_RADIUS = 1.5
 
 
@@ -123,6 +131,16 @@ def replay(rows, use_tips):
     P.GRAB_RADIUS_MULTIPLIER = RECORDING_ERA_GRAB_RADIUS
     prev_extent = object_extent.grab_extent
     object_extent.grab_extent = _recording_era_grab_extent
+    # ⛔ AND THE RECORDING-ERA RATE LIMIT. The depth ratio's cap became PER SECOND
+    # on 2026-08-27 (`palm_depth.RATE_LIMIT_PER_S`), driven by a caller-supplied
+    # interval. At the take's real ~19.92 fps the intervals are not exactly 50 ms,
+    # so the cap now tracks elapsed time rather than frame count -- which is the
+    # entire point of the change, and which moved this replay by 7.5 px.
+    # ⭐ Dropping the interval restores the per-FRAME cap the take was recorded
+    # under, so the F1 switch is again the only variable this file measures.
+    prev_ratio_update = palm_depth.DepthRatioTracker.update
+    palm_depth.DepthRatioTracker.update = (
+        lambda self, landmarks, dt_ms=None: prev_ratio_update(self, landmarks, None))
     P.configure_source_resolution(640, 480)
     # ⛔ A WHOLLY FRESH WORLD, not a released one. `release_cube` clears the grab
     # baseline but leaves the cube WHERE IT ENDED, so a second pass would start
@@ -160,6 +178,7 @@ def replay(rows, use_tips):
         fingertips.USE_TIP_BARYCENTER = prev
         P.GRAB_RADIUS_MULTIPLIER = prev_radius
         object_extent.grab_extent = prev_extent
+        palm_depth.DepthRatioTracker.update = prev_ratio_update
     return out
 
 

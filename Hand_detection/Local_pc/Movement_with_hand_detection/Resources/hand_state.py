@@ -134,6 +134,35 @@ GRAB_RADIUS_MULTIPLIER = 1.0
 # resync blend, a fix the owner has already accepted.
 ROTATION_SLERP_MAX_DT_MS = 200.0
 
+
+# ⭐⭐ THE FRAME INTERVAL, COMPUTED ONCE AND SHARED. Owner, 2026-08-27: *"the dt
+# will probably also be used somewhere else in the game later on"* -- so it lands
+# as a named, reusable quantity rather than being re-derived at each call site.
+#
+# ⛔ WHY IT LIVES HERE AND NOT IN THE ESTIMATORS. The estimator layer is
+# CLOCK-FREE BY CONTRACT (`CONSTRAINTS` §2): it is transliterated to JS/Swift/
+# Kotlin, and a wall-clock read is the first thing that does not port. So no
+# estimator may ask what time it is -- the CALLER, which already owns the frame
+# loop and its timestamps, computes the interval and passes it down as a plain
+# number. That keeps every estimator deterministic under replay, which is what
+# `analysis/parity_replay.py` and every golden-vector suite depend on.
+#
+# ⚠ THE CLAMP IS THE POINT, NOT A DETAIL. After a dropout, a coast or a stalled
+# frame the raw interval can be hundreds of milliseconds, and every consumer of dt
+# scales something by it -- a blend factor, a rate limit, a fade. Unclamped, one
+# hitch becomes one large visible jump, which is precisely the pop `D2`/`D3` exist
+# to prevent. Clamping here means no consumer has to remember to.
+def frame_dt_ms(now_ms, last_ms, max_dt_ms=ROTATION_SLERP_MAX_DT_MS):
+    """Milliseconds since the previous frame, clamped. None when unknowable.
+
+    `None` means "there is no usable interval yet" -- the first frame, or a
+    caller with no clock. Every consumer must treat it as "do not advance",
+    never as zero and never as a guess.
+    """
+    if now_ms is None or last_ms is None:
+        return None
+    return min(max(0.0, now_ms - last_ms), max_dt_ms)
+
 # ⭐ D2, 2026-08-21: 150 ms, chosen from `analysis/d2_bridge_ab.py`, which
 # classifies every held-cube dropout rather than counting the ones removed.
 #

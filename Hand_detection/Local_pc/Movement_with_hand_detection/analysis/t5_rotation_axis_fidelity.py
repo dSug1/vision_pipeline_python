@@ -59,6 +59,11 @@ import math
 import os
 import sys
 
+try:                                    # the console here is cp1252
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, ValueError):
+    pass
+
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Resources"))
 import palm_rotation as PR  # noqa: E402
 
@@ -79,6 +84,13 @@ MIN_ANGLE_DEG = 20.0   # only frames actually rotating carry axis information
 
 def load(session_dir):
     path = os.path.join(session_dir, "raw_landmarks.jsonl")
+    # ⛔ AN INCOMPLETE SESSION MUST NOT KILL THE SWEEP. `2026-08-22_134418_yaw_
+    # sweep_constant_depth` has a `meta.json` and no landmarks -- an aborted take
+    # -- and this crashed on it with a bare FileNotFoundError partway through the
+    # run, so the takes AFTER it were never measured and nobody noticed the bar had
+    # only half-run. ⭐ Skipped and REPORTED now, never silently.
+    if not os.path.exists(path):
+        return None
     frames = []
     with open(path, "r", encoding="utf-8") as fh:
         for line in fh:
@@ -195,6 +207,9 @@ def main():
             continue
         for s in matches:
             print(f"[{tag}]  {s}")
+            if not os.path.exists(os.path.join(CAPTURE_ROOT, s, "raw_landmarks.jsonl")):
+                print("  [!] no raw_landmarks.jsonl -- aborted take, SKIPPED")
+                continue
             res = analyse(os.path.join(CAPTURE_ROOT, s), tag)
             if res is None:
                 print("  no usable frames\n")

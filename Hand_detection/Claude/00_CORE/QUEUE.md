@@ -24,78 +24,54 @@ The binding one, restated: **A10 — measure or revert.**
 
 ---
 
-## ⭐⭐⭐ YOU ARE HERE (2026-08-25)
+## ⭐⭐⭐ YOU ARE HERE (2026-08-27)
 
-⭐⭐ **`F1` IS RIG-ACCEPTED (2026-08-26) AND STILL OFF IN THE GAME.** Four live
-rig sessions with the owner. **The fingertip grip is accepted** — *"I like the
-feel, this is better than the palm grip"* — the jitter filter is settled at
-**tau = 70 ms** (*"this is good"*), and `A1` shipped into both tools: the object
-now **settles onto the fingertip barycentre** instead of riding 115 px beside it,
-and its depth is **re-seated on the hand at every grab** instead of ratcheting
-into the near wall.
+✅✅ **`F1` IS SHIPPED AND LIVE IN THE GAME.** `USE_TIP_BARYCENTER = True`: the
+object is carried by the **fingertip barycentre**, settles onto it with a
+motion-masked walk, has its depth **anchored to the hand at every grab**, and is
+picked up only when the barycentre falls inside the object's **projected
+footprint**. Owner ran the rig and production repeatedly across 2026-08-26/27.
 
-⛔⛔ **AND THE FIRST TAKE WAS VOID — read this before trusting any rig result.**
-Two module-global gates meant panels 1 and 2 were **bit-identical in position
-(0.00 px over 6025 samples)**: the owner judged a comparison that was not running
-the feature. ⭐ **The switch had been verified where it was SET, not where it took
-EFFECT** — a new entry in the instrument-is-a-suspect collection, and the reason
-`verify_f1_grip_offstate` now matters more than the configuration check that
-replaced it. Details: [`queue_notes/F1.md`](queue_notes/F1.md).
+⛔⛔ **THE ROTATION TRIM WAS REMOVED, AND THAT IS THE SESSION'S MAIN RESULT.**
+`TRIM_GAIN = 0.0`. §10.1's declared-angle take measured it **non-monotonic in the
+declared finger angle at every gain and clamp** (15.7° / 12.6° / 20.3° for a
+declared 10 / 20 / 40) — it is not a fine control at any setting, and the clamp had
+been masking that by pinning every answer to 10.00°.
+⚠ **This retracts the rig's headline**: the 21.2°-vs-32.9° lean was a constant 10°
+offset, not the fingers steering the cube. ⭐ Step 0's `M2` had already named the
+cause — the rigid fit over five non-rigid points *tumbles*.
+⚠ The owner asked for the trim removed **twice** before this and was refused both
+times. The metric they asked for is what settled it.
 
-⛔ **Both `F1` switches remain OFF in the game** (`USE_TIP_BARYCENTER=False`,
-`TRIM_GAIN=0.0`). The acceptance above is **the rig only**; §10.2 gate 5 wants a
-live look in BOTH tools, the `A10` bar has still never been run against `F1`, and
-§10.1's trim-resolution metric still does not exist — so the trim's measured
-**21.2° lean against the shipped 32.9°** is DAMPING until a declared take proves
-it is fidelity.
+✅ **`A10` reproduces EXACTLY** — yaw 14.5°/1.13 · pitch 5.5°/0.74 · roll 6.7°/1.02
+· **jitter p95 25.41°**. With the trim at gain 0 the rotation channel is
+byte-for-byte the shipped pipeline, so nothing could have moved; it was measured
+anyway rather than argued.
 
-⭐⭐ **`T6`'s ANALYSIS HAS RUN** (2026-08-26, `analysis/t6_ratio_analysis.py`) —
-protocol §4.1/§4.2 and the depth arm §8.1/§8.2, over the six recorded takes. Two
-results, and the second one was not what the row was opened for:
+✅ **`parity_replay` NO DIVERGENCE on four takes** — and it took **six** fixes.
+⭐⭐ **The reusable one: every per-hand estimator must die with its track.** Three
+were missing that reset in the debug tool (absolute depth, tip trim, and the
+relative depth baseline — the last carrying a 6% depth error into the next grab).
+The other three were harness asymmetries: it never compared **orientation**, never
+passed **`rotation=`**, and never set **`slerp_mode`/`slerp_tau_ms`**.
 
-* **the ratio table must be 2-D.** Magnitude cannot separate yaw from pitch —
-  orthography forbids it — though the excursion's **SIGN** splits them 3/3 on
-  single-axis takes. `Rdiag` and `Rbow`, the two cues nominated to break that
-  degeneracy, came back sign-inconsistent.
-* ⭐⭐ **the DEPTH arm paid before the rotation arm did** — and a verification
-  pass replaced the mechanism with a better one. At the **square** pose the four
-  rigid palm spans imply depths **13–22% apart**; that is drift-free by
-  construction (they read the same frame), `min` over them **is** the absolute
-  estimator, and so its output **steps whenever rotation changes which span
-  wins** — no foreshortening required. `NOMINAL_SPAN_M[(5,17)]` is the outlier
-  for this operator. ⭐ The relative form is immune: a per-grab baseline absorbs
-  the per-span error exactly, so this is fixable **without** a calibration step.
-  ⛔ The snap gate reads the absolute one: its within-take excursion reaches
-  **0.161 m against a 0.15 m tolerance** sized independently of it.
-  ⚠ **Two claims were RETRACTED the same day**: the "≤7% drift bound" (its
-  premise — that palm-on and back-on project the same spans — is refuted by the
-  spans, three of four returning 8–30% short), and a "distance-free" ratio that
-  was in fact distance-**squared**. The statistic that does cancel drift is the
-  **product**, worst **1.209**.
+⭐ **The settled constants live in `queue_notes/F1.md`** and in
+`LiveSnapDebug.settled_values()`, which now writes them into every take's
+`meta.json` and prints them on exit — because a session's tuning was nearly lost
+to a closed window.
 
-**Next on the row: §4.3 the transfer test, §8.3 the inversion** — both still
-`analysis/` work, nothing in the pipeline changed. ⛔ Read
-[`queue_notes/T6.md`](queue_notes/T6.md) first; it also carries the two metric
-bugs this harness caught in itself before publishing a number.
+⭐⭐⭐ **NEXT BUILD: `T6` §4.3 — THE TRANSFER TEST.** The six ratio-table takes are
+recorded and §4.1/§4.2/§8.1/§8.2 are analysed; §4.3 is the protocol's own
+**"⛔ THE DECIDING TEST"** and has not been run. Build the table on one take, apply
+it to another at a different depth, report how much of the 22.6° bias comes out:
+**>15° transformative · 5–15° needs per-session calibration · <5° dead.**
+⛔ Do NOT implement any matrix before it — transfer was refuted once already
+(§2.0.9, on a contaminated index), and today's §4.1 says the table must be **2-D**.
+⭐ Then §8.3: invert the table to de-foreshorten the depth anchor.
 
-⚠ **Still owed on `F1` regardless of the take**: the `A10` acceptance bar has
-never been run against it (yaw / lean / pitch / roll / **jitter p95 25.41**), and
-the trim-resolution metric of §10.1 does not exist — without it `F1` can pass
-every existing metric and still not deliver the fine alignment it was built for.
-
-Last three landings: **`L1`** rotation lag fixed and shipped (τ = 20 ms);
-**`IS1`–`IS3`** the input system ✅ **SHIPPED** (`handinput/`, observes-only) —
-owner ran both tools 2026-08-25, clean; **`SEC1`** robustness +
-security audit shipped, four items left as explicit decisions (`SEC2`–`SEC5`).
-
-⚠ **2026-08-25 live look**: production clean; the debug tool's **white
-snap-highlight**, removed as collateral by `febd3fa`, was restored and confirmed
-live. ⭐ It exposed that **renderer parity is unguarded** — `parity_replay`
-covers gesture logic, not drawing ([`queue_notes/U6.md`](queue_notes/U6.md)).
-
-Still open and still the owner's show-stopper: the **yaw lean** (~27° at a
-60–90° hand turn). `T6` was built and A10-rejected; the diagnosis survives, the
-remedy does not — [`10_HAND_TRACKING/spec/ORIENTATION_DIAGNOSIS.md`](../10_HAND_TRACKING/spec/ORIENTATION_DIAGNOSIS.md).
+Still open and still the owner's show-stopper: the **yaw lean** (~27° at a 60–90°
+hand turn). ⛔ `F1` did NOT fix it — the apparent improvement was the trim's
+constant offset, now removed.
 
 ⭐ The full block, and every superseded one back to 2026-08-03, is
 [`10_HAND_TRACKING/history/SESSION_LOG.md`](../10_HAND_TRACKING/history/SESSION_LOG.md) — newest first.
@@ -145,7 +121,7 @@ remedy does not — [`10_HAND_TRACKING/spec/ORIENTATION_DIAGNOSIS.md`](../10_HAN
 | [T6](queue_notes/T6.md) | Orientation from 2D (planar PnP) | HAND | perception | ⛔⛔ **built and A10-rejected 2026-08-24** — yaw got worse; code in `estimators()` only. ⭐⭐ **A 2D-RATIO-TABLE correction is OPEN and NOT covered by §2.0.12** (owner 2026-08-25) — clean depth-free index, yaw/pitch kept separate, declared ground truth. §2.0.9's refutation used a *contaminated* index so it does not carry. ✅ **ALL SIX TAKES RECORDED 2026-08-26** — 1680 frames, every one on-axis, 3 depths × 2 axes, right hand declared. ⛔ **CAVEAT ZERO (owner): the distance was NOT reliable and the hand very likely moved during the takes.** ⭐ Fine for the ratio table — foreshortening ratios are **scale-free** — but it invalidates every depth-derived reading, and two claims built on one were retracted the same day. ⚠ Grid is **30°** (7 positions), not the protocol's 25.71°: the owner could not set 25.71° by feel, and the declared angle IS the ground truth. ⛔ **Before analysing, read the dossier**: the ratio the tool prints is the take MEDIAN and is contaminated by the sweep — use the 0° hold. ⛔ **TWO claims made and retracted on this data in one afternoon** — "take 6 is the anomaly", then "four of six never return, which geometry forbids". ⭐ Caveat zero answers both: a drifting hand produces a monotone climb, no mystery required. ⭐ The one finding that SURVIVES (it is scale-free): `edge_on_measure` is **blind to pitch** — 0.94–1.00 at pitch-90° vs 0.13–0.28 at yaw-90° — so `Rsq`/`Lsq` cannot judge a pitch take. ✅✅ **§4.1/§4.2/§8.1/§8.2 ANALYSED 2026-08-26** (`analysis/t6_ratio_analysis.py`): magnitude does NOT separate the axes (orthography forbids it), but the **SIGN** of `Rwl`'s 0°→90° excursion splits yaw from pitch **3/3** — so the table must be **2-D**, and `Rdiag`/`Rbow` did not deliver the second observable. ⭐⭐ **THE DEPTH ARM PAID FIRST**, and a verification pass sharpened it: at the **square** pose the four palm spans imply depths **13–22% apart** (drift-free — one frame), `min` over them IS the absolute estimator, so its output **STEPS whenever rotation changes which span wins**. `NOMINAL_SPAN_M[(5,17)]` is the outlier. ⛔ The snap gate inherits it: within-take excursion reaches **0.161 m against a 0.15 m tolerance**. ⚠ Two claims RETRACTED the same day — the drift bound (premise refuted) and a "distance-free" ratio that was distance-SQUARED; the corrected statistic is the product, ≤ **1.209**. **Next: §4.3 transfer, §8.3 inversion** | 4.2 |
 | [T6d](queue_notes/T6d.md) | The anisotropic 2×2 fit | HAND | perception | ⛔⛔ built, 4 live sessions, **owner-rejected 2026-08-24** — production never ran it | T6 |
 | [L1](queue_notes/L1.md) | Rotation smoothing — a **time constant** | HAND | responsiveness | ✅✅ **shipped 2026-08-24**, owner-settled live at τ = 20 ms | — |
-| [F1](queue_notes/F1.md) | ⭐⭐⭐ **The cube's transform from the FINGERTIPS** | HAND | perception + gesture | ⭐⭐⭐ **SPECIFIED + STEP 0 MEASURED + STEP 3 SHIPPED 2026-08-25** (⛔ live take owed). Design = **palm-frame deformation + bounded trim**, gain 0 ⇒ bit-identical to Horn; τ = 20 ms untouched; ⛔ contact-point arm dropped on a **patent** finding. **Census (`analysis/f1_tip_census.py`)**: tip noise floor **1.5 mm** ✅ workable (held only 5–10% worse) · ⛔ rigid tip residual **75–95° inside 0.5 s** — not noise, the rigid model is wrong ⇒ clamp far below it · ⛔ plain barycentre drifts **1 cm median / 6 cm p95** ⇒ `g_pos = 1` needs a clamp · ✅ collinearity floor 0.20 costs 1.9%. ⭐⭐ **Steps 1, 2 and 4 BUILT 2026-08-26** — 1€ filter, fingertip barycentre for snap+translation, and the palm-frame ROTATION TRIM (gain 0 = shipped Horn; a rigidly rotated hand yields **0.0000°** of trim). ⭐ **`f1_rig.bat` runs all three side by side on one camera** for the live take. ⛔ **Live take owed** — and until it happens **BOTH F1 switches are OFF in the game** (`USE_TIP_BARYCENTER=False`, `TRIM_GAIN=0.0`), so production is pre-F1 and every change lives in the rig where it can be compared. ⭐ **Step 1 landed 2026-08-26**: the **1€ filter** + 30 golden vectors, inert until step 2 (⚠ the vectors caught a real divergence from the paper immediately — the speed term used the filtered, not the raw, value). **Back-of-hand snap rule REMOVED** ✅ **live-confirmed both tools 2026-08-25**; debug measured **9 of 15 snaps back-of-hand** (⚠ re-opens `N8`; the rule was refusing **8.3%** of free-hand frames; ⚠ production recorded nothing — `N4`) → [`spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](../10_HAND_TRACKING/spec/F1_FINGERTIP_TRANSFORM_SPEC.md)  ⭐⭐⭐ **RIG-ACCEPTED LIVE 2026-08-26** — owner *"I like the feel, this is better than the palm grip"*, and *"this is good"* at **tau 70 ms**. Trim measures **21.2° lean against the shipped 32.9°** at large yaw. ✅ **`A1` shipped into both tools**: the object now settles ON the fingertip barycentre (a **115.6 px** constant offset, faded at 150 px/s after a teleport and an exponential both FAILED the gate) and its depth is re-seated on the hand at every grab — it had been **ratcheted into the 0.30 m floor for 57.4% of every hold** while the hand was never once that near. ⛔⛔ **TAKE 1 WAS VOID**: two module-global gates left panels 1 and 2 **bit-identical (0.00 px)** — the switch had been verified where it was SET, not where it took EFFECT. ⛔ **Both switches still OFF in the game**: the `A10` bar and §10.1's trim-resolution metric are still owed, and the 21.2° is DAMPING until a declared take says it is fidelity. | L1 ✅ |
+| [F1](queue_notes/F1.md) | ⭐⭐⭐ **The cube's transform from the FINGERTIPS** | HAND | perception + gesture | ⭐⭐⭐ **SPECIFIED + STEP 0 MEASURED + STEP 3 SHIPPED 2026-08-25** (⛔ live take owed). Design = **palm-frame deformation + bounded trim**, gain 0 ⇒ bit-identical to Horn; τ = 20 ms untouched; ⛔ contact-point arm dropped on a **patent** finding. **Census (`analysis/f1_tip_census.py`)**: tip noise floor **1.5 mm** ✅ workable (held only 5–10% worse) · ⛔ rigid tip residual **75–95° inside 0.5 s** — not noise, the rigid model is wrong ⇒ clamp far below it · ⛔ plain barycentre drifts **1 cm median / 6 cm p95** ⇒ `g_pos = 1` needs a clamp · ✅ collinearity floor 0.20 costs 1.9%. ⭐⭐ **Steps 1, 2 and 4 BUILT 2026-08-26** — 1€ filter, fingertip barycentre for snap+translation, and the palm-frame ROTATION TRIM (gain 0 = shipped Horn; a rigidly rotated hand yields **0.0000°** of trim). ⭐ **`f1_rig.bat` runs all three side by side on one camera** for the live take. ⛔ **Live take owed** — and until it happens **BOTH F1 switches are OFF in the game** (`USE_TIP_BARYCENTER=False`, `TRIM_GAIN=0.0`), so production is pre-F1 and every change lives in the rig where it can be compared. ⭐ **Step 1 landed 2026-08-26**: the **1€ filter** + 30 golden vectors, inert until step 2 (⚠ the vectors caught a real divergence from the paper immediately — the speed term used the filtered, not the raw, value). **Back-of-hand snap rule REMOVED** ✅ **live-confirmed both tools 2026-08-25**; debug measured **9 of 15 snaps back-of-hand** (⚠ re-opens `N8`; the rule was refusing **8.3%** of free-hand frames; ⚠ production recorded nothing — `N4`) → [`spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](../10_HAND_TRACKING/spec/F1_FINGERTIP_TRANSFORM_SPEC.md)  ⭐⭐⭐ **RIG-ACCEPTED LIVE 2026-08-26** — owner *"I like the feel, this is better than the palm grip"*, and *"this is good"* at **tau 70 ms**. Trim measures **21.2° lean against the shipped 32.9°** at large yaw. ✅ **`A1` shipped into both tools**: the object now settles ON the fingertip barycentre (a **115.6 px** constant offset, faded at 150 px/s after a teleport and an exponential both FAILED the gate) and its depth is re-seated on the hand at every grab — it had been **ratcheted into the 0.30 m floor for 57.4% of every hold** while the hand was never once that near. ⛔⛔ **TAKE 1 WAS VOID**: two module-global gates left panels 1 and 2 **bit-identical (0.00 px)** — the switch had been verified where it was SET, not where it took EFFECT. ⛔ **Both switches still OFF in the game**: the `A10` bar and §10.1's trim-resolution metric are still owed, and the 21.2° is DAMPING until a declared take says it is fidelity.  ✅✅ **SHIPPED 2026-08-27.** `USE_TIP_BARYCENTER=True` — the fingertip grip, `A1`'s motion-masked re-centring walk, depth anchoring at grab, and a grab radius that is the object's PROJECTED FOOTPRINT. ⛔ **The rotation TRIM was REMOVED** (`TRIM_GAIN=0.0`): §10.1's take measured it **non-monotonic in the declared finger angle at every gain and clamp** — 15.7/12.6/20.3° for a declared 10/20/40 — so it is not a fine control at any setting, and the rig's 21.2° lean was a constant 10° offset, not finger steering. ✅ `A10` reproduces EXACTLY (yaw 14.5/1.13 · pitch 5.5/0.74 · roll 6.7/1.02 · **jitter p95 25.41**). ✅ `parity_replay` NO DIVERGENCE on four takes after **six** fixes — three per-hand estimators that did not die with their track, three harness asymmetries. | L1 ✅ |
 | [T7](queue_notes/T7.md) | World-referenced rotation (tilted camera) | HAND | perception | designed 2026-08-24 — ⭐ ships **with U12**, not after T6; no-op until then | T6, U12 |
 
 ## Phase B — the block representation

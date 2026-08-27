@@ -1706,7 +1706,10 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             # velocity fit measured on this project LOST to "hold the last
             # value", at every horizon.
             if Z_TRANSLATION and cube.grab_depth_m is not None:
-                _ratio, _ratio_valid = _depth_ratio_trackers[handedness].update(landmarks)
+                # ⭐ Same shared helper as the debug tool -- N6, and the estimator
+                # stays clock-free.
+                _ratio, _ratio_valid = _depth_ratio_trackers[handedness].update(
+                    landmarks, hand_state.frame_dt_ms(now_ms, _last_frame_ms))
                 if _ratio_valid and _ratio > 1e-6:
                     # ⭐ The anchor walks from the object's own depth at grab
                     # towards the hand's: at grab the offset is the whole gap, so

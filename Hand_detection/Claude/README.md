@@ -44,11 +44,12 @@ name.** They are the record, not the briefing.
 
 ## Where it stands, in five lines
 
-**`F1` is RIG-ACCEPTED (2026-08-26) and still OFF in the game.** The fingertip
-grip is accepted live, jitter settled at tau = 70 ms, and `A1` shipped — the object
-now settles ON the fingertip barycentre and its depth is re-seated on the hand at
-each grab. ⛔ The `A10` bar and §10.1's metric are still owed before either switch
-goes on.
+✅✅ **`F1` is SHIPPED (2026-08-27)** — the object is carried by the fingertip
+barycentre, settles onto it only while the hand moves, and is grabbed inside its
+projected footprint. ⛔ The rotation **trim was removed**: §10.1 measured it
+non-monotonic in the declared finger angle at every setting.
+**Next build: `T6` §4.3, the transfer test** — the protocol's own deciding test,
+desk work, no camera.
 **`T6` has moved**: its six takes are analysed and the analysis re-verified — the
 ratio table must be **2-D**, and the **absolute depth estimator steps whenever
 rotation changes which palm span it selects** (the four disagree by 13–22% at the

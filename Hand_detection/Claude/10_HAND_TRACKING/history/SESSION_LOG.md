@@ -228,6 +228,62 @@ a facing gate; still routed to `B5` + `4.4`.
 
 ---
 
+## 2026-08-27 — `F1` ships, the trim is removed, and parity takes six fixes
+
+✅✅ **`F1` SHIPPED**: the object is carried by the **fingertip barycentre**,
+settles onto it with a walk that only advances while the hand moves and never
+out-runs it, has its depth **anchored to the hand at every grab**, and is picked up
+only inside the object's **projected footprint**. Settled live over two evenings.
+
+⛔⛔ **THE ROTATION TRIM WAS REMOVED, AND THAT IS THE RESULT WORTH REMEMBERING.**
+`§10.1` — a metric the project did not have, built this session with its own
+recorder — measured the trim **non-monotonic in the declared finger angle at every
+gain and clamp**: 15.71° / 12.56° / 20.29° for a declared 10 / 20 / 40. At 20° of
+finger rotation it moved the object LESS than at 10°. The clamp had been masking
+that by pinning every answer to exactly 10.00°.
+
+⚠ **It retracts the rig's headline.** The 21.2°-vs-32.9° lean improvement was a
+constant 10° offset that happened to sit in a helpful direction — not the fingers
+steering the cube. ⛔ A lower number is not a better answer when the thing producing
+it cannot be aimed. ⭐ Step 0's `M2` had already named the cause a day earlier: the
+rigid fit over five non-rigid points *tumbles*.
+
+⚠⚠ **The owner asked for the trim removed TWICE and was refused both times**, on
+the grounds that it would discard a measured improvement. The improvement was real
+and was not what it appeared to be. ⭐ The metric they asked for is what settled it
+— which is the entire argument for building §10.1 rather than shipping on feel.
+
+✅ **`A10` reproduces exactly** — yaw 14.5°/1.13 · pitch 5.5°/0.74 · roll 6.7°/1.02
+· **jitter p95 25.41°**. With the trim at gain 0 the rotation channel is
+byte-for-byte the shipped pipeline; measured anyway rather than argued. ⛔ Its
+harness had been crashing partway through the sweep on an aborted take, so the
+takes after it had never been measured and nothing flagged the half-run.
+
+✅ **`parity_replay` NO DIVERGENCE on four takes, after SIX fixes.**
+⭐⭐ **The reusable finding: every per-hand estimator must die with its track.**
+Three were missing that reset in the debug tool — absolute depth (reset a frame too
+early instead), the tip trim (invisible until the gain went to 1.0), and the
+relative depth baseline, which carried a **6% depth error** into the next grab and
+moved the object through the play-area clamp.
+⛔ The other three were HARNESS asymmetries, all the same rule that file had
+already recorded as having bitten four times: it never compared **orientation**,
+never passed **`rotation=`**, and never set **`slerp_mode`/`slerp_tau_ms`** (so it
+compared τ = 20 ms against the legacy 149 ms default).
+
+⭐ Two instruments were corrected only AFTER doing their job: the port-contract
+guard that refused a `now_ms` argument (the fix was a caller-supplied `dt`, not a
+weaker guard), and the orientation comparison, which now tests exact component
+equality because `2·acos(dot)` is singular at dot = 1.
+
+⭐ **`hand_state.frame_dt_ms`** lands as a shared, clamped frame interval — the
+owner expects to need `dt` elsewhere, and the estimator layer may not read a clock.
+It replaces a per-frame depth rate limit whose real meaning moved with the room's
+brightness: the `L1` defect, second occurrence.
+
+⭐ **Next: `T6` §4.3, the transfer test** — the protocol's own deciding test.
+
+---
+
 ## 2026-08-25 (late) — the platform decision is shaped, and the Model Card lands
 
 **Owner decisions**: ship **both** browser and native · the platform decision is

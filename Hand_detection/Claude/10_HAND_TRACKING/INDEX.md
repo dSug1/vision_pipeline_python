@@ -37,21 +37,25 @@ fact and is why an earlier pass wrongly recommended accepting it.
 **The diagnosis is proven twice over and still stands; the remedy is not found.**
 → [`spec/ORIENTATION_DIAGNOSIS.md`](spec/ORIENTATION_DIAGNOSIS.md)
 
-⭐⭐ **`F1` IS RIG-ACCEPTED (2026-08-26), AND STILL OFF IN THE GAME.** The owner
-ran four rig sessions: the **fingertip grip is accepted** (*"better than the palm
-grip"*), the jitter filter is settled at **tau = 70 ms**, and **`A1` shipped into
-both tools** — the object settles ON the fingertip barycentre instead of riding
-115 px beside it, and its depth is re-seated on the hand at each grab instead of
-ratcheting into the 0.30 m floor (where it had sat for 57% of every hold).
-⛔⛔ **The FIRST take was void**: two module-global gates left panels 1 and 2
-bit-identical, so the owner judged a comparison that was not running the feature.
-⭐ **A switch must be verified where it takes EFFECT, never where it is set.**
-⛔ **Both switches stay OFF in the game** — the `A10` bar has never been run
-against `F1`, §10.1's trim-resolution metric does not exist, and the trim's
-measured **21.2° lean against the shipped 32.9°** is damping until a **declared**
-take proves it is fidelity.
+✅✅ **`F1` IS SHIPPED (2026-08-27).** The object is carried by the **fingertip
+barycentre**, settles onto it with a motion-masked walk (it only closes the gap
+while the hand is moving, and never faster than the hand), has its depth
+**anchored to the hand at each grab**, and is picked up only when the barycentre
+falls inside the object's **projected footprint**.
+⛔⛔ **The rotation TRIM was REMOVED.** §10.1's declared-angle take measured it
+**non-monotonic in the declared finger angle at every gain and clamp**, so it is
+not a fine control at any setting. ⚠ That **retracts** the rig's 21.2°-vs-32.9°
+lean result: it was a constant 10° offset, not the fingers steering the cube.
+⭐ Step 0's `M2` had already named the cause — the rigid fit over five non-rigid
+points tumbles.
+✅ `A10` reproduces exactly (jitter p95 **25.41°**) and `parity_replay` is clean on
+four takes. ⭐⭐ The reusable finding: **every per-hand estimator must die with its
+track** — three were missing that reset.
 → [`spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](spec/F1_FINGERTIP_TRANSFORM_SPEC.md) ·
 [`../00_CORE/queue_notes/F1.md`](../00_CORE/queue_notes/F1.md)
+
+⛔ **`F1` did NOT fix the yaw lean.** The apparent improvement was the trim's
+constant offset, and it is gone. The show-stopper stands.
 
 ⭐⭐ **`T6`'s analysis has RUN** — protocol §4.1/§4.2 and the depth arm §8.1/§8.2,
 over the six recorded takes (`analysis/t6_ratio_analysis.py`, no pipeline change).

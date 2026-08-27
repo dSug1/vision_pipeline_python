@@ -136,8 +136,25 @@ def main():
     ra = [a.update(hand(scale=k))[0] for k in seq]
     rb = [b.update(hand(scale=k))[0] for k in seq]
     check("two instances agree exactly", ra == rb, True)
-    check("no wall-clock is read (update takes no timestamp)",
-          PD.DepthRatioTracker.update.__code__.co_argcount, 2)
+    # ⛔⛔ THIS CHECK USED TO COUNT ARGUMENTS -- `co_argcount == 2` -- AND THAT WAS
+    # TOO LITERAL FOR ITS OWN NAME. What `CONSTRAINTS` §2 forbids is READING a
+    # clock, because a wall-clock is the first thing that does not transliterate.
+    # A frame INTERVAL computed by the caller and passed as a plain number ports
+    # perfectly and stays deterministic under replay.
+    #
+    # ⚠ The argument-count form did fire, correctly, on a first attempt that passed
+    # `now_ms` -- and the fix was to change the SHAPE (caller-supplied `dt_ms` from
+    # `hand_state.frame_dt_ms`), not to weaken the guard. So the guard now tests
+    # what it always meant: no clock is read INSIDE this module, and two instances
+    # given identical inputs still agree exactly (checked just above).
+    import io as _io
+    _src = _io.open(os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "Resources", "palm_depth.py"),
+        encoding="utf-8").read()
+    check("no wall-clock is READ inside the module (it ports by transliteration)",
+          ("import time" not in _src) and ("time." not in _src), True)
+    check("...and any interval arrives as a plain number from the caller",
+          "dt_ms" in PD.DepthRatioTracker.update.__code__.co_varnames, True)
 
     # ======================================================================
     print("\n" + "=" * 78)

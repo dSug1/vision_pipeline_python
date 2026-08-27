@@ -85,6 +85,57 @@ EXIT_DWELL_FRAMES = 3
 # above that is an estimator excursion, not an arm.
 RATE_LIMIT_PER_FRAME = 0.12
 
+# ⛔⛔ AND IT IS THE WRONG UNIT, WHICH IS WHY THE OWNER STILL SAW Z JUMPS.
+#
+# Owner, 2026-08-26: *"there was still a big jump in the z direction of the cube
+# during one of the grabs"*. ⭐ MEASURED on that very take: none of the 48 depth
+# steps over 2 cm land on a grab -- `A1`'s walk fixed that -- they are all DURING
+# a hold, and their size is set by this limiter:
+#
+#     per-frame relative depth step, held frames: p50 0.009  p90 0.052
+#                                                 p95 0.083  p99 0.116  max 0.137
+#
+# ⚠ The cap is 0.12 and the comment above says genuine hand motion is ~5%/frame.
+# So the limiter sits at 2.4x real motion and passes exactly the excursions it was
+# added to stop -- p90 is already under the genuine rate, and the visible jumps are
+# the 5-10% tail above it.
+#
+# ⛔ WORSE, IT IS PER FRAME. That is the defect `L1` already paid for once: a
+# per-frame fraction changes its real-world meaning with the camera's frame rate,
+# so the same constant is 240%/s in a bright room and 360%/s in a dark one. The
+# fix there was to express the constant in TIME, and it is the fix here.
+#
+# ⭐ 1.20 per SECOND reproduces ~6%/frame at this pipeline's measured ~20 fps --
+# just above the module's own 5%/frame figure for a genuine push, and tight enough
+# that the 8-11% of frames carrying the tail are limited instead of shown.
+# ⭐⭐ AND THE CAP IS PER SECOND WHEN THE CALLER SUPPLIES AN INTERVAL.
+#
+# ⛔ A FIRST ATTEMPT PASSED `now_ms` AND WAS REVERTED WHOLE, correctly: this module
+# is CLOCK-FREE BY CONTRACT (`CONSTRAINTS` §2 -- the estimator layer is
+# transliterated, not rewritten, and a wall-clock read is the first thing that does
+# not port). `verify_palm_depth` caught it within the hour.
+#
+# ⭐ The shape that satisfies both: the CALLER owns the frame loop, computes the
+# interval with `hand_state.frame_dt_ms` (clamped, shared, reusable) and passes it
+# down as a PLAIN NUMBER. Nothing here asks what time it is, so the module stays
+# deterministic under replay and ports unchanged.
+#
+# ⭐⭐ 2.00 per second -- SETTLED LIVE BY THE OWNER on the rig slider, 2026-08-27
+# ("z rate 200% is good"), the way this project settles every feel constant.
+#
+# The unit fix and the tightening were deliberately separated. 2.40/s reproduced
+# the old 12%/frame at ~20 fps exactly, so the switch to time changed nothing; the
+# owner then swept the slider and stopped at 2.00/s = 10%/frame at 20 fps.
+#
+# ⚠ WHAT IT IS TRADING, measured on the owner's own take: per-frame relative depth
+# steps while holding ran p50 0.9%, p90 5.2%, p95 8.3%, max 13.7%. The module's
+# own figure for a GENUINE hand push is ~5%/frame. So 10%/frame still sits above
+# real motion and clips only the top of the excursion tail -- the owner traded
+# JUMP against LAG and stopped where the cube still follows a real push.
+# ⛔ It is NOT at the 5%/frame genuine rate, and that is a choice, not an
+# oversight: going there was audibly laggy on a deliberate push.
+RATE_LIMIT_PER_S = 2.00
+
 # Ratios outside this are not reachable by arm movement (measured envelope is
 # 0.53..1.89); clamping stops a bad frame throwing the cube to infinity.
 MIN_RATIO = 0.40
@@ -202,8 +253,15 @@ class DepthRatioTracker:
         self.exit_run = 0
         return True
 
-    def update(self, landmarks):
-        """Returns (ratio, valid). Ratio is d/d0 -- >1 nearer, <1 further."""
+    def update(self, landmarks, dt_ms=None):
+        """Returns (ratio, valid). Ratio is d/d0 -- >1 nearer, <1 further.
+
+        `dt_ms` is the frame interval from `hand_state.frame_dt_ms`, already
+        clamped. ⭐ It is a PLAIN NUMBER, never a clock: see `RATE_LIMIT_PER_S`.
+        ⚠ `None` means the caller has no interval yet, and the per-FRAME cap is
+        used -- which is exactly today's behaviour, so every existing call site is
+        unchanged until it is updated.
+        """
         if self.baseline is None:
             if not self.freeze(landmarks):
                 return self.ratio, False
@@ -250,7 +308,10 @@ class DepthRatioTracker:
 
         # --- rate limit: ~9% false depth survives even the best anchor.
         delta = raw - self.ratio
-        cap = self.rate_limit * max(self.ratio, 1e-6)
+        # ⭐ Per SECOND when an interval is supplied, per FRAME otherwise.
+        per_frame = (self.rate_limit if dt_ms is None
+                     else RATE_LIMIT_PER_S * (dt_ms / 1000.0))
+        cap = per_frame * max(self.ratio, 1e-6)
         if delta > cap:
             raw = self.ratio + cap
             self.rate_limited += 1

@@ -250,6 +250,20 @@ SLIDERS = (
     # cubes pinned at the 0.30 m floor while the hand sat at 0.42 -- so it should
     # be far smaller now. This slider is how we find out, live.
     ("GRAB z margin cm", 30, 15, lambda n: n / 100.0),
+    # ⭐⭐ THE Z-JUMP KNOB. `palm_depth`'s ratio may change by at most this fraction
+    # of itself per SECOND, so the constant means the same thing whatever the
+    # camera's frame rate (the `L1` lesson, applied on 2026-08-27).
+    # Shown as PERCENT PER SECOND -- the displayed integer is the applied value.
+    #
+    # ⚠ WHAT THE NUMBERS MEAN, measured on the owner's own take: at ~20 fps,
+    #     240 %/s = 12%/frame  <- today's shipped value
+    #     100 %/s =  5%/frame  <- the module's own figure for a GENUINE hand push
+    # and the per-frame depth step while held was p50 0.9%, p90 5.2%, p95 8.3%,
+    # max 13.7%. So the visible jumps are the tail ABOVE the genuine rate, and the
+    # useful range to explore is roughly 100-240.
+    # ⚠ 0 freezes depth outright -- reachable on purpose, like every other slider
+    # here, because a hidden floor teaches the wrong thing about where the limit is.
+    ("Z rate %/s", 400, 200, lambda n: n / 100.0),
     # ⛔ PARKED 2026-08-26 alongside the two above -- the owner retired it after
     # revisiting an earlier preference for a raised clamp.
     #   ("TRIM max deg", TRIM_MAX_DEG_MAX, 10, lambda n: float(n)),
@@ -816,6 +830,7 @@ GRAB_RADIUS_MULTIPLIER = _HS_const.GRAB_RADIUS_MULTIPLIER
 GRIP_ALIGN_MOVING_MS = fingertips.GRIP_ALIGN_MOVING_MS
 GRIP_ALIGN_MASK_RATIO = fingertips.GRIP_ALIGN_MASK_RATIO
 GRAB_Z_TOLERANCE_M = _PDepth.GRAB_Z_TOLERANCE_M
+DEPTH_RATE_PER_S = _PDepth.RATE_LIMIT_PER_S
 CUBE_ALPHA = 0.55  # transparency of the cube overlay, so the video stays visible underneath
 SNAP_BORDER_COLOR = (255, 255, 255)
 SNAP_BORDER_WIDTH = 3
@@ -1686,6 +1701,7 @@ def _read_sliders() -> None:
     """
     global SLERP_TAU_MS, JITTER_TAU_MS, JITTER_BETA, GRAB_RADIUS_MULTIPLIER
     global GRIP_ALIGN_MOVING_MS, GRIP_ALIGN_MASK_RATIO, GRAB_Z_TOLERANCE_M
+    global DEPTH_RATE_PER_S
     try:
         vals = [spec[3](cv2.getTrackbarPos(spec[0], SLIDER_WIN)) for spec in SLIDERS]
     except cv2.error:
@@ -1693,7 +1709,7 @@ def _read_sliders() -> None:
     # ⚠ THREE sliders now -- three others are parked (see `SLIDERS`). The parked
     # values are NOT re-read here; they keep their module defaults.
     (SLERP_TAU_MS, _gain, GRAB_RADIUS_MULTIPLIER, GRIP_ALIGN_MOVING_MS,
-     GRIP_ALIGN_MASK_RATIO, GRAB_Z_TOLERANCE_M) = vals
+     GRIP_ALIGN_MASK_RATIO, GRAB_Z_TOLERANCE_M, DEPTH_RATE_PER_S) = vals
     # ⚠ The SHARED module global, like TRIM gain above: `decay_grip_offset` reads
     # it internally, and the two tools cannot run at once (one camera, DSHOW is
     # exclusive), so there is no window in which they could disagree.
@@ -1701,6 +1717,9 @@ def _read_sliders() -> None:
     # ⚠ Same reasoning: both tools read this attribute at call time, and they can
     # never run at once, so driving the shared module is safe and keeps ONE value.
     _PDepth.GRAB_Z_TOLERANCE_M = GRAB_Z_TOLERANCE_M
+    # ⚠ Same scoping as the two above: the shared module, because both tools read
+    # this attribute at call time and they can never run at once.
+    _PDepth.RATE_LIMIT_PER_S = DEPTH_RATE_PER_S
 
     # ⭐ The fingertip filter is SHARED across arms by design, so configuring it
     # here configures every panel at once -- which is correct: the arms differ in
@@ -1748,6 +1767,7 @@ def settled_values() -> dict:
         "grip_align_moving_ms": GRIP_ALIGN_MOVING_MS,
         "grip_align_mask_ratio": GRIP_ALIGN_MASK_RATIO,
         "grab_z_margin_m": GRAB_Z_TOLERANCE_M,
+        "depth_rate_per_s": DEPTH_RATE_PER_S,
         "jitter_tau_ms": JITTER_TAU_MS,
         "jitter_beta": JITTER_BETA,
     }
@@ -1765,7 +1785,7 @@ def _draw_slider_panel(open_: bool):
     """The panel's own canvas: the value in the unit the owner reasons about."""
     if not open_ or cv2.getWindowProperty(SLIDER_WIN, cv2.WND_PROP_VISIBLE) < 1:
         return
-    canvas = np.zeros((380, 520, 3), dtype=np.uint8)
+    canvas = np.zeros((430, 520, 3), dtype=np.uint8)
     cv2.putText(canvas, f"smoothing tau = {SLERP_TAU_MS:.0f} ms", (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (120, 255, 255), 2, cv2.LINE_AA)
     note = ("no smoothing -- the cube goes exactly where Horn says"
@@ -1846,6 +1866,16 @@ def _draw_slider_panel(open_: bool):
                 1, cv2.LINE_AA)
     cv2.putText(canvas, "depth is ESTIMATED, not measured: T6 put the four palm",
                 (10, 368), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
+                cv2.LINE_AA)
+    cv2.line(canvas, (10, 386), (510, 386), (60, 60, 60), 1)
+    _zr = (("depth FROZEN -- the cube cannot move in Z" if DEPTH_RATE_PER_S <= 0
+            else "z rate: %.0f %%/s  =  %.1f %%/frame at 20 fps"
+                 % (DEPTH_RATE_PER_S * 100, DEPTH_RATE_PER_S * 100 * 0.05)))
+    cv2.putText(canvas, _zr, (10, 410), cv2.FONT_HERSHEY_SIMPLEX, 0.52,
+                (120, 255, 200) if DEPTH_RATE_PER_S > 0 else (120, 120, 255),
+                1, cv2.LINE_AA)
+    cv2.putText(canvas, "240 = shipped;  100 = a genuine hand push.  Jumps live above it.",
+                (10, 428), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (150, 150, 150), 1,
                 cv2.LINE_AA)
     try:
         cv2.imshow(SLIDER_WIN, canvas)
@@ -2094,6 +2124,20 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                 # on the track's death, and NOT on the first frame the hand is
                 # missing. See `_update_snap_depth` for the divergence this fixed.
                 _snap_depth_trackers[handedness].reset()
+                # ⛔⛔ AND THE RELATIVE DEPTH BASELINE -- the THIRD instance of this
+                # exact bug in one session, and the one that cost the most to find.
+                # Production resets `_depth_ratio_trackers` in TWO places (the
+                # free-hand branch AND here); this tool had only the first, so a
+                # baseline outlived the hand it was measured from. `parity_replay`
+                # showed it as production's ratio sitting at 1.000 while this tool
+                # carried 0.9318 into the next grab -- a 6% depth error that then
+                # moved the object through the play-area clamp.
+                # ⭐ THE PATTERN: every per-hand estimator must die with its track.
+                # Three were missing it here (absolute depth, tip trim, and this).
+                # ⚠ If a FOURTH per-hand estimator is ever added, this branch is
+                # where it belongs, and `parity_replay` is what will notice if it
+                # is forgotten -- but only for quantities the harness COMPARES.
+                state.depth_ratio_trackers[handedness].reset()
                 # ⛔⛔ AND THE TIP TRIM, for the same reason and found the same way.
                 # Production resets it in TWO places -- the free-hand branch AND
                 # here, on the track's death -- and this tool had only the first.
@@ -2297,8 +2341,11 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
             # depth holds too -- B8 measured every velocity fit losing to "hold
             # the last value", so there is nothing to extrapolate with.
             if cube.grab_depth_m is not None:
+                # ⭐ The shared, clamped frame interval -- one definition, and the
+                # estimator never asks what time it is (`CONSTRAINTS` §2).
                 _ratio, _ratio_valid = state.depth_ratio_trackers[handedness].update(
-                    data["pixel_landmarks"])
+                    data["pixel_landmarks"],
+                    _HS_const.frame_dt_ms(now_ms, state.last_frame_ms))
                 if _ratio_valid and _ratio > 1e-6:
                     # ⭐ The anchor walks from the object's own depth at grab
                     # towards the hand's. At grab the offset is the whole gap, so
@@ -2673,6 +2720,8 @@ def main():
                            int(round(GRIP_ALIGN_MASK_RATIO * 100)))
         cv2.setTrackbarPos("GRAB z margin cm", SLIDER_WIN,
                            int(round(GRAB_Z_TOLERANCE_M * 100)))
+        cv2.setTrackbarPos("Z rate %/s", SLIDER_WIN,
+                           int(round(DEPTH_RATE_PER_S * 100)))
         if args.f1_rig:
             # ⭐ The rig exists to show the trim, so it starts with the trim ON --
             # while the ordinary single-arm view stays at production's 0.
