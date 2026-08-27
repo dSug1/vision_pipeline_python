@@ -293,7 +293,7 @@ SLIDERS = (
     # 2.53 deg/frame -- about 38 deg/s at 15 fps -- so a threshold under that would
     # be tripped by the very jitter the damper removes, and the damping would
     # flicker on and off.
-    ("RELEASE deg/s", 400, 80, lambda n: float(n)),
+    ("RELEASE deg/s", 400, 60, lambda n: float(n)),
     # ⭐⭐ FREEZE: consecutive fast frames needed to let the object move at all.
     # ⛔ 0 = OFF, i.e. the smooth ramp above. Any value > 0 makes the blend factor
     # EXACTLY ZERO while held -- absolutely no movement, by construction rather than
@@ -309,7 +309,7 @@ SLIDERS = (
     # makes the rotation jerky. I want to keep it to 0 or 1 or max 2"*. The COHERENCE
     # gate below is what makes 1 sufficient -- it does the noise rejection the second
     # frame used to do, without costing a frame of onset.
-    ("FREEZE frames", 2, 0, lambda n: int(n)),
+    ("FREEZE frames", 2, 1, lambda n: int(n)),
     # ⭐⭐ DIRECTIONAL COHERENCE, in percent: how much of the hand must be stepping
     # the SAME WAY as it did last frame before the object may move at all.
     # ⛔ 0 = OFF. 60 is the measured working value: still hands read 0.35, turning

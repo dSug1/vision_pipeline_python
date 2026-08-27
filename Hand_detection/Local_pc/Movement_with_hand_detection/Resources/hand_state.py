@@ -123,7 +123,7 @@ ROTATION_STEADY_EXTRA_MS = 4500.0
 # a HELD-STILL hand's raw target already moves 2.53 deg/frame -- about 38 deg/s at
 # 15 fps. A release threshold under that would be tripped by the very jitter the
 # damper exists to remove, and the damping would flicker on and off.
-ROTATION_STEADY_RELEASE_DEG_S = 80.0
+ROTATION_STEADY_RELEASE_DEG_S = 60.0
 
 # Below this fraction of the release speed the damping is at FULL strength. The gap
 # between the two is the whole width of the ramp -- narrow, on purpose.
@@ -222,7 +222,7 @@ def steady_speed_envelope(previous_env, speed_deg_s, dt_ms):
 # hand creeps below the threshold the gap accumulates and is paid back as a JUMP on
 # release. That is inherent to "absolutely no movement" and is the reason this is a
 # mode rather than the default.
-# ✅ SETTLED BY THE OWNER 2026-08-27: 4500 / 80 / 1 / 0.60, after eight live
+# ✅ SETTLED BY THE OWNER 2026-08-27: RELEASE 60 / FREEZE 1 / COHERENCE 0, after nine live
 # sessions. ⚠ 1 frame, not 2: the two-frame trigger was rejected for making the
 # rotation jerky, and the coherence gate below is what makes one frame enough.
 ROTATION_STEADY_FREEZE_FRAMES = 1      # 0 = off (smooth ramp); N = freeze, N-frame trigger
@@ -258,7 +258,16 @@ ROTATION_STEADY_FREEZE_FRAMES = 1      # 0 = off (smooth ramp); N = freeze, N-fr
 # i.e. the same noise rejection with no second frame, and far more of the real
 # turning caught.
 COHERENCE_MIN_PX = 0.75        # below this a landmark has no meaningful direction
-COHERENCE_FRACTION = 0.60      # 0 = gate OFF. ✅ 0.60 settled by the owner.
+# ⛔⛔ MEASURED NOT WORTH IT, and shipped OFF. The signal is real -- 0.36 coherent
+# when still against 0.76 on a slow turn -- but it never wins on the trade-off
+# frontier: as an AND-gate it can only REDUCE releases, so it cannot help the slow
+# case by construction, and rebuilt as an OR path it still lost (71.4% against
+# 79.5% slow-turn following at the same stillness).
+# ⚠ On the owner's own take it froze slow turns almost solid: 0.17 deg/frame of
+# cube movement during a slow turn, against 4.06 with the gate off.
+# ✅ PARKED, not deleted -- the slider still exposes it, same treatment as
+# JITTER/SPEED, so it can be re-tested rather than re-derived.
+COHERENCE_FRACTION = 0.0       # 0 = gate OFF. ✅ Settled OFF by measurement + feel.
 
 
 def landmark_coherence(points, prev_points, prev_deltas, min_px=COHERENCE_MIN_PX):
