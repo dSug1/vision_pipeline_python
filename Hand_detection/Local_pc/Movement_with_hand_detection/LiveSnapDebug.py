@@ -271,7 +271,16 @@ SLIDERS = (
     # choice: the take exited at exactly 400.0, so the useful range had not been
     # bracketed. A slider whose maximum is the answer has not been explored yet --
     # the same reason GRAB radius runs to 300%.
-    ("STEADY ms", 1000, 0, lambda n: float(n)),
+    # ⚠ RANGE 1000 -> 5000 (owner, 2026-08-27: *"I want to test a cube fully
+    # steady"*). ⭐ 5000 ms is alpha = 0.013, i.e. the cube covers 1.3% of the gap
+    # per frame: measured white-noise attenuation 8%, predicted residual jitter
+    # 0.35 deg/frame against a 4.30 deg raw.
+    # ⛔ AND AT THAT SETTING THE *RELEASE* THRESHOLD BECOMES THE WHOLE STORY, because
+    # anything below it is effectively FROZEN -- a slow deliberate turn at 50 deg/s
+    # would advance ~1.3% per frame, about 18% of the motion in a full second. That
+    # is not a defect to fix, it is what "fully steady" costs, and it is why the two
+    # sliders have to be judged together.
+    ("STEADY ms", 5000, 0, lambda n: float(n)),
     # ⭐⭐ WHERE THE DAMPING LETS GO, in deg/s of hand rotation. Owner, 2026-08-27:
     # *"I don't want any quaternion slerp as soon as I start a hand rotation"*.
     # ⛔ ABOVE this the extra damping is EXACTLY ZERO -- the cube is on today's tau
