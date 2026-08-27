@@ -105,6 +105,35 @@ def occludes(front_depth_m, back_depth_m):
 SEGMENT_STEPS = 16
 
 
+def near_face_depth(centre_depth_m, near_offset_px, focal_px):
+    """The depth of a solid's NEAREST point, from its centre depth.
+
+    ⭐⭐ WHY AN OCCLUDER IS NOT A PLANE. A cube is SOLID and has thickness: at
+    80 px nominal it is **7.2 cm** on a side, so its near face sits 3.6 cm closer to
+    the camera than its centre. Treating the centre as the occluding plane means the
+    whole near HALF of the object is transparent -- anything inside it draws on top,
+    including the fingertips holding it.
+    ⛔ Measured, and it is why the owner still saw every fingertip in front of the
+    cube after the grip-depth fix landed correctly: the tips span only ~2 cm in depth
+    and sat clustered around the cube's CENTRE, i.e. buried inside a 7.2 cm solid.
+
+    ⭐ `near_offset_px` is the nearest projected vertex's own z, in the renderer's
+    projected pixel units, and is NEGATIVE toward the camera. Taking it from the
+    vertices the renderer just projected makes this EXACT for any orientation --
+    a rotated cube reaches further forward than an axis-aligned one (up to half its
+    space diagonal), and no constant half-size would capture that.
+
+    ⚠ The pixel->metre conversion is the pinhole one, `d / focal`, evaluated at the
+    object's own depth. Every other px<->m conversion in this pipeline uses the same
+    relation (`palm_geometry.focal_px`).
+    """
+    if centre_depth_m is None or near_offset_px is None:
+        return centre_depth_m
+    if not focal_px or focal_px <= 0.0:
+        return centre_depth_m
+    return centre_depth_m + near_offset_px * centre_depth_m / float(focal_px)
+
+
 def convex_hull(points):
     """Monotone-chain hull. Returns the hull in order; needs no numpy."""
     pts = sorted(set((float(x), float(y)) for x, y in points))

@@ -477,8 +477,15 @@ class CubeWindow:
         # because a cube is -- which is what `point_in_convex` requires.
         # ⚠ Taken from the vertices this method just projected, so the occluder and
         # the drawing cannot disagree about where the object is.
+        # ⭐ The occluder's depth is the object's NEAR FACE, not its centre -- a cube
+        # is solid, and its near half was transparent until 2026-08-27.
+        # ⚠ `min(rz)` is this orientation's own nearest vertex, so a rotated cube
+        # reaches correctly further forward than an axis-aligned one.
         self._silhouettes.append(
-            (depth_order.convex_hull([xy for xy, _z in projected]), obj.depth_m))
+            (depth_order.convex_hull([xy for xy, _z in projected]),
+             depth_order.near_face_depth(obj.depth_m,
+                                         min(z for _xy, z in projected),
+                                         palm_geometry.focal_px(self.window_size))))
 
         edge_color = SNAP_BORDER_COLOR if obj.owner is not None else CUBE_EDGE_COLOR
         edge_width = SNAP_BORDER_WIDTH if obj.owner is not None else 1

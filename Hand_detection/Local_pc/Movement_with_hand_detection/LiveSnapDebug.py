@@ -2663,7 +2663,8 @@ def _draw_hand_occluded(frame, pts, depths, occluders):
             cv2.circle(frame, (int(x), int(y)), 3, LANDMARK_COLOR, -1, cv2.LINE_AA)
 
 
-def _draw_cube_3d(overlay, cube: Cube, screen_center: Tuple[float, float], sink=None):
+def _draw_cube_3d(overlay, cube: Cube, screen_center: Tuple[float, float], sink=None,
+                  near_sink=None):
     """Real rotating 3D object (2026-08-01, replaces the old flat-rect +
     axis-gizmo placeholder) -- ported from production CubeWindow.py's
     `_draw_object_3d`, same fixed-camera-distance perspective projection
@@ -2693,6 +2694,8 @@ def _draw_cube_3d(overlay, cube: Cube, screen_center: Tuple[float, float], sink=
         rx, ry, rz = _quat_rotate_vector(cube.orientation, local)
         scale = camera_distance / (camera_distance + rz)
         projected.append(((cx + rx * scale, cy + ry * scale), rz))
+        if near_sink is not None:
+            near_sink.append(rz)
 
     visible_faces = []
     for face in cube.mesh.faces:
@@ -2749,9 +2752,18 @@ def _draw_cubes(frame, state: CubeState):
         # depth other than the reference one.
         size = state.projected_size_of(cube)
         screen_center = (cube.position[0] + size / 2, cube.position[1] + size / 2)
-        _draw_cube_3d(overlay, cube, screen_center, pts_for_hull)
+        near_px = []
+        _draw_cube_3d(overlay, cube, screen_center, pts_for_hull, near_px)
         if pts_for_hull:
-            sils.append((depth_order.convex_hull(pts_for_hull), cube.depth_m))
+            # ⭐ The NEAR FACE, exactly as production computes it (N6): a cube is
+            # solid, and treating its centre as the occluding plane left the whole
+            # near half transparent -- which is what buried the fingertips inside
+            # the object they were holding.
+            sils.append((depth_order.convex_hull(pts_for_hull),
+                         depth_order.near_face_depth(
+                             cube.depth_m,
+                             min(near_px) if near_px else None,
+                             palm_geometry.focal_px(frame.shape[1::-1]))))
     cv2.addWeighted(overlay, CUBE_ALPHA, frame, 1 - CUBE_ALPHA, 0, frame)
     # ⚠ RESTORED 2026-08-25: this loop was removed as COLLATERAL by `febd3fa`,
     # the commit that stripped T6d's A/B rig out of this tool. It sat directly
