@@ -80,6 +80,58 @@ SUSTAINED_LOST = "SUSTAINED_LOST"
 # `HandsTriggeredActions.ROTATION_SLERP_TAU_MS`'s comment.
 ROTATION_SLERP_TAU_MS = 20.0
 
+# ⭐⭐ THE STEADY DAMPER (owner, 2026-08-27: *"there is a bit of jitter of the
+# cube"*). Measured on `2026-08-27_195429_solid` while a cube was held:
+#
+#     grip point moves   3.50 px/frame median      <- the input
+#     cube POSITION      3.39 px/frame median      <- tracks it to 0.1 px
+#     cube ORIENTATION   4.30 deg/frame median, p95 15.40   <- THE JITTER
+#     cube size (depth)  1.25 px median, p95 6.57 (8% of an 80 px cube)
+#
+# ⛔ So position is NOT the problem -- damping it would only lag translation. The
+# shimmer is ORIENTATION, 4.3 deg every frame at 15 fps, and it is already smoothed
+# at tau = 20 ms.
+#
+# ⭐ RAISING tau IS NOT THE ANSWER, and `L1` is why: a fixed time constant lags
+# genuine motion exactly as much as it damps jitter, and the owner rejected that
+# trade once already (*"the cube is lagging the hand and this feels very
+# uncomfortable"*). This makes tau ADAPTIVE instead -- the 1-euro idea applied to
+# the slerp already shipped:
+#
+#     barely turning  ->  tau rises      -> the shimmer is held still
+#     really turning  ->  tau collapses  -> today's responsiveness, unchanged
+#
+# ⛔ `extra_ms = 0` IS TODAY'S BEHAVIOUR, BIT-EXACT. The slider's left end is
+# production.
+ROTATION_STEADY_EXTRA_MS = 0.0
+
+# Angular speed at which HALF the extra damping has been given back. Below it the
+# cube is treated as "being held still", above it as "being turned".
+# ⚠ 60 deg/s is roughly 4 deg per frame at 15 fps -- i.e. exactly the measured
+# median jitter, so noise sits at the damped end and deliberate turning does not.
+ROTATION_STEADY_KNEE_DEG_S = 60.0
+
+
+def steady_tau_ms(base_tau_ms, speed_deg_s,
+                  extra_ms=None, knee_deg_s=ROTATION_STEADY_KNEE_DEG_S):
+    """The effective smoothing time constant for this frame.
+
+    ⛔⛔ `speed_deg_s` MUST BE MEASURED FROM THE RAW TARGET, never from the
+    smoothed output. Measuring the output makes it self-referential: damping lowers
+    the apparent speed, which raises the damping, which lowers it further -- and the
+    cube locks solid and never moves again. This is the one way to get this function
+    badly wrong, so it is stated here rather than left to the caller to notice.
+
+    ⚠ An unknown speed is treated as FAST (no extra damping). Unknown must not
+    mean "hold still", or a dropout would freeze the object.
+    """
+    base = max(1.0, float(base_tau_ms))
+    extra = ROTATION_STEADY_EXTRA_MS if extra_ms is None else float(extra_ms)
+    if extra <= 0.0 or speed_deg_s is None or speed_deg_s != speed_deg_s:
+        return base
+    knee = max(1e-6, float(knee_deg_s))
+    return base + extra / (1.0 + max(0.0, float(speed_deg_s)) / knee)
+
 # ⭐⭐ THE GRAB RADIUS LIVES HERE FOR THE SAME REASON tau DOES, and it had the same
 # problem: it was defined TWICE, once in each tool, both reading 1.5 -- so the
 # duplication stayed invisible until the moment one of them was tuned.

@@ -256,6 +256,18 @@ SLIDERS = (
     # (19.8 -> 19.6) and IMPROVES on pitch (45.0 -> 22.1), so there is no measured
     # jitter cost -- but T6d was rejected for FEELING wrong while scoring fine, so
     # the slider exists to let the hand decide, not the table.
+    # ⭐⭐ THE STEADY DAMPER, owner 2026-08-27: *"there is a bit of jitter of the
+    # cube"*. EXTRA milliseconds of smoothing given to a cube that is barely
+    # turning, and taken back as it turns.
+    # ⛔ 0 ms IS TODAY'S BEHAVIOUR, BIT-EXACT -- the left end is production.
+    # ⚠ It is NOT "raise SMOOTH ms". A fixed time constant lags real motion exactly
+    # as much as it damps jitter, which is the trade `L1` already rejected
+    # (*"the cube is lagging the hand and this feels very uncomfortable"*). This one
+    # is spent only while the cube is nearly still.
+    # ⭐ Measured target: orientation moves 4.30 deg/frame median while held, which
+    # at 15 fps is the shimmer. Position needs nothing -- the cube tracks the grip
+    # point to within 0.1 px, so damping it would only lag translation.
+    ("STEADY ms", 400, 0, lambda n: float(n)),
     ("SLANT axis %", 100, 0, lambda n: n / 100.0),
     # ⭐⭐ THE OWNER'S OWN STRATEGY, as a whole estimator: the regression fitted
     # from the six takes (HALF 1) on a canonical frozen at the grab (HALF 2).
@@ -1217,6 +1229,10 @@ class CubeState:
     # two estimators on ONE camera and ONE detection -- a per-call estimator can
     # only ever compare a panel against itself.
     rotation: object = None
+    # ⚠ The RAW target's angular speed, deg/s, for the steady damper. Raw, not
+    # smoothed -- see `_slerp_factor_for`.
+    last_target_quat: object = None
+    last_target_speed_deg_s: object = None
     # ⭐⭐ THE LAG A/B (owner, 2026-08-24: *"the cube is lagging the hand and this
     # feels very uncomfortable"*). "frame" = today's FIXED PER-FRAME factor; "time"
     # = a real exponential with a time constant in MILLISECONDS.
@@ -1817,7 +1833,7 @@ def _read_sliders() -> None:
     """
     global SLERP_TAU_MS, JITTER_TAU_MS, JITTER_BETA, GRAB_RADIUS_MULTIPLIER
     global GRIP_ALIGN_MOVING_MS, GRIP_ALIGN_MASK_RATIO, GRAB_Z_TOLERANCE_M
-    global DEPTH_RATE_PER_S, SLANT_AXIS_GAIN, POSE_BLEND
+    global DEPTH_RATE_PER_S, SLANT_AXIS_GAIN, POSE_BLEND, STEADY_EXTRA_MS
     try:
         vals = [spec[3](cv2.getTrackbarPos(spec[0], SLIDER_WIN)) for spec in SLIDERS]
     except cv2.error:
@@ -1825,8 +1841,11 @@ def _read_sliders() -> None:
     # ⚠ THREE sliders now -- three others are parked (see `SLIDERS`). The parked
     # values are NOT re-read here; they keep their module defaults.
     (SLERP_TAU_MS, _gain, GRAB_RADIUS_MULTIPLIER, GRIP_ALIGN_MOVING_MS,
-     GRIP_ALIGN_MASK_RATIO, SLANT_AXIS_GAIN, POSE_BLEND,
+     GRIP_ALIGN_MASK_RATIO, STEADY_EXTRA_MS, SLANT_AXIS_GAIN, POSE_BLEND,
      GRAB_Z_TOLERANCE_M) = vals
+    # ⚠ Shared module, same reasoning as the others: both tools read it at call
+    # time and can never run at once. ⛔ It stays 0 in production unless set there.
+    _HS_const.ROTATION_STEADY_EXTRA_MS = STEADY_EXTRA_MS
     # ⚠ Same shared-module reasoning as the three below: an estimator built with
     # `gain=None` reads this attribute at call time. ⛔ Production never constructs
     # `SlantAxisHorn` at all, so this cannot reach it -- but `parity_replay` is the
@@ -1896,6 +1915,7 @@ def settled_values() -> dict:
         # an A/B session, and this row still managed to lose one take to it.
         # ⭐ Read from the module, not from the local: it is the value the estimator
         # actually consults at call time, so it cannot drift from what ran.
+        "steady_extra_ms": _HS_const.ROTATION_STEADY_EXTRA_MS,
         "slant_axis_gain": _SlantAxis.GAIN,
         # ⚠ In the log from the start this time. The first `--slant-rig` take was
         # lost because its gain was not recorded; a second A/B losing the same way
@@ -2067,6 +2087,11 @@ def _slerp_factor_for(state: CubeState, now_ms) -> float:
     if prev is None:
         return ROTATION_SLERP_FACTOR      # no dt yet: today's value, never a guess
     dt = min(max(0.0, now_ms - prev), _SLERP_MAX_DT_MS)
+    # ⭐⭐ ADAPTIVE tau: extra damping only while the cube is nearly still.
+    # ⛔ The speed comes from the RAW TARGET, never from the cube's own smoothed
+    # orientation. Measuring the output would be self-referential -- damping lowers
+    # the apparent speed, which raises the damping -- and the cube would lock solid.
+    tau = _HS_const.steady_tau_ms(tau, getattr(state, "last_target_speed_deg_s", None))
     return 1.0 - math.exp(-dt / tau)
 
 
@@ -2595,6 +2620,14 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
             # geometric confidence gate) -- data-confirmed improvement
             # (back-pose >30deg-jump frames dropped ~4-5x, >60deg ~2-3x
             # across matched recordings), re-enabled.
+            # ⭐ Stamp the RAW target's speed before smoothing with it. One value
+            # per arm per frame; both cubes of an arm share the same hand target.
+            _pt = state.last_target_quat
+            if _pt is not None and state.last_frame_ms is not None and now_ms is not None:
+                _dtm = max(1e-3, min(now_ms - state.last_frame_ms, _SLERP_MAX_DT_MS))
+                state.last_target_speed_deg_s = (
+                    _PRot.quat_angle_deg(_pt, target_quat) * 1000.0 / _dtm)
+            state.last_target_quat = target_quat
             cube.orientation = _quat_slerp(cube.orientation, target_quat,
                                            _slerp_factor_for(state, now_ms))
 
