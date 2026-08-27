@@ -228,77 +228,83 @@ def steady_speed_envelope(previous_env, speed_deg_s, dt_ms):
 ROTATION_STEADY_FREEZE_FRAMES = 1      # 0 = off (smooth ramp); N = freeze, N-frame trigger
 
 
-# ⭐⭐⭐ PER-LANDMARK DIRECTIONAL COHERENCE -- the owner's mechanism, 2026-08-27:
-# *"at each landmark level, the trigger threshold is N consecutive frames where the
-# landmark position changes in the same direction: that should eliminate noise where
-# landmarks goes one direction the next frame and comes back the frame after"*.
+# ⭐⭐⭐ WHOLE-HAND DIRECTIONAL COHERENCE, as a single matrix operation.
 #
-# ⭐ IT SUCCEEDS WHERE A SPEED THRESHOLD CANNOT, and the reason is measurable: the
-# noise and a real turn OVERLAP in magnitude (noise p95 163 deg/s against onsets
-# above 121), so no speed alone separates them. They do NOT overlap in DIRECTION.
-# Measured on `2026-08-27_224751_freeze`, fraction of moving landmarks whose step
-# agrees in direction with their previous step:
+# The question that produced it (owner, 2026-08-27): *"are there matrix operations
+# which can be done at frame N, N+1 and N+2 to check that there is an overall
+# direction of all the landmarks at N+2 which is not random noise at each
+# landmark?"* There are, and this is the one that measured best.
 #
-#       hand STILL     0.35 median
-#       hand TURNING   0.90 median
+# Stack the two displacement fields and take their normalised inner product:
 #
-# ⛔ BUT COHERENCE ALONE IS NOT ENOUGH, and this is the part worth keeping: on its
-# own it calls 19-38% of still frames "moving", because a SLOW COHERENT DRIFT is
-# perfectly coherent and simply is not fast. Direction rejects jitter; magnitude
-# rejects drift; the trigger needs both.
+#     D1 = P(N+1) - P(N)      D2 = P(N+2) - P(N+1)
+#     coherence = <D1, D2>_F / (||D1||_F . ||D2||_F)
 #
-# ⭐⭐ WHAT IT BUYS: with coherence gating alongside the speed test, ONE frame is
-# enough -- which is the point, because the owner rejected the two-frame trigger for
-# making the rotation jerky:
+# ⭐ ONE PASS, NO SVD, NO NUMPY -- it is a dot product over 21 points, so it ports
+# by transliteration like everything else here.
 #
-#     rule                                  releases when STILL   when TURNING
-#     speed>=80,  N=2  (rejected: jerky)           1.3%              85.1%
-#     speed>=80 AND coherence>=0.6, N=1            1.6%              97.7%
+# ⭐⭐ IT REPLACED A PER-LANDMARK SIGN VOTE, and the improvement is structural
+# rather than a tuned constant. The vote gave every landmark ONE BINARY SAY, so a
+# point that barely moved cast a coin flip with the same weight as one that swung
+# 5 px. The Frobenius form weights by magnitude, which is exactly what the vote
+# threw away. Measured on four takes:
 #
-# i.e. the same noise rejection with no second frame, and far more of the real
-# turning caught.
-COHERENCE_MIN_PX = 0.75        # below this a landmark has no meaningful direction
-# ⛔⛔ MEASURED NOT WORTH IT, and shipped OFF. The signal is real -- 0.36 coherent
-# when still against 0.76 on a slow turn -- but it never wins on the trade-off
-# frontier: as an AND-gate it can only REDUCE releases, so it cannot help the slow
-# case by construction, and rebuilt as an OR path it still lost (71.4% against
-# 79.5% slow-turn following at the same stillness).
-# ⚠ On the owner's own take it froze slow turns almost solid: 0.17 deg/frame of
-# cube movement during a slow turn, against 4.06 with the gate off.
-# ✅ PARKED, not deleted -- the slider still exposes it, same treatment as
-# JITTER/SPEED, so it can be re-tested rather than re-derived.
-COHERENCE_FRACTION = 0.0       # 0 = gate OFF. ✅ Settled OFF by measurement + feel.
+#     measure                        still     slow turn    separation
+#     per-landmark sign vote         0.353       0.810         0.98
+#     Frobenius correlation         -0.260      +0.538         1.01
+#     dominant-direction energy      0.762       0.818         0.33
+#     rigid residual (Kabsch fit)    0.831       0.856         0.12
+#
+# ⭐ The sign is the real prize: a STILL hand comes out NEGATIVE, because
+# consecutive noise steps anti-correlate -- a landmark goes one way and comes back,
+# which is precisely the effect being detected. So ZERO is a principled threshold
+# where the vote needed an arbitrary 0.6.
+#
+# ⛔ IT IS STILL OFF BY DEFAULT, and the reason is measured, not assumed: it does
+# not beat a plain speed threshold as a TRIGGER. The tails overlap badly (still p90
+# +0.65 against slow p25 -0.04), because a hand that nearly pauses mid-turn IS a
+# still hand for that frame. Frontier, best slow-turn following at each stillness
+# ceiling: <=5% 61.6% speed-only vs none qualifying with the gate; <=15% 80.1% vs
+# 78.9%.
+#
+# ⚠ The dominant-direction energy (Tomasi & Kanade's rank constraint, IJCV 1992)
+# and the rigid residual (Kabsch 1976) were measured too and are much weaker -- 0.33
+# and 0.12 separation. Recorded so the obvious formulations are not re-tried blind.
+# Full comparison: `analysis/global_coherence.py`.
+#
+# ⛔ `None` = OFF, and when it is off NOTHING IS COMPUTED. The predecessor ran its
+# 21-landmark arithmetic every frame in both tools and threw the answer away.
+FROBENIUS_THRESHOLD = None
 
 
-def landmark_coherence(points, prev_points, prev_deltas, min_px=COHERENCE_MIN_PX):
-    """(fraction_agreeing, deltas) -- how much of the hand is moving ONE WAY.
+def frobenius_coherence(points, prev_points, prev_deltas):
+    """(correlation in [-1,1], deltas) for D1 = prev step, D2 = this step.
 
-    ⭐ A landmark counts only if it moved at least `min_px`: a point that barely
-    moved has a direction made of rounding, and counting it would add coin flips to
-    the average. ⚠ Compared as SQUARED magnitudes so this module still needs no
-    `math` import (`verify_hand_state` asserts it imports nothing).
-
-    ⚠ Returns the deltas so the caller can pass them back next frame; this module
-    holds no state of its own.
+    ⚠ Returns the deltas so the caller can hand them back next frame; this module
+    holds no state of its own. `None` on the first frame of a hand, when there is no
+    previous step to correlate against.
     """
     if not points or not prev_points or len(points) != len(prev_points):
         return None, None
-    deltas = []
+    d2 = []
     for i in range(len(points)):
-        deltas.append((points[i][0] - prev_points[i][0],
-                       points[i][1] - prev_points[i][1]))
-    if not prev_deltas or len(prev_deltas) != len(deltas):
-        return None, deltas
-    thr = float(min_px) * float(min_px)
-    moving = agree = 0
-    for i in range(len(deltas)):
-        dx, dy = deltas[i]
-        if dx * dx + dy * dy < thr:
-            continue
-        moving += 1
-        if dx * prev_deltas[i][0] + dy * prev_deltas[i][1] > 0.0:
-            agree += 1
-    return (agree / float(moving) if moving else 0.0), deltas
+        d2.append((points[i][0] - prev_points[i][0],
+                   points[i][1] - prev_points[i][1]))
+    if not prev_deltas or len(prev_deltas) != len(d2):
+        return None, d2
+    num = ss1 = ss2 = 0.0
+    for i in range(len(d2)):
+        ax, ay = prev_deltas[i]
+        bx, by = d2[i]
+        num += ax * bx + ay * by
+        ss1 += ax * ax + ay * ay
+        ss2 += bx * bx + by * by
+    # ⚠ Squared magnitudes multiplied then rooted ONCE, so this needs no `math`
+    # import -- `verify_hand_state` asserts the module imports nothing.
+    den2 = ss1 * ss2
+    if den2 <= 1e-24:
+        return None, d2
+    return num / (den2 ** 0.5), d2
 
 
 # ⭐⭐ TRANSLATION USES THE SAME RULE AND THE SAME NUMBERS (owner, 2026-08-27:
@@ -347,14 +353,15 @@ def steady_hold_update(frozen, run, speed_deg_s, release_deg_s=None,
     if speed_deg_s is None or speed_deg_s != speed_deg_s:
         return frozen, 0                     # unknown speed changes nothing
     sp = max(0.0, float(speed_deg_s))
-    # ⭐ BOTH tests must pass to release: fast ENOUGH and moving ONE WAY. Direction
-    # rejects the jitter that magnitude cannot; magnitude rejects the slow coherent
-    # drift that direction cannot.
-    # ⚠ `COHERENCE_FRACTION = 0` disables the direction half, leaving exactly the
-    # speed-only behaviour -- so the gate can be turned off without a second branch.
+    # ⭐ Both tests must pass to release: fast ENOUGH and moving ONE WAY.
+    # ⛔ AN AND-GATE CAN ONLY REDUCE RELEASES, which is why this cannot help the SLOW
+    # case however it is tuned -- measured, and the reason it ships off. An OR form
+    # ("fast, OR slower but coherent") was built and measured too: still worse,
+    # 71.4% against 79.5% slow-turn following at equal stillness.
     ok = sp >= hi
-    if ok and COHERENCE_FRACTION > 0.0 and coherence is not None:
-        ok = coherence >= COHERENCE_FRACTION
+    # ⚠ `None` threshold = gate off, and then `coherence` is not even computed.
+    if ok and FROBENIUS_THRESHOLD is not None and coherence is not None:
+        ok = coherence >= FROBENIUS_THRESHOLD
     if frozen:
         run = run + 1 if ok else 0
         return (False, 0) if run >= n else (True, run)

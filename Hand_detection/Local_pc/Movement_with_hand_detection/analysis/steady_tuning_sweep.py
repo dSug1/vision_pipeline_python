@@ -78,7 +78,7 @@ def load(session):
                 out.append(None)
                 continue
             q = horn.delta(st, px, wl)
-            coh, deltas = HS.landmark_coherence(px, prev_pts, prev_deltas)
+            coh, deltas = HS.frobenius_coherence(px, prev_pts, prev_deltas)
             if q is not None and prev_q is not None:
                 out.append((PR.quat_angle_deg(prev_q, q) * 1000.0 / DT, coh))
             else:
@@ -90,7 +90,7 @@ def load(session):
 def score(seqs, release, coh_thr, frames):
     """(still, slow, fast) fractions of frames on which the object MOVES."""
     HS.ROTATION_STEADY_RELEASE_DEG_S = release
-    HS.COHERENCE_FRACTION = coh_thr
+    HS.FROBENIUS_THRESHOLD = coh_thr
     HS.ROTATION_STEADY_FREEZE_FRAMES = frames
     n = [0, 0, 0]
     moved = [0, 0, 0]
@@ -131,7 +131,7 @@ def main():
     best = None
     for frames in (1, 2):
         for rel in (30.0, 40.0, 50.0, 60.0, 80.0):
-            for coh in (0.0, 0.5, 0.6, 0.7):
+            for coh in (None, -0.2, 0.0, 0.3):
                 (st, sl, fa), n = score(seqs, rel, coh, frames)
                 # \u2b50 the objective states the trade-off explicitly rather than ranking
                 # on one column: stillness matters, but a frozen SLOW turn is the
@@ -139,23 +139,22 @@ def main():
                 cost = st * 1.0 + (100.0 - sl) * 1.5 + (100.0 - fa) * 0.5
                 if best is None or cost < best[0]:
                     best = (cost, rel, coh, frames, st, sl, fa)
-                if coh in (0.0, 0.6) and rel in (30.0, 50.0, 80.0):
-                    print("  rel %3.0f  coh %.1f  N=%d      %8.1f%% %8.1f%% %8.1f%%"
+                if coh in (None, 0.0) and rel in (30.0, 50.0, 80.0):
+                    print("  rel %3.0f  frob %-5s N=%d      %8.1f%% %8.1f%% %8.1f%%"
                           % (rel, coh, frames, st, sl, fa))
     print("  " + "-" * (w - 4))
     print("  sample sizes: still %d, slow %d, fast %d frames" % tuple(n))
     print()
     print("=" * w)
     _c, rel, coh, fr, st, sl, fa = best
-    print("  \u2b50 BEST TRADE-OFF: RELEASE %.0f   COHERENCE %.0f%%   FREEZE %d"
-          % (rel, coh * 100, fr))
+    print("  \u2b50 BEST TRADE-OFF: RELEASE %.0f   FROB %-5s   FREEZE %d" % (rel, coh, fr))
     print("     still %.1f%%   slow %.1f%%   fast %.1f%%" % (st, sl, fa))
     print("  \u26a0 The objective weights a frozen SLOW turn 1.5x a false release when")
     print("     still, because the jerking is the defect being fixed. Change the")
     print("     weights and the winner can change -- they are a judgement, not a fact.")
     print("=" * w)
     HS.ROTATION_STEADY_RELEASE_DEG_S = 80.0
-    HS.COHERENCE_FRACTION = 0.60
+    HS.FROBENIUS_THRESHOLD = None
     HS.ROTATION_STEADY_FREEZE_FRAMES = 1
     return 0
 

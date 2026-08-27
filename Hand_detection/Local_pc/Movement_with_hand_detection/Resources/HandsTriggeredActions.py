@@ -1364,10 +1364,14 @@ def _stamp_steady_speed(handedness: str, hand_quat, now_ms: Optional[float],
         # ⚠ Driven by the RAW per-frame speed, not the envelope: the trigger's whole
         # job is to count CONSECUTIVE fast frames, and an envelope that holds its
         # peak would make every frame after a spike look fast.
-        _coh, _deltas = hand_state.landmark_coherence(
-            landmarks, _steady_prev_pts.get(handedness),
-            _steady_prev_deltas.get(handedness))
-        _steady_prev_deltas[handedness] = _deltas
+        # ⛔ COMPUTED ONLY WHEN THE GATE IS ON. Its predecessor ran 21
+        # landmarks of arithmetic every frame in both tools and threw the
+        # answer away, because the threshold was zero.
+        _coh = None
+        if hand_state.FROBENIUS_THRESHOLD is not None:
+            _coh, _deltas = hand_state.frobenius_coherence(
+                landmarks, _steady_prev_pts.get(handedness), _steady_prev_deltas.get(handedness))
+            _steady_prev_deltas[handedness] = _deltas
         # ⭐ The owner's mechanism: fast ENOUGH and moving ONE WAY. Direction
         # rejects the jitter magnitude cannot; magnitude rejects the slow drift
         # direction cannot. Together, ONE frame is enough -- which is the point,

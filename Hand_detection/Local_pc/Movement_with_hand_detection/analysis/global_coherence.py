@@ -50,7 +50,6 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from Resources import hand_state as HS                        # noqa: E402
 from Resources import palm_rotation as PR                     # noqa: E402
 
 try:
@@ -76,6 +75,24 @@ def pct(xs, q):
 
 
 # ---------------------------------------------------------------- the measures
+def sign_vote(d1, d2, min_px=0.75):
+    """A. The REMOVED per-landmark vote, kept LOCAL as the baseline being beaten.
+
+    ⚠ Deliberately not imported: it was deleted from `hand_state` on 2026-08-27
+    (measured as pure cost), and a comparison harness must not resurrect shipped
+    code to keep working. This is the only copy and it exists to be beaten.
+    """
+    thr = min_px * min_px
+    moving = agree = 0
+    for (ax, ay), (bx, by) in zip(d1, d2):
+        if bx * bx + by * by < thr:
+            continue
+        moving += 1
+        if ax * bx + ay * by > 0.0:
+            agree += 1
+    return (agree / float(moving)) if moving else 0.0
+
+
 def frobenius_corr(d1, d2):
     """B. <D1,D2>_F / (||D1|| ||D2||). Magnitude-weighted, one pass, no SVD."""
     num = ss1 = ss2 = 0.0
@@ -171,9 +188,8 @@ def load(session):
                 p0, p1, p2 = hist
                 d1 = [(p1[i][0] - p0[i][0], p1[i][1] - p0[i][1]) for i in range(N)]
                 d2 = [(p2[i][0] - p1[i][0], p2[i][1] - p1[i][1]) for i in range(N)]
-                sign, _ = HS.landmark_coherence(p2, p1, d1)
                 out.append((PR.quat_angle_deg(prev_q, q) * 1000.0 / DT,
-                            sign if sign is not None else 0.0,
+                            sign_vote(d1, d2),
                             frobenius_corr(d1, d2),
                             dominant_energy(d2),
                             rigid_residual(p0, p2)))
