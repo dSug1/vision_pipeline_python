@@ -225,8 +225,73 @@ def steady_speed_envelope(previous_env, speed_deg_s, dt_ms):
 ROTATION_STEADY_FREEZE_FRAMES = 0      # 0 = off (smooth ramp); N = freeze, N-frame trigger
 
 
+# ⭐⭐⭐ PER-LANDMARK DIRECTIONAL COHERENCE -- the owner's mechanism, 2026-08-27:
+# *"at each landmark level, the trigger threshold is N consecutive frames where the
+# landmark position changes in the same direction: that should eliminate noise where
+# landmarks goes one direction the next frame and comes back the frame after"*.
+#
+# ⭐ IT SUCCEEDS WHERE A SPEED THRESHOLD CANNOT, and the reason is measurable: the
+# noise and a real turn OVERLAP in magnitude (noise p95 163 deg/s against onsets
+# above 121), so no speed alone separates them. They do NOT overlap in DIRECTION.
+# Measured on `2026-08-27_224751_freeze`, fraction of moving landmarks whose step
+# agrees in direction with their previous step:
+#
+#       hand STILL     0.35 median
+#       hand TURNING   0.90 median
+#
+# ⛔ BUT COHERENCE ALONE IS NOT ENOUGH, and this is the part worth keeping: on its
+# own it calls 19-38% of still frames "moving", because a SLOW COHERENT DRIFT is
+# perfectly coherent and simply is not fast. Direction rejects jitter; magnitude
+# rejects drift; the trigger needs both.
+#
+# ⭐⭐ WHAT IT BUYS: with coherence gating alongside the speed test, ONE frame is
+# enough -- which is the point, because the owner rejected the two-frame trigger for
+# making the rotation jerky:
+#
+#     rule                                  releases when STILL   when TURNING
+#     speed>=80,  N=2  (rejected: jerky)           1.3%              85.1%
+#     speed>=80 AND coherence>=0.6, N=1            1.6%              97.7%
+#
+# i.e. the same noise rejection with no second frame, and far more of the real
+# turning caught.
+COHERENCE_MIN_PX = 0.75        # below this a landmark has no meaningful direction
+COHERENCE_FRACTION = 0.0       # 0 = gate OFF. 0.6 is the measured working value.
+
+
+def landmark_coherence(points, prev_points, prev_deltas, min_px=COHERENCE_MIN_PX):
+    """(fraction_agreeing, deltas) -- how much of the hand is moving ONE WAY.
+
+    ⭐ A landmark counts only if it moved at least `min_px`: a point that barely
+    moved has a direction made of rounding, and counting it would add coin flips to
+    the average. ⚠ Compared as SQUARED magnitudes so this module still needs no
+    `math` import (`verify_hand_state` asserts it imports nothing).
+
+    ⚠ Returns the deltas so the caller can pass them back next frame; this module
+    holds no state of its own.
+    """
+    if not points or not prev_points or len(points) != len(prev_points):
+        return None, None
+    deltas = []
+    for i in range(len(points)):
+        deltas.append((points[i][0] - prev_points[i][0],
+                       points[i][1] - prev_points[i][1]))
+    if not prev_deltas or len(prev_deltas) != len(deltas):
+        return None, deltas
+    thr = float(min_px) * float(min_px)
+    moving = agree = 0
+    for i in range(len(deltas)):
+        dx, dy = deltas[i]
+        if dx * dx + dy * dy < thr:
+            continue
+        moving += 1
+        if dx * prev_deltas[i][0] + dy * prev_deltas[i][1] > 0.0:
+            agree += 1
+    return (agree / float(moving) if moving else 0.0), deltas
+
+
 def steady_hold_update(frozen, run, speed_deg_s, release_deg_s=None,
-                       trigger_frames=None, hold_fraction=ROTATION_STEADY_HOLD_FRACTION):
+                       trigger_frames=None, hold_fraction=ROTATION_STEADY_HOLD_FRACTION,
+                       coherence=None):
     """Advance the freeze state machine. Returns `(frozen, run)`.
 
     FROZEN  -> needs `trigger_frames` CONSECUTIVE frames at or above the release
@@ -246,8 +311,16 @@ def steady_hold_update(frozen, run, speed_deg_s, release_deg_s=None,
     if speed_deg_s is None or speed_deg_s != speed_deg_s:
         return frozen, 0                     # unknown speed changes nothing
     sp = max(0.0, float(speed_deg_s))
+    # ⭐ BOTH tests must pass to release: fast ENOUGH and moving ONE WAY. Direction
+    # rejects the jitter that magnitude cannot; magnitude rejects the slow coherent
+    # drift that direction cannot.
+    # ⚠ `COHERENCE_FRACTION = 0` disables the direction half, leaving exactly the
+    # speed-only behaviour -- so the gate can be turned off without a second branch.
+    ok = sp >= hi
+    if ok and COHERENCE_FRACTION > 0.0 and coherence is not None:
+        ok = coherence >= COHERENCE_FRACTION
     if frozen:
-        run = run + 1 if sp >= hi else 0
+        run = run + 1 if ok else 0
         return (False, 0) if run >= n else (True, run)
     return (True, 0) if sp < lo else (False, 0)
 

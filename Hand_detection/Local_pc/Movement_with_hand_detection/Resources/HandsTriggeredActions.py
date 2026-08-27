@@ -1296,6 +1296,10 @@ _steady_prev_target: Dict[str, Optional[tuple]] = {h: None for h in TRACKED_HAND
 # EXACTLY zero -- the object does not move at all, rather than moving slowly.
 _steady_frozen: Dict[str, bool] = {h: True for h in TRACKED_HANDS}
 _steady_run: Dict[str, int] = {h: 0 for h in TRACKED_HANDS}
+# ⚠ Per-landmark step history for the DIRECTIONAL COHERENCE gate. Held here rather
+# than in `hand_state`, which owns the rule and keeps no state of its own.
+_steady_prev_pts: Dict[str, Optional[list]] = {h: None for h in TRACKED_HANDS}
+_steady_prev_deltas: Dict[str, Optional[list]] = {h: None for h in TRACKED_HANDS}
 
 
 def _rotation_slerp_factor(now_ms: Optional[float], handedness: Optional[str] = None) -> float:
@@ -1336,7 +1340,8 @@ def _quat_angle_deg(a, b) -> float:
     return math.degrees(2.0 * math.acos(d))
 
 
-def _stamp_steady_speed(handedness: str, hand_quat, now_ms: Optional[float]) -> None:
+def _stamp_steady_speed(handedness: str, hand_quat, now_ms: Optional[float],
+                        landmarks=None) -> None:
     """Feed this HAND's RAW rotation speed into its envelope. Once per hand, per frame.
 
     ⛔ RAW, never the cube's smoothed orientation: measuring the output is
@@ -1354,9 +1359,20 @@ def _stamp_steady_speed(handedness: str, hand_quat, now_ms: Optional[float]) -> 
         # ⚠ Driven by the RAW per-frame speed, not the envelope: the trigger's whole
         # job is to count CONSECUTIVE fast frames, and an envelope that holds its
         # peak would make every frame after a spike look fast.
+        _coh, _deltas = hand_state.landmark_coherence(
+            landmarks, _steady_prev_pts.get(handedness),
+            _steady_prev_deltas.get(handedness))
+        _steady_prev_deltas[handedness] = _deltas
+        # ⭐ The owner's mechanism: fast ENOUGH and moving ONE WAY. Direction
+        # rejects the jitter magnitude cannot; magnitude rejects the slow drift
+        # direction cannot. Together, ONE frame is enough -- which is the point,
+        # because the two-frame trigger made the rotation jerky.
         _steady_frozen[handedness], _steady_run[handedness] = hand_state.steady_hold_update(
-            _steady_frozen.get(handedness, True), _steady_run.get(handedness, 0), speed)
+            _steady_frozen.get(handedness, True), _steady_run.get(handedness, 0), speed,
+            coherence=_coh)
     _steady_prev_target[handedness] = hand_quat
+    if landmarks:
+        _steady_prev_pts[handedness] = landmarks
 
 
 def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: List[Tuple[float, float]],
@@ -1630,7 +1646,7 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
         # ⭐ ONCE PER HAND, PER FRAME, from the HAND's own orientation -- before any
         # cube is touched, so a hand holding two cubes stamps exactly once and the
         # debug tool can do the identical thing at the identical point.
-        _stamp_steady_speed(handedness, hand_quat_now, now_ms)
+        _stamp_steady_speed(handedness, hand_quat_now, now_ms, landmarks)
 
         # ⭐ handinput: the pose this frame ACTUALLY produced, before any of it
         # reaches a cube. `hand_quat_now` is the same quaternion the grab-delta

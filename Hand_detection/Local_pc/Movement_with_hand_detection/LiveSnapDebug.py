@@ -305,7 +305,17 @@ SLIDERS = (
     # ⚠ While frozen the object ignores slow drift, so a hand creeping below the
     # threshold accumulates a gap that is paid back as a JUMP on release. That is
     # what "absolutely no movement" costs.
-    ("FREEZE frames", 6, 0, lambda n: int(n)),
+    # ⚠ KEEP THIS AT 1. Owner, 2026-08-27: *"if I increase the freeze frame, it
+    # makes the rotation jerky. I want to keep it to 0 or 1 or max 2"*. The COHERENCE
+    # gate below is what makes 1 sufficient -- it does the noise rejection the second
+    # frame used to do, without costing a frame of onset.
+    ("FREEZE frames", 2, 0, lambda n: int(n)),
+    # ⭐⭐ DIRECTIONAL COHERENCE, in percent: how much of the hand must be stepping
+    # the SAME WAY as it did last frame before the object may move at all.
+    # ⛔ 0 = OFF. 60 is the measured working value: still hands read 0.35, turning
+    # hands 0.90, so the two separate cleanly where SPEED cannot (their magnitudes
+    # overlap -- noise p95 163 deg/s against onsets above 121).
+    ("COHERENCE %", 100, 0, lambda n: n / 100.0),
     ("SLANT axis %", 100, 0, lambda n: n / 100.0),
     # ⭐⭐ THE OWNER'S OWN STRATEGY, as a whole estimator: the regression fitted
     # from the six takes (HALF 1) on a canonical frozen at the grab (HALF 2).
@@ -1875,7 +1885,7 @@ def _read_sliders() -> None:
     global SLERP_TAU_MS, JITTER_TAU_MS, JITTER_BETA, GRAB_RADIUS_MULTIPLIER
     global GRIP_ALIGN_MOVING_MS, GRIP_ALIGN_MASK_RATIO, GRAB_Z_TOLERANCE_M
     global DEPTH_RATE_PER_S, SLANT_AXIS_GAIN, POSE_BLEND, STEADY_EXTRA_MS
-    global STEADY_RELEASE_DEG_S, STEADY_FREEZE_FRAMES
+    global STEADY_RELEASE_DEG_S, STEADY_FREEZE_FRAMES, STEADY_COHERENCE
     try:
         vals = [spec[3](cv2.getTrackbarPos(spec[0], SLIDER_WIN)) for spec in SLIDERS]
     except cv2.error:
@@ -1884,9 +1894,11 @@ def _read_sliders() -> None:
     # values are NOT re-read here; they keep their module defaults.
     (SLERP_TAU_MS, _gain, GRAB_RADIUS_MULTIPLIER, GRIP_ALIGN_MOVING_MS,
      GRIP_ALIGN_MASK_RATIO, STEADY_EXTRA_MS, STEADY_RELEASE_DEG_S,
-     STEADY_FREEZE_FRAMES, SLANT_AXIS_GAIN, POSE_BLEND, GRAB_Z_TOLERANCE_M) = vals
+     STEADY_FREEZE_FRAMES, STEADY_COHERENCE, SLANT_AXIS_GAIN, POSE_BLEND,
+     GRAB_Z_TOLERANCE_M) = vals
     _HS_const.ROTATION_STEADY_RELEASE_DEG_S = STEADY_RELEASE_DEG_S
     _HS_const.ROTATION_STEADY_FREEZE_FRAMES = STEADY_FREEZE_FRAMES
+    _HS_const.COHERENCE_FRACTION = STEADY_COHERENCE
     # ⚠ Shared module, same reasoning as the others: both tools read it at call
     # time and can never run at once. ⛔ It stays 0 in production unless set there.
     _HS_const.ROTATION_STEADY_EXTRA_MS = STEADY_EXTRA_MS
@@ -1962,6 +1974,7 @@ def settled_values() -> dict:
         "steady_extra_ms": _HS_const.ROTATION_STEADY_EXTRA_MS,
         "steady_release_deg_s": _HS_const.ROTATION_STEADY_RELEASE_DEG_S,
         "steady_freeze_frames": _HS_const.ROTATION_STEADY_FREEZE_FRAMES,
+        "steady_coherence": _HS_const.COHERENCE_FRACTION,
         "slant_axis_gain": _SlantAxis.GAIN,
         # ⚠ In the log from the start this time. The first `--slant-rig` take was
         # lost because its gain was not recorded; a second A/B losing the same way
@@ -2134,9 +2147,11 @@ _steady_env = {}
 _steady_prev_hand_quat = {}
 _steady_frozen = {}
 _steady_run = {}
+_steady_prev_pts = {}
+_steady_prev_deltas = {}
 
 
-def _stamp_steady_speed(handedness, hand_quat, now_ms, prev_ms):
+def _stamp_steady_speed(handedness, hand_quat, now_ms, prev_ms, landmarks=None):
     """Feed this HAND's RAW rotation speed into its envelope. ⭐ Mirrors
     `HandsTriggeredActions._stamp_steady_speed` exactly (N6 in spirit: one rule,
     and `parity_replay` is what proves the two copies agree)."""
@@ -2149,9 +2164,20 @@ def _stamp_steady_speed(handedness, hand_quat, now_ms, prev_ms):
         _steady_env[handedness] = _HS_const.steady_speed_envelope(
             _steady_env.get(handedness), speed, dt)
         # ⚠ RAW per-frame speed, not the envelope -- see production's copy.
+        _coh, _deltas = _HS_const.landmark_coherence(
+            landmarks, _steady_prev_pts.get(handedness),
+            _steady_prev_deltas.get(handedness))
+        _steady_prev_deltas[handedness] = _deltas
+        # ⭐ The owner's mechanism: fast ENOUGH and moving ONE WAY. Direction
+        # rejects the jitter magnitude cannot; magnitude rejects the slow drift
+        # direction cannot. Together, ONE frame is enough -- which is the point,
+        # because the two-frame trigger made the rotation jerky.
         _steady_frozen[handedness], _steady_run[handedness] = _HS_const.steady_hold_update(
-            _steady_frozen.get(handedness, True), _steady_run.get(handedness, 0), speed)
+            _steady_frozen.get(handedness, True), _steady_run.get(handedness, 0), speed,
+            coherence=_coh)
     _steady_prev_hand_quat[handedness] = hand_quat
+    if landmarks:
+        _steady_prev_pts[handedness] = landmarks
 
 
 def _slerp_factor_for(state: CubeState, now_ms, handedness=None) -> float:
@@ -2496,7 +2522,8 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
         # ⭐ ONCE PER HAND, PER FRAME -- the SAME point production stamps it, from the
         # same quantity. Anything else and `parity_replay` diverges, which is how the
         # per-arm version was caught.
-        _stamp_steady_speed(handedness, hand_quat_now, now_ms, state.last_frame_ms)
+        _stamp_steady_speed(handedness, hand_quat_now, now_ms, state.last_frame_ms,
+                            data.get("pixel_landmarks"))
 
         # ⭐ 4.2: this frame's absolute hand depth, stamped upstream by
         # `_update_snap_depth` so one estimator serves every arm. ABSENT means a
