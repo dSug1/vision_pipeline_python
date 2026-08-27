@@ -19,6 +19,8 @@ retractions are kept rather than deleted.
 |---|---|
 | **T6 — orientation from 2D (planar PnP)** | ⛔⛔ **BUILT AND A10-REJECTED 2026-08-24.** Yaw — the defect it existed to fix — gets **worse** (median/frame 13.0° → 29.8°); pitch **gain is fixed** (0.74 → 0.99). Four explanations tested and all refuted: the edge-on planar degeneracy, twin-branch flips, model shape, and the assumed FOV. ⭐ **It amends the project's own premise**: *"the 2D landmarks are good"* was an inference from roll, and roll was measured with Horn over **world** landmarks — T6 is the first direct test of 2D-only pose and it is worse. Code stays in `estimators()`; call sites unchanged |
 | **T6d — the anisotropic 2×2 fit** `g(ψ) = a + b·cos2ψ + c·sin2ψ` | ⛔⛔ **BUILT, LIVE-TESTED OVER FOUR SESSIONS, OWNER-REJECTED 2026-08-24** — *"very minor improvement and I don't want to ship it"*. ⭐ **Nothing to revert: production never ran it**, every arm sat behind a toggle measured byte-identical to shipped Horn (975/975 frames). The measured reason it was invisible: the two A/B panels' cube orientations differ by a median of **4.83°** (p90 17.4), **flat across every palm-tilt band** — below what an eye resolves on a 40–80 px cube. ⚠ The ψ finding survives as a fact about MediaPipe, not as a fix |
+| **`palm_slant_axis` — steer Horn's AXIS by the palm's foreshortening** | ⛔⛔ **BUILT, LIVE-TESTED, OWNER-REJECTED 2026-08-27** — *"the feel is very bad. there is no consistency in the rotation axis, discontinuities everywhere"*. ⭐ It SCORED well: yaw lean 22.0° → 13.6°, pitch 14.8° → 10.0°. ⛔ The metric was wrong — per-frame axis WANDER measured on smooth instructed SWEEPS, which is the one motion that cannot make a gate chatter. On the owner's own grabbing take: **114 gate toggles**, jolt p95 29.7°, and per-frame axis jump p95 **1.90x** shipped Horn while the MEDIAN improved. ⚠ Replacing both hard gates with one geometric fade cut the jolt in half and moved the felt defect barely at all (1.90x → 1.84x); a time-constant sweep found **no tau** that keeps the lean fix without adding jitter. Nothing to revert — gain defaults 0 and production never constructed it |
+| **`palm_slant_pose` — the owner's own strategy: the six-take regression + a canonical frozen at grab** | ⛔⛔ **BUILT WHOLE, LIVE-TESTED, OWNER-REJECTED 2026-08-27** — *"panels 2 and 3 are much worse than panel 1: the rotation does not follow a coherent axis, lot of jumps, lot of jitter"*, on BOTH the palm and the finger feature set. ⭐⭐ It produced **the best yaw number this row has ever measured — lean 27.2° → 8.6°** — and was still rejected, because per-frame orientation jump p95 went 12.6° → 30.3° (**2.4x**). ⚠ Median jump IMPROVED (2.98 → 2.41): smoother most of the time, occasionally much worse. **The tail decides the feel, every time.** ⛔ Partial blend is measured HARMFUL (yaw 53.7° at 50% vs 27.2° at 0 and 8.6° at 100): slerping two orientations that disagree lands worse than either end |
 | **Down-weighting MediaPipe's world z (`k`)** | ⛔ **REJECTED 2026-08-23** — the `k` that makes yaw good **doubles** the pitch error. Yaw and pitch need **opposite** things from the same coordinate, which closes the whole *"weight z less"* family (cf. `2.3`'s five nulls). ⭐ It DID establish the diagnosis: the tilt is caused by world-z error |
 | **The 9-point palm+tips constellation** | ⛔ **A10 REJECT 2026-08-23** — +1.4° of axis fidelity for **+4.9° of p95 jitter** in real handling. Its *"wins in every take"* reputation rested on the axis-**contaminated** 2026-08-04 yaw take |
 | **"Fix the Horn fit"** | ⛔ Horn is **exact** — 0.000° on synthetic input. Do not touch it |
@@ -30,8 +32,13 @@ retractions are kept rather than deleted.
 | **A physical card held in the hand to steady a yaw take** | ⚠ controls the **sweep** well (best contamination score ever measured) but reads the **tilt higher** (17–19° vs the card-free 12.6–13.0°). Keep it for cleanliness, never for axis magnitude |
 | **The mirror, the frame convention, hand anatomy, constellation degeneracy** | ⛔ all eliminated **by control** as causes of the yaw lean |
 
-⭐ Where four rejects leave the yaw lean: **Horn's flaw is BIAS** (it consumes a
-fabricated z) **and every per-frame replacement's flaw is VARIANCE.** Full
+⭐⭐ **WHERE SIX REJECTS NOW LEAVE THE YAW LEAN, and the pattern is the whole
+lesson: Horn's flaw is BIAS** (it consumes a fabricated z) **and every per-frame
+replacement's flaw is VARIANCE.** Three separate 2-D-shape estimators have now
+scored BETTER on the lean and WORSE on the tail, and the tail has won the verdict
+every time. ⛔ **A fourth attempt of this shape should not be proposed** unless it
+first demonstrates a per-frame orientation jump at or under shipped Horn's on a
+GRABBING take — the lean number is not the gate and never was. Full
 argument: [`history/T6_INVESTIGATION_LOG.md`](history/T6_INVESTIGATION_LOG.md) §2.0.4.
 
 ## Identity, chirality and ownership

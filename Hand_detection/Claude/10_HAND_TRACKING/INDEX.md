@@ -80,6 +80,16 @@ independent, depth-free truth, `σ` reads **0.94–0.96 on a hand that barely mo
 is nearly vertical as `σ → 1`. Roll invariance survives (~7–8° across 40–103° of
 roll); small tilts do not. ⭐ **Large-angle correction, NOT a replacement for
 Horn** — which still covers the yaw lean, worst at 60–90°.
+⛔⛔ **AND IT WAS ALL LIVE-REJECTED ON 2026-08-27 — READ `REJECTED.md` BEFORE
+PROPOSING ANY OF IT AGAIN.** Two builds, two verdicts: the axis correction (*"discontinuities everywhere"*) and the owner's own halves 1+2 (*"much worse than
+panel 1 ... lot of jumps, lot of jitter"*). ⭐⭐ The scores were GOOD — halves 1+2 gave
+the best yaw this row ever measured, **lean 27.2° → 8.6°** — and the p95 orientation
+jump went **12.6° → 30.3°** while the median improved. Smoother most of the time,
+occasionally much worse; **the tail decides the feel every time**, and three estimators
+in a row have now died of exactly that. ⭐⭐⭐ **THE METHOD RULE: a corpus whose MOTION
+does not match the product's cannot validate an estimator for the product** — all six
+takes are OPEN hands and the game GRIPS. ✅ Nothing to revert; production untouched.
+
 ✅✅ **THE ESTIMATOR IS BUILT** (2026-08-27): `Resources/palm_slant.py`, stdlib-only
 /numpy-free/clock-free, authority fade in from the start, golden vectors passing.
 ⭐⭐⭐ **AND THE CORRECTION FOLLOWED THE SAME DAY, BECAUSE `t5f`'s WORDING
