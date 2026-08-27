@@ -135,21 +135,50 @@ ROTATION_STEADY_HOLD_FRACTION = 0.45
 # maximum AT ONCE and only falls back gradually: one fast frame releases the damper,
 # and it re-engages only after the hand has genuinely settled.
 #
-# ⭐ How long the envelope takes to fall by one whole RELEASE threshold. A LINEAR
-# release, not an exponential one, and that is deliberate twice over:
-#   ✅ it keeps this module's "imports NOTHING" property, which
-#      `verify_hand_state.py` asserts as a port-contract check and which an `exp`
-#      would have quietly cost (it did: the first version failed that vector);
-#   ⭐ and a fixed rate gives a PREDICTABLE hold time, which is what an envelope
-#      follower wants -- an exponential tail lingers unevenly depending on how fast
-#      the turn was.
-# ⚠ Still TIME-based, never per-frame (`L1`): the step is rate x dt.
-ROTATION_STEADY_ENVELOPE_MS = 250.0
+# ⛔⛔ THE ENVELOPE'S DECAY RATE IS NOW ITS OWN NUMBER, IN deg/s PER SECOND.
+# It used to be "one whole RELEASE threshold per ENVELOPE_MS", which quietly COUPLED
+# the release slider to two opposing effects: raising it lifted the bar (more
+# damping) AND sped up the decay (less damping). Owner, 2026-08-27: *"I did not see
+# much effect for the release when I varied it"* -- that cancellation is why.
+# ⭐ Decoupled, the RELEASE slider now does exactly one thing.
+# ⭐⭐ AND IT IS FAST, WHICH IS THE WHOLE FIX. Owner, 2026-08-27: *"I felt the
+# 600 ms did not dampen as much as previously"* -- correct, and the cause was NOT
+# the attack. A held-still hand's raw target exceeds 160 deg/s on 5.4% of frames
+# from jitter alone, and at the original 640 each of those spikes released the
+# damping for ~350 ms. Measured duty cycle: full damping only 80.3% of the time.
+#
+# ⭐ A real turn RE-ATTACKS EVERY FRAME, so it stays released no matter how fast
+# this decays; only an ISOLATED spike decays away. Making the release last about one
+# frame therefore costs the onset nothing and buys back all the damping:
+#
+#     decay    full damping   released   onset following
+#      640         80.3%        12.5%         96%
+#     3000         88.1%         6.1%         97%
+#     6000         88.6%         5.7%         97%   <- shipped
+#   no envelope at all           88.6%/5.6%    (onset 81%)
+#
+# ⛔ i.e. the damping is now indistinguishable from having no envelope, while the
+# onset keeps the envelope's full benefit. ⚠ Raising it further changes nothing --
+# 12000 measures identically, so this is the knee, not a maximum.
+ROTATION_STEADY_DECAY_DEG_S2 = 6000.0
+
+# (the old ROTATION_STEADY_ENVELOPE_MS is gone: the decay rate above replaced it,
+# and a constant nothing reads is a constant that drifts from the truth.)
 
 
-def steady_speed_envelope(previous_env, speed_deg_s, dt_ms,
-                          tau_ms=ROTATION_STEADY_ENVELOPE_MS):
-    """Fast-attack, slow-release envelope of the raw target's angular speed.
+def steady_speed_envelope(previous_env, speed_deg_s, dt_ms):
+    """Fast-attack, fast-release envelope of the raw target's angular speed.
+
+    ⛔⛔ A WINDOWED (multi-frame) SPEED WAS TRIED HERE AND IS THE WRONG ANSWER.
+    It rejects the noise beautifully -- median speed 23 -> 9 deg/s -- and it
+    DESTROYS the thing the envelope exists for: onset following collapsed from 96%
+    to 10%, because averaging the first fast frame with two quiet ones puts it back
+    under the threshold. ⭐ At the very first frame of a turn there is genuinely no
+    information separating it from a noise spike; only the NEXT frame can tell.
+    Every dual-threshold variant was measured too and none recovered it, because the
+    noise (p95 163 deg/s) overlaps the onset speeds (>121 deg/s).
+    ⚠ So the attack stays instant and per-frame, and the noise is dealt with by
+    making the RELEASE fast instead -- see `ROTATION_STEADY_DECAY_DEG_S2`.
 
     ⚠ `previous_env` None starts the envelope AT the speed, not at zero -- starting
     low would apply full damping to a hand that is already moving.
@@ -161,10 +190,10 @@ def steady_speed_envelope(previous_env, speed_deg_s, dt_ms,
         return sp
     if sp >= previous_env:
         return sp                                  # instant attack
-    if dt_ms is None or dt_ms <= 0.0 or tau_ms <= 0.0:
+    if dt_ms is None or dt_ms <= 0.0:
         return previous_env
-    # linear release: one whole RELEASE threshold per `tau_ms` of elapsed time
-    step = ROTATION_STEADY_RELEASE_DEG_S * (float(dt_ms) / float(tau_ms))
+    # linear release at its OWN rate, independent of the release threshold
+    step = ROTATION_STEADY_DECAY_DEG_S2 * (float(dt_ms) / 1000.0)
     fell = previous_env - step
     return sp if fell < sp else fell
 
