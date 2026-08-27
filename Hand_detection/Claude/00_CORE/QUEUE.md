@@ -84,12 +84,28 @@ repairing `z` upstream) in
 orientation sensors or viewing-angle range is actively patented — a second,
 independent reason to avoid the IMU route already declined on behaviour grounds.
 
-⭐⭐⭐ **NEXT — AND IT IS AN EXPERIMENT, NOT A BUILD: cross-check the pitch collapse
-against the established pitch harness** (`t5h`/`t5j`, baseline axis 5.5° / gain
-0.74). Everything above leans on a declared 60° of pitch reading **5.3°**, produced
-by an instrument written the same day. A number that large from an instrument that
-new is the exact shape of the four harnesses that once reported CLEAN on takes the
-owner had watched fail.
+⛔⛔ **THE CROSS-CHECK RAN, AND THE PITCH COLLAPSE IS RETRACTED.** The established
+harnesses' own z-free ground truth (`t5f`'s foreshortening inversion) ALSO
+under-reports pitch — 15° and 29° for a declared 30° and 60°. Two methods failing
+for different reasons agree with each other more than either agrees with the
+declaration, which makes the **declaration** the outlier. ⛔ And the third witness
+is blind exactly there: `dR/dθ ≈ 0.001/deg` in the 0–30° pitch band, so 0.02 of
+ratio noise is 20–57° of angle.
+⛔ **§4.3's pitch "+41.4° recovered" is WITHDRAWN with it** — the table is built on
+declared angles and scored on declared angles, so where nothing can check the
+declaration, "recovery" only shows the table reproduces the operator's habit.
+⭐ **The yaw verdict stands** (dead, +2.4°): yaw's declarations ARE self-consistent
+at 60–90° (spread 0.04), so its failure is not a ground-truth problem.
+⭐⭐ **THE TAKES CANNOT GROUND-TRUTH THE 30–60° BAND AT ALL** — Horn fails through
+`z`, the ratio through conditioning, the declaration through repeatability (spread
+0.50–0.69 at the 30° holds, both axes).
+
+⭐⭐⭐ **NEXT: a take whose ground truth is MEASURABLE, not declared.** `t5j` already
+sets the standard — it grounds ROLL by the in-image knuckle-row angle, needing
+neither depth nor a declaration, which is why the roll numbers have never been
+disputed. Pitch needs the equivalent: a physical jig at known angles, or a marker
+whose in-image geometry encodes the angle. ⛔ Until one exists, no pitch claim from
+these takes should be built on.
 ⛔ Do NOT implement any matrix meanwhile: yaw is dead, pitch is unconfirmed, and
 §4.1 says a runtime table must be **2-D** while `Rdiag`/`Rbow` measured
 sign-inconsistent.
