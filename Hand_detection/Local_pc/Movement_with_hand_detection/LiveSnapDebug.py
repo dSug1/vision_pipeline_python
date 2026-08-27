@@ -770,6 +770,12 @@ def _arm_title(state):
 # which is what a jitter or lean judgement actually needs.
 HIDE_VIDEO = False
 
+# ⭐ The hand skeleton, on or off. Owner, 2026-08-27. Same key ('l') and the same
+# default (ON) as production's, so the habit transfers between the two tools.
+# ⛔ DISPLAY ONLY, like `HIDE_VIDEO`: detection, recording and every estimator are
+# upstream of the draw and cannot see this.
+SHOW_LANDMARKS = True
+
 COAST_MS_ARMS = (150.0, 300.0, 450.0)
 
 
@@ -2746,6 +2752,11 @@ def main():
                         help="1 (default) = mirror production, one window. "
                              "3 = the D2/D3 bridging comparison rig, all three "
                              "arms side by side off one camera.")
+    parser.add_argument("--no-landmarks", dest="no_landmarks", action="store_true",
+                        # ASCII ONLY IN HELP TEXT -- see the note on --f1-rig.
+                        help="Start with the hand skeleton hidden. Press 'l' to "
+                             "toggle it live. Display only -- detection, recording "
+                             "and every estimator are unaffected.")
     parser.add_argument("--no-video", dest="no_video", action="store_true",
                         # ASCII ONLY IN HELP TEXT -- see the note on --f1-rig.
                         help="Draw the landmarks and cubes on BLACK instead of the "
@@ -2920,8 +2931,12 @@ def main():
         #                      int(round(DEPTH_RATE_PER_S * 100)))
         if args.no_video:
             globals()["HIDE_VIDEO"] = True
+        if args.no_landmarks:
+            globals()["SHOW_LANDMARKS"] = False
         print("[LiveSnapDebug] camera stream %s -- press 'v' to toggle."
               % ("HIDDEN (landmarks + cubes on black)" if HIDE_VIDEO else "shown"))
+        print("[LiveSnapDebug] hand landmarks %s -- press 'l' to toggle."
+              % ("SHOWN" if SHOW_LANDMARKS else "hidden"))
         if args.pose_rig:
             # ⛔ STARTS AT 100%, NOT PART WAY. The middle of this slider is measured
             # WORSE than either end (yaw lean 53.7 at 50% against 27.2 at 0 and 8.6 at
@@ -3295,7 +3310,7 @@ def main():
                 # ⚠ The mask must come from the cube pass, so nothing between these
                 # two blocks may draw on `panel`.
                 cube_mask = _draw_cubes(panel, arm)
-                if normalized_by_hand:
+                if normalized_by_hand and SHOW_LANDMARKS:
                     hands_layer = panel.copy()
                     for handedness, normalized in normalized_by_hand.items():
                         data = hand_data_by_hand[handedness]
@@ -3318,6 +3333,10 @@ def main():
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 break
+            if key == ord("l"):
+                globals()["SHOW_LANDMARKS"] = not SHOW_LANDMARKS
+                print("[LiveSnapDebug] hand landmarks %s ('l' toggles)"
+                      % ("SHOWN" if SHOW_LANDMARKS else "hidden"))
             if key == ord("v"):
                 # ⚠ `global` is not needed at module scope in this function, but the
                 # name IS module-level, so rebind it there rather than shadowing.

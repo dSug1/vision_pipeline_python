@@ -260,6 +260,11 @@ class CubeWindow:
         # ⚠ Display only. Nothing downstream reads this; it is replaced wholesale
         # each frame and an empty dict simply draws no hands.
         self._hand_landmarks: Dict[str, list] = {}
+        # ⭐ Owner, 2026-08-27. Same key ('l') and same default (ON) as the debug
+        # tool's, so the habit transfers. ⛔ DISPLAY ONLY -- the landmarks are still
+        # received, still drive every decision, and are still recorded; this changes
+        # nothing but whether they are painted.
+        self.show_landmarks = True
         large_size = cube_size * 2
         small_size = cube_size
         self.cubes: Dict[str, Cube] = {
@@ -470,6 +475,8 @@ class CubeWindow:
 
     def _draw_hand_landmarks(self) -> None:
         """⛔ MUST BE CALLED BEFORE THE CUBES. That ordering IS the occlusion."""
+        if not self.show_landmarks:
+            return
         for pts in self._hand_landmarks.values():
             if not pts or len(pts) < 21:
                 continue
@@ -494,6 +501,14 @@ class CubeWindow:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.closed = True
+            # ⚠ The FIRST key this window has ever handled. Kept to a single
+            # display toggle on purpose: this loop runs inside the live pipeline, and
+            # a key that changed behaviour rather than drawing would make the two
+            # tools diverge on something `parity_replay` cannot see.
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_l:
+                self.show_landmarks = not self.show_landmarks
+                print("[CubeWindow] hand landmarks %s ('l' toggles)"
+                      % ("SHOWN" if self.show_landmarks else "hidden"))
 
         if self.closed:
             pygame.quit()
