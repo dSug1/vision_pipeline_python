@@ -57,26 +57,25 @@ track** — three were missing that reset.
 ⛔ **`F1` did NOT fix the yaw lean.** The apparent improvement was the trim's
 constant offset, and it is gone. The show-stopper stands.
 
-⭐⭐ **`T6`'s analysis has RUN** — protocol §4.1/§4.2 and the depth arm §8.1/§8.2,
-over the six recorded takes (`analysis/t6_ratio_analysis.py`, no pipeline change).
-Two results change what happens next. **The ratio table must be 2-D**: magnitude
-cannot separate yaw from pitch (orthography forbids it) though the excursion's
-**sign** splits them 3/3 on single-axis takes. And **the depth arm paid before the
-rotation arm did**: at the **square** pose the four rigid palm spans imply depths
-**13–22% apart** — drift-free, since they read the same frame — and `min` over
-them *is* the absolute estimator, so its output **steps whenever rotation changes
-which span wins**. ⛔ The snap gate reads it: a within-take excursion of **0.161 m
-against a 0.15 m tolerance**. ⭐ The relative form is immune and the fix needs no
-calibration step. ⚠ A verification pass **retracted two claims the same day** — a
-drift bound whose premise the spans refute, and a "distance-free" ratio that was
-distance-squared; see the dossier.
-**Next: §4.3 the transfer test, §8.3 the inversion** — both still `analysis/` work.
-⛔ Read [`../00_CORE/queue_notes/T6.md`](../00_CORE/queue_notes/T6.md) first, for
-its **caveat zero**: the owner reports the distance was unreliable and the hand
-moved during the takes. ⭐ Harmless for the ratio table — foreshortening ratios are
-**scale-free** — but it invalidates every depth-derived reading, and two claims
-built on one were retracted the same day. ⚠ Also: the ratio the recording tool
-prints is the take median and is contaminated by the sweep; use the 0° hold.
+⭐⭐⭐ **`T6` BECAME A REGRESSION, AND THE RATIO TABLE IS DEAD.** `Rwl` measures
+compression along one fixed direction, so it carries `cos(yaw)/cos(pitch)` — one
+number, two unknowns, a **lossy projection**. That is why §4.1's cross-talk was
+~1.0 and §4.3's yaw transfer came out dead (mean +2.4° recovered).
+⭐ What replaced it: **slant/tilt from the trimmed affine SVD, FITTED from the six
+takes**. Beats Horn on both axes — **yaw 8.7° vs 11.5°, pitch 17.6° vs 30.7°** —
+and is **bijective** by construction (monotone fit per branch · palm/back sign for
+the branch · tilt for the axis).
+⭐ **The owner's freeze-a-matrix-at-grab architecture is validated** (10.6°/17.4°).
+It works because the cube's rotation is already grab-relative, so the absolute
+error at grab cancels. ⛔ The composition must be **multiplicative**; additively it
+is worse than Horn.
+⛔ **Palm-only for orientation**: under grip the finger feature jitters 0.013–0.458
+per frame against palm-5's 0.004–0.070, so the fingers keep their own channel.
+⛔ **Two retractions**: the "pitch collapse" and §4.3's pitch verdict — the
+established z-free truth under-reports pitch too, so the DECLARATION is the
+outlier, and the takes cannot ground-truth the 30–60° band.
+→ [`spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md`](spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md)
+· [`../00_CORE/queue_notes/T6.md`](../00_CORE/queue_notes/T6.md)
 
 **Open, deliberately not next**: the two-hand swap · `N8` cube-stealing
 palm-first (routed to `B5`) · `T1` back-of-hand rotation quality · `T4`

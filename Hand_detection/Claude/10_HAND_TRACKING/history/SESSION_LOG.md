@@ -228,6 +228,59 @@ a facing gate; still routed to `B5` + `4.4`.
 
 ---
 
+## 2026-08-27 (late) — the ratio table dies, a regression replaces it, and the owner's architecture is validated
+
+⭐⭐⭐ **`T6` STOPPED BEING A TABLE.** The owner's bijectivity question is what
+killed it: `Rwl` measures compression along ONE fixed direction, so under combined
+rotation it carries `cos(yaw)/cos(pitch)` — one number, two unknowns. ⛔ That is a
+**lossy projection**, not a weak ratio, and no pair of fixed lengths recovers what
+it discards. It explains §4.1's cross-talk of ~1.0 and §4.3's dead yaw transfer at
+a stroke.
+
+⭐ **The replacement is fitted, not derived** — the owner's second correction:
+*"start from regression from the data directly."* Every closed form tried omitted
+something real (thickness, the knuckle bow, perspective) and the data refused it. A
+regression absorbs all of them because they are present in the frames it is fitted
+to. Slant/tilt from the trimmed affine SVD, **beating Horn on both axes: yaw 8.7°
+vs 11.5°, pitch 17.6° vs 30.7°** — and bijective by construction.
+
+⭐⭐ **AND THE OWNER'S ARCHITECTURE IS VALIDATED**: freeze a matrix at grab,
+compose, invert, subtract. It works for a reason that was not obvious — **the
+cube's rotation is already grab-relative, so the absolute error at grab cancels.**
+⛔ The composition must be MULTIPLICATIVE (`σ_abs = σ_rel × σ₀`); done additively it
+scores 20.3° on yaw, worse than Horn. The composition IS the trick.
+
+⛔⛔ **FOUR THINGS I GOT WRONG AND THE OWNER CAUGHT OR THE DATA DID:**
+
+1. **"There is no reason it should lose on the back half"** — right. The cause was
+   my own data partition: splitting exclusively at 90° left the back branch with
+   three angles, so a hold-out had to EXTRAPOLATE and clamped at exactly 30.0°. I
+   had blamed `T1` (back-of-hand quality) from plausibility. Sharing the 90° knot
+   fixed it: yaw 12.3° → 8.7°.
+2. **Leave-one-DEPTH-out scored 1.2° and was meaningless** — the 30° grid means the
+   held-out angle is present at the other depths, so a monotone fit BINS to it.
+   Caught before reporting. Only holding out the ANGLE asks it to interpolate.
+3. **The exact-C1 cubic mend was rejected by measurement** — it fixed the
+   extrapolation but cost the front half badly (yaw 60°: 1.7° → 6.4°). Two
+   parameters per branch cannot follow the real curve. ⭐ Flexibility was doing more
+   work than smoothness.
+4. **The "pitch collapse" was retracted** — the established z-free ground truth
+   under-reports pitch too, so the DECLARATION is the outlier, and §4.3's pitch
+   verdict went with it. The takes cannot ground-truth the 30–60° band at all.
+
+⭐⭐ **THE FINDING THAT OUTLIVES THE ROW: the landmark set matters more than the
+model.** No-thumb + 25% trim halves the cross-take feature spread against the
+palm-5 that every earlier attempt used (0.067 vs 0.162). ⛔ **But it does not
+survive a gripping hand** — under grip the finger feature jitters 0.013–0.458 per
+frame against palm-5's 0.004–0.070. So palm-only for orientation, fingers as their
+own channel, which is the split the owner proposed independently.
+
+⚠ **One assumption is still smuggled in**: the multiplicative composition
+re-imports the orthographic `cos` model the regression exists to avoid. The
+empirical fix — a 2-D fit on hold PAIRS — is next and needs no new take.
+
+---
+
 ## 2026-08-27 — `F1` ships, the trim is removed, and parity takes six fixes
 
 ✅✅ **`F1` SHIPPED**: the object is carried by the **fingertip barycentre**,

@@ -24,95 +24,64 @@ The binding one, restated: **A10 — measure or revert.**
 
 ---
 
-## ⭐⭐⭐ YOU ARE HERE (2026-08-27)
+## ⭐⭐⭐ YOU ARE HERE (2026-08-27, late)
 
-✅✅ **`F1` IS SHIPPED AND LIVE IN THE GAME.** `USE_TIP_BARYCENTER = True`: the
-object is carried by the **fingertip barycentre**, settles onto it with a
-motion-masked walk, has its depth **anchored to the hand at every grab**, and is
-picked up only when the barycentre falls inside the object's **projected
-footprint**. Owner ran the rig and production repeatedly across 2026-08-26/27.
+✅✅ **`F1` IS SHIPPED AND LIVE** — fingertip grip, `A1`'s motion-masked walk, depth
+anchoring at grab, footprint grab radius. ⛔ **The rotation TRIM was REMOVED**:
+§10.1 measured it non-monotonic in the declared finger angle at every gain and
+clamp. `A10` reproduces exactly, `parity_replay` clean on four takes.
 
-⛔⛔ **THE ROTATION TRIM WAS REMOVED, AND THAT IS THE SESSION'S MAIN RESULT.**
-`TRIM_GAIN = 0.0`. §10.1's declared-angle take measured it **non-monotonic in the
-declared finger angle at every gain and clamp** (15.7° / 12.6° / 20.3° for a
-declared 10 / 20 / 40) — it is not a fine control at any setting, and the clamp had
-been masking that by pinning every answer to 10.00°.
-⚠ **This retracts the rig's headline**: the 21.2°-vs-32.9° lean was a constant 10°
-offset, not the fingers steering the cube. ⭐ Step 0's `M2` had already named the
-cause — the rigid fit over five non-rigid points *tumbles*.
-⚠ The owner asked for the trim removed **twice** before this and was refused both
-times. The metric they asked for is what settled it.
+⭐⭐⭐ **AND `T6` TURNED INTO SOMETHING BETTER THAN A RATIO TABLE.**
 
-✅ **`A10` reproduces EXACTLY** — yaw 14.5°/1.13 · pitch 5.5°/0.74 · roll 6.7°/1.02
-· **jitter p95 25.41°**. With the trim at gain 0 the rotation channel is
-byte-for-byte the shipped pipeline, so nothing could have moved; it was measured
-anyway rather than argued.
+**What was killed:** the ratio table itself. `Rwl` measures compression along ONE
+fixed direction, so under combined rotation it carries `cos(yaw)/cos(pitch)` — one
+number, two unknowns. ⛔ A **lossy projection**, not a weak ratio, which is why
+§4.1 measured cross-talk near 1.0 and §4.3's transfer came out dead on yaw.
 
-✅ **`parity_replay` NO DIVERGENCE on four takes** — and it took **six** fixes.
-⭐⭐ **The reusable one: every per-hand estimator must die with its track.** Three
-were missing that reset in the debug tool (absolute depth, tip trim, and the
-relative depth baseline — the last carrying a 6% depth error into the next grab).
-The other three were harness asymmetries: it never compared **orientation**, never
-passed **`rotation=`**, and never set **`slerp_mode`/`slerp_tau_ms`**.
+**What replaced it:** a **regression fitted from the takes**, on the classical
+**slant/tilt** pair from the trimmed affine SVD. Bijective by construction —
+monotone fit per branch, palm/back sign picks the branch, tilt picks the axis.
 
-⭐ **The settled constants live in `queue_notes/F1.md`** and in
-`LiveSnapDebug.settled_values()`, which now writes them into every take's
-`meta.json` and prints them on exit — because a session's tuning was nearly lost
-to a closed window.
+| | MODEL | HORN |
+|---|---|---|
+| yaw (leave-one-angle-out) | **8.7°** | 11.5° |
+| pitch | **17.6°** | 30.7° |
+| yaw, canonical frozen at an arbitrary pose | **10.6°** | 11.7° |
+| pitch, same | **17.4°** | 25.9° |
 
-⛔⭐ **`T6` §4.3 — THE DECIDING TEST — HAS RUN, AND IT SPLITS BY AXIS.**
+⭐ **THE OWNER'S ARCHITECTURE IS VALIDATED**: freeze a matrix at grab, compose
+**multiplicatively** (`σ_abs = σ_rel × σ₀`), invert, subtract. It works because the
+cube's rotation is ALREADY grab-relative, so the absolute error at grab cancels.
+⛔ Composed additively it scores 20.3° — worse than Horn. The composition is the
+whole trick.
 
-* **YAW is DEAD**: mean **+2.4°** of the 22.6° bias recovered, against a <5°
-  threshold. ⭐ And ASYMMETRIC — near→far recovers 8–12°, far→near LOSES 8–15° — so
-  the ratios carry a **depth dependence** and **one table does not serve all
-  depths**. That answers §4.4 as a side effect.
-* ⭐⭐ **PITCH looks transformative** (mean **+41.4°**, 6 of 6 pairs) — but because
-  **the shipped estimator COLLAPSES**: at a declared **60° of pitch, Horn reports
-  5.3°**. ⛔⛔ **UNCONFIRMED.** It rests on an instrument built the same day and on
-  a magnitude comparison that conflates axis error with gain error.
+⭐ **Three findings that outlive the row:**
+* **The landmark set matters more than the model** — no-thumb + 25% trim halves the
+  cross-take feature spread against the palm-5 every earlier attempt used.
+* ⛔ **But the finger gain does NOT survive a gripping hand**: under grip the
+  finger feature jitters 0.013–0.458 per frame against palm-5's 0.004–0.070. So
+  **palm-only for orientation, fingers as their own channel** — which is exactly
+  the split the owner proposed.
+* ⛔ **The pitch collapse was RETRACTED**, and with it §4.3's pitch verdict: the
+  established z-free ground truth under-reports pitch too, so the DECLARATION is
+  the outlier. The takes cannot ground-truth the 30–60° band at all.
 
-⭐⭐ **AND THE RATIO TABLE IS THE WRONG SHAPE — the owner's bijectivity question
-settled it.** `Rwl` measures compression along ONE fixed direction, so under
-combined rotation it carries `cos(yaw)/cos(pitch)`: one number, two unknowns. That
-is a **lossy projection**, not a weak ratio, and no pair of fixed lengths recovers
-it. ⭐ The recoverable pair is the classical **SLANT and TILT** from the affine
-SVD — `σ₂/σ₁ = cos(slant)`, minor axis = tilt — which is **bijective** and is
-already measured to work on the takes. Two strategies are drafted (orientation, and
-repairing `z` upstream) in
-[`../10_HAND_TRACKING/spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md`](../10_HAND_TRACKING/spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md).
-⛔ It carries a **patent finding**: resolving the planar two-fold ambiguity via
-orientation sensors or viewing-angle range is actively patented — a second,
-independent reason to avoid the IMU route already declined on behaviour grounds.
+⭐⭐⭐ **NEXT, IN ORDER — all desk work, no new take:**
+1. **Remove the last assumption.** The multiplicative composition re-imports the
+   orthographic `cos` model the regression exists to avoid. Fit
+   `(σ_rel, σ₀) → angle` **empirically** from hold PAIRS instead. Existing data.
+2. **Build the estimator** — `Resources/palm_slant.py`, stdlib-only and clock-free
+   per `CONSTRAINTS` §2, with golden vectors in the same change (§3).
+3. ⭐ **Validate it on INDEPENDENT takes with INDEPENDENT truth.** `t5j` grounds
+   roll by the in-image knuckle-row angle — no depth, no declaration — and `t5h`
+   carries the jitter bar. Scoring the new estimator there escapes the declared
+   angles entirely, which is the weakness every `T6` number still carries.
+4. Only then `A10`, `parity_replay`, and a live look in both tools.
+5. **Then Strategy B** — reconstruct `z` from the validated orientation, repairing
+   one input instead of the four consumers that each patch around it.
 
-⛔⛔ **THE CROSS-CHECK RAN, AND THE PITCH COLLAPSE IS RETRACTED.** The established
-harnesses' own z-free ground truth (`t5f`'s foreshortening inversion) ALSO
-under-reports pitch — 15° and 29° for a declared 30° and 60°. Two methods failing
-for different reasons agree with each other more than either agrees with the
-declaration, which makes the **declaration** the outlier. ⛔ And the third witness
-is blind exactly there: `dR/dθ ≈ 0.001/deg` in the 0–30° pitch band, so 0.02 of
-ratio noise is 20–57° of angle.
-⛔ **§4.3's pitch "+41.4° recovered" is WITHDRAWN with it** — the table is built on
-declared angles and scored on declared angles, so where nothing can check the
-declaration, "recovery" only shows the table reproduces the operator's habit.
-⭐ **The yaw verdict stands** (dead, +2.4°): yaw's declarations ARE self-consistent
-at 60–90° (spread 0.04), so its failure is not a ground-truth problem.
-⭐⭐ **THE TAKES CANNOT GROUND-TRUTH THE 30–60° BAND AT ALL** — Horn fails through
-`z`, the ratio through conditioning, the declaration through repeatability (spread
-0.50–0.69 at the 30° holds, both axes).
-
-⭐⭐⭐ **NEXT: a take whose ground truth is MEASURABLE, not declared.** `t5j` already
-sets the standard — it grounds ROLL by the in-image knuckle-row angle, needing
-neither depth nor a declaration, which is why the roll numbers have never been
-disputed. Pitch needs the equivalent: a physical jig at known angles, or a marker
-whose in-image geometry encodes the angle. ⛔ Until one exists, no pitch claim from
-these takes should be built on.
-⛔ Do NOT implement any matrix meanwhile: yaw is dead, pitch is unconfirmed, and
-§4.1 says a runtime table must be **2-D** while `Rdiag`/`Rbow` measured
-sign-inconsistent.
-
-Still open and still the owner's show-stopper: the **yaw lean** (~27° at a 60–90°
-hand turn). ⛔ `F1` did NOT fix it — the apparent improvement was the trim's
-constant offset, now removed.
+⛔ Still the owner's show-stopper: the **yaw lean**. `F1` did not fix it — the
+apparent improvement was the trim's constant offset, now removed.
 
 ⭐ The full block, and every superseded one back to 2026-08-03, is
 [`10_HAND_TRACKING/history/SESSION_LOG.md`](../10_HAND_TRACKING/history/SESSION_LOG.md) — newest first.
@@ -159,7 +128,7 @@ constant offset, now removed.
 | [T2](queue_notes/T2.md) | Pitch-plane crossing | HAND | pipeline | partly fixed — DR-2 closed the sign-flip half | 2.2, 1.5–1.7 |
 | [T3](queue_notes/T3.md) | Object jump / silent handover | HAND | pipeline | ✅✅ **fixed 2026-08-22** by the narrow remap, owner-accepted live | 2.1, N5 |
 | [T4](queue_notes/T4.md) | Yaw / palm-sinking in translation | HAND | pipeline | deferred | 1.4, 1.2, 4.1 |
-| [T6](queue_notes/T6.md) | Orientation from 2D (planar PnP) | HAND | perception | ⛔⛔ **built and A10-rejected 2026-08-24** — yaw got worse; code in `estimators()` only. ⭐⭐ **A 2D-RATIO-TABLE correction is OPEN and NOT covered by §2.0.12** (owner 2026-08-25) — clean depth-free index, yaw/pitch kept separate, declared ground truth. §2.0.9's refutation used a *contaminated* index so it does not carry. ✅ **ALL SIX TAKES RECORDED 2026-08-26** — 1680 frames, every one on-axis, 3 depths × 2 axes, right hand declared. ⛔ **CAVEAT ZERO (owner): the distance was NOT reliable and the hand very likely moved during the takes.** ⭐ Fine for the ratio table — foreshortening ratios are **scale-free** — but it invalidates every depth-derived reading, and two claims built on one were retracted the same day. ⚠ Grid is **30°** (7 positions), not the protocol's 25.71°: the owner could not set 25.71° by feel, and the declared angle IS the ground truth. ⛔ **Before analysing, read the dossier**: the ratio the tool prints is the take MEDIAN and is contaminated by the sweep — use the 0° hold. ⛔ **TWO claims made and retracted on this data in one afternoon** — "take 6 is the anomaly", then "four of six never return, which geometry forbids". ⭐ Caveat zero answers both: a drifting hand produces a monotone climb, no mystery required. ⭐ The one finding that SURVIVES (it is scale-free): `edge_on_measure` is **blind to pitch** — 0.94–1.00 at pitch-90° vs 0.13–0.28 at yaw-90° — so `Rsq`/`Lsq` cannot judge a pitch take. ✅✅ **§4.1/§4.2/§8.1/§8.2 ANALYSED 2026-08-26** (`analysis/t6_ratio_analysis.py`): magnitude does NOT separate the axes (orthography forbids it), but the **SIGN** of `Rwl`'s 0°→90° excursion splits yaw from pitch **3/3** — so the table must be **2-D**, and `Rdiag`/`Rbow` did not deliver the second observable. ⭐⭐ **THE DEPTH ARM PAID FIRST**, and a verification pass sharpened it: at the **square** pose the four palm spans imply depths **13–22% apart** (drift-free — one frame), `min` over them IS the absolute estimator, so its output **STEPS whenever rotation changes which span wins**. `NOMINAL_SPAN_M[(5,17)]` is the outlier. ⛔ The snap gate inherits it: within-take excursion reaches **0.161 m against a 0.15 m tolerance**. ⚠ Two claims RETRACTED the same day — the drift bound (premise refuted) and a "distance-free" ratio that was distance-SQUARED; the corrected statistic is the product, ≤ **1.209**. **Next: §4.3 transfer, §8.3 inversion**  ⛔⭐ **§4.3 THE DECIDING TEST RAN 2026-08-27 AND SPLITS BY AXIS.** **YAW: DEAD** — mean **+2.4°** recovered, and ASYMMETRIC (near→far +8..12°, far→near −8..15°), so the ratios carry a depth dependence and one table does not serve all depths (§4.4 answered for free). ⚠ The verdict was nearly cherry-picked: reading the BEST pair would have said *"needs calibration"*. ⭐⭐ **PITCH: apparently transformative** (mean +41.4°, 6/6 pairs) — but because **HORN COLLAPSES**: at a declared 60° pitch the shipped estimator reports **5.3°**. ⛔ UNCONFIRMED, on a one-day-old instrument; **cross-check against the established pitch harness before building anything**. | 4.2 |
+| [T6](queue_notes/T6.md) | Orientation from 2D (planar PnP) | HAND | perception | ⛔⛔ **built and A10-rejected 2026-08-24** — yaw got worse; code in `estimators()` only. ⭐⭐ **A 2D-RATIO-TABLE correction is OPEN and NOT covered by §2.0.12** (owner 2026-08-25) — clean depth-free index, yaw/pitch kept separate, declared ground truth. §2.0.9's refutation used a *contaminated* index so it does not carry. ✅ **ALL SIX TAKES RECORDED 2026-08-26** — 1680 frames, every one on-axis, 3 depths × 2 axes, right hand declared. ⛔ **CAVEAT ZERO (owner): the distance was NOT reliable and the hand very likely moved during the takes.** ⭐ Fine for the ratio table — foreshortening ratios are **scale-free** — but it invalidates every depth-derived reading, and two claims built on one were retracted the same day. ⚠ Grid is **30°** (7 positions), not the protocol's 25.71°: the owner could not set 25.71° by feel, and the declared angle IS the ground truth. ⛔ **Before analysing, read the dossier**: the ratio the tool prints is the take MEDIAN and is contaminated by the sweep — use the 0° hold. ⛔ **TWO claims made and retracted on this data in one afternoon** — "take 6 is the anomaly", then "four of six never return, which geometry forbids". ⭐ Caveat zero answers both: a drifting hand produces a monotone climb, no mystery required. ⭐ The one finding that SURVIVES (it is scale-free): `edge_on_measure` is **blind to pitch** — 0.94–1.00 at pitch-90° vs 0.13–0.28 at yaw-90° — so `Rsq`/`Lsq` cannot judge a pitch take. ✅✅ **§4.1/§4.2/§8.1/§8.2 ANALYSED 2026-08-26** (`analysis/t6_ratio_analysis.py`): magnitude does NOT separate the axes (orthography forbids it), but the **SIGN** of `Rwl`'s 0°→90° excursion splits yaw from pitch **3/3** — so the table must be **2-D**, and `Rdiag`/`Rbow` did not deliver the second observable. ⭐⭐ **THE DEPTH ARM PAID FIRST**, and a verification pass sharpened it: at the **square** pose the four palm spans imply depths **13–22% apart** (drift-free — one frame), `min` over them IS the absolute estimator, so its output **STEPS whenever rotation changes which span wins**. `NOMINAL_SPAN_M[(5,17)]` is the outlier. ⛔ The snap gate inherits it: within-take excursion reaches **0.161 m against a 0.15 m tolerance**. ⚠ Two claims RETRACTED the same day — the drift bound (premise refuted) and a "distance-free" ratio that was distance-SQUARED; the corrected statistic is the product, ≤ **1.209**. **Next: §4.3 transfer, §8.3 inversion**  ⛔⭐ **§4.3 THE DECIDING TEST RAN 2026-08-27 AND SPLITS BY AXIS.** **YAW: DEAD** — mean **+2.4°** recovered, and ASYMMETRIC (near→far +8..12°, far→near −8..15°), so the ratios carry a depth dependence and one table does not serve all depths (§4.4 answered for free). ⚠ The verdict was nearly cherry-picked: reading the BEST pair would have said *"needs calibration"*. ⭐⭐ **PITCH: apparently transformative** (mean +41.4°, 6/6 pairs) — but because **HORN COLLAPSES**: at a declared 60° pitch the shipped estimator reports **5.3°**. ⛔ UNCONFIRMED, on a one-day-old instrument; **cross-check against the established pitch harness before building anything**.  ⭐⭐⭐ **THE RATIO TABLE IS DEAD; A REGRESSION REPLACED IT (2026-08-27).** `Rwl` is a LOSSY PROJECTION (one number, two unknowns), so §4.3's yaw transfer failed and §4.1's cross-talk was ~1.0. ✅ **Slant/tilt from the trimmed affine SVD, fitted from the takes**, beats Horn on both axes (**yaw 8.7° vs 11.5°, pitch 17.6° vs 30.7°**) and is **bijective** by construction. ✅ **The owner's freeze-at-grab architecture is validated** (10.6°/17.4°) — the composition is MULTIPLICATIVE, and additively it scores worse than Horn. ⛔ Palm-only under grip: the finger gain does not survive a closed hand. ⛔ The pitch collapse and §4.3's pitch verdict are RETRACTED — the declaration is the outlier. **Next: empirical composition fit, then build the estimator, then score it on `t5j`/`t5h` where the truth is INDEPENDENT of any declaration** | 4.2 |
 | [T6d](queue_notes/T6d.md) | The anisotropic 2×2 fit | HAND | perception | ⛔⛔ built, 4 live sessions, **owner-rejected 2026-08-24** — production never ran it | T6 |
 | [L1](queue_notes/L1.md) | Rotation smoothing — a **time constant** | HAND | responsiveness | ✅✅ **shipped 2026-08-24**, owner-settled live at τ = 20 ms | — |
 | [F1](queue_notes/F1.md) | ⭐⭐⭐ **The cube's transform from the FINGERTIPS** | HAND | perception + gesture | ⭐⭐⭐ **SPECIFIED + STEP 0 MEASURED + STEP 3 SHIPPED 2026-08-25** (⛔ live take owed). Design = **palm-frame deformation + bounded trim**, gain 0 ⇒ bit-identical to Horn; τ = 20 ms untouched; ⛔ contact-point arm dropped on a **patent** finding. **Census (`analysis/f1_tip_census.py`)**: tip noise floor **1.5 mm** ✅ workable (held only 5–10% worse) · ⛔ rigid tip residual **75–95° inside 0.5 s** — not noise, the rigid model is wrong ⇒ clamp far below it · ⛔ plain barycentre drifts **1 cm median / 6 cm p95** ⇒ `g_pos = 1` needs a clamp · ✅ collinearity floor 0.20 costs 1.9%. ⭐⭐ **Steps 1, 2 and 4 BUILT 2026-08-26** — 1€ filter, fingertip barycentre for snap+translation, and the palm-frame ROTATION TRIM (gain 0 = shipped Horn; a rigidly rotated hand yields **0.0000°** of trim). ⭐ **`f1_rig.bat` runs all three side by side on one camera** for the live take. ⛔ **Live take owed** — and until it happens **BOTH F1 switches are OFF in the game** (`USE_TIP_BARYCENTER=False`, `TRIM_GAIN=0.0`), so production is pre-F1 and every change lives in the rig where it can be compared. ⭐ **Step 1 landed 2026-08-26**: the **1€ filter** + 30 golden vectors, inert until step 2 (⚠ the vectors caught a real divergence from the paper immediately — the speed term used the filtered, not the raw, value). **Back-of-hand snap rule REMOVED** ✅ **live-confirmed both tools 2026-08-25**; debug measured **9 of 15 snaps back-of-hand** (⚠ re-opens `N8`; the rule was refusing **8.3%** of free-hand frames; ⚠ production recorded nothing — `N4`) → [`spec/F1_FINGERTIP_TRANSFORM_SPEC.md`](../10_HAND_TRACKING/spec/F1_FINGERTIP_TRANSFORM_SPEC.md)  ⭐⭐⭐ **RIG-ACCEPTED LIVE 2026-08-26** — owner *"I like the feel, this is better than the palm grip"*, and *"this is good"* at **tau 70 ms**. Trim measures **21.2° lean against the shipped 32.9°** at large yaw. ✅ **`A1` shipped into both tools**: the object now settles ON the fingertip barycentre (a **115.6 px** constant offset, faded at 150 px/s after a teleport and an exponential both FAILED the gate) and its depth is re-seated on the hand at every grab — it had been **ratcheted into the 0.30 m floor for 57.4% of every hold** while the hand was never once that near. ⛔⛔ **TAKE 1 WAS VOID**: two module-global gates left panels 1 and 2 **bit-identical (0.00 px)** — the switch had been verified where it was SET, not where it took EFFECT. ⛔ **Both switches still OFF in the game**: the `A10` bar and §10.1's trim-resolution metric are still owed, and the 21.2° is DAMPING until a declared take says it is fidelity.  ✅✅ **SHIPPED 2026-08-27.** `USE_TIP_BARYCENTER=True` — the fingertip grip, `A1`'s motion-masked re-centring walk, depth anchoring at grab, and a grab radius that is the object's PROJECTED FOOTPRINT. ⛔ **The rotation TRIM was REMOVED** (`TRIM_GAIN=0.0`): §10.1's take measured it **non-monotonic in the declared finger angle at every gain and clamp** — 15.7/12.6/20.3° for a declared 10/20/40 — so it is not a fine control at any setting, and the rig's 21.2° lean was a constant 10° offset, not finger steering. ✅ `A10` reproduces EXACTLY (yaw 14.5/1.13 · pitch 5.5/0.74 · roll 6.7/1.02 · **jitter p95 25.41**). ✅ `parity_replay` NO DIVERGENCE on four takes after **six** fixes — three per-hand estimators that did not die with their track, three harness asymmetries. | L1 ✅ |

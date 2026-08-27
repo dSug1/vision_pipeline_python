@@ -50,10 +50,11 @@ projected footprint. ⛔ The rotation **trim was removed**: §10.1 measured it
 non-monotonic in the declared finger angle at every setting.
 **Next build: `T6` §4.3, the transfer test** — the protocol's own deciding test,
 desk work, no camera.
-**`T6` has moved**: its six takes are analysed and the analysis re-verified — the
-ratio table must be **2-D**, and the **absolute depth estimator steps whenever
-rotation changes which palm span it selects** (the four disagree by 13–22% at the
-square pose). Next is §4.3 / §8.3, no camera needed.
+**`T6` became a regression.** The ratio table is dead (it is a lossy projection);
+**slant/tilt fitted from the six takes beats Horn on both axes**, is bijective, and
+the owner's freeze-at-grab architecture is validated. Next: an empirical
+composition fit, then build the estimator, then score it where the ground truth
+owes nothing to a declared angle.
 **Open show-stopper**: the **yaw lean** (~27° at a 60–90° hand turn).
 Full status: [`00_CORE/QUEUE.md`](00_CORE/QUEUE.md)'s YOU-ARE-HERE block.
 Full narrative: [`10_HAND_TRACKING/history/SESSION_LOG.md`](10_HAND_TRACKING/history/SESSION_LOG.md).
