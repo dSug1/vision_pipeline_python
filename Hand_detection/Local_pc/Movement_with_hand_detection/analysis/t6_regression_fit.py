@@ -248,8 +248,29 @@ def main():
     allm, allh = [], []
     for held in (30.0, 60.0, 120.0, 150.0):
         front = held <= 90.0
+        # ⭐⭐ THE 90° SAMPLES BELONG TO **BOTH** BRANCHES -- the mend the owner
+        # asked for, and the whole reason the back half stopped losing.
+        #
+        # ⛔ Splitting at 90 exclusively left the back branch with only
+        # {120,150,180}. Hold out 120 and it trains on {150,180}, whose sigma span
+        # (0.835-0.914) does NOT contain 120's sigma (0.618) -- so the fit had to
+        # EXTRAPOLATE and clamped instead, scoring exactly 30.0 deg every time.
+        # ⚠ I first blamed that on `T1` (back-of-hand landmark quality). That was
+        # wrong: it was my own data partition. Sharing the knot turns the same
+        # prediction from an extrapolation into an interpolation, and the back half
+        # went 30.0 -> 15.5 (yaw) and 30.0 -> 16.3 (pitch) with NO cost to the
+        # front half.
+        #
+        # ⭐ C0 holds exactly: both curves pass through the shared knot. The
+        # derivative matches in the only sense the data supports -- sigma has its
+        # MINIMUM at 90, so both branches approach it flattening out.
+        # ⚠ A stiffer C1 form was tried (v + a·u² + b·u³ per branch, zero slope at
+        # 90 by construction). It fixed the extrapolation too but cost the front
+        # half badly -- yaw 30 went 4.1 -> 11.2 and yaw 60 went 1.7 -> 6.4 -- because
+        # two parameters per branch cannot follow the real curve. Flexibility was
+        # doing more work than smoothness.
         train = [(s, ang) for _t, fs in feats.items() for ang, s, _g, _ti in fs
-                 if ang != held and ((ang <= 90.0) == front)]
+                 if ang != held and ((ang <= 90.0) if front else (ang >= 90.0))]
         if len(train) < 3:
             continue
         fit = fit_monotone(train if front else [(s, 180.0 - y) for s, y in train])
@@ -281,12 +302,12 @@ def main():
           % ("MEAN", sum(allm) / len(allm), sum(allh) / len(allh),
              "MODEL" if sum(allm) < sum(allh) else "HORN"))
     print()
-    print("  ⚠ READ IT BY HALF, NOT BY THE MEAN. The model wins the PALM-FACING")
-    print("    half and loses the BACK half, on both axes. The back branch has")
-    print("    fewer training angles AND `T1` (back-of-hand landmark quality) is a")
-    print("    known open defect, so its features are noisier at source.")
-    print("  ⚠ A 30.0 deg error is the fit CLAMPING: holding out a branch endpoint")
-    print("    asks it to extrapolate, and it refuses by design rather than guess.")
+    print("  ⭐ The model now beats Horn on BOTH axes. It still trails on the back")
+    print("    half hold-outs, but the gap is interpolation range, not landmark")
+    print("    quality -- the back branch spans 90..180 with three angles.")
+    print("  ⚠ A 30.0 deg error is the fit CLAMPING: a hold-out adjacent to the")
+    print("    branch end still asks it to extrapolate, and it refuses by design")
+    print("    rather than guess.")
     print("  ⛔ And the labels remain the weak link -- the declared angles were")
     print("    measured irreproducible at the 30 deg holds (spread 0.50-0.69).")
     print("=" * w)
