@@ -71,12 +71,25 @@ to a closed window.
   5.3°**. ⛔⛔ **UNCONFIRMED.** It rests on an instrument built the same day and on
   a magnitude comparison that conflates axis error with gain error.
 
-⭐⭐⭐ **NEXT: CROSS-CHECK THE PITCH COLLAPSE against the established pitch harness
-(`t5h`/`t5j`, whose baseline is axis 5.5° / gain 0.74 on a different take) BEFORE
-building anything.** A number that large from an instrument that new is the exact
-shape of the four harnesses that once reported CLEAN on takes the owner had watched
-fail. If it survives, it is a bigger defect than the yaw lean this row was opened
-for and it reframes the rotation problem.
+⭐⭐ **AND THE RATIO TABLE IS THE WRONG SHAPE — the owner's bijectivity question
+settled it.** `Rwl` measures compression along ONE fixed direction, so under
+combined rotation it carries `cos(yaw)/cos(pitch)`: one number, two unknowns. That
+is a **lossy projection**, not a weak ratio, and no pair of fixed lengths recovers
+it. ⭐ The recoverable pair is the classical **SLANT and TILT** from the affine
+SVD — `σ₂/σ₁ = cos(slant)`, minor axis = tilt — which is **bijective** and is
+already measured to work on the takes. Two strategies are drafted (orientation, and
+repairing `z` upstream) in
+[`../10_HAND_TRACKING/spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md`](../10_HAND_TRACKING/spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md).
+⛔ It carries a **patent finding**: resolving the planar two-fold ambiguity via
+orientation sensors or viewing-angle range is actively patented — a second,
+independent reason to avoid the IMU route already declined on behaviour grounds.
+
+⭐⭐⭐ **NEXT — AND IT IS AN EXPERIMENT, NOT A BUILD: cross-check the pitch collapse
+against the established pitch harness** (`t5h`/`t5j`, baseline axis 5.5° / gain
+0.74). Everything above leans on a declared 60° of pitch reading **5.3°**, produced
+by an instrument written the same day. A number that large from an instrument that
+new is the exact shape of the four harnesses that once reported CLEAN on takes the
+owner had watched fail.
 ⛔ Do NOT implement any matrix meanwhile: yaw is dead, pitch is unconfirmed, and
 §4.1 says a runtime table must be **2-D** while `Rdiag`/`Rbow` measured
 sign-inconsistent.
