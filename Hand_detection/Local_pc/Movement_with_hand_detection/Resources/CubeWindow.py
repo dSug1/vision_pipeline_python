@@ -1,5 +1,10 @@
 import pygame
 
+try:                                    # imported, never copied (N6)
+    from . import hand_anatomy
+except ImportError:                     # pragma: no cover - direct import
+    import hand_anatomy
+
 from . import palm_geometry
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
@@ -11,6 +16,22 @@ from typing import Dict, Optional, Tuple
 # and sends it once as a "meta" packet (see PythonApp_Main.py's dispatch for
 # datatype == "meta"), which calls resize() below to match it.
 DEFAULT_WINDOW_SIZE: Tuple[int, int] = (640, 480)
+
+# ⭐⭐ HAND LANDMARKS IN PRODUCTION (owner, 2026-08-27). The debug tool has always
+# drawn them and production never did, so the two tools showed different things and
+# a judgement made in one did not transfer to the other.
+# ⛔ OCCLUSION IS THE POINT, and it is free here: the landmarks are drawn BEFORE
+# the cubes, and `_draw_object_3d` paints OPAQUE polygons, so a cube covers whatever
+# of the hand sits under it. In the debug tool the same effect needs real work,
+# because there the cube is alpha-blended over the video on purpose.
+# ⚠ The landmark coordinates arrive as MIRRORED WEBCAM-FRAME PIXELS -- the same
+# space the cube positions live in, and the window is the frame's own 640x480 -- so
+# no transform is needed. If either ever stops being true, this breaks silently and
+# visibly, which is the good kind.
+LANDMARK_COLOR = (90, 200, 255)
+LANDMARK_CONNECTION_COLOR = (60, 130, 170)
+LANDMARK_RADIUS = 3
+LANDMARK_LINE_WIDTH = 2
 DEFAULT_CUBE_SIZE = 40  # the SMALL cube's edge length; the LARGE cube is 2x this (direct request, 2026-08-01)
 
 # Snap/hover highlight (Claude/GESTURE_PIPELINE_SPEC.md §13.3, 2026-08-01):
@@ -236,6 +257,9 @@ class CubeWindow:
         self.screen = pygame.display.set_mode(window_size)
         pygame.display.set_caption("Part One - two cubes, one per hand")
         self.clock = pygame.time.Clock()
+        # ⚠ Display only. Nothing downstream reads this; it is replaced wholesale
+        # each frame and an empty dict simply draws no hands.
+        self._hand_landmarks: Dict[str, list] = {}
         large_size = cube_size * 2
         small_size = cube_size
         self.cubes: Dict[str, Cube] = {
@@ -436,6 +460,29 @@ class CubeWindow:
             pygame.draw.polygon(self.screen, color, int_pts)
             pygame.draw.polygon(self.screen, edge_color, int_pts, edge_width)
 
+    def set_hand_landmarks(self, by_hand: Dict[str, list]) -> None:
+        """This frame's landmarks per hand, in webcam-frame pixels. DISPLAY ONLY.
+
+        ⚠ Called before `pump_and_draw`. Passing `{}` (or never calling it) simply
+        draws no hands, so a caller that predates this keeps working unchanged.
+        """
+        self._hand_landmarks = by_hand or {}
+
+    def _draw_hand_landmarks(self) -> None:
+        """⛔ MUST BE CALLED BEFORE THE CUBES. That ordering IS the occlusion."""
+        for pts in self._hand_landmarks.values():
+            if not pts or len(pts) < 21:
+                continue
+            try:
+                ipts = [(int(p[0]), int(p[1])) for p in pts]
+            except (TypeError, IndexError):
+                continue
+            for a, b in hand_anatomy.HAND_CONNECTIONS:
+                pygame.draw.line(self.screen, LANDMARK_CONNECTION_COLOR,
+                                 ipts[a], ipts[b], LANDMARK_LINE_WIDTH)
+            for xy in ipts:
+                pygame.draw.circle(self.screen, LANDMARK_COLOR, xy, LANDMARK_RADIUS)
+
     def pump_and_draw(self) -> None:
         """Process window events and redraw both cubes. Called once per
         received "hands" packet (~30fps from the server), after both cubes'
@@ -453,6 +500,10 @@ class CubeWindow:
             return
 
         self.screen.fill((30, 30, 30))
+        # ⛔ ORDER IS LOAD-BEARING: hands first, cubes second. The cubes are opaque,
+        # so this is what makes a cube OCCLUDE the hand behind it. Swapping these two
+        # lines would draw the skeleton on top of the object it is holding.
+        self._draw_hand_landmarks()
         for cube in self.cubes.values():
             self._draw_object_3d(cube)
         pygame.display.flip()

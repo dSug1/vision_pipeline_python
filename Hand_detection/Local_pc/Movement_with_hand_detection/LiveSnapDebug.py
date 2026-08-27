@@ -2624,7 +2624,7 @@ def _draw_hand(frame, normalized_landmarks, handedness, thumb_outward, reliabili
                     cv2.FONT_HERSHEY_DUPLEX, 0.6, color, 2, cv2.LINE_AA)
 
 
-def _draw_cube_3d(overlay, cube: Cube, screen_center: Tuple[float, float]):
+def _draw_cube_3d(overlay, cube: Cube, screen_center: Tuple[float, float], mask=None):
     """Real rotating 3D object (2026-08-01, replaces the old flat-rect +
     axis-gizmo placeholder) -- ported from production CubeWindow.py's
     `_draw_object_3d`, same fixed-camera-distance perspective projection
@@ -2669,6 +2669,12 @@ def _draw_cube_3d(overlay, cube: Cube, screen_center: Tuple[float, float]):
         int_pts = np.array([[int(x), int(y)] for x, y in pts], dtype=np.int32)
         cv2.fillConvexPoly(overlay, int_pts, color)
         cv2.polylines(overlay, [int_pts], True, CUBE_EDGE_COLOR, 1, cv2.LINE_AA)
+        # ⭐ THE SAME polygons, into the coverage mask. Taken from the drawing
+        # itself rather than recomputed from the footprint, so the mask cannot
+        # disagree with what is on screen -- a separately-derived mask would drift
+        # the moment the projection changed.
+        if mask is not None:
+            cv2.fillConvexPoly(mask, int_pts, 255)
 
 
 def _draw_cubes(frame, state: CubeState):
@@ -2678,13 +2684,24 @@ def _draw_cubes(frame, state: CubeState):
     cube(s) are held -- kept opaque/on top so the highlight itself stays
     crisp rather than also being alpha-blended."""
     overlay = frame.copy()
+    # ⭐⭐ OCCLUSION (owner, 2026-08-27: the landmarks must be hidden by the cube).
+    # ⛔ IT CANNOT BE DONE BY DRAW ORDER HERE, and that is the whole difficulty.
+    # Production paints OPAQUE cubes, so drawing hands first is enough. This tool
+    # ALPHA-BLENDS the cube on purpose -- the owner asked for that explicitly ("the
+    # overlay has to have some transparency") so the video stays readable underneath
+    # -- and an alpha blend lets whatever is beneath show THROUGH, landmarks
+    # included. Simply drawing the hand first would leave it faintly visible.
+    # ⭐ So the cube reports WHICH PIXELS IT COVERS, and the caller paints the
+    # landmarks everywhere except there. The cube keeps its transparency over the
+    # VIDEO and is fully opaque to the HAND, which is what was asked for.
+    mask = np.zeros(frame.shape[:2], dtype=np.uint8)
     for cube in state.cubes.values():
         # 4.2: the PROJECTED extent, everywhere. `position` is the top-left of
         # what is drawn, so using `size` here would offset the centre at any
         # depth other than the reference one.
         size = state.projected_size_of(cube)
         screen_center = (cube.position[0] + size / 2, cube.position[1] + size / 2)
-        _draw_cube_3d(overlay, cube, screen_center)
+        _draw_cube_3d(overlay, cube, screen_center, mask)
     cv2.addWeighted(overlay, CUBE_ALPHA, frame, 1 - CUBE_ALPHA, 0, frame)
     # ⚠ RESTORED 2026-08-25: this loop was removed as COLLATERAL by `febd3fa`,
     # the commit that stripped T6d's A/B rig out of this tool. It sat directly
@@ -2699,6 +2716,11 @@ def _draw_cubes(frame, state: CubeState):
             size = int(round(state.projected_size_of(cube)))
             x, y = int(cube.position[0]), int(cube.position[1])
             cv2.rectangle(frame, (x, y), (x + size, y + size), SNAP_BORDER_COLOR, SNAP_BORDER_WIDTH)
+    # ⭐ The pixels the cubes cover, for the caller to keep the landmarks out of.
+    # ⚠ The snap highlight above is deliberately NOT in the mask: it is a HUD
+    # annotation, not part of the object's body, and masking the hand out from under
+    # a 3-px border would leave a visible notch in the skeleton.
+    return mask
 
 
 def build_detector():
@@ -3265,16 +3287,24 @@ def main():
                     panel = np.zeros_like(frame)
                 else:
                     panel = frame if len(arms) == 1 else frame.copy()
-                for handedness, normalized in normalized_by_hand.items():
-                    data = hand_data_by_hand[handedness]
-                    _draw_hand(
-                        panel, normalized, handedness, data["thumb_outward"],
-                        arm.last_hand_reliability_alpha[handedness], width, height,
-                    )
-                # ⭐ In the A/B rig, panel 2 also carries panel 1's cube as a
-                # wireframe. Positions are bit-identical between the arms, so any
-                # visible gap between cage and solid IS the estimator difference.
-                _draw_cubes(panel, arm)
+                # ⛔⛔ ORDER REVERSED 2026-08-27, AND THE REVERSAL IS THE FEATURE.
+                # The hands used to be drawn first and the alpha-blended cube laid
+                # over them, which let the skeleton show THROUGH the object it was
+                # holding. Now the cubes go down first and report their coverage, and
+                # the landmarks are painted only where no cube is.
+                # ⚠ The mask must come from the cube pass, so nothing between these
+                # two blocks may draw on `panel`.
+                cube_mask = _draw_cubes(panel, arm)
+                if normalized_by_hand:
+                    hands_layer = panel.copy()
+                    for handedness, normalized in normalized_by_hand.items():
+                        data = hand_data_by_hand[handedness]
+                        _draw_hand(
+                            hands_layer, normalized, handedness, data["thumb_outward"],
+                            arm.last_hand_reliability_alpha[handedness], width, height,
+                        )
+                    # keep the hand layer only OUTSIDE the cubes
+                    np.copyto(panel, hands_layer, where=(cube_mask == 0)[:, :, None])
                 _draw_bridge_hud(panel, arm, height)
                 if args.slerp_ab and i == 1:
                     _draw_ab_divergence(panel, arms[0], arm, height)

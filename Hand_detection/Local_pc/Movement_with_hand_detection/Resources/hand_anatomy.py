@@ -131,6 +131,20 @@ MIN_BEND_DEG = 15.0          # below this a joint is "straight" and its rotation
                              # joints are SKIPPED, never judged.
 MIN_BONE_LENGTH = 1e-6       # degenerate/collapsed landmark guard.
 
+# ⭐ THE 21-POINT TOPOLOGY, as index pairs. Anatomy, so it lives here.
+# ⚠ It exists because PRODUCTION cannot reach MediaPipe's own
+# `solutions.hands.HAND_CONNECTIONS`: the client receives landmarks over a socket
+# and does not import mediapipe at all. ⛔ The alternative was hard-coding the
+# same 21 pairs inside `CubeWindow.py`, i.e. a second copy of the hand's skeleton
+# that could drift from this one (N6: imported, never copied).
+HAND_CONNECTIONS = (
+    (0, 1), (1, 2), (2, 3), (3, 4),                 # thumb
+    (0, 5), (5, 6), (6, 7), (7, 8),                 # index
+    (5, 9), (9, 10), (10, 11), (11, 12),            # middle
+    (9, 13), (13, 14), (14, 15), (15, 16),          # ring
+    (13, 17), (0, 17), (17, 18), (18, 19), (19, 20),  # pinky + palm closure
+)
+
 
 def _sub(a, b):
     return (a[0] - b[0], a[1] - b[1], a[2] - b[2])

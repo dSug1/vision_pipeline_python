@@ -1824,6 +1824,16 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
 
     _publish_hand_input(hands, _hi_pose, now_ms)
 
+    # ⭐⭐ The hand skeleton, drawn in production for the first time (owner,
+    # 2026-08-27). DISPLAY ONLY -- nothing downstream reads it back, and an empty
+    # list simply draws nothing.
+    # ⛔ The OCCLUSION comes from `pump_and_draw`'s order: landmarks first, opaque
+    # cubes second, so a cube covers the hand behind it. That ordering lives in
+    # `CubeWindow` and is commented there as load-bearing.
+    # ⚠ `hands` is this frame's ((name, landmarks), ...) pairs -- the SAME tuple the
+    # logic above consumed, so what is drawn cannot disagree with what was decided.
+    cube_window.set_hand_landmarks({name: lms for name, lms in hands if lms})
+
     cube_window.pump_and_draw()
 
 
