@@ -294,6 +294,18 @@ SLIDERS = (
     # be tripped by the very jitter the damper removes, and the damping would
     # flicker on and off.
     ("RELEASE deg/s", 400, 80, lambda n: float(n)),
+    # ⭐⭐ FREEZE: consecutive fast frames needed to let the object move at all.
+    # ⛔ 0 = OFF, i.e. the smooth ramp above. Any value > 0 makes the blend factor
+    # EXACTLY ZERO while held -- absolutely no movement, by construction rather than
+    # by being slow. Owner, 2026-08-27: *"I want absolutely no movement when the cube
+    # should be steady, and immediate release when the hands move (maybe with a
+    # couple of frames trigger)"*.
+    # ⭐ 2 is that couple. It rejects single-frame NOISE SPIKES outright -- which the
+    # instant-attack envelope could not -- at a cost of exactly N-1 frames of onset.
+    # ⚠ While frozen the object ignores slow drift, so a hand creeping below the
+    # threshold accumulates a gap that is paid back as a JUMP on release. That is
+    # what "absolutely no movement" costs.
+    ("FREEZE frames", 6, 0, lambda n: int(n)),
     ("SLANT axis %", 100, 0, lambda n: n / 100.0),
     # ⭐⭐ THE OWNER'S OWN STRATEGY, as a whole estimator: the regression fitted
     # from the six takes (HALF 1) on a canonical frozen at the grab (HALF 2).
@@ -1863,7 +1875,7 @@ def _read_sliders() -> None:
     global SLERP_TAU_MS, JITTER_TAU_MS, JITTER_BETA, GRAB_RADIUS_MULTIPLIER
     global GRIP_ALIGN_MOVING_MS, GRIP_ALIGN_MASK_RATIO, GRAB_Z_TOLERANCE_M
     global DEPTH_RATE_PER_S, SLANT_AXIS_GAIN, POSE_BLEND, STEADY_EXTRA_MS
-    global STEADY_RELEASE_DEG_S
+    global STEADY_RELEASE_DEG_S, STEADY_FREEZE_FRAMES
     try:
         vals = [spec[3](cv2.getTrackbarPos(spec[0], SLIDER_WIN)) for spec in SLIDERS]
     except cv2.error:
@@ -1872,8 +1884,9 @@ def _read_sliders() -> None:
     # values are NOT re-read here; they keep their module defaults.
     (SLERP_TAU_MS, _gain, GRAB_RADIUS_MULTIPLIER, GRIP_ALIGN_MOVING_MS,
      GRIP_ALIGN_MASK_RATIO, STEADY_EXTRA_MS, STEADY_RELEASE_DEG_S,
-     SLANT_AXIS_GAIN, POSE_BLEND, GRAB_Z_TOLERANCE_M) = vals
+     STEADY_FREEZE_FRAMES, SLANT_AXIS_GAIN, POSE_BLEND, GRAB_Z_TOLERANCE_M) = vals
     _HS_const.ROTATION_STEADY_RELEASE_DEG_S = STEADY_RELEASE_DEG_S
+    _HS_const.ROTATION_STEADY_FREEZE_FRAMES = STEADY_FREEZE_FRAMES
     # ⚠ Shared module, same reasoning as the others: both tools read it at call
     # time and can never run at once. ⛔ It stays 0 in production unless set there.
     _HS_const.ROTATION_STEADY_EXTRA_MS = STEADY_EXTRA_MS
@@ -1948,6 +1961,7 @@ def settled_values() -> dict:
         # actually consults at call time, so it cannot drift from what ran.
         "steady_extra_ms": _HS_const.ROTATION_STEADY_EXTRA_MS,
         "steady_release_deg_s": _HS_const.ROTATION_STEADY_RELEASE_DEG_S,
+        "steady_freeze_frames": _HS_const.ROTATION_STEADY_FREEZE_FRAMES,
         "slant_axis_gain": _SlantAxis.GAIN,
         # ⚠ In the log from the start this time. The first `--slant-rig` take was
         # lost because its gain was not recorded; a second A/B losing the same way
@@ -2118,6 +2132,8 @@ _SLERP_MAX_DT_MS = _HS_const.ROTATION_SLERP_MAX_DT_MS
 # property of the hand alone and is the same in both tools whatever it is holding.
 _steady_env = {}
 _steady_prev_hand_quat = {}
+_steady_frozen = {}
+_steady_run = {}
 
 
 def _stamp_steady_speed(handedness, hand_quat, now_ms, prev_ms):
@@ -2132,6 +2148,9 @@ def _stamp_steady_speed(handedness, hand_quat, now_ms, prev_ms):
         speed = _PRot.quat_angle_deg(prev, hand_quat) * 1000.0 / dt
         _steady_env[handedness] = _HS_const.steady_speed_envelope(
             _steady_env.get(handedness), speed, dt)
+        # ⚠ RAW per-frame speed, not the envelope -- see production's copy.
+        _steady_frozen[handedness], _steady_run[handedness] = _HS_const.steady_hold_update(
+            _steady_frozen.get(handedness, True), _steady_run.get(handedness, 0), speed)
     _steady_prev_hand_quat[handedness] = hand_quat
 
 
@@ -2152,8 +2171,13 @@ def _slerp_factor_for(state: CubeState, now_ms, handedness=None) -> float:
     # ⛔ The speed comes from the RAW TARGET, never from the cube's own smoothed
     # orientation. Measuring the output would be self-referential -- damping lowers
     # the apparent speed, which raises the damping -- and the cube would lock solid.
-    # ⚠ The HAND's envelope, keyed exactly as production keys it.
-    tau = _HS_const.steady_tau_ms(tau, _steady_env.get(handedness))
+    # ⛔ FREEZE MODE WINS OUTRIGHT when it is on -- factor exactly 0.0.
+    if _HS_const.ROTATION_STEADY_FREEZE_FRAMES > 0:
+        if _steady_frozen.get(handedness, True):
+            return 0.0
+    else:
+        # ⚠ The HAND's envelope, keyed exactly as production keys it.
+        tau = _HS_const.steady_tau_ms(tau, _steady_env.get(handedness))
     return 1.0 - math.exp(-dt / tau)
 
 

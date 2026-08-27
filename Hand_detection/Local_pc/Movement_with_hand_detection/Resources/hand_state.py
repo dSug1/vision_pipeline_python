@@ -201,6 +201,57 @@ def steady_speed_envelope(previous_env, speed_deg_s, dt_ms):
     return sp if fell < sp else fell
 
 
+# ⭐⭐⭐ FREEZE MODE (owner, 2026-08-27): *"I want absolutely no movement when the
+# cube should be steady, and immediate release when the hands move (maybe with a
+# couple of frames trigger)"*.
+#
+# ⛔ DAMPING IS NOT STILLNESS. Even at 4500 ms the blend factor is 0.015, so the
+# cube still creeps 1.5% of the gap every frame -- small, but never zero, and over a
+# long hold it wanders. Freeze mode makes the blend factor EXACTLY 0.0 below the
+# threshold: the object does not move at all, by construction rather than by being
+# slow.
+#
+# ⭐ THE TRIGGER IS WHAT MAKES IT SAFE, and it is why the owner's "couple of
+# frames" is the right instinct: a single frame above the threshold is the shape of
+# a NOISE SPIKE (measured: the raw target exceeds 160 deg/s on 5.4% of frames with
+# the hand still), while a real turn is above it for many frames in a row. Requiring
+# N consecutive frames rejects the spikes outright -- which the earlier
+# instant-attack envelope could not do -- at a cost of exactly N-1 frames of onset.
+#
+# ⚠ THE COST, stated plainly: while frozen the cube ignores slow drift, so if the
+# hand creeps below the threshold the gap accumulates and is paid back as a JUMP on
+# release. That is inherent to "absolutely no movement" and is the reason this is a
+# mode rather than the default.
+ROTATION_STEADY_FREEZE_FRAMES = 0      # 0 = off (smooth ramp); N = freeze, N-frame trigger
+
+
+def steady_hold_update(frozen, run, speed_deg_s, release_deg_s=None,
+                       trigger_frames=None, hold_fraction=ROTATION_STEADY_HOLD_FRACTION):
+    """Advance the freeze state machine. Returns `(frozen, run)`.
+
+    FROZEN  -> needs `trigger_frames` CONSECUTIVE frames at or above the release
+               speed to let go. One fast frame is not enough; that is the point.
+    MOVING  -> refreezes as soon as the speed drops below the HOLD level, which is
+               lower than the release level, so the two thresholds hysterese and the
+               state cannot chatter on a speed hovering at the boundary.
+
+    ⚠ `speed_deg_s` is the RAW target's speed, never the smoothed output -- the
+    same rule `steady_tau_ms` states, and for the same reason.
+    """
+    n = int(ROTATION_STEADY_FREEZE_FRAMES if trigger_frames is None else trigger_frames)
+    if n <= 0:
+        return False, 0                      # mode off: never frozen
+    hi = float(ROTATION_STEADY_RELEASE_DEG_S if release_deg_s is None else release_deg_s)
+    lo = hi * max(0.0, min(1.0, float(hold_fraction)))
+    if speed_deg_s is None or speed_deg_s != speed_deg_s:
+        return frozen, 0                     # unknown speed changes nothing
+    sp = max(0.0, float(speed_deg_s))
+    if frozen:
+        run = run + 1 if sp >= hi else 0
+        return (False, 0) if run >= n else (True, run)
+    return (True, 0) if sp < lo else (False, 0)
+
+
 def steady_tau_ms(base_tau_ms, speed_deg_s,
                   extra_ms=None, release_deg_s=None,
                   hold_fraction=ROTATION_STEADY_HOLD_FRACTION):

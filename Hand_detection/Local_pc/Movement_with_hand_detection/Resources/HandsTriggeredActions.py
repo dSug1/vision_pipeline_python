@@ -1292,6 +1292,10 @@ def on_hands_world_frame(left_world: List[Tuple[float, float, float]], right_wor
 # one envelope, or the still one inherits the moving one's release.
 _steady_env: Dict[str, Optional[float]] = {h: None for h in TRACKED_HANDS}
 _steady_prev_target: Dict[str, Optional[tuple]] = {h: None for h in TRACKED_HANDS}
+# ⭐ FREEZE MODE's state machine, per hand. `frozen` means the blend factor is
+# EXACTLY zero -- the object does not move at all, rather than moving slowly.
+_steady_frozen: Dict[str, bool] = {h: True for h in TRACKED_HANDS}
+_steady_run: Dict[str, int] = {h: 0 for h in TRACKED_HANDS}
 
 
 def _rotation_slerp_factor(now_ms: Optional[float], handedness: Optional[str] = None) -> float:
@@ -1308,6 +1312,11 @@ def _rotation_slerp_factor(now_ms: Optional[float], handedness: Optional[str] = 
     dt = min(max(0.0, now_ms - _last_frame_ms), ROTATION_SLERP_MAX_DT_MS)
     tau = max(1.0, ROTATION_SLERP_TAU_MS)
     if handedness is not None:
+        # ⛔ FREEZE MODE WINS OUTRIGHT when it is on: a factor of exactly 0.0, so
+        # the object is still BY CONSTRUCTION and not merely slow.
+        if hand_state.ROTATION_STEADY_FREEZE_FRAMES > 0:
+            return 0.0 if _steady_frozen.get(handedness, True) else \
+                1.0 - math.exp(-dt / tau)
         tau = hand_state.steady_tau_ms(tau, _steady_env.get(handedness))
     return 1.0 - math.exp(-dt / tau)
 
@@ -1342,6 +1351,11 @@ def _stamp_steady_speed(handedness: str, hand_quat, now_ms: Optional[float]) -> 
         speed = _quat_angle_deg(prev, hand_quat) * 1000.0 / dt
         _steady_env[handedness] = hand_state.steady_speed_envelope(
             _steady_env.get(handedness), speed, dt)
+        # ⚠ Driven by the RAW per-frame speed, not the envelope: the trigger's whole
+        # job is to count CONSECUTIVE fast frames, and an envelope that holds its
+        # peak would make every frame after a spike look fast.
+        _steady_frozen[handedness], _steady_run[handedness] = hand_state.steady_hold_update(
+            _steady_frozen.get(handedness, True), _steady_run.get(handedness, 0), speed)
     _steady_prev_target[handedness] = hand_quat
 
 
