@@ -57,6 +57,13 @@ contract as `palm_geometry.py` / `hand_blocks.py` / `hand_identity.py`. Golden
 vectors before the port exists (U3).
 """
 
+# ⚠ The module's FIRST stdlib import: `steady_speed_envelope`'s decay is
+# time-based, which needs `exp` (`L1` -- a per-frame factor's feel moves with the
+# camera). Everything else here is pure arithmetic, which is why there was nothing
+# to import until now. ✅ `math` is stdlib, so the port contract is unaffected.
+import math
+
+
 # The three values of `quality.trackingState` (spec §2, added 2026-08-21).
 TRACKING = "TRACKING"
 BRIDGING = "BRIDGING"
@@ -105,15 +112,60 @@ ROTATION_SLERP_TAU_MS = 20.0
 # production.
 ROTATION_STEADY_EXTRA_MS = 0.0
 
-# Angular speed at which HALF the extra damping has been given back. Below it the
-# cube is treated as "being held still", above it as "being turned".
-# ⚠ 60 deg/s is roughly 4 deg per frame at 15 fps -- i.e. exactly the measured
-# median jitter, so noise sits at the damped end and deliberate turning does not.
-ROTATION_STEADY_KNEE_DEG_S = 60.0
+# ⛔⛔ THE RELEASE IS A HARD-EDGED RAMP, NOT A HYPERBOLA (owner, 2026-08-27:
+# *"we need a more abrupt cut-off because I don't want any quaternion slerp as soon
+# as I start a hand rotation"*).
+#
+# The first shape was `extra / (1 + speed/knee)`, which never fully lets go: at
+# 600 ms of extra and a brisk 300 deg/s it still left ~120 ms of tau, and that is
+# the "lengthy slerp" felt at the START of a turn. ⭐ Now the extra damping is
+# ramped to EXACTLY ZERO by `RELEASE_DEG_S`, so above that speed the cube is on
+# today's tau and nothing else.
+#
+# ⚠ THE FLOOR IS SET BY THE NOISE, and it is why this cannot simply be tiny:
+# a HELD-STILL hand's raw target already moves 2.53 deg/frame -- about 38 deg/s at
+# 15 fps. A release threshold under that would be tripped by the very jitter the
+# damper exists to remove, and the damping would flicker on and off.
+ROTATION_STEADY_RELEASE_DEG_S = 90.0
+
+# Below this fraction of the release speed the damping is at FULL strength. The gap
+# between the two is the whole width of the ramp -- narrow, on purpose.
+ROTATION_STEADY_HOLD_FRACTION = 0.45
+
+# ⭐⭐ THE SPEED ENVELOPE: INSTANT ATTACK, SLOW RELEASE. This is what makes the
+# cut-off feel immediate rather than merely sharp.
+#
+# ⛔ A turn STARTS at zero speed. Any threshold on the instantaneous speed is
+# therefore still fully damped for the first frame or two of a deliberate rotation
+# -- exactly the onset lag being complained about. So the envelope jumps to any new
+# maximum AT ONCE and only decays back down over this time constant: one fast frame
+# releases the damper, and it re-engages only after the hand has genuinely settled.
+ROTATION_STEADY_ENVELOPE_MS = 250.0
+
+
+def steady_speed_envelope(previous_env, speed_deg_s, dt_ms,
+                          tau_ms=ROTATION_STEADY_ENVELOPE_MS):
+    """Fast-attack, slow-release envelope of the raw target's angular speed.
+
+    ⚠ `previous_env` None starts the envelope AT the speed, not at zero -- starting
+    low would apply full damping to a hand that is already moving.
+    """
+    if speed_deg_s is None or speed_deg_s != speed_deg_s:
+        return previous_env
+    sp = max(0.0, float(speed_deg_s))
+    if previous_env is None:
+        return sp
+    if sp >= previous_env:
+        return sp                                  # instant attack
+    if dt_ms is None or dt_ms <= 0.0 or tau_ms <= 0.0:
+        return previous_env
+    a = 1.0 - math.exp(-float(dt_ms) / float(tau_ms))
+    return previous_env + a * (sp - previous_env)  # slow release
 
 
 def steady_tau_ms(base_tau_ms, speed_deg_s,
-                  extra_ms=None, knee_deg_s=ROTATION_STEADY_KNEE_DEG_S):
+                  extra_ms=None, release_deg_s=None,
+                  hold_fraction=ROTATION_STEADY_HOLD_FRACTION):
     """The effective smoothing time constant for this frame.
 
     ⛔⛔ `speed_deg_s` MUST BE MEASURED FROM THE RAW TARGET, never from the
@@ -129,8 +181,17 @@ def steady_tau_ms(base_tau_ms, speed_deg_s,
     extra = ROTATION_STEADY_EXTRA_MS if extra_ms is None else float(extra_ms)
     if extra <= 0.0 or speed_deg_s is None or speed_deg_s != speed_deg_s:
         return base
-    knee = max(1e-6, float(knee_deg_s))
-    return base + extra / (1.0 + max(0.0, float(speed_deg_s)) / knee)
+    hi = float(ROTATION_STEADY_RELEASE_DEG_S if release_deg_s is None else release_deg_s)
+    if hi <= 0.0:
+        return base
+    lo = hi * max(0.0, min(1.0, float(hold_fraction)))
+    sp = max(0.0, float(speed_deg_s))
+    if sp >= hi:
+        return base                       # ⭐ fully released: today's tau, exactly
+    if sp <= lo:
+        return base + extra               # fully held
+    t = (sp - lo) / (hi - lo)
+    return base + extra * (1.0 - t * t * (3.0 - 2.0 * t))
 
 # ⭐⭐ THE GRAB RADIUS LIVES HERE FOR THE SAME REASON tau DOES, and it had the same
 # problem: it was defined TWICE, once in each tool, both reading 1.5 -- so the

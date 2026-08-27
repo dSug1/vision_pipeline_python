@@ -272,6 +272,16 @@ SLIDERS = (
     # bracketed. A slider whose maximum is the answer has not been explored yet --
     # the same reason GRAB radius runs to 300%.
     ("STEADY ms", 1000, 0, lambda n: float(n)),
+    # ⭐⭐ WHERE THE DAMPING LETS GO, in deg/s of hand rotation. Owner, 2026-08-27:
+    # *"I don't want any quaternion slerp as soon as I start a hand rotation"*.
+    # ⛔ ABOVE this the extra damping is EXACTLY ZERO -- the cube is on today's tau
+    # and nothing else. Below 45% of it the damping is at full strength; the gap is
+    # the whole ramp, and it is narrow on purpose.
+    # ⚠ IT CANNOT GO VERY LOW. A held-STILL hand's raw target already moves
+    # 2.53 deg/frame -- about 38 deg/s at 15 fps -- so a threshold under that would
+    # be tripped by the very jitter the damper removes, and the damping would
+    # flicker on and off.
+    ("RELEASE deg/s", 400, 90, lambda n: float(n)),
     ("SLANT axis %", 100, 0, lambda n: n / 100.0),
     # ⭐⭐ THE OWNER'S OWN STRATEGY, as a whole estimator: the regression fitted
     # from the six takes (HALF 1) on a canonical frozen at the grab (HALF 2).
@@ -1237,6 +1247,11 @@ class CubeState:
     # smoothed -- see `_slerp_factor_for`.
     last_target_quat: object = None
     last_target_speed_deg_s: object = None
+    # ⭐ Fast-attack / slow-release envelope of the RAW target's speed. A turn
+    # starts at zero speed, so thresholding the instantaneous value leaves the first
+    # frames of a deliberate rotation fully damped -- which is the onset lag the
+    # owner felt. The envelope releases on the first fast frame instead.
+    last_speed_env: object = None
     # ⭐⭐ THE LAG A/B (owner, 2026-08-24: *"the cube is lagging the hand and this
     # feels very uncomfortable"*). "frame" = today's FIXED PER-FRAME factor; "time"
     # = a real exponential with a time constant in MILLISECONDS.
@@ -1838,6 +1853,7 @@ def _read_sliders() -> None:
     global SLERP_TAU_MS, JITTER_TAU_MS, JITTER_BETA, GRAB_RADIUS_MULTIPLIER
     global GRIP_ALIGN_MOVING_MS, GRIP_ALIGN_MASK_RATIO, GRAB_Z_TOLERANCE_M
     global DEPTH_RATE_PER_S, SLANT_AXIS_GAIN, POSE_BLEND, STEADY_EXTRA_MS
+    global STEADY_RELEASE_DEG_S
     try:
         vals = [spec[3](cv2.getTrackbarPos(spec[0], SLIDER_WIN)) for spec in SLIDERS]
     except cv2.error:
@@ -1845,8 +1861,9 @@ def _read_sliders() -> None:
     # ⚠ THREE sliders now -- three others are parked (see `SLIDERS`). The parked
     # values are NOT re-read here; they keep their module defaults.
     (SLERP_TAU_MS, _gain, GRAB_RADIUS_MULTIPLIER, GRIP_ALIGN_MOVING_MS,
-     GRIP_ALIGN_MASK_RATIO, STEADY_EXTRA_MS, SLANT_AXIS_GAIN, POSE_BLEND,
-     GRAB_Z_TOLERANCE_M) = vals
+     GRIP_ALIGN_MASK_RATIO, STEADY_EXTRA_MS, STEADY_RELEASE_DEG_S,
+     SLANT_AXIS_GAIN, POSE_BLEND, GRAB_Z_TOLERANCE_M) = vals
+    _HS_const.ROTATION_STEADY_RELEASE_DEG_S = STEADY_RELEASE_DEG_S
     # ⚠ Shared module, same reasoning as the others: both tools read it at call
     # time and can never run at once. ⛔ It stays 0 in production unless set there.
     _HS_const.ROTATION_STEADY_EXTRA_MS = STEADY_EXTRA_MS
@@ -1920,6 +1937,7 @@ def settled_values() -> dict:
         # ⭐ Read from the module, not from the local: it is the value the estimator
         # actually consults at call time, so it cannot drift from what ran.
         "steady_extra_ms": _HS_const.ROTATION_STEADY_EXTRA_MS,
+        "steady_release_deg_s": _HS_const.ROTATION_STEADY_RELEASE_DEG_S,
         "slant_axis_gain": _SlantAxis.GAIN,
         # ⚠ In the log from the start this time. The first `--slant-rig` take was
         # lost because its gain was not recorded; a second A/B losing the same way
@@ -2095,7 +2113,8 @@ def _slerp_factor_for(state: CubeState, now_ms) -> float:
     # ⛔ The speed comes from the RAW TARGET, never from the cube's own smoothed
     # orientation. Measuring the output would be self-referential -- damping lowers
     # the apparent speed, which raises the damping -- and the cube would lock solid.
-    tau = _HS_const.steady_tau_ms(tau, getattr(state, "last_target_speed_deg_s", None))
+    # ⚠ The ENVELOPE, not the instantaneous speed -- see `CubeState.last_speed_env`.
+    tau = _HS_const.steady_tau_ms(tau, getattr(state, "last_speed_env", None))
     return 1.0 - math.exp(-dt / tau)
 
 
