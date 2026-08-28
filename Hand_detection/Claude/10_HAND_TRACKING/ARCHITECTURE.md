@@ -47,6 +47,7 @@ Benign.
 Client `Resources/`, **stdlib-only and numpy-free by contract** so it can be
 ported by transliteration ([`../00_CORE/CONSTRAINTS.md`](../00_CORE/CONSTRAINTS.md) §2):
 
+`camera_mount` (⭐ where the camera sits; every camera-dependent sign derives from it) ·
 `palm_geometry` · `palm_rotation` (Horn, and `PlanarPnP` for A/B only) ·
 `palm_depth` · `planar_pnp` · `hand_blocks` · `hand_state` · `palm_anchor` ·
 `hand_skeleton` · `frame_gate` · `block_predictor` · `confirmation_gate` ·
@@ -82,6 +83,7 @@ it to `sys.path`). A copy is how the two drift.
 | | |
 |---|---|
 | production | `launch.bat` (or `PythonApp_Main.py`) |
+| ⭐ try the USER-viewpoint fix in either tool | prefix with `CAMERA_MOUNT=facing_user` — no edit needed. Default is `legacy` (today's build). `head_worn` is for vision glasses |
 | debug, one window mirroring production | `debug_snap.bat` / `LiveSnapDebug.py` |
 | ⭐ tune **rotation smoothing** by feel | `LiveSnapDebug.py` — a second window carries one slider, `SMOOTH ms` (0–150; its integer **is** τ in ms). `--smooth-ms N`, `--no-sliders` |
 | ⭐ the **lag A/B** — same estimator, smoothing the only difference | `LiveSnapDebug.py --slerp-ab` — panel 1 = the old per-frame 0.35, panel 2 = the τ slider |
@@ -104,6 +106,7 @@ capture handles inside *one* process both succeed; that is a misleading test.)
 |---|---|
 | golden vectors | `analysis/verify_*.py` — **26 suites, all passing** |
 | the two tools must still agree | `analysis/parity_replay.py` |
+| ⭐ the CAMERA MOUNT's wiring, on a recording (no camera needed) | `analysis/mount_ab.py <session>` — does the switch take EFFECT, and in which direction |
 | chirality guard (after ANY mirroring/handedness change) | `tools/VerifyChiralityFixture.py` |
 | the audit's guards (tags, camera stalls, loopback, the `meta` clamp) | `analysis/verify_hardening.py` — 51 checks |
 | the INPUT SYSTEM: boundary, contract, vectors, action trace | `analysis/verify_handinput.py` — 96 checks |

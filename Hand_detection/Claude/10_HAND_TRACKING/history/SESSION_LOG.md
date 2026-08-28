@@ -17,6 +17,127 @@ newest-first is restored, the entry bodies are byte-identical, and
 
 ---
 
+## 2026-08-28 — the camera has been in the wrong place all along
+
+The owner reported that yaw, pitch and z-translation all read BACKWARDS on screen,
+and proposed negating every landmark `z` to simulate their own viewpoint. Both
+halves of that turned out to be more interesting than they looked.
+Full dossier: [`../../00_CORE/queue_notes/V1.md`](../../00_CORE/queue_notes/V1.md).
+
+⭐⭐⭐ **THE SHIPPED BUILD IS A HYBRID OF TWO CAMERA MOUNTINGS, AND THAT IS THE
+DEFECT.** The frame is mirrored before detection, so `x` ends up in the USER's
+frame while `z` stays in the CAMERA's. That mixed frame is a **REFLECTION**
+(det −1) — not any physical viewpoint at all. Completing it with a `z` negation
+gives `diag(−1,1,−1)`, a proper 180° turn about the vertical: the user's own view.
+
+⭐⭐ **THE DIAGNOSIS PREDICTED THE SYMPTOM RATHER THAN BEING FITTED TO IT.**
+Conjugating by `D = diag(1,1,−1)` maps `R(n,θ) → R((nₓ,n_y,−n_z), −θ)`: yaw and
+pitch REVERSE, **roll does not**. The owner named yaw and pitch and did not name
+roll. Nothing in the report said roll was fine — the geometry said it first.
+
+⛔ **A SECOND MECHANISM, WHICH THE PROPOSED FIX COULD NOT HAVE REACHED.**
+Z-translation is not driven by landmark `z` at all — `palm_depth` says so in its own
+header — it is pixel-span driven through `cube.depth_m = grab / ratio`. ⭐ And that
+mapping is **correct for a head-worn camera**: today's depth handling was never
+wrong, it was only ever wrong for a FACING one. That is what proves the hybrid.
+
+⭐⭐ **THE OWNER'S GLASSES REQUIREMENT TURNED A FLIP INTO A SETTING.** *"I need to be
+able to port my game to vision glasses"* — so the switch is not "flip z", it is
+WHERE THE CAMERA IS, and the mirror, the orientation sign, the depth direction and
+the chirality bit all derive from it in one module.
+
+⛔⛔ **AND THE LANDMARKS WERE DELIBERATELY NOT TOUCHED, WITH A PROOF.** Horn obeys
+`R'_opt = D R_opt D` exactly, so conjugating the quaternion at the parity anchor is
+IDENTICAL on screen — while negating landmark `z` would have inverted three things
+that must not invert: `U7`'s chirality determinant, `R1`'s camera-referenced
+occlusion, and all 37 suites plus 415 recordings. ⭐ The chirality bit turns out to
+be a function of the MIRROR alone, which is why `facing_user` needs no change to it
+and only a head-worn camera does.
+
+✅ **EVIDENCE, ENTIRELY OFFLINE** — the owner asked that the camera not be run.
+`analysis/mount_ab.py` replays recorded hands through the shipped estimator because
+`F1`'s take 1 was VOID for exactly this reason (a switch verified where it was SET,
+not where it took EFFECT). On **2041 fitted hand-frames**: yaw sign reversed
+**100.00%**, pitch **100.00%**, roll **0.00%**, total angle changed by
+**0.000e+00°**. `parity_replay` NO DIVERGENCE on four takes; 37/37 suites pass under
+`legacy` AND `facing_user`.
+
+⭐ **THREE SUITES ARE CONVENTION- OR BASELINE-BOUND, AND NOW SAY SO.** They encode
+the mirrored chirality convention, or replay cube positions recorded under the old
+depth mapping, so under another mount they reported a FAIL that was not a defect.
+They now SKIP LOUDLY (`analysis/mount_guard.py`). ⚠ A harness that cries wolf is the
+same defect as one that reports clean on a broken take, wearing the opposite sign —
+and it trains the reader to discount red. Same shape as `T6`'s method rule, applied
+to the camera's PLACEMENT instead of the hand's motion: **a corpus captured with one
+mounting cannot validate another.**
+
+⚠ **OWED: the owner's live look, in both tools.** Default is `legacy` — today's
+build, bit-for-bit. `CAMERA_MOUNT=facing_user` tries it with no edit.
+⚠ **One artifact cannot be coded away**: the hand's VIDEO still grows as it moves
+away from the user, because the video is the camera's, while the cube now shrinks.
+⛔ **`head_worn` is built but UNVALIDATED** — no glasses, no head-worn corpus.
+
+### ⛔⛔ THEN THE OWNER RAN IT, TWICE, AND OVERTURNED TWO THINGS
+
+Both by **looking**, after every offline check had passed.
+
+⛔ **`head_worn`: *"the mentions left and right hands are inversed"*.** The real
+defect was `hand_identity.anatomical_name` — a display swap that exists only to
+undo the mirror, so with no mirror it starts causing the error. ⛔ But checking it
+exposed **my own second error**: the chirality bit had been made mount-dependent
+when it is not. `signed_palm_volume`'s sign flips with the mirror AND so does the
+answer MediaPipe would give — the two cancel.
+
+⛔⛔ **AND THE HARNESS HAD ALREADY SAID SO.** `verify_geometric_chirality` failed
+under `head_worn` reporting this exact defect, and it was read as the fixture
+being convention-bound and **silenced with a guard**. ⭐⭐ **The method rule this
+earns is `METHOD.md`'s own, inverted**: the standing warning is that a harness can
+report CLEAN on a build the owner watched fail; this is the other direction — a
+harness reporting a REAL defect and being explained away. **Suspecting the
+instrument is not the same as dismissing it.**
+
+✅✅ **THE ORIENTATION IS SETTLED: `pitch_yaw`** — conjugation by `diag(1,1,−1)`,
+reversing PITCH and YAW and leaving ROLL alone. Owner, after cycling all four
+options on one pose: *"the setup I closed with is the correct one"*.
+
+⭐⭐⭐ **The constraint that made the search finite: a viewpoint change is a
+CONJUGATION, and there are EXACTLY THREE, each reversing EXACTLY TWO axes.**
+Reversing one axis alone is geometrically impossible — `det(Q)` would have to be
+`+1` and `−1` at once — so *"yaw is backwards"* can never be fixed on its own.
+
+⚠⚠ **BUT GETTING THERE TOOK THREE SESSIONS AND PRODUCED THREE MUTUALLY
+INCONSISTENT REPORTS**, one option per restart:
+
+    run 1  pitch_yaw  (P,Y,R)=(1,1,0)  wrong: yaw          => yaw should be 0
+    run 2  pitch_roll (1,0,1)          wrong: yaw, roll    => yaw 1, roll 0
+    run 3  yaw_roll   (0,1,1)          wrong: roll, pitch  => pitch 1, roll 0
+
+pitch consistent, roll consistent, **yaw flatly contradictory between runs 1 and 2**.
+
+⭐⭐⭐ **THE METHOD RULE, AND IT IS THE MOST REUSABLE THING FROM THIS ROW: WHEN ONE
+OPTION PER RESTART PRODUCES INCONSISTENT REPORTS, THE INSTRUMENT IS THE PROBLEM,
+NOT THE OBSERVER — A/B ON ONE POSE INSTEAD.** An `'m'` key was added to cycle the
+options live on one camera and one pose; it settled in ONE session what three had
+failed to. ⚠ And it matters here for a checkable reason: **the open YAW-LEAN defect
+makes the cube ROLL WHILE IT YAWS by up to ~27°**, so two of the three axes being
+judged are coupled by a known bug. Asking for a per-axis verdict by eye was asking
+for something the eye could not give — and that was not noticed for three sessions.
+
+⛔⛔ **A SECOND STORY IS RETRACTED WITH IT.** While `yaw_roll` was briefly the
+default it was written up as *"the one with the cleanest physical meaning"*: the
+inverse of the `cv2.flip` mirror, since a bathroom mirror preserves nodding and
+reverses turning and tilting. Sound about mirrors, wrong about this pipeline, and
+reached by reasoning BACKWARDS from a live report rather than forwards from the
+geometry. ⚠ Kept deliberately — a tidy physical story is exactly the kind of thing
+that gets believed twice.
+
+⭐⭐ **WHAT THE OFFLINE EVIDENCE WAS WORTH, EXACTLY.** `mount_ab.py` measured yaw
+reversing on 100.00% of 2041 frames. True, and unable to say whether reversing yaw
+was RIGHT. **It proved the wiring; it could never prove the direction** — the
+corpus records what the cube did, not what the owner wanted it to do.
+
+---
+
 ## 2026-08-27 (evening) — rendering rebuilt and shipped; `T6`'s two estimators live-rejected
 
 ⭐ Two threads ran in one session. One shipped, one died. Full dossiers:

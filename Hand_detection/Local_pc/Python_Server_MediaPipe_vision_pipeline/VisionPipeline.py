@@ -1,5 +1,15 @@
 ﻿import cv2
 import argparse
+import os
+import sys
+
+# N6 -- the camera mount is ONE module, imported by the server, the client and
+# the debug tool alike, never copied. Same sys.path pattern the debug tool uses
+# for this server's `hand_identity`. Pure stdlib, no side effects.
+sys.path.insert(0, os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..", "Movement_with_hand_detection", "Resources"))
+import camera_mount  # noqa: E402  (path set immediately above)
 
 from Resources import capture_policy
 from Resources.inference import load_models, run_inference_on_frame
@@ -67,7 +77,13 @@ if not ret:
 # MIRROR BEFORE DETECTION (2026-08-22, spec 14.3.4.3). This frame is NOT just a
 # size probe: the loop below consumes it before reading the next one, so it
 # reaches inference and must be mirrored like every other frame.
-frame = cv2.flip(frame, 1)
+# ⛔ THE MIRROR IS THE CAMERA MOUNT'S CALL (2026-08-28). A facing camera must be
+# mirrored so the user's right hand appears on the right; a HEAD-WORN camera
+# already shares the user's viewpoint and must NOT be. ⚠ It is the FRAME that is
+# flipped, never the coordinates -- `REJECTED.md`: post-hoc `invert_x` was
+# falsified, the two routes disagree by 7.7-10 mm and 12-20 deg.
+if camera_mount.mirror_frame():
+    frame = cv2.flip(frame, 1)
 height, width = frame.shape[:2]
 try:
     SendMetaPacketThroughSocket(width, height, connection)
@@ -157,7 +173,8 @@ try:
         break
     if _retries:
         print(f"[Main] camera recovered after {_retries} failed read(s)")
-    frame = cv2.flip(frame, 1)   # mirror BEFORE detection -- spec 14.3.4.3
+    if camera_mount.mirror_frame():   # the mount's call -- see camera_mount
+        frame = cv2.flip(frame, 1)   # BEFORE detection -- spec 14.3.4.3
 finally:
     # Always release the camera and sockets, even on exception / interrupt,
     # so the device is never left in a stuck state for the next run.

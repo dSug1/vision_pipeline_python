@@ -21,7 +21,7 @@ for each item is its queue dossier or spec section.
 | `U1`–`U12` | **unscheduled**; owner's call or later |
 | `IS1`–`IS4` | the **input system** |
 | `SEC1`–`SEC5` | the **security / robustness audit** |
-| `L1`, `F1` | one-off rows: rotation **lag**, and the **fingertip** transform |
+| `L1`, `F1`, `V1` | one-off rows: rotation **lag**, the **fingertip** transform, and the **camera mount** |
 | `A1`–`A10` | amendments/rules in the perception spec — **`A10` is the binding one** (measure or revert) |
 
 ## Mechanisms
@@ -33,6 +33,7 @@ for each item is its queue dossier or spec section.
 | **Horn** | the shipped rotation estimator: a least-squares rigid fit (Horn/Kabsch) over the 5-point palm, grab-referenced. Exact to 0.000° on synthetic input |
 | **`horn-palm`** | the shipped **anchor**: Horn over `PALM_LANDMARKS = (0, 5, 9, 13, 17)` — wrist + four MCPs |
 | **chirality** | which way the palm faces / which hand it is, derived from **geometry** (`signed_palm_volume`), not from the label. `U7` |
+| **the camera mount** | where the camera sits relative to the user's EYES — `facing_user` (a desktop webcam, opposite side of the hands) vs `head_worn` (vision glasses, same side). `Resources/camera_mount.py`; every sign that depends on it derives from there. `V1` |
 | **the yaw lean** | the open show-stopper: turning the hand like a page tips the object out of upright, ~27° at 60–90°. ⚠ **Never state it as "13° of axis deviation"** |
 | **grab-relative** | translation carries the object's own offset from the hand at grab time, rather than snapping it to the hand |
 | **the play volume** | the world-space region an object may occupy — the frustum inset by half a hand breadth (42.5 mm) |

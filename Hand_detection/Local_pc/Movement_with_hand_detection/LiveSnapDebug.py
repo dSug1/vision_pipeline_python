@@ -50,6 +50,7 @@ sys.path.insert(0, os.path.join(
     "..", "Python_Server_MediaPipe_vision_pipeline", "Resources"))
 import hand_identity  # noqa: E402  (path set immediately above)
 import capture_policy  # noqa: E402  (same directory; shared with production, N6)
+from Resources import camera_mount as _CMount  # noqa: E402  (N6: one mount, both tools)
 from Resources import palm_rotation as _PRot
 from Resources import palm_depth as _PDepth  # noqa: E402  (4.1/M9, read-only)
 from Resources import session_paths  # noqa: E402  (tag sanitising, shared with production)
@@ -2488,6 +2489,11 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                 if _d is not None:
                     hand_quat_now = _d
 
+        # ⭐⭐ THE CAMERA MOUNT, APPLIED ONCE, HERE (2026-08-28) -- the SAME point,
+        # from the SAME quantity, as production. ⚠ A no-op unless the mount is
+        # `facing_user`; `camera_mount`'s header carries the equivalence proof.
+        hand_quat_now = _CMount.user_view_quat(hand_quat_now)
+
         # ⭐ ONCE PER HAND, PER FRAME -- the SAME point production stamps it, from the
         # same quantity. Anything else and `parity_replay` diverges, which is how the
         # per-arm version was caught.
@@ -2635,7 +2641,10 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                     if (cube.grab_hand_depth_m is not None
                             and cube.grab_depth_offset_m is not None):
                         _anchor = cube.grab_hand_depth_m + cube.grab_depth_offset_m
-                    cube.depth_m = palm_geometry.clamp_depth(_anchor / _ratio)
+                    # ⚠ Mount-directed, units unchanged. N6: the SAME call
+                    # production makes, at the same point.
+                    cube.depth_m = palm_geometry.clamp_depth(
+                        _CMount.depth_from_ratio(_anchor, _ratio))
             if anchor is not None:
                 new_center = anchor.apply(cube.grab_anchor_state,
                                           data["pixel_landmarks"],
@@ -3121,6 +3130,10 @@ def main():
               % ("HIDDEN (landmarks + cubes on black)" if HIDE_VIDEO else "shown"))
         print("[LiveSnapDebug] hand landmarks %s -- press 'l' to toggle."
               % ("SHOWN" if SHOW_LANDMARKS else "hidden"))
+        if _CMount.MOUNT == _CMount.FACING_USER:
+            print("[LiveSnapDebug] viewpoint '%s' -- press 'm' to cycle "
+                  "(yaw_roll -> pitch_yaw -> pitch_roll -> none)."
+                  % _CMount.VIEW_AXIS_MODE)
         if args.pose_rig:
             # ⛔ STARTS AT 100%, NOT PART WAY. The middle of this slider is measured
             # WORSE than either end (yaw lean 53.7 at 50% against 27.2 at 0 and 8.6 at
@@ -3232,7 +3245,8 @@ def main():
             if _retries:
                 print(f"[LiveSnapDebug] camera recovered after {_retries} failed read(s)")
             t_capture_ms = (time.perf_counter() - t0) * 1000.0   # REAL clock (N17)
-            frame = cv2.flip(frame, 1)  # mirror, matching the production pipeline's invert_x
+            if _CMount.mirror_frame():   # mount's call -- see camera_mount
+                frame = cv2.flip(frame, 1)  # matches production; FRAME not coords
 
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
@@ -3541,6 +3555,25 @@ def main():
                 globals()["HIDE_VIDEO"] = not HIDE_VIDEO
                 print("[LiveSnapDebug] camera stream %s ('v' toggles)"
                       % ("HIDDEN -- landmarks and cubes only" if HIDE_VIDEO else "shown"))
+            if key == ord("m"):
+                # ⭐⭐ CYCLE THE VIEWPOINT OPTION LIVE (`V1`, 2026-08-28). Three
+                # separate live sessions were spent one-option-per-restart, and the
+                # three reports came out MUTUALLY INCONSISTENT on yaw -- which is
+                # what a restart-per-guess loop produces when one axis is hard to
+                # judge alone. ⚠ And yaw IS hard to judge here: the open yaw-lean
+                # defect makes the cube ROLL while it yaws, so the two axes cannot
+                # be read independently by eye on a single pose.
+                # ⛔ DEBUG TOOL ONLY -- production never cycles; it reads the one
+                # setting. This is an instrument, not a game feature.
+                _opts = ["yaw_roll", "pitch_yaw", "pitch_roll", "none"]
+                _cur = _CMount.VIEW_AXIS_MODE
+                _CMount.VIEW_AXIS_MODE = _opts[(_opts.index(_cur) + 1) % len(_opts)
+                                               ] if _cur in _opts else _opts[0]
+                _rev = [n for n, sgn in zip(("pitch", "yaw", "roll"),
+                                            _CMount.VIEW_AXES[_CMount.VIEW_AXIS_MODE])
+                        if sgn < 0]
+                print("[LiveSnapDebug] viewpoint '%s' -- reverses %s ('m' cycles)"
+                      % (_CMount.VIEW_AXIS_MODE, "+".join(_rev) or "nothing"))
             if any(cv2.getWindowProperty(n, cv2.WND_PROP_VISIBLE) < 1 for n in windows):
                 break
             if args.duration and (time.perf_counter() - t0) >= args.duration:

@@ -26,6 +26,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import mount_guard  # noqa: E402  (same directory as this suite)
 
 from Resources import palm_depth                             # noqa: E402
 from Resources import object_extent                          # noqa: E402
@@ -183,6 +184,8 @@ def replay(rows, use_tips):
 
 
 def main():
+    # ⛔ This suite is bound to a camera mounting -- see analysis/mount_guard.py
+    mount_guard.require_mount("verify_f1_grip_offstate", *mount_guard.BASELINE_BOUND)
     session = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_SESSION
     print("=" * 82)
     print("F1 STEP 2 -- the OFF state must be today's pipeline")

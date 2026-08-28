@@ -25,7 +25,8 @@ patents to 2038/2039** that touch this area (recorded in the T6 investigation lo
 
 ## 2. ⛔ The port contract — stdlib-only, numpy-free estimator layer
 
-Every module in the client's `Resources/` estimator layer (`palm_geometry`,
+Every module in the client's `Resources/` estimator layer (`camera_mount`,
+`palm_geometry`,
 `palm_rotation`, `palm_depth`, `hand_blocks`, `hand_state`, `palm_anchor`,
 `hand_skeleton`, `frame_gate`, `block_predictor`, `confirmation_gate`,
 `planar_pnp`, `owner_remap`) is **stdlib-only and numpy-free by contract**, so it
@@ -85,6 +86,24 @@ binds the centre, the play-area clamp, the grab radius and both renderers.
 ⛔ `_top_left_for_center` was **deleted from both tools** for exactly this reason
 — it converted with the nominal size, so a surviving copy makes an object drift
 sideways as it moves in depth. **Do not reintroduce it.**
+
+## 7bis. ⭐⭐ One place knows where the CAMERA is — `V1`
+
+Owner, 2026-08-28: the game must port to **vision glasses**, where the camera is
+worn and already shares the user's viewpoint, as well as run on a desktop webcam,
+where it faces the user from the far side of the hands. **Those two mountings need
+opposite signs**, so the mounting is a setting (`Resources/camera_mount.py`) and
+the mirror, the orientation sign, the depth direction and the chirality bit are all
+**derived** from it.
+
+⛔ **Do not add a fourth place that knows about the camera.** The defect `V1` fixed
+was exactly that: the build took its **mirror** from one mounting and its **depth**
+from the other, which is a reflection rather than any physical viewpoint.
+
+⚠ Two things stay CAMERA-referenced in every mode, and inverting them is the trap:
+`depth_order`/`grip_depth_m` (occlusion composites camera pixels) and
+`cube.depth_m` (`projected_size_px` consumes it). Only the DIRECTION the hand
+drives them may change.
 
 ## 8. ⚠ No calibration step, anywhere, for now
 

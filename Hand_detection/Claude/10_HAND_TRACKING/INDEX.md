@@ -118,6 +118,42 @@ in the palm's frame. ⛔⛔ **The owner's live look HAPPENED THE SAME DAY AND RE
 → [`spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md`](spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md)
 · [`../00_CORE/queue_notes/T6.md`](../00_CORE/queue_notes/T6.md)
 
+⭐⭐ **`V1` — THE CAMERA MOUNT — IS BUILT (2026-08-28), DEFAULT OFF, LIVE LOOK OWED.**
+The owner reported yaw, pitch and z-translation all reading BACKWARDS. ⭐⭐⭐ The cause
+is that the shipped build is a **hybrid of two camera mountings**: the frame is
+mirrored before detection, so `x` is in the USER's frame while `z` is still in the
+CAMERA's — a REFLECTION, which is no physical viewpoint at all. ⭐ The diagnosis
+**predicted** the symptom rather than being fitted to it: conjugating by
+`D = diag(1,1,−1)` reverses yaw and pitch and leaves **roll exactly alone**, and roll
+is the one axis the owner did not name. ⛔ Z-translation is a **second mechanism** —
+pixel-span driven, so no landmark change could reach it; and `grab / ratio` is
+CORRECT for a head-worn camera, which is what proves the hybrid.
+⭐⭐ **The landmarks are NOT touched, and it is proven not to matter** (Horn obeys
+`R'_opt = D R_opt D` exactly) — negating them would invert `U7`'s chirality
+determinant and `R1`'s camera-referenced occlusion.
+✅ Offline evidence only, as the owner asked: **2041 recorded hand-frames** — yaw
+reversed **100.00%**, pitch **100.00%**, roll **0.00%**, angle changed **0.000e+00°**;
+`parity_replay` clean on 4 takes; 37/37 suites under both `legacy` and `facing_user`.
+⚠ One artifact cannot be coded away: the hand's **video** still grows as it moves
+away (the video is the camera's) while the cube shrinks.
+⛔⛔ **TWO RETRACTIONS FROM THE OWNER'S FIRST LIVE RUNS — both found by LOOKING,
+after every offline check had passed.** (1) `head_worn` showed left/right inverted:
+a real defect in `anatomical_name`, plus **my own error making the chirality bit
+mount-dependent when it is not** — and `verify_geometric_chirality` had ALREADY
+FAILED saying so and was **silenced with a guard**. ⭐⭐ **The method rule, which is
+`METHOD.md`'s inverted: a harness reporting a REAL defect can be explained away —
+suspecting the instrument is not the same as dismissing it.** (2) ✅✅ **THE ORIENTATION IS
+SETTLED: `pitch_yaw`** — reverses PITCH and YAW, leaves ROLL alone, owner-confirmed
+live. ⭐⭐⭐ **A viewpoint change is a CONJUGATION and there are EXACTLY THREE, each
+reversing EXACTLY TWO axes — reversing one alone is geometrically impossible.**
+⚠⚠ But three options tried ONE PER RESTART produced three MUTUALLY INCONSISTENT
+reports. ⭐⭐⭐ **The method rule: when one-option-per-restart yields inconsistent
+reports, the INSTRUMENT is the problem, not the observer — A/B on one pose.** An
+`'m'` key now cycles the options live and settled in one session what three had
+not. ⚠ Why it mattered here: **the open yaw lean makes the cube ROLL while it
+YAWS**, so two of the three axes were coupled by a known bug.
+→ [`../00_CORE/queue_notes/V1.md`](../00_CORE/queue_notes/V1.md)
+
 **Open, deliberately not next**: the two-hand swap · `N8` cube-stealing
 palm-first (routed to `B5`) · `T1` back-of-hand rotation quality · `T4`
 yaw/palm-sink · `N12` pitch-crossing jump · `U5` occlusion coast.
@@ -128,6 +164,7 @@ yaw/palm-sink · `N12` pitch-crossing jump · `U5` occlusion coast.
 
 | you want to… | read |
 |---|---|
+| ⭐⭐ **change anything that depends on where the CAMERA is** | [`../00_CORE/queue_notes/V1.md`](../00_CORE/queue_notes/V1.md) — `Resources/camera_mount.py` owns the mirror, the orientation sign, the depth direction and the chirality bit. ⛔ Do not add a fourth place that knows about the camera |
 | ⛔ **check whether an idea has already failed** | [`REJECTED.md`](REJECTED.md) — **do this first, it is the cheapest page here** |
 | know the processes, modules and every command | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
 | know what to build next | [`../00_CORE/QUEUE.md`](../00_CORE/QUEUE.md) |

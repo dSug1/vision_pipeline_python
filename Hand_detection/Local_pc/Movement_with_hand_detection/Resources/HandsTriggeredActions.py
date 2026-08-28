@@ -11,6 +11,7 @@ from .CubeWindow import CubeWindow
 # cannot drift between them again (§13.6.1). Pure stdlib, no side effects.
 from . import owner_remap
 from . import object_extent
+from . import camera_mount
 from . import depth_order
 from . import palm_depth
 from . import palm_geometry
@@ -1634,6 +1635,15 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                 if _d is not None:          # None = degenerate fit: keep the filtered value
                     hand_quat_now = _d
 
+        # ⭐⭐ THE CAMERA MOUNT, APPLIED ONCE, HERE (2026-08-28). This is the last
+        # point at which `hand_quat_now` is still just "the hand's orientation",
+        # and it is the point the comment below already designates as the one both
+        # tools must share -- so one line covers Horn, the raw fallback AND
+        # `handinput`'s published pose, with no second site to drift.
+        # ⚠ A no-op unless the mount is `facing_user`. `camera_mount`'s header
+        # carries the proof that this equals negating every landmark z.
+        hand_quat_now = camera_mount.user_view_quat(hand_quat_now)
+
         # ⭐ ONCE PER HAND, PER FRAME, from the HAND's own orientation -- before any
         # cube is touched, so a hand holding two cubes stamps exactly once and the
         # debug tool can do the identical thing at the identical point.
@@ -1813,7 +1823,12 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                     if (cube.grab_hand_depth_m is not None
                             and cube.grab_depth_offset_m is not None):
                         _anchor = cube.grab_hand_depth_m + cube.grab_depth_offset_m
-                    cube.depth_m = palm_geometry.clamp_depth(_anchor / _ratio)
+                    # ⚠ THE DIRECTION IS THE MOUNT'S; THE UNITS ARE ALWAYS METRES
+                    # FROM THE CAMERA -- `projected_size_px` and `depth_order` both
+                    # consume this, so only which way the hand drives it may change.
+                    # `legacy`/`head_worn` compute `_anchor / _ratio`, as before.
+                    cube.depth_m = palm_geometry.clamp_depth(
+                        camera_mount.depth_from_ratio(_anchor, _ratio))
             # ⭐⭐ F1 STEP 2 -- THE OBJECT FOLLOWS THE FINGERTIP BARYCENTRE.
             # Owner: "if the fingertips move while the cube is grabbed, the cube's
             # transform follow the transform of the barycenter."

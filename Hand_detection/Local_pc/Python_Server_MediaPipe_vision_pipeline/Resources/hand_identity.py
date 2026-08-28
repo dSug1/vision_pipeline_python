@@ -270,17 +270,53 @@ MAX_ASSOC_PALM_RATIO = 3.0
 # it, and the internal convention is left exactly as it is. Defined HERE, in the
 # module both the server and `LiveSnapDebug.py` already import, so the two
 # cannot drift (rule N6: imported, never copied).
+# ⛔ MOUNT-DEPENDENT since 2026-08-28 (`V1`). This swap exists ONLY to undo the
+# `cv2.flip` mirror: with a facing camera the internal label is the mirror of the
+# physical hand, so the swap corrects it. On a HEAD-WORN camera there is no mirror,
+# the internal label already names the physical hand, and swapping CAUSES the error
+# instead of removing it. Found by the owner in one live run of `head_worn`:
+# *"the mentions left and right hands are inversed in the user worn"*.
+# ⭐ Still DISPLAY-ONLY, and still defined HERE so the server and the debug tool
+# cannot drift (N6). Everything the block above says stays true.
 _ANATOMICAL = {"Left": "Right", "Right": "Left"}
+_IDENTITY = {"Left": "Left", "Right": "Right"}
+
+
+def _mirrored():
+    """Is the frame being mirrored? Asked of `camera_mount`, never cached, so a
+    single setting governs the mirror and this display swap together.
+
+    ⚠ The import is resolved lazily and defensively: this module is loaded three
+    different ways (server package, debug tool via sys.path, `handinput` export),
+    and a display label must never be the reason one of them fails to start."""
+    try:
+        import camera_mount
+    except ImportError:                                  # pragma: no cover
+        import os as _os
+        import sys as _sys
+        _sys.path.insert(0, _os.path.join(
+            _os.path.dirname(_os.path.abspath(__file__)),
+            "..", "..", "Movement_with_hand_detection", "Resources"))
+        try:
+            import camera_mount
+        except ImportError:
+            return True                                  # today's behaviour
+    return camera_mount.mirror_frame()
 
 
 def anatomical_name(track_label):
     """The physical hand a track label refers to -- for ON-SCREEN TEXT ONLY.
 
     `track_label` is the pipeline's internal label ('Left'/'Right'). Returns the
-    hand the operator is actually holding up, which is its opposite. ⚠ Never feed
-    this back into any rule, filter or ownership key -- see the block above.
+    hand the operator is actually holding up. ⚠ Never feed this back into any rule,
+    filter or ownership key -- see the block above.
+
+    ⛔ It is the opposite of the internal label ONLY WHILE THE FRAME IS MIRRORED.
+    With a head-worn camera there is no mirror and the internal label already names
+    the physical hand, so the swap must not run (`V1`).
     """
-    return _ANATOMICAL.get(track_label, track_label)
+    table = _ANATOMICAL if _mirrored() else _IDENTITY
+    return table.get(track_label, track_label)
 
 
 def palm_centroid(points_xy):

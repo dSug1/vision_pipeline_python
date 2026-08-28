@@ -50,7 +50,10 @@ occludes the hand by one depth rule in both tools. ⛔ The rotation **trim was
 removed**, and `T6`'s two orientation builds were **live-rejected**: better on the
 lean, worse on the tail — which has decided every verdict.
 **Open show-stopper**: the **yaw lean** (~27° at a 60–90° hand turn), still unfixed.
-**The next build is NOT chosen.** ⭐ By [`00_CORE/DECISIONS.md`](00_CORE/DECISIONS.md)
+⭐⭐ **`V1` — the CAMERA MOUNT — is BUILT (2026-08-28), default OFF, live look owed**:
+yaw, pitch and z-translation read backwards because the build is a hybrid of two
+camera mountings. Run `CAMERA_MOUNT=facing_user` to try it.
+**No other build is chosen.** ⭐ By [`00_CORE/DECISIONS.md`](00_CORE/DECISIONS.md)
 the **platform decision** is now due — it was sequenced right after `F1`, and `F1` shipped.
 Full status: [`00_CORE/QUEUE.md`](00_CORE/QUEUE.md)'s YOU-ARE-HERE block.
 Full narrative: [`10_HAND_TRACKING/history/SESSION_LOG.md`](10_HAND_TRACKING/history/SESSION_LOG.md).

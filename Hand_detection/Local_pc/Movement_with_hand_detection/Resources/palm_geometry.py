@@ -43,6 +43,11 @@ the degenerate configuration behind the pitch-plane crossing (T2).
 
 import math
 
+try:                                        # imported, never copied (N6)
+    from . import camera_mount
+except ImportError:
+    import camera_mount
+
 WRIST = 0
 INDEX_MCP = 5
 PINKY_MCP = 17
@@ -122,7 +127,16 @@ THUMB_CMC = 1
 # One bit, fitted by majority over the whole declared corpus and stated openly:
 # a NEGATIVE signed volume means the apparent (mirrored) hand is `Left`. Under
 # this project's mirrored convention that is a physical RIGHT hand.
-CHIRALITY_V_NEGATIVE_IS_LEFT = True
+# ⛔ DERIVED FROM THE CAMERA MOUNT since 2026-08-28, not hard-coded, because it
+# is a function of the MIRROR and nothing else: `signed_palm_volume` is a
+# DETERMINANT, so a mirrored frame flips its sign and an unmirrored one does not.
+# `facing_user` and `legacy` both mirror, so both keep the value fitted over the
+# declared corpus (True); only a HEAD-WORN camera inverts it.
+# ⭐ `camera_mount`'s header records why the orientation fix does NOT negate the
+# landmarks: if it did, this bit would have to turn over for `facing_user` too,
+# taking `U7`'s whole subsystem with it on a build meant only to change a
+# rotation DIRECTION.
+CHIRALITY_V_NEGATIVE_IS_LEFT = camera_mount.chirality_v_negative_is_left()
 
 # Consecutive agreeing observations required to CHANGE the held chirality.
 #
