@@ -17,6 +17,73 @@ newest-first is restored, the entry bodies are byte-identical, and
 
 ---
 
+## 2026-08-28 (evening) — the yaw lean finally has a correction that survives
+
+Four attempts have died on this show-stopper. The fifth shipped, and it shipped
+because the owner proposed the architecture and then found the bug in my
+implementation of it. Full dossier:
+[`../../00_CORE/queue_notes/V2.md`](../../00_CORE/queue_notes/V2.md).
+
+⭐⭐ **THE OWNER'S ARCHITECTURE IS TEXTBOOK, AND THE LITERATURE NAMES IT.** A
+MULTIPLICATIVE correction quaternion, reset to identity at grab, is the **MEKF's
+multiplicative error quaternion** — the standard of satellite attitude
+determination, chosen for exactly the reason it is right here: multiplying
+preserves the unit-norm constraint where adding does not.
+
+⛔ **THE LITERATURE CHANGED THE FORMULA.** My first draft scaled the rotation
+axis's off-vertical components — ad-hoc. **Swing/twist decomposition** is the
+standard tool, and taken about the vertical the split IS the question: the
+**twist is the yaw**, the **swing is the contamination**. Trimming the swing leaves
+the turn AMOUNT exact, which matters because the amount was already fine (gain
+1.13) and it is uprightness that fails.
+
+⭐ **BOTH OF THE OWNER'S QUESTIONS WERE ANSWERED BY MEASUREMENT.** Yaw is
+contaminated by BOTH pitch and roll (~1.3x apart), and — the load-bearing part —
+**both are one-directional BIASES, not symmetric noise**, which is what lets a
+deterministic correction remove them at all. ⛔ **No depth dependence**: binned
+WITHIN each take, the four takes disagree on the sign of the trend.
+
+⛔⛔ **THEN A REGRESSION COST A LIVE SESSION, AND IT IS THE MOST REUSABLE THING
+HERE.** The correction faded in on the twist MAGNITUDE, so any rotation with 15° of
+yaw had its entire swing damped — and a real pitch gesture always carries
+incidental yaw. Owner: *"pitch and roll are heavily damped as a consequence."*
+The golden vectors were GREEN, because they used **mathematically pure** pitch and
+roll, where the twist is exactly zero.
+
+⭐⭐⭐ **THE METHOD RULE: A GOLDEN VECTOR BUILT FROM A MATHEMATICALLY PURE INPUT
+TESTS A CASE THE PRODUCT NEVER SEES.** Purity is the wrong idealisation when the
+defect lives in the impurity. The fix was to ramp on a RATIO — how much of THIS
+rotation is yaw — which measures 0.805 on turns and 0.191 on pitch/roll gestures.
+
+⛔ **THE OWNER'S SECOND PROPOSAL WAS MEASURED AND DECLINED.** Driving the damp from
+the six takes' hand ratios: `edge_on_measure` separates the two gestures by
+**0.078** where the twist ratio manages **0.613**, and is **1.6x noisier**. Worse on
+both axes — and it is the 2-D-shape class whose VARIANCE killed the three
+predecessors.
+
+⭐⭐ **WHY 0.66, AND WHAT CANNOT BE CLAIMED.** The owner set it by eye; the maths
+came after and only BRACKETS it. `ROLL` never touches world z, so its 6.7° error is
+the accuracy floor, and `1 - 6.7/26.8 = 0.750` is where correction stops removing
+measurable bias. ⛔ **The floor is not one number** — it rises with turn size
+(0.015 at 20° → 0.750 at 75°), so a scalar tracks the large-turn end.
+⚠ A first least-squares model predicted **0.114** and the owner's eye refuted it:
+the swing's variation is not white noise (change/spread 0.11) but a persistent
+POSE-dependent artifact — so it is error too, and the right gain is far above 0.114.
+
+⚠ **SHIPPED WITH THE GATE CLEARED ON 3 OF 4 TAKES.** `stripped` sits at 1.072x,
+7% over the 1.000x bar, and has been the outlier at every gain since 0.10. ⭐ The
+three rejected predecessors never came within 1.8x — but *better than what was
+rejected is not the gate*, and it is recorded rather than smoothed over.
+
+⚠ **ALSO THIS SESSION, AND ALSO INSTRUCTIVE**: three broken debug builds in a row,
+all from removing a slider without checking its consumers. Static analysis missed
+two of them. The guard now **EXECUTES** `_create_sliders` and `_read_sliders` with
+`cv2` stubbed — when a thing can simply be RUN, running it beats reasoning about
+its source. And the panel now renders each control's one-line purpose FROM THE
+TABLE, so a slider cannot exist without its explanation.
+
+---
+
 ## 2026-08-28 — the camera has been in the wrong place all along
 
 The owner reported that yaw, pitch and z-translation all read BACKWARDS on screen,

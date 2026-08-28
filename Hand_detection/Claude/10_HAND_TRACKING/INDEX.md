@@ -156,6 +156,23 @@ not. ⚠ Why it mattered here: **the open yaw lean makes the cube ROLL while it
 YAWS**, so two of the three axes were coupled by a known bug.
 → [`../00_CORE/queue_notes/V1.md`](../00_CORE/queue_notes/V1.md)
 
+✅✅ **`V2` IS SHIPPED (2026-08-28) — THE YAW LEAN HAS A SURVIVING CORRECTION AT LAST.**
+`Resources/lean_trim.py` trims the **SWING** of a swing/twist decomposition about
+the vertical, leaving the **TWIST** — the turn amount — exact. Gains **0.66/0.66** in
+both tools; `gain 0` is bit-exact shipped Horn.
+⭐⭐ **The owner proposed the architecture and it is TEXTBOOK**: a multiplicative
+correction quaternion reset to identity at grab is the **MEKF's multiplicative error
+quaternion**. ⛔ The literature changed the FORMULA — swing/twist, not axis scaling.
+⭐ **Measured, not assumed**: the yaw is contaminated by BOTH pitch and roll (~1.3x),
+and **both are one-directional BIASES**, which is what a deterministic correction can
+remove. ⛔ **No depth dependence** — binned within takes, the four disagree on sign.
+⛔⛔ **A regression cost a live session**: the fade-in used twist MAGNITUDE, so a real
+pitch gesture had its whole swing damped. ⭐⭐⭐ **THE METHOD RULE: A GOLDEN VECTOR
+BUILT FROM A MATHEMATICALLY PURE INPUT TESTS A CASE THE PRODUCT NEVER SEES.**
+⚠ **The gate is cleared on 3 of 4 takes**; `stripped` is 1.072x, 7% over the bar.
+⚠ **OWED: the production live look.**
+→ [`../00_CORE/queue_notes/V2.md`](../00_CORE/queue_notes/V2.md)
+
 **Open, deliberately not next**: the two-hand swap · `N8` cube-stealing
 palm-first (routed to `B5`) · `T1` back-of-hand rotation quality · `T4`
 yaw/palm-sink · `N12` pitch-crossing jump · `U5` occlusion coast.
@@ -166,6 +183,7 @@ yaw/palm-sink · `N12` pitch-crossing jump · `U5` occlusion coast.
 
 | you want to… | read |
 |---|---|
+| ⭐⭐ **touch the yaw lean, or any rotation CORRECTION** | [`../00_CORE/queue_notes/V2.md`](../00_CORE/queue_notes/V2.md) — swing/twist, two gains, the gate it had to clear, and why 0.66 is a BRACKET and not a derivation. ⛔ Read `REJECTED.md` first: three predecessors died of VARIANCE |
 | ⭐⭐ **change anything that depends on where the CAMERA is** | [`../00_CORE/queue_notes/V1.md`](../00_CORE/queue_notes/V1.md) — `Resources/camera_mount.py` owns the mirror, the orientation sign, the depth direction and the chirality bit. ⛔ Do not add a fourth place that knows about the camera |
 | ⛔ **check whether an idea has already failed** | [`REJECTED.md`](REJECTED.md) — **do this first, it is the cheapest page here** |
 | know the processes, modules and every command | [`ARCHITECTURE.md`](ARCHITECTURE.md) |

@@ -12,6 +12,7 @@ from .CubeWindow import CubeWindow
 from . import owner_remap
 from . import object_extent
 from . import camera_mount
+from . import lean_trim
 from . import depth_order
 from . import palm_depth
 from . import palm_geometry
@@ -1643,6 +1644,12 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
         # ⚠ A no-op unless the mount is `facing_user`. `camera_mount`'s header
         # carries the proof that this equals negating every landmark z.
         hand_quat_now = camera_mount.user_view_quat(hand_quat_now)
+        # ⭐⭐ V2: the yaw-lean trim, immediately after the viewpoint. ⚠ It reads
+        # `lean_trim`'s OWN constants -- production has no sliders, and `L1`'s rule
+        # is that a tuning constant lives in exactly one module. The debug tool's
+        # sliders write those same constants, which is what keeps the two tools
+        # identical under `parity_replay`.
+        hand_quat_now = lean_trim.trim(hand_quat_now)
 
         # ⭐ ONCE PER HAND, PER FRAME, from the HAND's own orientation -- before any
         # cube is touched, so a hand holding two cubes stamps exactly once and the

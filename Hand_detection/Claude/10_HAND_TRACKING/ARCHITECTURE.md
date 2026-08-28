@@ -48,6 +48,7 @@ Client `Resources/`, **stdlib-only and numpy-free by contract** so it can be
 ported by transliteration ([`../00_CORE/CONSTRAINTS.md`](../00_CORE/CONSTRAINTS.md) §2):
 
 `camera_mount` (⭐ where the camera sits; every camera-dependent sign derives from it) ·
+`lean_trim` (⭐ `V2`'s swing/twist yaw-lean correction, gains 0.66/0.66) ·
 `palm_geometry` · `palm_rotation` (Horn, and `PlanarPnP` for A/B only) ·
 `palm_depth` · `planar_pnp` · `hand_blocks` · `hand_state` · `palm_anchor` ·
 `hand_skeleton` · `frame_gate` · `block_predictor` · `confirmation_gate` ·
@@ -107,6 +108,9 @@ capture handles inside *one* process both succeed; that is a misleading test.)
 | golden vectors | `analysis/verify_*.py` — **26 suites, all passing** |
 | the two tools must still agree | `analysis/parity_replay.py` |
 | ⭐ the CAMERA MOUNT's wiring, on a recording (no camera needed) | `analysis/mount_ab.py <session>` — does the switch take EFFECT, and in which direction |
+| ⛔ **the LEAN TRIM's gate** — run BEFORE quoting any lean number | `analysis/lean_trim_ab.py <session>` — per-frame orientation jump vs shipped Horn, judged PER TAKE |
+| what contaminates yaw, and whether depth matters | `analysis/lean_decomposition.py <session>` |
+| the slider panel's wiring (arity, globals, descriptions) | `analysis/verify_slider_wiring.py` — static AND it executes both slider functions |
 | chirality guard (after ANY mirroring/handedness change) | `tools/VerifyChiralityFixture.py` |
 | the audit's guards (tags, camera stalls, loopback, the `meta` clamp) | `analysis/verify_hardening.py` — 51 checks |
 | the INPUT SYSTEM: boundary, contract, vectors, action trace | `analysis/verify_handinput.py` — 96 checks |

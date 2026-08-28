@@ -50,7 +50,8 @@ sys.path.insert(0, os.path.join(
     "..", "Python_Server_MediaPipe_vision_pipeline", "Resources"))
 import hand_identity  # noqa: E402  (path set immediately above)
 import capture_policy  # noqa: E402  (same directory; shared with production, N6)
-from Resources import camera_mount as _CMount  # noqa: E402  (N6: one mount, both tools)
+from Resources import camera_mount as _CMount
+from Resources import lean_trim as _lean_trim  # noqa: E402  (N6: one mount, both tools)
 from Resources import palm_rotation as _PRot
 from Resources import palm_depth as _PDepth  # noqa: E402  (4.1/M9, read-only)
 from Resources import session_paths  # noqa: E402  (tag sanitising, shared with production)
@@ -145,6 +146,22 @@ def _publish_hand_input(state, hand_data_by_hand, pose_out, now_ms):
 # the same day as dead code) and it is therefore the whole of the felt lag.
 SLIDER_WIN = "Rotation smoothing + F1 fingertips"
 
+# ⛔ RETIRED SLIDERS KEEP THEIR CONSTANTS. When `SLANT axis %` and `POSE blend %`
+# were retired from the panel on 2026-08-28 these two lost their ONLY assignment --
+# they had lived solely as unpack targets -- and `_read_sliders` still pushes them
+# into the estimator modules, so the tool died with `NameError` on the first frame.
+# ⚠ All 38 suites passed anyway: none of them exercises `_read_sliders`, which
+# needs a live OpenCV window. `METHOD.md`, exactly: automated green is NECESSARY,
+# NOT SUFFICIENT -- a live look is what closes a change.
+# ⭐ 0.0 is the shipped state for both (each was owner-rejected live 2026-08-27);
+# the rigs raise them directly.
+SLANT_AXIS_GAIN = 0.0
+POSE_BLEND = 0.0
+
+# V2 -- the yaw-lean trim's two gains. 0/0 is bit-exact shipped Horn.
+LEAN_PITCH_GAIN = 0.0
+LEAN_ROLL_GAIN = 0.0
+
 # ⭐ Measured on `2026-08-24_205729_t6d_ab_ghost`, every arm fed identical input,
 # lag read by shift-aligning against an unsmoothed replay of the same take:
 #     tau 149 ms -> 128 ms lag, cube step p95 11.44 deg   (== the shipped 0.35)
@@ -185,178 +202,59 @@ JITTER_TAU_MAX_MS = 400
 TRIM_GAIN_MAX_PCT = 100
 TRIM_MAX_DEG_MAX = 30
 
+# ⛔⛔ STANDING RULE, owner 2026-08-28: *"as a rule, collapse the previous
+# sliders which were used in previous builds and are not useful in the current
+# build."* A panel is a working surface, not an archive. Three were retired here
+# the day the rule was given -- `TRIM gain %` (F1's rotation trim, REMOVED as
+# non-monotonic), `SLANT axis %` and `POSE blend %` (both owner-rejected live on
+# 2026-08-27). Their modules, constants and rigs are untouched and still reachable;
+# only the panel entries are gone.
+# ⭐ IT WAS NOT COSMETIC. Twelve trackbars in a 400 px window pushed the twelfth
+# OFF THE PANEL -- the owner saw one LEAN slider where two had been added. A dead
+# control does not just take space, it hides a live one.
+# ⛔⛔ STANDING RULE, owner 2026-08-28: EVERY SLIDER CARRIES ITS OWN ONE-LINE
+# PURPOSE, AND THE PANEL DRAWS IT. *"write these texts directly in the window,
+# each text line under each slider. do that as a rule."*
+#
+# ⭐ The description is the 5th field of the row, not a comment and not a lookup
+# table somewhere else, so a slider CANNOT exist without its explanation and the
+# two cannot drift apart. `analysis/verify_slider_wiring.py` fails if one is blank.
+#
+# ⚠ OpenCV stacks its trackbars ABOVE the image and gives no way to draw between
+# them, so the lines cannot literally sit under each trackbar without replacing
+# the trackbars with hand-drawn ones. `_draw_slider_panel` therefore renders them
+# in the SAME ORDER, each with its live value -- the panel reads top-to-bottom
+# against the trackbars above it.
+#
+# ⛔ Also owner 2026-08-28: "remove the other text in the sliders' window which is
+# not helpful for my debugging." The canvas used to carry commentary for controls
+# that no longer exist (slant axis, pose blend, fingertip trim, jitter, z rate).
+# All of it is gone; the rationale is in
+# Claude/10_HAND_TRACKING/history/SLIDER_PANEL_RATIONALE.md.
+#
+# ⚠ Where STEADY ms (4500) went: stripped in 6c3bd29 when the FREEZE replaced it --
+# "damping is not stillness". It is the RELEASE deg/s + FREEZE frames pair below.
+#
+# ⚠ The displayed integer IS the applied value in its stated unit. Never an index.
 SLIDERS = (
-    # ⛔ 0 = NO smoothing: the cube goes exactly where Horn says, every frame.
-    ("SMOOTH ms", SLERP_TAU_MAX_MS, 20, lambda n: float(n)),
-    # ⛔ 0 = the fingertip filter OFF, and off is BIT-EXACT (the input value is
-    # returned unchanged), so this position is genuinely today-without-F1's-filter
-    # rather than an approximation of it.
-    # ⛔⛔ PARKED 2026-08-26, owner: "jitter and speed ... removed at their
-    # minimums ... don't delete the code, just park those three". Both are now
-    # fixed at ZERO -- the 1-euro filter's own off state, which is BIT-EXACT
-    # passthrough rather than an approximation. Reason: the census puts the tip
-    # noise floor at 1.5 mm median, so there was little for the filter to remove,
-    # and the owner found its lag "unbearable" at any useful setting.
-    # ⭐ To revisit, put these two lines back in the tuple and restore the
-    # 5-value unpack in `_read_sliders`; nothing else was removed.
-    #   ("JITTER tau ms", JITTER_TAU_MAX_MS, 133, lambda n: float(n)),
-    #   ("SPEED b x1000", 200, 20, lambda n: n / 1000.0),
-    # ⚠ DRIVES ONLY THE ARM THAT HAS THE TRIM ON. In the three-window rig panels
-    # 1 and 2 pin their gain to 0.0 explicitly, so sweeping this moves panel 3 and
-    # leaves the controls alone -- which is what keeps the rig one-variable.
-    #
-    # ⛔⛔ IT STARTS AT 0, MATCHING PRODUCTION, AND `--f1-rig` RAISES IT.
-    # Starting it at 100 made the ordinary single-arm debug tool run the trim
-    # while production ran without it -- i.e. the two tools would differ in normal
-    # use, which is the exact divergence `U6` keeps `parity_replay` around to
-    # prevent. The rig is where the trim is meant to be ON, so the rig turns it on.
-    ("TRIM gain %", TRIM_GAIN_MAX_PCT, 0, lambda n: n / 100.0),
-    # ⭐⭐ THE GRAB RADIUS, owner 2026-08-26: "slider x the narrower axis of the
-    # cube's projected footprint, slider between 0 and 1". Shown as a PERCENT
-    # because the panel's rule is that the displayed integer IS the applied value
-    # in its stated unit, and a trackbar cannot show 0.50.
-    # ⚠ 0% means NOTHING CAN BE GRABBED -- deliberately reachable, because a
-    # slider whose useful range is hidden behind a floor teaches the wrong thing
-    # about where the limit is.
-    # ⭐ Starts at the shipped 50%. Measured on 50 real grabs: 50% -> 42% of them
-    # still occur, 60% -> 54%, 75% -> 72%, 100% -> 80%.
-    # ⚠ The start value here is a PLACEHOLDER, exactly as "SMOOTH ms"'s is: this
-    # table is built before `hand_state` is imported, so the real value is pushed
-    # onto the trackbar in `_create_sliders`. A literal that drifts from the
-    # constant would show the operator a number the pipeline is not using.
-    # ⚠ RANGE IS 0..300, not 0..100. At 100 max the owner could not get BACK to a
-    # working value once 33% turned out to be unusable -- a slider that cannot
-    # reach the previous behaviour is a trap, not a control.
-    ("GRAB radius %", 300, 100, lambda n: n / 100.0),
-    # ⭐⭐ A1's fade budget, owner 2026-08-26: "make a slider for these xx ms,
-    # between 0 and 1000 ms". Milliseconds OF HAND MOVEMENT, not of wall clock —
-    # a hand held still does not spend it.
-    # ⚠ 0 ms is the TELEPORT, and it is reachable on purpose: it is the design the
-    # acceptance gate rejected at 118.4 px in one frame, so the slider's own left
-    # end shows what that felt like.
-    ("FADE ms moving", 1000, 300, lambda n: float(n)),
-    # ⭐⭐ How much of the HAND's own step the cube may spend closing the gap, per
-    # frame. Owner 2026-08-26: "a multiple of the hand movement cap, with a slider
-    # between 0.05 and 1". Shown as a percent so the displayed integer IS the
-    # applied value, the rule every slider on this panel follows.
-    # ⚠ 0 is reachable and means the cube NEVER re-centres — informative rather
-    # than hidden. The owner's stated floor, 0.05, is position 5.
-    ("WALK % of hand", 100, 25, lambda n: n / 100.0),
-    # ⭐⭐ T6's AXIS CORRECTION -- how much of the way to steer Horn's rotation
-    # axis toward the one the palm's own foreshortening implies. This is the LEAN
-    # control: the owner called the lean a show-stopper, and this is the first
-    # thing measured to reduce it.
-    # ⛔ 0% IS BIT-EXACT SHIPPED HORN, not an approximation of it -- the golden
-    # vectors assert the quaternion is returned as the SAME OBJECT. So the left end
-    # of this slider is today's production behaviour, exactly.
-    # ⚠ DRIVES ONLY THE ARM THAT FOLLOWS THE GLOBAL. In `--slant-rig` panel 1 is
-    # pinned to 0.0 and ignores this, so sweeping it moves panel 2 alone -- the same
-    # one-variable discipline the TRIM slider follows.
-    # ⭐ Measured on the clean sweeps, lean med: yaw 22.0 -> 16.2 (50%) -> 13.6
-    # (75%) -> 13.5 (100%); pitch 14.8 -> 10.0 (100%). ⚠ Wander p95 is flat on yaw
-    # (19.8 -> 19.6) and IMPROVES on pitch (45.0 -> 22.1), so there is no measured
-    # jitter cost -- but T6d was rejected for FEELING wrong while scoring fine, so
-    # the slider exists to let the hand decide, not the table.
-    # ⭐⭐ THE STEADY DAMPER, owner 2026-08-27: *"there is a bit of jitter of the
-    # cube"*. EXTRA milliseconds of smoothing given to a cube that is barely
-    # turning, and taken back as it turns.
-    # ⛔ 0 ms IS TODAY'S BEHAVIOUR, BIT-EXACT -- the left end is production.
-    # ⚠ It is NOT "raise SMOOTH ms". A fixed time constant lags real motion exactly
-    # as much as it damps jitter, which is the trade `L1` already rejected
-    # (*"the cube is lagging the hand and this feels very uncomfortable"*). This one
-    # is spent only while the cube is nearly still.
-    # ⭐ Measured target: orientation moves 4.30 deg/frame median while held, which
-    # at 15 fps is the shimmer. Position needs nothing -- the cube tracks the grip
-    # point to within 0.1 px, so damping it would only lag translation.
-    # ⚠ RANGE RAISED 400 -> 1000 (owner, 2026-08-27). 400 was the STOP, not a
-    # choice: the take exited at exactly 400.0, so the useful range had not been
-    # bracketed. A slider whose maximum is the answer has not been explored yet --
-    # the same reason GRAB radius runs to 300%.
-    # ⭐⭐ WHERE THE DAMPING LETS GO, in deg/s of hand rotation. Owner, 2026-08-27:
-    # *"I don't want any quaternion slerp as soon as I start a hand rotation"*.
-    # ⛔ ABOVE this the extra damping is EXACTLY ZERO -- the cube is on today's tau
-    # and nothing else. Below 45% of it the damping is at full strength; the gap is
-    # the whole ramp, and it is narrow on purpose.
-    # ⚠ IT CANNOT GO VERY LOW. A held-STILL hand's raw target already moves
-    # 2.53 deg/frame -- about 38 deg/s at 15 fps -- so a threshold under that would
-    # be tripped by the very jitter the damper removes, and the damping would
-    # flicker on and off.
-    ("RELEASE deg/s", 400, 60, lambda n: float(n)),
-    # ⭐⭐ FREEZE: consecutive fast frames needed to let the object move at all.
-    # ⛔ 0 = OFF, i.e. the smooth ramp above. Any value > 0 makes the blend factor
-    # EXACTLY ZERO while held -- absolutely no movement, by construction rather than
-    # by being slow. Owner, 2026-08-27: *"I want absolutely no movement when the cube
-    # should be steady, and immediate release when the hands move (maybe with a
-    # couple of frames trigger)"*.
-    # ⭐ 2 is that couple. It rejects single-frame NOISE SPIKES outright -- which the
-    # instant-attack envelope could not -- at a cost of exactly N-1 frames of onset.
-    # ⚠ While frozen the object ignores slow drift, so a hand creeping below the
-    # threshold accumulates a gap that is paid back as a JUMP on release. That is
-    # what "absolutely no movement" costs.
-    # ⚠ KEEP THIS AT 1. Owner, 2026-08-27: *"if I increase the freeze frame, it
-    # makes the rotation jerky. I want to keep it to 0 or 1 or max 2"*. The COHERENCE
-    # gate below is what makes 1 sufficient -- it does the noise rejection the second
-    # frame used to do, without costing a frame of onset.
-    ("FREEZE frames", 2, 1, lambda n: int(n)),
-    ("SLANT axis %", 100, 0, lambda n: n / 100.0),
-    # ⭐⭐ THE OWNER'S OWN STRATEGY, as a whole estimator: the regression fitted
-    # from the six takes (HALF 1) on a canonical frozen at the grab (HALF 2).
-    # ⛔ 0% is bit-exact shipped Horn. 100% is the strategy running alone.
-    # ⛔⛔ THE MIDDLE IS A TRAP AND THE MEASUREMENT SAYS SO: yaw lean reads 27.2 at
-    # 0%, **53.7 at 50%**, and 8.6 at 100%. Slerping between two orientations that
-    # disagree lands on an axis worse than EITHER, so this control is all-or-nothing.
-    # ⚠ Left reachable anyway -- a slider whose bad region is hidden teaches the
-    # wrong thing about where the limit is, which is the GRAB radius rule.
-    # ⚠ Measured cost: per-frame orientation jump p95 12.6 -> 30.3, i.e. 2.4x
-    # shipped Horn, while the MEDIAN improves (2.98 -> 2.41). Smoother most of the
-    # time, worse in the tail. That is a feel question, which is why it has a slider.
-    ("POSE blend %", 100, 0, lambda n: n / 100.0),
-    # ⭐⭐ THE AXIAL HALF OF THE GRAB GATE, owner 2026-08-26: "currently, the margin
-    # is too wide". In CENTIMETRES so the displayed integer is the applied value.
-    # ⚠ It is deliberately SEPARATE from the in-plane radius and always has been:
-    # x,y are MEASURED in pixels while depth is ESTIMATED, and `T6` measured the
-    # four palm spans disagreeing about that estimate by 13-22% at a single square
-    # pose. `GRAB_Z_TOLERANCE_M`'s own comment says it is sized to swallow that so
-    # the gate stays REACHABLE.
-    # ⛔ MEASURED BEFORE TIGHTENING: on the two takes recorded before the depth
-    # ratchet was fixed, |hand depth - cube depth| at grab ran a MEDIAN 12.3 cm
-    # (p95 14.6), i.e. pressed against today's 15. Most of that was the ratchet --
-    # cubes pinned at the 0.30 m floor while the hand sat at 0.42 -- so it should
-    # be far smaller now. This slider is how we find out, live.
-    ("GRAB z margin cm", 30, 15, lambda n: n / 100.0),
-    # ⭐⭐ THE Z-JUMP KNOB. `palm_depth`'s ratio may change by at most this fraction
-    # of itself per SECOND, so the constant means the same thing whatever the
-    # camera's frame rate (the `L1` lesson, applied on 2026-08-27).
-    # Shown as PERCENT PER SECOND -- the displayed integer is the applied value.
-    #
-    # ⚠ WHAT THE NUMBERS MEAN, measured on the owner's own take: at ~20 fps,
-    #     240 %/s = 12%/frame  <- today's shipped value
-    #     100 %/s =  5%/frame  <- the module's own figure for a GENUINE hand push
-    # and the per-frame depth step while held was p50 0.9%, p90 5.2%, p95 8.3%,
-    # max 13.7%. So the visible jumps are the tail ABOVE the genuine rate, and the
-    # useful range to explore is roughly 100-240.
-    # ⚠ 0 freezes depth outright -- reachable on purpose, like every other slider
-    # here, because a hidden floor teaches the wrong thing about where the limit is.
-    # ⛔⛔ PARKED 2026-08-27 (owner: *"there is no need for z rate %/s slider"*).
-    # The value was SETTLED at the shipped 2.00 and the work since has all been
-    # rotation, which this does not touch.
-    #
-    # ⚠ IT WAS ALSO A PARITY LEAK, and that is the stronger reason. This slider
-    # writes `_PDepth.RATE_LIMIT_PER_S`, a module BOTH tools import (N6), so while it
-    # sat off 2.00 the debug tool ran a depth rate production does not. Measured
-    # across the last four takes: **4.0 / 0.51 / 0.42 / 2.0** -- three of them
-    # off-spec, and nothing in the session was about depth. Parking pins it at the
-    # module's own constant, which is production's, so `U6` has nothing to catch.
-    # ⭐ The rotation verdicts are unaffected: depth rate drives Z TRANSLATION and
-    # cannot reach an orientation estimator. Recorded rather than assumed.
-    #
-    # ⭐ To revive: restore the line below, add `DEPTH_RATE_PER_S` back to the
-    # `_read_sliders` unpack, and restore the two lines flagged "Z rate parked".
-    # Nothing else was removed -- same treatment as JITTER/SPEED above.
-    #   ("Z rate %/s", 400, 200, lambda n: n / 100.0),
-    # ⛔ PARKED 2026-08-26 alongside the two above -- the owner retired it after
-    # revisiting an earlier preference for a raised clamp.
-    #   ("TRIM max deg", TRIM_MAX_DEG_MAX, 10, lambda n: float(n)),
+    ("SMOOTH ms", SLERP_TAU_MAX_MS, 20, lambda n: float(n),
+     "how long the cube takes to catch up to the hand's rotation"),
+    ("GRAB radius %", 300, 100, lambda n: n / 100.0,
+     "how big the grab zone is, as % of the cube's projected footprint"),
+    ("FADE ms moving", 1000, 300, lambda n: float(n),
+     "how long the cube takes to settle onto the fingertips after a grab"),
+    ("WALK % of hand", 100, 25, lambda n: n / 100.0,
+     "how much of the hand's own step the cube may spend closing that gap"),
+    ("RELEASE deg/s", 400, 60, lambda n: float(n),
+     "hand speed above which the cube unfreezes and follows again"),
+    ("FREEZE frames", 2, 1, lambda n: int(n),
+     "how many calm frames before the cube freezes dead still"),
+    ("GRAB z margin cm", 30, 15, lambda n: n / 100.0,
+     "how far off the cube's depth a hand may be and still grab it"),
+    ("LEAN pitch %", 100, 66, lambda n: n / 100.0,
+     "how much of the yaw's pitch contamination to remove"),
+    ("LEAN roll %", 100, 66, lambda n: n / 100.0,
+     "how much of the yaw's roll contamination to remove"),
 )
 
 # ⭐ OWNER'S CHOICE, 2026-08-24, settled live: **20 ms**. Reached by sweeping the
@@ -1408,6 +1306,48 @@ class CubeState:
         cube.grab_anchor_state = None
         cube.grab_depth_m = None    # 4.2: depth freezes in place, like position
 
+    def home_cube(self, name: str) -> None:
+        """⭐⭐ RELEASE the cube and return it to the HOME POSE -- world origin,
+        identity orientation, reference depth. Owner, 2026-08-28: *"ungrab the cube
+        and reset the transform of the grabbed cube to position vector null and
+        quaternion identity. This will help me have a fixed reference to start each
+        of the movements."*
+
+        ⭐ WHY THIS IS A REAL INSTRUMENT, NOT A CONVENIENCE. Every rotation here is
+        GRAB-RELATIVE, so what the cube does depends on where it already was.
+        Judging "did the lean improve" while each trial starts from wherever the
+        last one left the cube compares two different experiments. A fixed start
+        pose is what makes successive movements comparable -- which is exactly what
+        the `V2` gain sliders need in order to be judged by eye at all.
+
+        ⛔ "POSITION VECTOR NULL" IS THE WORLD ORIGIN, NOT PIXEL (0,0). The optical
+        axis is the frame CENTRE (`palm_geometry.world_from_px`), so world (0,0) at
+        `REFERENCE_DEPTH_M` IS the screen centre at the resting depth. Pixel (0,0)
+        would be the top-left corner: literal, and useless as a reference.
+
+        ⚠ DEPTH IS SET BEFORE THE CENTRE, and the order is load-bearing:
+        `set_target_center` derives `position` from the PROJECTED extent, which
+        depends on depth (`CONSTRAINTS` §7). Centring first and then changing depth
+        would leave the cube off-centre by the size difference.
+
+        ⛔ DEBUG TOOL ONLY. Production has no such key -- this is a measurement
+        aid, and a game that teleports its object on a keypress is a different
+        game."""
+        cube = self.cubes[name]
+        self.release_cube(name)                     # clears every grab baseline
+        cube.orientation = IDENTITY_QUATERNION
+        cube.depth_m = palm_geometry.REFERENCE_DEPTH_M
+        w, h = self.window_size
+        self.set_target_center(name, (w / 2.0, h / 2.0))
+
+    def home_held_cubes(self) -> list:
+        """Home every cube currently held. Returns the names homed, so the caller
+        can say nothing happened rather than leave the operator guessing."""
+        held = [n for n, c in self.cubes.items() if c.owner is not None]
+        for n in held:
+            self.home_cube(n)
+        return held
+
     def set_target_center(self, name: str, center: Tuple[float, float]) -> None:
         """⭐⭐ U9 (N6, mirrors `CubeWindow.set_target_center`): confine the object
         to the PLAY AREA, not to the window. The hand-side margin cannot enforce
@@ -1853,8 +1793,16 @@ def _create_sliders():
     unlabelled one, because it invites a confident wrong reading.
     """
     cv2.namedWindow(SLIDER_WIN, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(SLIDER_WIN, 520, 400)
-    for name, maxv, start, _ in SLIDERS:
+    # ⚠ HEIGHT IS PER-TRACKBAR, NOT A CONSTANT. OpenCV stacks trackbars ABOVE
+    # the canvas, so a fixed height silently CLIPS the last ones -- which is how a
+    # newly added slider went unseen. Sized from the table so adding one cannot
+    # hide another.
+    cv2.resizeWindow(SLIDER_WIN, 520, 200 + 30 * len(SLIDERS))
+    # ⚠ INDEXED, NOT UNPACKED. A fixed-arity unpack here broke the tool the
+    # day the description field was added -- `_create_sliders` needs a window,
+    # so no fixture reached it. Indexing tolerates the row growing again.
+    for spec in SLIDERS:
+        name, maxv, start = spec[0], spec[1], spec[2]
         cv2.createTrackbar(name, SLIDER_WIN, start, maxv, lambda _v: None)
 
 
@@ -1875,15 +1823,23 @@ def _read_sliders() -> None:
     global GRIP_ALIGN_MOVING_MS, GRIP_ALIGN_MASK_RATIO, GRAB_Z_TOLERANCE_M
     global DEPTH_RATE_PER_S, SLANT_AXIS_GAIN, POSE_BLEND
     global STEADY_RELEASE_DEG_S, STEADY_FREEZE_FRAMES
+    global LEAN_PITCH_GAIN, LEAN_ROLL_GAIN
     try:
         vals = [spec[3](cv2.getTrackbarPos(spec[0], SLIDER_WIN)) for spec in SLIDERS]
     except cv2.error:
         return
     # ⚠ THREE sliders now -- three others are parked (see `SLIDERS`). The parked
     # values are NOT re-read here; they keep their module defaults.
-    (SLERP_TAU_MS, _gain, GRAB_RADIUS_MULTIPLIER, GRIP_ALIGN_MOVING_MS,
+    # ⚠ NINE now. `TRIM gain %`, `SLANT axis %` and `POSE blend %` were retired
+    # 2026-08-28 (see `SLIDERS`); their constants keep their module defaults and the
+    # rigs set them directly, so nothing that used them stopped working.
+    (SLERP_TAU_MS, GRAB_RADIUS_MULTIPLIER, GRIP_ALIGN_MOVING_MS,
      GRIP_ALIGN_MASK_RATIO, STEADY_RELEASE_DEG_S, STEADY_FREEZE_FRAMES,
-     SLANT_AXIS_GAIN, POSE_BLEND, GRAB_Z_TOLERANCE_M) = vals
+     GRAB_Z_TOLERANCE_M, LEAN_PITCH_GAIN, LEAN_ROLL_GAIN) = vals
+    # ⚠ N6: the sliders write the SHARED module's constants, so production and the
+    # debug tool apply ONE value and `parity_replay` stays meaningful.
+    _lean_trim.GAIN_PITCH = LEAN_PITCH_GAIN
+    _lean_trim.GAIN_ROLL = LEAN_ROLL_GAIN
     _HS_const.ROTATION_STEADY_RELEASE_DEG_S = STEADY_RELEASE_DEG_S
     _HS_const.ROTATION_STEADY_FREEZE_FRAMES = STEADY_FREEZE_FRAMES
     # ⚠ Shared module, same reasoning as the others: both tools read it at call
@@ -1921,7 +1877,10 @@ def _read_sliders() -> None:
 
     # ⚠ The module GLOBAL, not a per-arm value: arms that pin their gain (the rig
     # controls, at 0.0) are unaffected, and arms that leave it None follow this.
-    tip_trim.TRIM_GAIN = _gain
+    # ⛔ `TRIM gain %` was RETIRED 2026-08-28, so there is no `_gain` to push;
+    # `tip_trim.TRIM_GAIN` keeps its module default (0.0 = the shipped state,
+    # F1's trim having been removed as non-monotonic). Deleting the slider
+    # without deleting this line is what threw `NameError` on the first frame.
 
     # ⚠ `GRAB_RADIUS_MULTIPLIER` above rebinds THIS MODULE's name only, and that is
     # deliberate: `hand_state` keeps the shipped value, so sweeping the slider
@@ -1983,131 +1942,6 @@ def print_settled_values(prefix="[LiveSnapDebug]"):
     print(f"{prefix} -------------------------------")
 
 
-def _draw_slider_panel(open_: bool):
-    """The panel's own canvas: the value in the unit the owner reasons about."""
-    if not open_ or cv2.getWindowProperty(SLIDER_WIN, cv2.WND_PROP_VISIBLE) < 1:
-        return
-    canvas = np.zeros((430, 520, 3), dtype=np.uint8)
-    cv2.putText(canvas, f"smoothing tau = {SLERP_TAU_MS:.0f} ms", (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (120, 255, 255), 2, cv2.LINE_AA)
-    note = ("no smoothing -- the cube goes exactly where Horn says"
-            if SLERP_TAU_MS <= 0 else
-            "TODAY's behaviour (== the shipped per-frame 0.35)"
-            if SLERP_TAU_MS >= 149 else
-            "below one frame (64 ms): the lag is gone, this trades jitter only")
-    cv2.putText(canvas, note, (10, 54), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
-                (170, 170, 170), 1, cv2.LINE_AA)
-    cv2.putText(canvas, "0 = none    20 = owner's setting    149 = today",
-                (10, 76), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1, cv2.LINE_AA)
-
-    # ⭐⭐ T6's LEAN CONTROL. Printed as its own line because it is the one thing
-    # `--slant-rig` exists to judge, and because the first take of that rig was lost
-    # to nobody being able to say afterwards what it had been set to.
-    cv2.putText(canvas, f"slant axis gain = {_SlantAxis.GAIN * 100:.0f}%", (10, 98),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (120, 255, 255), 2, cv2.LINE_AA)
-    _snote = ("0 = SHIPPED HORN, bit-exact -- panel 2 equals panel 1"
-              if _SlantAxis.GAIN <= 0 else
-              "full: the axis goes where the palm's squash says"
-              if _SlantAxis.GAIN >= 1.0 else
-              "part-way between shipped Horn and the corrected axis")
-    cv2.putText(canvas, _snote, (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
-                (170, 170, 170), 1, cv2.LINE_AA)
-
-    cv2.putText(canvas, f"pose blend = {_SlantPose.BLEND * 100:.0f}%", (10, 142),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (120, 255, 255), 2, cv2.LINE_AA)
-    _pnote = ("0 = SHIPPED HORN, bit-exact"
-              if _SlantPose.BLEND <= 0 else
-              "100% = the regression + freeze-at-grab, running alone"
-              if _SlantPose.BLEND >= 1.0 else
-              "!! MIDDLE IS WORSE THAN EITHER END -- measured 53.7 deg lean at 50%")
-    cv2.putText(canvas, _pnote, (10, 164), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
-                (170, 170, 170), 1, cv2.LINE_AA)
-
-    # ⭐ F1's block. Every line prints the APPLIED value, and the fingertip filter
-    # prints its cutoff too -- the slider speaks ms because that is the unit the
-    # owner reasons in, but the algorithm's own parameter is the Hz, and a take
-    # should be readable off a screenshot in both.
-    cv2.line(canvas, (10, 90), (510, 90), (60, 60, 60), 1)
-    if JITTER_TAU_MS <= 0:
-        jl = "fingertip filter OFF  (bit-exact: the raw barycentre)"
-        jc = (120, 120, 255)
-    else:
-        jl = (f"fingertip jitter: tau {JITTER_TAU_MS:.0f} ms "
-              f"(fc {_tau_ms_to_cutoff_hz(JITTER_TAU_MS):.2f} Hz)  "
-              f"beta {JITTER_BETA:.3f}")
-        jc = (120, 255, 200)
-    cv2.putText(canvas, jl, (10, 116), cv2.FONT_HERSHEY_SIMPLEX, 0.52, jc, 1,
-                cv2.LINE_AA)
-    cv2.putText(canvas, "lower tau = twitchier but no lag;  higher = calmer at rest",
-                (10, 138), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
-                cv2.LINE_AA)
-
-    if tip_trim.TRIM_GAIN <= 0:
-        tl = "fingertip TRIM OFF  (rotation is shipped Horn, exactly)"
-        tc = (120, 120, 255)
-    else:
-        tl = (f"fingertip trim: gain {tip_trim.TRIM_GAIN:.2f}  "
-              f"max {tip_trim.TRIM_MAX_DEG:.0f} deg")
-        tc = (120, 255, 200)
-    cv2.putText(canvas, tl, (10, 172), cv2.FONT_HERSHEY_SIMPLEX, 0.52, tc, 1,
-                cv2.LINE_AA)
-    cv2.putText(canvas, "census: real finger motion is ~16 deg median over 0.5 s,",
-                (10, 194), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
-                cv2.LINE_AA)
-    cv2.putText(canvas, "so a max far above ~15 stops being a TRIM and starts",
-                (10, 214), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
-                cv2.LINE_AA)
-    cv2.putText(canvas, "following the fingers -- which is the A10-dead arm.",
-                (10, 234), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
-                cv2.LINE_AA)
-
-    # ⭐ THE GRAB RADIUS, printed in BOTH units: the fraction the slider sets, and
-    # the pixels it comes to on a face-on large cube at the resting depth -- which
-    # is the number the operator is actually aiming inside of.
-    cv2.line(canvas, (10, 252), (510, 252), (60, 60, 60), 1)
-    _face_on = object_extent.grab_extent(
-        palm_geometry.projected_size_px(CUBE_SIZE_LARGE,
-                                        palm_geometry.REFERENCE_DEPTH_M),
-        (1.0, 0.0, 0.0, 0.0), _CUBE_MESH_VERTS, CUBE_PERSPECTIVE_DISTANCE_RATIO)
-    if GRAB_RADIUS_MULTIPLIER <= 0:
-        gl = "GRAB radius 0%  --  NOTHING can be picked up"
-        gc = (120, 120, 255)
-    else:
-        gl = (f"grab radius: {GRAB_RADIUS_MULTIPLIER:.2f} x footprint "
-              f"= {GRAB_RADIUS_MULTIPLIER * _face_on:.0f} px face-on")
-        gc = (120, 255, 200)
-    cv2.putText(canvas, gl, (10, 278), cv2.FONT_HERSHEY_SIMPLEX, 0.52, gc, 1,
-                cv2.LINE_AA)
-    cv2.putText(canvas, "of 50 real grabs: 50% -> 42% still occur, 75% -> 72%,",
-                (10, 300), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
-                cv2.LINE_AA)
-    cv2.putText(canvas, "100% -> 80%.  Smaller radius = smaller slide at grab.",
-                (10, 320), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
-                cv2.LINE_AA)
-    _zl = (f"grab z margin: {GRAB_Z_TOLERANCE_M * 100:.0f} cm"
-           f"    walk: {GRIP_ALIGN_MASK_RATIO:.2f} x hand step")
-    cv2.putText(canvas, _zl, (10, 348), cv2.FONT_HERSHEY_SIMPLEX, 0.52,
-                (120, 255, 200) if GRAB_Z_TOLERANCE_M > 0 else (120, 120, 255),
-                1, cv2.LINE_AA)
-    cv2.putText(canvas, "depth is ESTIMATED, not measured: T6 put the four palm",
-                (10, 368), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (150, 150, 150), 1,
-                cv2.LINE_AA)
-    cv2.line(canvas, (10, 386), (510, 386), (60, 60, 60), 1)
-    _zr = (("depth FROZEN -- the cube cannot move in Z" if DEPTH_RATE_PER_S <= 0
-            else "z rate: %.0f %%/s  =  %.1f %%/frame at 20 fps"
-                 % (DEPTH_RATE_PER_S * 100, DEPTH_RATE_PER_S * 100 * 0.05)))
-    cv2.putText(canvas, _zr, (10, 410), cv2.FONT_HERSHEY_SIMPLEX, 0.52,
-                (120, 255, 200) if DEPTH_RATE_PER_S > 0 else (120, 120, 255),
-                1, cv2.LINE_AA)
-    cv2.putText(canvas, "240 = shipped;  100 = a genuine hand push.  Jumps live above it.",
-                (10, 428), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (150, 150, 150), 1,
-                cv2.LINE_AA)
-    try:
-        cv2.imshow(SLIDER_WIN, canvas)
-    except cv2.error:
-        pass
-
-
 # ⚠ A HITCH MUST NOT BECOME A POP. dt is clamped before it reaches the exponential:
 # after a dropout, a coast or a stalled frame, `now_ms` can jump by hundreds of ms,
 # and an unclamped dt drives the factor to 1.0 -- i.e. the cube teleports onto the
@@ -2135,6 +1969,54 @@ _steady_run = {}
 _steady_pos_frozen = {}
 _steady_pos_run = {}
 
+
+def _draw_slider_panel(open_: bool):
+    """The panel's legend: every slider, in trackbar order, with its live value
+    and its one-line purpose.
+
+    ⛔ RENDERED FROM `SLIDERS`, NEVER FROM A SECOND LIST. Owner, 2026-08-28:
+    *"write these texts directly in the window, each text line under each slider.
+    do that as a rule."* Driving it off the table is what makes that a rule rather
+    than a habit -- a new slider brings its own line, and a retired one takes its
+    line with it. The panel cannot describe a control that no longer exists, which
+    is exactly what it used to do.
+
+    ⚠ OpenCV draws its trackbars ABOVE the image and offers no hook to draw between
+    them, so these lines cannot literally sit under each trackbar. They are in the
+    SAME ORDER, so the legend reads top-to-bottom against the trackbars above it.
+
+    ⛔ Everything else was removed (owner: *"remove the other text in the sliders'
+    window which is not helpful for my debugging"*) -- including commentary for
+    controls retired the same day, which the canvas was still faithfully drawing.
+    """
+    if not open_ or cv2.getWindowProperty(SLIDER_WIN, cv2.WND_PROP_VISIBLE) < 1:
+        return
+    row_h, top = 34, 34
+    canvas = np.zeros((top + row_h * len(SLIDERS) + 10, 520, 3), dtype=np.uint8)
+    cv2.putText(canvas, "value  --  what it does", (10, 22),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (110, 110, 110), 1, cv2.LINE_AA)
+    for i, spec in enumerate(SLIDERS):
+        name, _maxv, _start, conv = spec[0], spec[1], spec[2], spec[3]
+        what = spec[4] if len(spec) > 4 else ""
+        try:
+            raw = cv2.getTrackbarPos(name, SLIDER_WIN)
+        except cv2.error:
+            raw = _start
+        val = conv(raw)
+        y = top + i * row_h
+        # ⭐ The applied value, in the slider's own unit. Dim when the control is at
+        # zero, because "off" is a state the operator needs to read at a glance --
+        # several of these are bit-exact passthrough at 0.
+        live = val > 0 if isinstance(val, (int, float)) else True
+        cv2.putText(canvas, "%-16s %-6s" % (name, ("%g" % val)), (10, y + 12),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.46,
+                    (120, 255, 200) if live else (120, 120, 255), 1, cv2.LINE_AA)
+        cv2.putText(canvas, what, (10, y + 28), cv2.FONT_HERSHEY_SIMPLEX, 0.38,
+                    (165, 165, 165), 1, cv2.LINE_AA)
+    try:
+        cv2.imshow(SLIDER_WIN, canvas)
+    except cv2.error:
+        pass
 
 def _stamp_steady_speed(handedness, hand_quat, now_ms, prev_ms,
                         grip_px=None, prev_grip_px=None):
@@ -2501,6 +2383,13 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
         # from the SAME quantity, as production. ⚠ A no-op unless the mount is
         # `facing_user`; `camera_mount`'s header carries the equivalence proof.
         hand_quat_now = _CMount.user_view_quat(hand_quat_now)
+        # ⭐⭐ V2: the yaw-lean trim, immediately after the viewpoint and
+        # before anything reads the pose -- so the cube, `_stamp_steady_speed`
+        # and `handinput` all see ONE orientation. ⚠ A no-op at gain 0.
+        # ⛔ It is a function of this quaternion ALONE: no 2-D shape feature,
+        # which is what separates it from the three estimators `REJECTED.md`
+        # killed for variance.
+        hand_quat_now = _lean_trim.trim(hand_quat_now)
 
         # ⭐ ONCE PER HAND, PER FRAME -- the SAME point production stamps it, from the
         # same quantity. Anything else and `parity_replay` diverges, which is how the
@@ -3155,7 +3044,8 @@ def main():
             # 100), because blending two orientations that disagree lands between them
             # on an axis neither would have chosen. Opening at 50% would show the
             # owner the worst version of their own strategy.
-            cv2.setTrackbarPos("POSE blend %", SLIDER_WIN, 100)
+            # ⚠ The slider was retired; the rig sets the constant directly.
+            globals()["POSE_BLEND"] = 1.0
         if args.slant_rig:
             # ⭐ The rig exists to show the AXIS CORRECTION, so it starts with the
             # correction ON -- while the ordinary single-arm view stays at
@@ -3165,7 +3055,8 @@ def main():
             # ⚠ It is a STARTING POINT, not a recommendation. The owner rejected
             # `T6d` for feeling wrong while scoring fine, so the number that ships
             # is whichever one the hand settles on, not this one.
-            cv2.setTrackbarPos("SLANT axis %", SLIDER_WIN, 75)
+            # ⚠ The slider was retired; the rig sets the constant directly.
+            globals()["SLANT_AXIS_GAIN"] = 0.75
         if args.f1_rig:
             # ⭐ The rig exists to show the trim, so it starts with the trim ON --
             # while the ordinary single-arm view stays at production's 0.
@@ -3183,6 +3074,8 @@ def main():
 
     timestamp_ms = 0
     print("[LiveSnapDebug] Running -- press 'q' or close a window to stop.")
+    print("[LiveSnapDebug] SPACE = ungrab the held cube and reset it to the "
+          "home pose (centre, identity, %.2f m)." % palm_geometry.REFERENCE_DEPTH_M)
     print(f"[LiveSnapDebug] smoothing tau starts at {SLERP_TAU_MS:.0f} ms "
           f"(149 = today's behaviour, 0 = none). Slider window: '{SLIDER_WIN}'.")
     if multi:
@@ -3570,6 +3463,16 @@ def main():
                 globals()["HIDE_VIDEO"] = not HIDE_VIDEO
                 print("[LiveSnapDebug] camera stream %s ('v' toggles)"
                       % ("HIDDEN -- landmarks and cubes only" if HIDE_VIDEO else "shown"))
+            if key == ord(" "):
+                # ⭐⭐ SPACE = ungrab + home: the fixed reference for a trial.
+                # ⚠ Only cubes actually HELD are homed -- a stray space bar must
+                # not rearrange a scene the operator is not touching.
+                _homed = state.home_held_cubes()
+                print("[LiveSnapDebug] %s"
+                      % ("HOMED %s -- released, centred, identity, %.2f m"
+                         % (", ".join(_homed), palm_geometry.REFERENCE_DEPTH_M)
+                         if _homed else
+                         "space: no cube is held, nothing to home"))
             if key == ord("m"):
                 # ⭐⭐ CYCLE THE VIEWPOINT OPTION LIVE (`V1`, 2026-08-28). Three
                 # separate live sessions were spent one-option-per-restart, and the

@@ -21,7 +21,7 @@ for each item is its queue dossier or spec section.
 | `U1`–`U12` | **unscheduled**; owner's call or later |
 | `IS1`–`IS4` | the **input system** |
 | `SEC1`–`SEC5` | the **security / robustness audit** |
-| `L1`, `F1`, `V1` | one-off rows: rotation **lag**, the **fingertip** transform, and the **camera mount** |
+| `L1`, `F1`, `V1`, `V2` | one-off rows: rotation **lag**, the **fingertip** transform, the **camera mount**, and the **yaw-lean trim** |
 | `A1`–`A10` | amendments/rules in the perception spec — **`A10` is the binding one** (measure or revert) |
 
 ## Mechanisms
@@ -34,6 +34,7 @@ for each item is its queue dossier or spec section.
 | **`horn-palm`** | the shipped **anchor**: Horn over `PALM_LANDMARKS = (0, 5, 9, 13, 17)` — wrist + four MCPs |
 | **chirality** | which way the palm faces / which hand it is, derived from **geometry** (`signed_palm_volume`), not from the label. `U7` |
 | **the camera mount** | where the camera sits relative to the user's EYES — `facing_user` (a desktop webcam, opposite side of the hands) vs `head_worn` (vision glasses, same side). `Resources/camera_mount.py`; every sign that depends on it derives from there. `V1` |
+| **swing / twist** | factoring a rotation as `q = q_swing ⊗ q_twist` about a chosen axis. Taken about the VERTICAL, the **twist is the yaw** and the **swing is the lean** — which is what `V2` trims |
 | **the yaw lean** | the open show-stopper: turning the hand like a page tips the object out of upright, ~27° at 60–90°. ⚠ **Never state it as "13° of axis deviation"** |
 | **grab-relative** | translation carries the object's own offset from the hand at grab time, rather than snapping it to the hand |
 | **the play volume** | the world-space region an object may occupy — the frustum inset by half a hand breadth (42.5 mm) |
