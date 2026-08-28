@@ -118,7 +118,9 @@ in the palm's frame. ⛔⛔ **The owner's live look HAPPENED THE SAME DAY AND RE
 → [`spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md`](spec/SLANT_TILT_AND_Z_RECONSTRUCTION.md)
 · [`../00_CORE/queue_notes/T6.md`](../00_CORE/queue_notes/T6.md)
 
-⭐⭐ **`V1` — THE CAMERA MOUNT — IS BUILT (2026-08-28), DEFAULT OFF, LIVE LOOK OWED.**
+✅✅ **`V1` — THE CAMERA MOUNT — IS SHIPPED (2026-08-28).** `CAMERA_MOUNT` defaults to
+`facing_user`; landmarks now default to HIDDEN in both tools (`'l'` shows them).
+⚠ The DEPTH direction and the size artifact were never separately judged.
 The owner reported yaw, pitch and z-translation all reading BACKWARDS. ⭐⭐⭐ The cause
 is that the shipped build is a **hybrid of two camera mountings**: the frame is
 mirrored before detection, so `x` is in the USER's frame while `z` is still in the

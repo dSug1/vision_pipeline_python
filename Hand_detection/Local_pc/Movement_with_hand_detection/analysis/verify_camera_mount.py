@@ -119,9 +119,14 @@ def main():
     src_default = io.open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                        "..", "Resources", "camera_mount.py"),
                           encoding="utf-8").read()
-    ok("DEFAULT MOUNT is legacy (no behaviour change until the live look)",
-       "MOUNT = _ENV if _ENV in MOUNTS else LEGACY" in src_default,
+    # ✅ SHIPPED 2026-08-28: the source default is now `facing_user`. `legacy` stays
+    # reachable as the diagnostic baseline that reproduces the old build bit-for-bit.
+    ok("DEFAULT MOUNT is facing_user (shipped)",
+       "MOUNT = _ENV if _ENV in MOUNTS else FACING_USER" in src_default,
        "effective MOUNT=%s" % CM.MOUNT)
+    ok("`legacy` still reachable as the A10/parity baseline",
+       CM.LEGACY in CM.MOUNTS and CM.user_view_quat((1.0, .2, .3, .4), CM.LEGACY)
+       == (1.0, .2, .3, .4))
 
     # -- 3. every option reverses EXACTLY TWO axes ---------------------------
     print("\n3. ⭐⭐ THE THREE VIEWPOINT OPTIONS -- each reverses EXACTLY TWO axes")

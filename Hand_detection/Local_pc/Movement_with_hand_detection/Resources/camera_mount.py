@@ -113,15 +113,20 @@ LEGACY = "legacy"
 
 MOUNTS = (FACING_USER, HEAD_WORN, LEGACY)
 
-# ⛔ THE DEFAULT IS `legacy` -- the build exactly as it shipped 2026-08-27 -- and it
-# stays there until the owner has looked at `facing_user` live in BOTH tools.
-# `METHOD.md`: automated green is necessary, not sufficient; a live look is what
-# closes a change. Flip this line, or set CAMERA_MOUNT in the environment.
+# ✅✅ SHIPPED 2026-08-28: the default is `facing_user`, which is the hardware this
+# game runs on today. The owner ran BOTH tools in BOTH mounts, settled the
+# orientation by live A/B, and said *"ship the build"*.
+#
+# ⛔ `legacy` is now a DIAGNOSTIC BASELINE ONLY -- `CAMERA_MOUNT=legacy` reproduces
+# the pre-2026-08-28 build bit-for-bit, which is what `A10` and `parity_replay`
+# compare against. It is not a deployment; it is the hybrid described in the header.
+# ⭐ `head_worn` is the glasses configuration and remains UNVALIDATED -- built from
+# the same geometry, never run on a worn camera.
 #
 # ⚠ A port replaces this env read with its own config read. It is the only
 # non-pure line in the module and it runs exactly once, at import.
 _ENV = os.environ.get("CAMERA_MOUNT", "").strip().lower()
-MOUNT = _ENV if _ENV in MOUNTS else LEGACY
+MOUNT = _ENV if _ENV in MOUNTS else FACING_USER
 
 
 def _m(mount):

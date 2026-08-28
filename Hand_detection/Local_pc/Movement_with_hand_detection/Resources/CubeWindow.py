@@ -272,11 +272,18 @@ class CubeWindow:
         # ⚠ Per-JOINT depth, one list per hand. Absent falls back to the hand's
         # single depth, which is the coarser object-level behaviour rather than none.
         self._hand_depths_per_landmark: Dict[str, list] = {}
-        # ⭐ Owner, 2026-08-27. Same key ('l') and same default (ON) as the debug
-        # tool's, so the habit transfers. ⛔ DISPLAY ONLY -- the landmarks are still
-        # received, still drive every decision, and are still recorded; this changes
-        # nothing but whether they are painted.
-        self.show_landmarks = True
+        # ⭐ Owner, 2026-08-27. Same key ('l') and same default as the debug tool's,
+        # so the habit transfers. ⛔ DISPLAY ONLY -- the landmarks are still received,
+        # still drive every decision, and are still recorded; this changes nothing
+        # but whether they are painted.
+        # ⚠ DEFAULT FLIPPED TO **HIDDEN** 2026-08-28 (owner: *"for the moment, hide the
+        # landmarks in both debug and production modes"*). ⭐ *"For the moment"* -- the
+        # drawing is intact and `'l'` still shows it; only the starting state moved.
+        # ⛔ STILL DISPLAY ONLY: the landmarks are received, drive every decision and are
+        # still recorded. `R1`'s occlusion work is unaffected -- what a hidden skeleton
+        # cannot do is reveal an occlusion defect by eye, which is why this is a default
+        # and not a removal.
+        self.show_landmarks = False
         # ⚠ Rebuilt every frame by `_draw_object_3d`. A stale silhouette would
         # occlude against where an object USED to be.
         self._silhouettes = []

@@ -815,10 +815,18 @@ def _arm_title(state):
 HIDE_VIDEO = False
 
 # ⭐ The hand skeleton, on or off. Owner, 2026-08-27. Same key ('l') and the same
-# default (ON) as production's, so the habit transfers between the two tools.
+# default as production's, so the habit transfers between the two tools.
 # ⛔ DISPLAY ONLY, like `HIDE_VIDEO`: detection, recording and every estimator are
 # upstream of the draw and cannot see this.
-SHOW_LANDMARKS = True
+#
+# ⚠ DEFAULT FLIPPED TO **HIDDEN** 2026-08-28 (owner: *"for the moment, hide the
+# landmarks in both debug and production modes"*). ⭐ *"For the moment"* -- the
+# drawing is intact and `'l'` still shows it; only the starting state moved.
+# ⛔ STILL DISPLAY ONLY: the landmarks are received, drive every decision and are
+# still recorded. `R1`'s occlusion work is unaffected -- what a hidden skeleton
+# cannot do is reveal an occlusion defect by eye, which is why this is a default
+# and not a removal.
+SHOW_LANDMARKS = False
 
 # ⚠ Deliberately the SAME colours production uses, so a hand looks the same in both
 # tools. They used to be MediaPipe's default style here and custom there.
@@ -2950,6 +2958,11 @@ def main():
                         help="Start with the hand skeleton hidden. Press 'l' to "
                              "toggle it live. Display only -- detection, recording "
                              "and every estimator are unaffected.")
+    parser.add_argument("--landmarks", dest="landmarks", action="store_true",
+                        # ASCII ONLY IN HELP TEXT -- see the note on --f1-rig.
+                        help="Start with the hand skeleton SHOWN. The default "
+                             "is hidden since 2026-08-28; --no-landmarks is now "
+                             "a no-op, kept so old command lines still run.")
     parser.add_argument("--no-video", dest="no_video", action="store_true",
                         # ASCII ONLY IN HELP TEXT -- see the note on --f1-rig.
                         help="Draw the landmarks and cubes on BLACK instead of the "
@@ -3126,6 +3139,8 @@ def main():
             globals()["HIDE_VIDEO"] = True
         if args.no_landmarks:
             globals()["SHOW_LANDMARKS"] = False
+        if args.landmarks:
+            globals()["SHOW_LANDMARKS"] = True
         print("[LiveSnapDebug] camera stream %s -- press 'v' to toggle."
               % ("HIDDEN (landmarks + cubes on black)" if HIDE_VIDEO else "shown"))
         print("[LiveSnapDebug] hand landmarks %s -- press 'l' to toggle."
