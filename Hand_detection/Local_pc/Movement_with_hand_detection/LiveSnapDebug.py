@@ -63,6 +63,7 @@ from Resources import palm_slant_axis as _SlantAxis  # noqa: E402  (T6 axis corr
 from Resources import palm_slant_pose as _SlantPose  # noqa: E402  (T6 halves 1+2)
 from Resources import depth_order  # noqa: E402  (the game's one occlusion rule, N6)
 from Resources import hand_anatomy  # noqa: E402  (HAND_CONNECTIONS, shared with production)
+from Resources import object_assembly  # noqa: E402  (AS3/AS4, one copy, both tools)
 
 # ⭐⭐ WHAT PRODUCTION ACTUALLY RUNS, since 2026-08-17.
 # `Resources/HandsTriggeredActions.py` now drives cube orientation with Horn
@@ -710,7 +711,14 @@ def _arm_title(state):
 # ⭐ Why it is useful: on a video background the eye tracks the HAND and forgives
 # the cube. On black there is nothing to compare against but the cube's own motion,
 # which is what a jitter or lean judgement actually needs.
-HIDE_VIDEO = False
+#
+# ⭐⭐ DEFAULT FLIPPED TO HIDDEN, owner 2026-08-28, during the `AS7` preview work.
+# ⚠ Same shape as `V1`'s landmark change: the drawing is intact, `'v'` still
+# toggles it, and `--video` starts it on. Nothing was removed.
+# ⭐ And it matters more than it did: the mate preview's whole job is to make a
+# DEPTH relationship readable, and the camera picture is the one thing on screen
+# whose own depth cues (a moving hand, a lit room) compete with it.
+HIDE_VIDEO = True
 
 # ⭐ The hand skeleton, on or off. Owner, 2026-08-27. Same key ('l') and the same
 # default as production's, so the habit transfers between the two tools.
@@ -880,8 +888,13 @@ TRANSLATION_EPSILON_PX = 5.0
 # request: large cube's every dimension is 2x the small cube's) -- keeping
 # this debug tool's visual an accurate stand-in for what production shows,
 # per its own "kept in logic-sync with the production module" discipline.
-CUBE_SIZE_SMALL = 40
-CUBE_SIZE_LARGE = CUBE_SIZE_SMALL * 2
+# ⭐⭐ SAME DIMENSIONS since 2026-08-28 (owner: *"make the 2 cubes the same
+# dimensions"*). ⚠ The names are HISTORICAL LABELS now, not descriptions — kept
+# because they are on the wire, in 415 recordings and in every harness.
+# ⛔ N6: production's `CubeWindow.DEFAULT_CUBE_SIZE` must carry the same number, and
+# `parity_replay` is what proves it.
+CUBE_SIZE_SMALL = 80
+CUBE_SIZE_LARGE = CUBE_SIZE_SMALL
 # ⛔ IMPORTED, NEVER COPIED (`CONSTRAINTS` §4 / N6). This was a SECOND copy of a
 # tuning constant until 2026-08-26 -- both tools happened to read 1.5, so the
 # duplication was invisible right up until the moment one of them was tuned.
@@ -899,6 +912,18 @@ CUBE_ALPHA = 0.55  # transparency of the cube overlay, so the video stays visibl
 SNAP_BORDER_COLOR = (255, 255, 255)
 SNAP_BORDER_WIDTH = 3
 CUBE_EDGE_COLOR = (20, 20, 20)  # normal (unsnapped) face-outline color, BGR
+
+# ⭐ AS5 -- the mate-connector colours. ⚠⚠ BGR HERE, RGB IN `CubeWindow`: this tool
+# draws with cv2 and production with pygame, so the same colour is written with its
+# channels reversed. These are `CubeWindow`'s three, channel-swapped -- grey when
+# idle, AMBER when a mate is within capture but not yet engaged, GREEN when mated.
+# ⛔ Not shared with production as constants for exactly that reason; the RULE that
+# picks between them is shared, and lives in `object_assembly.step`.
+CONNECTOR_IDLE_COLOR = (210, 210, 210)
+CONNECTOR_CANDIDATE_COLOR = (40, 190, 255)
+CONNECTOR_MATED_COLOR = (120, 230, 60)
+CONNECTOR_DOT_PX = 5
+CONNECTOR_NORMAL_FRACTION = 0.45
 
 HAND_POINT_COLOR = {"Left": (255, 120, 0), "Right": (0, 0, 255)}
 
@@ -1102,6 +1127,21 @@ class Cube:
     # baseline frozen at the grab so the grab frame is continuous in Z as well.
     depth_m: float = palm_geometry.REFERENCE_DEPTH_M
     grab_depth_m: Optional[float] = None
+    # ⭐⭐ AS1 -- the MATE CONNECTORS, in the mesh's local frame. Mirrors
+    # `CubeWindow.Cube`; the maths that reads them is `Resources/mate_connector.py`
+    # and there is exactly one copy of it (`N6`).
+    connectors: Tuple[object, ...] = ()
+    mate_state: str = ""            # display only (AS5): "", "candidate", "mated"
+    # ⭐⭐ AS7 -- the ghost + drop line for the best candidate mate, or None.
+    # Display only; mirrors `CubeWindow.Cube.mate_preview`.
+    mate_preview: Optional[object] = None
+    # Display only: "", "driver" or "follower" this frame (AS3's enforcement).
+    mate_role: str = ""
+    # ⭐⭐ Set by the assembly step when the mate hands this object BACK to its hand.
+    # The hand loop re-seats the depth baseline on the next frame it drives it --
+    # without that the object teleports, because its baseline went stale while the
+    # mate owned its depth (measured 18 cm, 2026-08-28).
+    rebaseline_depth: bool = False
 
 
 # ⛔⛔ `HandOrientationFilter` WAS REMOVED HERE (owner, 2026-08-24). Archived whole
@@ -1116,6 +1156,14 @@ class Cube:
 class CubeState:
     window_size: Tuple[int, int]
     cubes: Dict[str, Cube] = field(default_factory=dict)
+    # ⭐⭐ AS4 -- the object tree. `None` until `__post_init__` builds it; empty
+    # means nothing is assembled. Mirrors `CubeWindow.assembly`.
+    assembly: Optional[object] = None
+    # ⭐⭐ AS6 -- which (object, hand) pairs may not re-grab yet, after the object
+    # was released into a mate. Per ARM, because each arm has its own cubes and so
+    # its own grabs; production keeps one at module level, where its session state
+    # lives. The CLASS is shared (`N6`).
+    regrab_latch: Optional[object] = None
     # Thumb-outward snap rule state (§13.6) — see update_hands' docstring.
     last_known_thumb_outward: Dict[str, bool] = field(default_factory=lambda: {h: False for h in TRACKED_HANDS})
     # ⭐ Palm CONDITIONING (0-1) per hand, for the on-screen diagnostic
@@ -1126,6 +1174,12 @@ class CubeState:
     # kept because it tells the operator when a degenerate palm is the reason the
     # cube is misbehaving, which nothing else on screen says.
     last_hand_reliability_alpha: Dict[str, float] = field(default_factory=lambda: {h: 1.0 for h in TRACKED_HANDS})
+    # ⭐⭐ The GRIP POINT and DEPTH the snap test used this frame, per hand — stashed
+    # for the grip marker. ⛔ Captured, never recomputed at draw time: a second
+    # derivation of the same quantity is what made four harnesses report clean on
+    # takes the owner had watched fail.
+    last_grip_px: Dict[str, object] = field(default_factory=lambda: {h: None for h in TRACKED_HANDS})
+    last_grip_depth_m: Dict[str, object] = field(default_factory=lambda: {h: None for h in TRACKED_HANDS})
     # §16.15: per-hand state for an optional least-squares rotation estimator.
     # Reset on tracking loss -- never fit against a dead track.
     hand_rotation_states: Dict[str, object] = field(default_factory=lambda: {h: None for h in TRACKED_HANDS})
@@ -1239,21 +1293,51 @@ class CubeState:
                 for h in TRACKED_HANDS
             }
         if not self.cubes:
+            _large_mesh = _make_cube_mesh(FACE_COLOR_YELLOW, FACE_COLOR_VIOLET, FACE_COLOR_TURQUOISE)
+            _small_mesh = _make_cube_mesh(FACE_COLOR_GREEN, FACE_COLOR_RED, FACE_COLOR_BLUE)
             self.cubes = {
                 "large": Cube(
-                    mesh=_make_cube_mesh(FACE_COLOR_YELLOW, FACE_COLOR_VIOLET, FACE_COLOR_TURQUOISE),
+                    mesh=_large_mesh,
                     size=CUBE_SIZE_LARGE,
                     position=self._centered_position(CUBE_SIZE_LARGE),
+                    # ⭐ ONE connector each (AS1), on the `+X` face: the large
+                    # cube's YELLOW face against the small cube's GREEN one.
+                    # N6: built by the same factory production uses.
+                    connectors=object_assembly.cube_face_connectors(
+                        _large_mesh.vertices, _large_mesh.faces),
                 ),
                 "small": Cube(
-                    mesh=_make_cube_mesh(FACE_COLOR_GREEN, FACE_COLOR_RED, FACE_COLOR_BLUE),
+                    mesh=_small_mesh,
                     size=CUBE_SIZE_SMALL,
                     position=self._centered_position(CUBE_SIZE_SMALL),
+                    connectors=object_assembly.cube_face_connectors(
+                        _small_mesh.vertices, _small_mesh.faces),
                 ),
             }
+        if self.assembly is None:
+            self.assembly = object_assembly.MC.Assembly()   # ⭐ AS4, the object tree
+        if self.regrab_latch is None:
+            self.regrab_latch = object_assembly.RegrabLatch()   # ⭐ AS6
+        # ⛔ Homed only now that `self.cubes` exists — the layout needs to know how
+        # many objects there are. They must NOT start on top of each other.
+        for _name in self.cubes:
+            self.set_target_center(_name, self.home_center(_name))
 
     def _centered_position(self, size: int) -> Tuple[float, float]:
         return ((self.window_size[0] - size) / 2, (self.window_size[1] - size) / 2)
+
+    def home_center(self, name: str) -> Tuple[float, float]:
+        """⭐⭐ Where object `name` STARTS — a row about the centre, not the centre.
+
+        ⛔ Both cubes used to start at the same point, interpenetrating. Harmless
+        while each had one connector; once `AS1` went to six faces it meant an
+        ordinary drag mated on frame 12 and `AS6` took the cube out of the
+        player's hand. N6: the separation is `object_assembly`'s, so both tools
+        cannot disagree, and it is derived from the PREVIEW radius, not chosen."""
+        names = list(self.cubes)
+        index = names.index(name) if name in names else 0
+        return object_assembly.home_center_px(index, len(names) or 1,
+                                              self.window_size)
 
     def projected_size(self, name: str) -> float:
         """The named object's on-screen extent at its CURRENT depth (4.2).
@@ -1337,16 +1421,48 @@ class CubeState:
         self.release_cube(name)                     # clears every grab baseline
         cube.orientation = IDENTITY_QUATERNION
         cube.depth_m = palm_geometry.REFERENCE_DEPTH_M
-        w, h = self.window_size
-        self.set_target_center(name, (w / 2.0, h / 2.0))
+        # ⛔ ITS OWN home slot, not the window centre: homing both cubes to the
+        # middle puts them inside each other, which is the configuration that made
+        # an ordinary drag mate on frame 12 and take the cube out of the hand.
+        # ⚠ Break any mate it is in first — a homed cube that is still a child
+        # would be dragged straight back by its parent on the next frame.
+        if self.assembly is not None:
+            # ⚠ `cooldown=False`: homing MOVES the object to its own slot in the
+            # same breath, so the pair parts by construction. A cooldown here would
+            # only refuse a mate the operator might want immediately afterwards.
+            self.assembly.unlink(name, cooldown=False)
+            for _child in list(self.assembly.children_of(name)):
+                self.assembly.unlink(_child, cooldown=False)
+        self.set_target_center(name, self.home_center(name))
 
     def home_held_cubes(self) -> list:
-        """Home every cube currently held. Returns the names homed, so the caller
-        can say nothing happened rather than leave the operator guessing."""
-        held = [n for n, c in self.cubes.items() if c.owner is not None]
-        for n in held:
+        """Home every cube the operator has acted on — HELD **or ASSEMBLED**.
+
+        Returns the names homed, so the caller can say nothing happened rather than
+        leave the operator guessing.
+
+        ⚠⚠ **ASSEMBLED WAS ADDED 2026-08-28, AND IT IS A WIDENING OF A DELIBERATE
+        RULE.** The rule was *"only cubes actually HELD are homed — a stray space
+        bar must not rearrange a scene the operator is not touching"*, and that
+        reasoning still stands. What changed underneath it is `AS6`: a mate now
+        takes the cube OUT of the hand, so after one the scene contains a cube the
+        operator very much did act on and **nothing is held at all**. SPACE became a
+        no-op exactly when it was most needed — observed live, *"space: no cube is
+        held, nothing to home"*, twice in one session.
+
+        ⭐ A mated cube is not "a scene the operator is not touching": it is there
+        *because* they put it there. Free-floating cubes nobody has touched are
+        still left alone, which is the part of the rule that was load-bearing.
+        """
+        touched = [n for n, c in self.cubes.items() if c.owner is not None]
+        if self.assembly is not None:
+            for n in self.cubes:
+                if n not in touched and (self.assembly.parent_of(n)
+                                         or self.assembly.children_of(n)):
+                    touched.append(n)
+        for n in touched:
             self.home_cube(n)
-        return held
+        return touched
 
     def set_target_center(self, name: str, center: Tuple[float, float]) -> None:
         """⭐⭐ U9 (N6, mirrors `CubeWindow.set_target_center`): confine the object
@@ -1643,7 +1759,7 @@ def _make_continuous(q: Quat, reference: Quat) -> Quat:
 
 
 def _try_snap(state: CubeState, handedness: str, hand_pos: Tuple[float, float],
-              hand_depth_m=None, exclude=frozenset()) -> Optional[str]:
+              hand_depth_m=None, exclude=frozenset(), now_ms=None) -> Optional[str]:
     """Grab radius scales to EACH candidate cube's OWN size (2026-08-01,
     matching production's CubeWindow.py fix) -- a single shared radius
     stopped making sense once the two cubes have different sizes.
@@ -1667,6 +1783,18 @@ def _try_snap(state: CubeState, handedness: str, hand_pos: Tuple[float, float],
         ) * GRAB_RADIUS_MULTIPLIER
         cx, cy = state.cube_center(name)
         dist = math.hypot(hand_pos[0] - cx, hand_pos[1] - cy)
+        # ⭐⭐ AS6 -- THE RE-GRAB LATCH (N6: the same rule, the same class, the same
+        # point in the loop as production). Consulted BEFORE the radius test,
+        # because the far case is exactly the one that clears it. Without it the
+        # hand that just placed an object into a mate re-takes it on the next
+        # frame and the mate breaks: mate, release, re-grab, break, repeat.
+        _ok = _owner_key(handedness, state)
+        if state.regrab_latch is not None and state.regrab_latch.blocked(name, _ok):
+            if state.regrab_latch.observe(
+                    name, _ok,
+                    dist > grab_radius * object_assembly.REGRAB_RELEASE_FACTOR,
+                    now_ms):
+                continue
         if dist > grab_radius:
             continue
         if hand_depth_m is not None and \
@@ -2183,6 +2311,13 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
     # the same order.
     _bound = _bind_track_state(state, now_ms)
 
+    # ⭐⭐ AS3 -- the HAND-DRIVEN DESIRE, captured before the play-volume clamp.
+    # N6: production keeps the identical dict at the identical point, for the
+    # identical reason -- the residual that breaks a mate must not be able to see
+    # the clamp, or an object pinned at a wall drops whatever it is holding for a
+    # reason no player can see (owner decision, 2026-08-28).
+    _mate_desire: Dict[str, dict] = {}
+
     for handedness in TRACKED_HANDS:
         data = hand_data_by_hand[handedness]
         t = state.hand_state_trackers[handedness]
@@ -2402,6 +2537,10 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
         # caller that predates 4.2 -> pre-4.2 2D gating, deliberately.
         _hdepth = data.get("hand_depth")
         _hand_depth_m = _hdepth[0] if _hdepth else None
+        # ⭐ Stash it for the grip marker: the SAME depth the 3D grab gate compares
+        # against `cube.depth_m`, so a ring that matches an object's apparent size
+        # means the hand is genuinely within reach of it.
+        state.last_grip_depth_m[handedness] = _hand_depth_m
         _hand_depth_valid = bool(_hdepth[1]) if _hdepth else None
 
         # ⭐ handinput: capture the pose this arm produced, before it reaches a
@@ -2440,7 +2579,8 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
             if can_snap:
                 owned = _try_snap(state, handedness, hand_pos,
                                   hand_depth_m=_hand_depth_m,
-                                  exclude=released_this_frame)
+                                  exclude=released_this_frame,
+                                  now_ms=now_ms)
                 if owned is not None:
                     cube = state.cubes[owned]
                     # 4.2: freeze the Z baseline pair with the others, so the
@@ -2524,6 +2664,28 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
             # depth holds too -- B8 measured every velocity fit losing to "hold
             # the last value", so there is nothing to extrapolate with.
             if cube.grab_depth_m is not None:
+                # ⭐⭐ THE MATE JUST HANDED THIS OBJECT BACK -- re-seat before driving.
+                # While it was a FOLLOWER the mate owned its depth and this baseline
+                # went stale; resuming the ratio drive from it teleports the object
+                # (measured 18 cm). Re-anchoring here, where the grab-time capture
+                # already lives, makes the hand-over continuous: ratio 1.0 against
+                # the object's CURRENT depth, so nothing moves on the changeover.
+                if getattr(cube, "rebaseline_depth", False):
+                    cube.grab_depth_m = cube.depth_m
+                    _rb_grip = fingertips.grip_depth_m(
+                        _hand_depth_m, data.get("world_landmarks"))
+                    if (fingertips.GRIP_ALIGN_DEPTH_AT_GRAB and _use_tips
+                            and _rb_grip is not None):
+                        cube.grab_hand_depth_m = _rb_grip
+                        cube.grab_depth_offset_m = cube.depth_m - _rb_grip
+                    else:
+                        cube.grab_hand_depth_m = None
+                        cube.grab_depth_offset_m = None
+                    # ⛔ The RATIO baseline is stale too, and re-anchoring without
+                    # it would still jump: depth = anchor x ratio, and the ratio is
+                    # measured against the hand's span at the ORIGINAL grab.
+                    state.depth_ratio_trackers[handedness].reset()
+                    cube.rebaseline_depth = False
                 # ⭐ The shared, clamped frame interval -- one definition, and the
                 # estimator never asks what time it is (`CONSTRAINTS` §2).
                 _ratio, _ratio_valid = state.depth_ratio_trackers[handedness].update(
@@ -2540,8 +2702,10 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                         _anchor = cube.grab_hand_depth_m + cube.grab_depth_offset_m
                     # ⚠ Mount-directed, units unchanged. N6: the SAME call
                     # production makes, at the same point.
-                    cube.depth_m = palm_geometry.clamp_depth(
-                        _CMount.depth_from_ratio(_anchor, _ratio))
+                    _wanted_depth = _CMount.depth_from_ratio(_anchor, _ratio)
+                    # ⭐ AS3: the UNCLAMPED wish, stashed before the wall applies.
+                    _mate_desire.setdefault(owned, {})["depth_m"] = _wanted_depth
+                    cube.depth_m = palm_geometry.clamp_depth(_wanted_depth)
             if anchor is not None:
                 new_center = anchor.apply(cube.grab_anchor_state,
                                           data["pixel_landmarks"],
@@ -2600,6 +2764,8 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                 # 4.2: the CENTRE is what the play volume clamps; `position` is
                 # derived from it with the projected extent, so an object moving
                 # in Z grows about its own centre, not its corner.
+                # ⭐ AS3: the UNCLAMPED centre, same reason as the depth above.
+                _mate_desire.setdefault(owned, {})["center_px"] = new_center
                 state.set_target_center(owned, new_center)
             # ⭐⭐ F1 STEP 4 -- the fingertip trim, per arm. Identical maths to
             # production; `parity_replay` is what keeps them identical.
@@ -2630,6 +2796,19 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
             state.last_target_quat = target_quat
             cube.orientation = _quat_slerp(cube.orientation, target_quat,
                                            _slerp_factor_for(state, now_ms, handedness))
+
+    # ⭐⭐ AS3/AS4 -- ONE FRAME OF ASSEMBLY. N6: the SAME call production makes, at
+    # the same point in the frame.
+    # ⛔ AFTER the per-hand loop, because a mate is a relationship BETWEEN objects:
+    # inside it, the second cube would be judged against the first cube's PREVIOUS
+    # frame. ⛔ BEFORE the draw, so the screen shows the enforced pose.
+    # ⭐ AS6: `release` + `latch` are what make the mate survive a two-handed
+    # assembly. N6: the identical arguments production passes.
+    if state.assembly is not None:
+        object_assembly.step(state.cubes, state.assembly, state.window_size,
+                             now_ms, desires=_mate_desire,
+                             release=state.release_cube,
+                             latch=state.regrab_latch)
 
     # ⚠ AFTER the slerp, never before it: `_slerp_factor_for` needs the PREVIOUS
     # frame's clock to form dt, and stamping it earlier would make dt zero and the
@@ -2672,6 +2851,102 @@ def _draw_hand_labels(frame, normalized_landmarks, handedness, thumb_outward,
         color = (0, 140, 255) if reliability_alpha > 0.0 else (0, 0, 255)
         cv2.putText(frame, f"{_shown}: reliability {reliability_alpha:.2f}", (text_x, max(text_y, 20) + 24),
                     cv2.FONT_HERSHEY_DUPLEX, 0.6, color, 2, cv2.LINE_AA)
+
+
+GRIP_MARKER_COLOR = (255, 255, 255)     # BGR here — see the connector colours' note
+GRIP_MARKER_WIDTH = 2
+GRIP_MARKER_DOT_PX = 3
+
+
+def _draw_grip_markers(frame, state: CubeState) -> None:
+    """⭐⭐ One ring per hand at the point that decides a grab, sized by depth.
+
+    > **Owner, 2026-08-28:** *"instead of all the landmarks, draw a circle to show
+    > the center of the hand (where the grab would lock) and scale the center to
+    > display the z position. this will help me figure out where are my hands."*
+
+    ⛔ Position and depth are BOTH captured by `update_hands`, never recomputed
+    here — the ring depicts the rule, so it must not be able to disagree with it.
+
+    ⭐⭐ The radius runs through `projected_size_px` on a real 85 mm, i.e. the
+    objects' own law, so **two things that look the same size are at the same
+    depth**. And the depth is the one the 3D grab gate uses, so a ring matching an
+    object's apparent size means the hand is within reach of it.
+
+    ⚠ A hand with no depth this frame gets a DASHED ring at the reference size:
+    "I don't know where this hand is" is information; a missing ring reads as
+    "no hand".
+    """
+    # ⭐ The sign comes from the ONE place that knows where the camera is.
+    near_small = _CMount.near_camera_reads_small()
+    for handedness, point in state.last_grip_px.items():
+        if not point:
+            continue
+        depth = state.last_grip_depth_m.get(handedness)
+        diameter = palm_geometry.grip_marker_diameter_px(
+            depth, state.window_size, near_small)
+        if diameter is None:
+            continue
+        radius = max(3, int(round(diameter / 2.0)))
+        centre = (int(round(point[0])), int(round(point[1])))
+        if depth is None:
+            for k in range(0, 360, 30):
+                a0, a1 = math.radians(k), math.radians(k + 16)
+                cv2.line(frame,
+                         (centre[0] + int(radius * math.cos(a0)),
+                          centre[1] + int(radius * math.sin(a0))),
+                         (centre[0] + int(radius * math.cos(a1)),
+                          centre[1] + int(radius * math.sin(a1))),
+                         GRIP_MARKER_COLOR, GRIP_MARKER_WIDTH, cv2.LINE_AA)
+        else:
+            cv2.circle(frame, centre, radius, GRIP_MARKER_COLOR,
+                       GRIP_MARKER_WIDTH, cv2.LINE_AA)
+            # ⭐ DEBUG TOOL ONLY: the number behind the size. Production is the
+            # game and shows none -- this is a measurement aid, same standing as
+            # `home_cube`.
+            cv2.putText(frame, "%.2f m" % depth,
+                        (centre[0] + radius + 6, centre[1] + 4),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, GRIP_MARKER_COLOR, 1,
+                        cv2.LINE_AA)
+        cv2.circle(frame, centre, GRIP_MARKER_DOT_PX, GRIP_MARKER_COLOR, -1, cv2.LINE_AA)
+
+
+def _draw_z_hud(frame, state: CubeState) -> None:
+    """⭐⭐ THE Z READOUT — every quantity that decides an object's depth, on screen.
+
+    ⛔ DEBUG TOOL ONLY, same standing as `home_cube`: production is the game.
+
+    ⚠⚠ **IT EXISTS BECAUSE GUESSING FAILED.** A z defect was reported three times
+    and reproduced offline zero times — every simulation showed depth tracking
+    correctly through mate, release and re-grab, because a simulation drives the
+    quantities directly and the product drives them through a ratio, an anchor and
+    a mate. `METHOD` is explicit about this: print the aggregation, not just the
+    value, and suspect the instrument. There was no instrument.
+
+    Per object:  depth · who owns it · its MATE ROLE · whether it has a grab anchor.
+    Per hand:    the grip depth the 3D grab gate actually compares.
+
+    ⭐ The row that matters is `role`: a **follower** is placed BY the mate, so its
+    depth is NOT its own however hard the hand pushes — which is the one mechanism
+    that would make z look dead while everything else behaves.
+    """
+    y = 18
+    for name, cube in state.cubes.items():
+        anchor = "anchor" if cube.grab_depth_m is not None else "NO-ANCHOR"
+        role = cube.mate_role or "free"
+        cv2.putText(frame,
+                    "%-6s z=%.3f  own=%-8s %-8s %s"
+                    % (name, cube.depth_m, str(cube.owner)[:8], role, anchor),
+                    (8, y), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (200, 255, 200), 1,
+                    cv2.LINE_AA)
+        y += 16
+    for handedness, depth in state.last_grip_depth_m.items():
+        cv2.putText(frame,
+                    "%-6s grip z=%s" % (handedness,
+                                        "--" if depth is None else "%.3f" % depth),
+                    (8, y), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (200, 220, 255), 1,
+                    cv2.LINE_AA)
+        y += 16
 
 
 def _draw_hand_occluded(frame, pts, depths, occluders):
@@ -2750,6 +3025,97 @@ def _draw_cube_3d(overlay, cube: Cube, screen_center: Tuple[float, float], sink=
         if sink is not None:
             sink.extend((float(x), float(y)) for x, y in pts)
 
+    # ⭐⭐ AS5 -- THE MATE CONNECTORS. N6: same rule, same colours, same whisker as
+    # `CubeWindow._draw_connectors`; only the drawing primitives differ.
+    # ⭐ The whisker is the connector's OUTWARD NORMAL, and drawing it is the
+    # cheapest guard in the assembly build: the anti-parallel convention is
+    # invisible in code and immediately obvious on screen.
+    if getattr(cube, "connectors", None):
+        color = {"mated": CONNECTOR_MATED_COLOR,
+                 "candidate": CONNECTOR_CANDIDATE_COLOR}.get(
+                     getattr(cube, "mate_state", ""), CONNECTOR_IDLE_COLOR)
+        for conn in cube.connectors:
+            tip = tuple(conn.position[k] + conn.normal[k] * CONNECTOR_NORMAL_FRACTION
+                        for k in range(3))
+            marks = []
+            for v in (conn.position, tip):
+                local = (v[0] * half, v[1] * half, v[2] * half)
+                rx, ry, rz = _quat_rotate_vector(cube.orientation, local)
+                denom = camera_distance + rz
+                if denom <= 1e-6:
+                    marks = []
+                    break
+                s = camera_distance / denom
+                marks.append((int(cx + rx * s), int(cy + ry * s)))
+            if len(marks) != 2:
+                continue
+            cv2.line(overlay, marks[0], marks[1], color, 2, cv2.LINE_AA)
+            cv2.circle(overlay, marks[0], CONNECTOR_DOT_PX, color, -1, cv2.LINE_AA)
+            cv2.circle(overlay, marks[0], CONNECTOR_DOT_PX, (20, 20, 20), 1, cv2.LINE_AA)
+
+    _draw_mate_preview(overlay, cube)
+
+
+def _draw_mate_preview(overlay, cube: Cube) -> None:
+    """⭐⭐ AS7 -- the GHOST and the DROP LINE (N6: the same rule and the same
+    colours as `CubeWindow._draw_mate_preview`; only the primitives differ).
+
+        ghost      -> where would it land, and turned which way?
+        drop line  -> how far is there still to go?   <- the half z hides
+
+    ⛔ The ghost pose comes from `mate_connector.snap_pose`, the same function that
+    would actually place it, so the aid cannot contradict the mate.
+    ⚠ AMBER while out of reach, GREEN the moment only the dwell is left."""
+    preview = getattr(cube, "mate_preview", None)
+    if preview is None:
+        return
+    color = CONNECTOR_MATED_COLOR if preview.reachable else CONNECTOR_CANDIDATE_COLOR
+
+    if preview.from_px and preview.to_px:
+        _draw_dashed_line(overlay, preview.from_px, preview.to_px, color)
+
+    size = palm_geometry.projected_size_px(cube.size, preview.depth_m)
+    half = size / 2.0
+    camera_distance = size * CUBE_PERSPECTIVE_DISTANCE_RATIO
+    gx, gy = preview.center_px
+    projected = []
+    for v in cube.mesh.vertices:
+        local = (v[0] * half, v[1] * half, v[2] * half)
+        rx, ry, rz = _quat_rotate_vector(preview.orientation, local)
+        denom = camera_distance + rz
+        if denom <= 1e-6:
+            return
+        s = camera_distance / denom
+        projected.append(((gx + rx * s, gy + ry * s), rz))
+
+    # ⚠ Only the OUTLINE here, where production fills translucently. This tool
+    # already alpha-blends the whole overlay, so a filled ghost would come out at
+    # the same weight as a real cube and the two would be hard to tell apart --
+    # the very confusion the ghost exists to remove.
+    for face in cube.mesh.faces:
+        rn = _quat_rotate_vector(preview.orientation, face.normal)
+        if rn[2] >= 0:
+            continue
+        pts = np.array([[int(x), int(y)] for x, y in
+                        (projected[i][0] for i in face.vertex_indices)], dtype=np.int32)
+        cv2.polylines(overlay, [pts], True, color, 2, cv2.LINE_AA)
+
+
+def _draw_dashed_line(img, a, b, color, dash=8, gap=6) -> None:
+    """⚠ Dashed, not solid: a solid line reads as a link that already exists, and
+    the point of the preview is that it does not yet."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length = math.hypot(dx, dy)
+    if length < 1.0:
+        return
+    ux, uy = dx / length, dy / length
+    pos = 0.0
+    while pos < length:
+        end = min(pos + dash, length)
+        cv2.line(img, (int(a[0] + ux * pos), int(a[1] + uy * pos)),
+                 (int(a[0] + ux * end), int(a[1] + uy * end)), color, 2, cv2.LINE_AA)
+        pos = end + gap
+
 
 def _draw_cubes(frame, state: CubeState):
     """Draws both 3D cubes onto a copy of the frame, alpha-blends once (per
@@ -2775,6 +3141,7 @@ def _draw_cubes(frame, state: CubeState):
     # geometry -- so production and this tool now run the SAME test instead of two
     # implementations that could disagree.
     sils = []
+    held_hulls = []          # (cube, hull) for the held-object contour, drawn last
     # ⛔ AND THE CUBES ARE NOW SORTED AMONG THEMSELVES. They used to be painted in
     # dict order, so the two cubes did not occlude each other at all -- whichever
     # happened to be second won, regardless of which was actually nearer.
@@ -2783,6 +3150,8 @@ def _draw_cubes(frame, state: CubeState):
         # 4.2: the PROJECTED extent, everywhere. `position` is the top-left of
         # what is drawn, so using `size` here would offset the centre at any
         # depth other than the reference one.
+        # ⚠ The held-object outline is drawn from these same hulls, after the
+        # alpha blend -- see the loop below.
         size = state.projected_size_of(cube)
         screen_center = (cube.position[0] + size / 2, cube.position[1] + size / 2)
         near_px = []
@@ -2792,11 +3161,13 @@ def _draw_cubes(frame, state: CubeState):
             # solid, and treating its centre as the occluding plane left the whole
             # near half transparent -- which is what buried the fingertips inside
             # the object they were holding.
-            sils.append((depth_order.convex_hull(pts_for_hull),
+            _hull = depth_order.convex_hull(pts_for_hull)
+            sils.append((_hull,
                          depth_order.near_face_depth(
                              cube.depth_m,
                              min(near_px) if near_px else None,
                              palm_geometry.focal_px(frame.shape[1::-1]))))
+            held_hulls.append((cube, _hull))
     cv2.addWeighted(overlay, CUBE_ALPHA, frame, 1 - CUBE_ALPHA, 0, frame)
     # ⚠ RESTORED 2026-08-25: this loop was removed as COLLATERAL by `febd3fa`,
     # the commit that stripped T6d's A/B rig out of this tool. It sat directly
@@ -2806,11 +3177,18 @@ def _draw_cubes(frame, state: CubeState):
     # live look, not by any harness: production's CubeWindow.py kept its
     # equivalent (edge_color/edge_width), so the two tools had silently diverged
     # on what a HELD object looks like. U6's parity guard does not cover drawing.
-    for cube in state.cubes.values():
-        if cube.owner is not None:
-            size = int(round(state.projected_size_of(cube)))
-            x, y = int(cube.position[0]), int(cube.position[1])
-            cv2.rectangle(frame, (x, y), (x + size, y + size), SNAP_BORDER_COLOR, SNAP_BORDER_WIDTH)
+    # ⭐⭐ THE HELD OBJECT'S OWN CONTOUR, not a box around it (owner, 2026-08-28:
+    # *"highlight its contour in white instead of adding a white square in front
+    # of it"*). ⛔ The square was the object's AXIS-ALIGNED FOOTPRINT, so it sat in
+    # front of the shape rather than on it, and it stayed square however the cube
+    # was turned — the same complaint `object_extent` fixed for the grab radius.
+    # ⭐ The hull is the very one `_draw_cube_3d` just projected, so the highlight
+    # cannot disagree with the shape on screen.
+    for cube, hull in held_hulls:
+        if cube.owner is not None and len(hull) >= 3:
+            cv2.polylines(frame, [np.array([[int(x), int(y)] for x, y in hull],
+                                           dtype=np.int32)],
+                          True, SNAP_BORDER_COLOR, SNAP_BORDER_WIDTH, cv2.LINE_AA)
     # ⭐ `[(polygon, depth_m), ...]` -- `depth_order`'s occluder shape exactly, so a
     # caller hands it straight to `point_visible` / `segment_runs`.
     # ⚠ The snap highlight above is deliberately NOT in the mask: it is a HUD
@@ -2857,7 +3235,13 @@ def main():
                         help="Draw the landmarks and cubes on BLACK instead of the "
                              "camera picture. Display only: detection, recording and "
                              "every estimator are untouched. Press 'v' to toggle it "
-                             "live.")
+                             "live. NOTE: black is the DEFAULT since 2026-08-28, so "
+                             "this flag is now a no-op, kept so old command lines "
+                             "still run.")
+    parser.add_argument("--video", dest="video", action="store_true",
+                        # ASCII ONLY IN HELP TEXT -- see the note on --f1-rig.
+                        help="Start with the camera picture SHOWN. The default is "
+                             "black since 2026-08-28. 'v' toggles it either way.")
     parser.add_argument("--pose-rig", dest="pose_rig", action="store_true",
                         # ASCII ONLY IN HELP TEXT -- see the note on --f1-rig.
                         help="The owner's strategy, three windows on one camera: "
@@ -3024,20 +3408,28 @@ def main():
         # ⛔ Z rate parked -- no trackbar to position.
         #   cv2.setTrackbarPos("Z rate %/s", SLIDER_WIN,
         #                      int(round(DEPTH_RATE_PER_S * 100)))
-        if args.no_video:
-            globals()["HIDE_VIDEO"] = True
-        if args.no_landmarks:
-            globals()["SHOW_LANDMARKS"] = False
-        if args.landmarks:
-            globals()["SHOW_LANDMARKS"] = True
-        print("[LiveSnapDebug] camera stream %s -- press 'v' to toggle."
-              % ("HIDDEN (landmarks + cubes on black)" if HIDE_VIDEO else "shown"))
-        print("[LiveSnapDebug] hand landmarks %s -- press 'l' to toggle."
-              % ("SHOWN" if SHOW_LANDMARKS else "hidden"))
-        if _CMount.MOUNT == _CMount.FACING_USER:
-            print("[LiveSnapDebug] viewpoint '%s' -- press 'm' to cycle "
-                  "(yaw_roll -> pitch_yaw -> pitch_roll -> none)."
-                  % _CMount.VIEW_AXIS_MODE)
+    # ⛔ THESE WERE NESTED INSIDE `if args.sliders:` UNTIL 2026-08-28, so
+    # `--no-sliders` silently dropped `--landmarks`, `--no-video` and this whole
+    # banner. It never showed up because `sliders` defaults TRUE -- a flag that
+    # only works when an unrelated, default-on flag is also on. Dedented; nothing
+    # else changed.
+    if args.video:
+        globals()["HIDE_VIDEO"] = False
+    if args.no_video:
+        globals()["HIDE_VIDEO"] = True
+    if args.no_landmarks:
+        globals()["SHOW_LANDMARKS"] = False
+    if args.landmarks:
+        globals()["SHOW_LANDMARKS"] = True
+    print("[LiveSnapDebug] camera stream %s -- press 'v' to toggle."
+          % ("HIDDEN (landmarks + cubes on black)" if HIDE_VIDEO else "shown"))
+    print("[LiveSnapDebug] hand landmarks %s -- press 'l' to toggle."
+          % ("SHOWN" if SHOW_LANDMARKS else "hidden"))
+    if _CMount.MOUNT == _CMount.FACING_USER:
+        print("[LiveSnapDebug] viewpoint '%s' -- press 'm' to cycle "
+              "(yaw_roll -> pitch_yaw -> pitch_roll -> none)."
+              % _CMount.VIEW_AXIS_MODE)
+    if args.sliders:
         if args.pose_rig:
             # ⛔ STARTS AT 100%, NOT PART WAY. The middle of this slider is measured
             # WORSE than either end (yaw lean 53.7 at 50% against 27.2 at 0 and 8.6 at
@@ -3074,8 +3466,13 @@ def main():
 
     timestamp_ms = 0
     print("[LiveSnapDebug] Running -- press 'q' or close a window to stop.")
-    print("[LiveSnapDebug] SPACE = ungrab the held cube and reset it to the "
-          "home pose (centre, identity, %.2f m)." % palm_geometry.REFERENCE_DEPTH_M)
+    # ⚠ Text kept accurate to the behaviour: since 2026-08-28 SPACE also frees a
+    # cube that is ASSEMBLED but unheld (`AS6` takes it out of the hand at a mate,
+    # so nothing is held afterwards), and "home" is each object's OWN slot in the
+    # row, not the window centre — they must not start inside each other.
+    print("[LiveSnapDebug] SPACE = ungrab + un-mate every cube you have touched, "
+          "back to its own home slot (identity, %.2f m)."
+          % palm_geometry.REFERENCE_DEPTH_M)
     print(f"[LiveSnapDebug] smoothing tau starts at {SLERP_TAU_MS:.0f} ms "
           f"(149 = today's behaviour, 0 = none). Slider window: '{SLIDER_WIN}'.")
     if multi:
@@ -3440,6 +3837,16 @@ def main():
                                           data["thumb_outward"],
                                           arm.last_hand_reliability_alpha[handedness],
                                           width, height)
+                # ⭐⭐ THE GRIP MARKER — one ring per hand at the point that decides
+                # a grab, sized by that hand's depth (owner, 2026-08-28). N6: same
+                # rule, same real 85 mm, same projection law as
+                # `CubeWindow._draw_grip_marker`; only the primitives differ.
+                # ⚠ OUTSIDE the `SHOW_LANDMARKS` gate and AFTER the cubes, for the
+                # same two reasons production gives: it is not a skeleton, it is
+                # the answer to *where is my hand and how far away*; and a reticle
+                # hidden by the object it aims at aims at nothing.
+                _draw_grip_markers(panel, arm)
+                _draw_z_hud(panel, arm)
                 _draw_bridge_hud(panel, arm, height)
                 if args.slerp_ab and i == 1:
                     _draw_ab_divergence(panel, arms[0], arm, height)
@@ -3465,14 +3872,15 @@ def main():
                       % ("HIDDEN -- landmarks and cubes only" if HIDE_VIDEO else "shown"))
             if key == ord(" "):
                 # ⭐⭐ SPACE = ungrab + home: the fixed reference for a trial.
-                # ⚠ Only cubes actually HELD are homed -- a stray space bar must
-                # not rearrange a scene the operator is not touching.
+                # ⚠ Cubes the operator has ACTED ON -- held or assembled. Ones
+                # nobody has touched are still left alone, which is the part of
+                # the original rule that was load-bearing. See `home_held_cubes`.
                 _homed = state.home_held_cubes()
                 print("[LiveSnapDebug] %s"
-                      % ("HOMED %s -- released, centred, identity, %.2f m"
+                      % ("HOMED %s -- released, un-mated, own home slot, identity, %.2f m"
                          % (", ".join(_homed), palm_geometry.REFERENCE_DEPTH_M)
                          if _homed else
-                         "space: no cube is held, nothing to home"))
+                         "space: nothing held or assembled, nothing to home"))
             if key == ord("m"):
                 # ⭐⭐ CYCLE THE VIEWPOINT OPTION LIVE (`V1`, 2026-08-28). Three
                 # separate live sessions were spent one-option-per-restart, and the

@@ -644,6 +644,79 @@ U9_DERIVATION_DEPTH_M = 0.40
 # Half a hand breadth (85 mm anthropometric median). U9's 60 px, in metres.
 PLAY_AREA_MARGIN_M = 0.0425
 
+# ⭐⭐⭐ THE GRIP MARKER IS A DEPTH GAUGE, NOT A PERSPECTIVE CUE. That is the whole
+# design, and the first version got it wrong by trying to be perspective.
+#
+# > **Owner, 2026-08-28:** *"the scale of circle has to be from much wider to much
+# > smaller, so that the scale can give me a good representation of where the
+# > circle is on z axis (if the scale does not vary much, it does not help me) …
+# > When 2 circles are the same scale, it means the hands are at the same position
+# > on z axis and this shall help the user to match the mates."*
+#
+# ⛔ WHY REAL PERSPECTIVE CANNOT DELIVER THIS, AND IT IS ARITHMETIC, NOT OPINION.
+# A real object of fixed size spans `1/depth`, so across the play volume its size
+# ratio is **fixed at `0.85 / 0.30 = 2.83`** -- and NO choice of nominal size can
+# change it, because a bigger marker scales both ends equally. 2.83x across the
+# entire working range is not enough to read a depth off by eye, which is exactly
+# what the owner reported.
+#
+# ⭐ SO THE MARKER STOPS IMITATING A PHYSICAL OBJECT AND BECOMES AN INSTRUMENT.
+# Once it is a gauge, both of the owner's requirements are legitimate calibration
+# choices rather than lies about geometry:
+#   * the RANGE may be exaggerated -- 8.6x here instead of 2.83x;
+#   * the DIRECTION may be inverted, because what the gauge shows is depth in the
+#     USER's frame, and `camera_mount.near_camera_reads_small` owns that sign.
+#
+# ⭐⭐ AND THE PROPERTY THE OWNER ACTUALLY NAMED SURVIVES, because it only needs
+# MONOTONICITY: any strictly monotonic map preserves "same size <=> same depth".
+# Two rings that match are two hands at the same depth, which is the tool for
+# matching mates.
+#
+# ⭐ LINEAR IN DEPTH, not in `1/depth`, and that is deliberate: a perspective curve
+# compresses the far half, which is precisely where matching is hardest. A linear
+# gauge gives the same size change per centimetre everywhere.
+#
+# ⚠⚠ THE COST, STATED PLAINLY: the marker no longer shares the objects' projection
+# law, so **comparing a ring's size to a CUBE's size no longer means anything.**
+# Ring-to-ring is the comparison it is built for. ⭐ That still serves the goal --
+# the object's depth is anchored to its hand's at grab (`A1`), so two hands level
+# in z carry two objects level in z.
+#
+# BRACKETS. Floor: it must still read as a RING, not a dot -- 0.035 of the frame
+# width is 22 px across at 640. Ceiling: it must not dominate the frame or two of
+# them cannot be compared -- 0.30 is 192 px at 640, under a third of the width.
+# ⚠ These are LEGIBILITY choices, not measurements, and are the first thing to
+# change if the range still reads wrong live.
+GRIP_MARKER_MIN_FRAC = 0.035
+GRIP_MARKER_MAX_FRAC = 0.30
+
+
+def grip_marker_diameter_px(depth_m, frame_size, near_is_small):
+    """The gauge: a hand's depth as a diameter in pixels.
+
+    `near_is_small` comes from `camera_mount.near_camera_reads_small()` -- the ONE
+    place that knows where the camera is (`CONSTRAINTS` §7bis). Do not decide it
+    here.
+
+    ⚠ Depth is clamped to the play volume, so the gauge SATURATES at its ends
+    rather than running off the screen for an outlier reading.
+    ⚠ `depth_m is None` returns the midpoint, for a caller that draws it dashed:
+    "I do not know where this hand is" is information, and no ring reads as
+    "no hand".
+    """
+    if not frame_size or not frame_size[0]:
+        return None
+    small = GRIP_MARKER_MIN_FRAC * frame_size[0]
+    large = GRIP_MARKER_MAX_FRAC * frame_size[0]
+    if depth_m is None:
+        return (small + large) / 2.0
+    span = PLAY_DEPTH_MAX_M - PLAY_DEPTH_MIN_M
+    if span <= 0.0:
+        return (small + large) / 2.0
+    t = (clamp_depth(depth_m) - PLAY_DEPTH_MIN_M) / span      # 0 nearest camera
+    return small + t * (large - small) if near_is_small \
+        else large + t * (small - large)
+
 # ⚠⚠ THE VOLUME IS BOUNDED IN Z TOO, and the bound decides something less obvious
 # than "the object shrinks to a dot": **an object may only be pushed to a depth
 # the hand can come back to.** Release freezes an object in place in all three

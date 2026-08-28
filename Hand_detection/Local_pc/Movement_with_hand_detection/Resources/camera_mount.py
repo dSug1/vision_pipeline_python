@@ -298,6 +298,35 @@ def depth_from_ratio(grab_depth_m, ratio, mount=None):
     return grab_depth_m / ratio
 
 
+def near_camera_reads_small(mount=None):
+    """⭐⭐ Should a hand NEAR THE CAMERA be drawn SMALL on the depth gauge?
+
+    > **Owner, 2026-08-28:** *"it shall be inversed (small circle = hand close to
+    > the camera when the camera is facing, or far from the camera when the camera
+    > is worn by the user)."*
+
+    ⭐ **The owner stated BOTH mounts, and they are opposite — which is the whole
+    reason this is a `camera_mount` question and not a display preference.** The
+    gauge shows how deep into the SCENE the hand is, i.e. its depth in the USER's
+    frame, and only the mounting says how that relates to depth from the camera:
+
+      * camera facing the user -- nearer the camera is FURTHER FROM THE USER, so
+        it must read SMALL:                            True
+      * camera worn by the user -- nearer the camera is nearer the user, so it
+        reads LARGE, which is also the physically natural way round:   False
+
+    ⛔ AND IT IS A DEFECT FIX, NOT A TASTE CHANGE. `V1` recorded the artifact: with
+    a facing camera, pushing the hand toward the camera pushes the held object
+    AWAY from the user, so `depth_from_ratio` sends `cube.depth_m` UP and the cube
+    SHRINKS. A marker sized on raw camera depth GREW at the same moment. The ring
+    and the object it belongs to moved in opposite directions.
+
+    ⚠ `legacy` follows `head_worn`, exactly as `depth_from_ratio` does — the two
+    must agree or the gauge would contradict the motion it is gauging.
+    """
+    return _m(mount) == FACING_USER
+
+
 def chirality_v_negative_is_left(mount=None):
     """`palm_geometry.CHIRALITY_V_NEGATIVE_IS_LEFT` -- MOUNT-INDEPENDENT. Always True.
 

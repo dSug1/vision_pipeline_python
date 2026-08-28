@@ -17,7 +17,7 @@ subsystem folder.
 | **building anything** | `Claude/00_CORE/` — always. It is small |
 | working on **hand tracking / gestures / rotation** | `+ Claude/10_HAND_TRACKING/INDEX.md` (and `REJECTED.md` before proposing a fix) |
 | changing **how the game behaves** | `+ Claude/20_GAME_RULES/` |
-| doing **3D import / meshes / rendering** | `+ Claude/30_OBJECTS_3D/` |
+| ⭐ **object ASSEMBLY / mate connectors**, 3D import, meshes, rendering | `+ Claude/30_OBJECTS_3D/` |
 | plugging the hand system into **another game, a lens, a port** | `+ Claude/40_INPUT_SYSTEM/` |
 | doing the **web / mobile port** | `+ Claude/50_PORT_WEB_MOBILE/` |
 | touching **privacy, dependencies, packaging, stores** | `+ Claude/60_SECURITY_COMPLIANCE/` |
@@ -34,7 +34,7 @@ name.** They are the record, not the briefing.
 | [`00_CORE/`](00_CORE/) | cross-cutting and always relevant: [`CHARTER`](00_CORE/CHARTER.md) (what/for whom) · [`CONSTRAINTS`](00_CORE/CONSTRAINTS.md) (what a build may not violate) · [`METHOD`](00_CORE/METHOD.md) (how anything gets decided) · [`QUEUE`](00_CORE/QUEUE.md) (**the** build list) · [`DECISIONS`](00_CORE/DECISIONS.md) · [`GLOSSARY`](00_CORE/GLOSSARY.md) · `queue_notes/` (each row's full history) |
 | [`10_HAND_TRACKING/`](10_HAND_TRACKING/) | webcam → the object's transform. Perception, identity, chirality, snap / translate / rotate / release, depth |
 | [`20_GAME_RULES/`](20_GAME_RULES/) | how the game behaves, in plain language — the behavioural record |
-| [`30_OBJECTS_3D/`](30_OBJECTS_3D/) | ⚠ seeded, not started — 3D import, meshes, rendering |
+| [`30_OBJECTS_3D/`](30_OBJECTS_3D/) | ⭐ **active since 2026-08-28** — object assembly by mate connectors; also 3D import, meshes, rendering |
 | [`40_INPUT_SYSTEM/`](40_INPUT_SYSTEM/) | `handinput` — the pipeline as a shippable input package |
 | [`50_PORT_WEB_MOBILE/`](50_PORT_WEB_MOBILE/) | ⚠ deferred — Part Zero-bis is done, `U3` is not |
 | [`60_SECURITY_COMPLIANCE/`](60_SECURITY_COMPLIANCE/) | privacy, minors, the audit, store submission |
@@ -53,8 +53,11 @@ lean, worse on the tail — which has decided every verdict.
 ✅✅ **`V1` (the CAMERA MOUNT) and `V2` (the YAW-LEAN TRIM) are BOTH SHIPPED
 (2026-08-28).** The mount is `facing_user`; the trim removes the lean's swing at
 gains 0.66/0.66 while leaving the turn amount exact. ⚠ `V2`'s production live look
-is still owed. **No other build is chosen.** ⭐ By [`00_CORE/DECISIONS.md`](00_CORE/DECISIONS.md)
-the **platform decision** is now due — it was sequenced right after `F1`, and `F1` shipped.
+is still owed.
+⭐⭐ **THE WORK HAS MOVED OFF THE HANDS AND ONTO THE OBJECTS (2026-08-28): `AS1`–`AS5`,
+ASSEMBLY BY MATE CONNECTORS** → [`30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md`](30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md).
+⭐ The **platform decision** is still due and still the owner's — assembly does not
+wait on it, because `AS1`–`AS4` touch no renderer.
 Full status: [`00_CORE/QUEUE.md`](00_CORE/QUEUE.md)'s YOU-ARE-HERE block.
 Full narrative: [`10_HAND_TRACKING/history/SESSION_LOG.md`](10_HAND_TRACKING/history/SESSION_LOG.md).
 

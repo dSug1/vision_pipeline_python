@@ -418,6 +418,19 @@ plain language, not implementation detail (link to the code instead).
 
 ## Not yet built
 
+- ⭐⭐ **OBJECTS ASSEMBLE INTO AN ASSEMBLY — in build 2026-08-28 (queue `AS1`–`AS5`).**
+  An object carries one or more **mate connectors** on its surface. Two objects join
+  when a connector on each faces the other within tolerance and their capture
+  spheres intersect; the **smaller becomes a child of the bigger**, and the child is
+  held so the two connectors stay coincident and aligned. Both objects stay
+  independently grabbable, and **two hands pulling apart** break the join.
+  - ⛔ **Not a rule here until it is live-confirmed in both tools**, per this file's
+    own contract. Design of record:
+    `Claude/30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md`.
+  - ⭐ **It needs no new gesture, and that is a consequence rather than a choice**:
+    separation is detected from the *residual* between two independently driven
+    objects, so a single hand can never break a join. The hand-open release trigger
+    (`4.4`) is still unbuilt and is still not required for this.
 - **Open-palm/closed-fist detection: PARKED (2026-08-01, later
   conversation)**, not intended to be pursued for the moment — was
   blocked on finding a working fist-detection approach (MediaPipe's

@@ -45,6 +45,8 @@ def main():
     print("=" * 78)
     import LiveSnapDebug as L
     from Resources import palm_geometry as PG
+    from Resources import object_assembly as OA
+    from Resources.CubeWindow import DEFAULT_CUBE_SIZE as CW_SIZE
 
     W, H = 1280, 720
 
@@ -74,8 +76,68 @@ def main():
     ok("depth is the reference depth", c.depth_m == PG.REFERENCE_DEPTH_M,
        "%.3f m" % c.depth_m)
     cx, cy = centre_of(st, c)
-    ok("centre is the world origin (frame centre)",
-       abs(cx - W / 2.0) < 0.5 and abs(cy - H / 2.0) < 0.5, "(%.1f, %.1f)" % (cx, cy))
+    # ⚠⚠ THIS ASSERTION CHANGED ON 2026-08-28, AND IT IS NOT A SILENCED FAILURE.
+    # It used to read "the frame centre", and it failed the moment objects were
+    # given SEPARATE home slots (`AS1`). ⛔ The old behaviour was the defect: both
+    # cubes homing to the middle put them INSIDE each other, which is what made an
+    # ordinary drag mate on frame 12 and take the cube out of the player's hand --
+    # reported live as *"I can't get the cube to move on the z axis"*.
+    # ⭐ The PROPERTY under test is unchanged and is the one that matters: homing
+    # sends the object to a DETERMINISTIC, KNOWN place. That place is now its own
+    # slot in the row, which is what `home_center` returns.
+    # ⛔ `V1` recorded the opposite mistake as a method rule -- a harness reporting a
+    # real defect was explained away with a guard. This is the other case: the
+    # SPECIFICATION moved, so the vector moves with it, and says so.
+    hx, hy = st.home_center("left")
+    # ⚠ The contract is "your own slot, CONFINED TO THE PLAY AREA" — homing goes
+    # through `set_target_center`, so the clamp applies here as everywhere else.
+    # ⭐ It bites in this fixture and not in the product: the fixture adds a THIRD
+    # cube, and at `HOME_SEPARATION_M` the outermost of three slots falls outside
+    # the play area on a 1280-wide frame. With the two objects that actually ship,
+    # no clamping happens — which section 1b asserts directly.
+    ex, ey = PG.clamp_to_play_volume(hx, hy, c.depth_m, c.size, st.window_size)
+    ok("centre is this object's OWN home slot (not the frame centre)",
+       abs(cx - ex) < 0.5 and abs(cy - ey) < 0.5,
+       "(%.1f, %.1f) vs home (%.1f, %.1f)" % (cx, cy, ex, ey))
+    ok("...and that slot is deterministic, so a trial always starts identically",
+       st.home_center("left") == (hx, hy))
+
+    print("\n1b. ⛔⛔ THE OBJECTS' REAL SIZES MUST CLEAR THEIR OWN PREVIEW REACH")
+    # ⭐⭐ THIS READS THE SHIPPED OBJECTS, NOT A FIXTURE, AND THAT IS THE POINT.
+    # `verify_object_assembly.py` builds its own cubes, so it cannot notice when the
+    # PRODUCT's sizes move underneath it — which is exactly the trap that let a
+    # `+X`-only connector set ship unreachable. When the owner made both cubes the
+    # same size (2026-08-28) the home separation silently stopped clearing the
+    # preview reach; this is the check that refuses to let that pass quietly again.
+    # ⚠⚠ CHECKED AT SEVERAL RESOLUTIONS, AND THE NARROW ONE IS THE HARD CASE.
+    # `size` is a PIXEL count at the reference depth, so an object's REAL size is
+    # `size * REFERENCE_DEPTH / focal(width)` — and focal scales with width. The
+    # same 80 px cube is 72 mm on a 640-wide camera and 36 mm on a 1280-wide one.
+    # A check at one resolution therefore proves nothing about the other, and the
+    # NARROW camera is where the home separation is tightest.
+    for _W, _H in ((640, 480), (1280, 720), (1920, 1080)):
+        st_r = L.CubeState(window_size=(_W, _H))
+        halves_r = sorted(OA.half_extent_m(c.size, (_W, _H)) for c in st_r.cubes.values())
+        meeting = halves_r[-2:]                 # the two that would actually meet
+        reach = sum(h * OA.MC.MATE_RADIUS_FRACTION for h in meeting)
+        gap = OA.HOME_SEPARATION_M - sum(meeting)
+        ok("home gap clears the PREVIEW reach at %dx%d" % (_W, _H),
+           gap > reach * OA.PREVIEW_RADIUS_FACTOR,
+           "%.1f mm gap vs %.1f mm preview"
+           % (gap * 1000.0, reach * OA.PREVIEW_RADIUS_FACTOR * 1000.0))
+    st2 = L.CubeState(window_size=(W, H))
+    halves = sorted(OA.half_extent_m(c.size, (W, H)) for c in st2.cubes.values())
+    homes = [st2.home_center(n) for n in st2.cubes]
+    ok("every object gets its OWN home slot", len(set(homes)) == len(homes),
+       str(["%.0f" % h[0] for h in homes]))
+    f = PG.focal_px((W, H))
+    inset = (PG.PLAY_AREA_MARGIN_M + max(halves)) * f / PG.REFERENCE_DEPTH_M
+    ok("...and every slot is inside the play area at the reference depth",
+       all(inset <= h[0] <= W - inset for h in homes),
+       "%s in %.0f..%.0f" % (["%.0f" % h[0] for h in homes], inset, W - inset))
+    ok("⚠ N6: the debug tool and production carry the SAME object size",
+       {c.size for c in st2.cubes.values()} == {CW_SIZE},
+       "debug %s vs production %d" % (sorted({c.size for c in st2.cubes.values()}), CW_SIZE))
 
     print("\n2. ⛔ THE CUBE IS RELEASED, AND EVERY GRAB BASELINE IS CLEARED")
     ok("owner is None", c.owner is None)

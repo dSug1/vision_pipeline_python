@@ -30,6 +30,10 @@ the specs, the *how* in the code.
 
 Plus a **Not yet built** section, and a **Status** section.
 
+⭐ **In build 2026-08-28, not yet a rule: objects ASSEMBLE** via mate connectors
+(`AS1`–`AS5`). It becomes rule 11 when it is live-confirmed in both tools — design
+of record [`../30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md`](../30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md).
+
 ## Where the *why* lives
 
 | rule area | rationale |

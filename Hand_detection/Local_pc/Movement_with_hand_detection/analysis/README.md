@@ -757,9 +757,29 @@ no longer exist at the root — stale by weeks.
 `verify_block_predictor` · `verify_capture_drive` · `verify_dead_track_reset_parity`
 · `verify_debug_update_hands` · `verify_depth_order` · `verify_f1_grip_offstate` ·
 `verify_grip_align` · `verify_hand_tracks` · `verify_no_frozen_cube` ·
-`verify_object_extent` · `verify_offscreen_identity` · `verify_one_euro` ·
+`verify_mate_connector` · `verify_mate_handback` · `verify_object_assembly` · `verify_object_extent` ·
+`verify_offscreen_identity` · `verify_one_euro` ·
 `verify_palm_slant` · `verify_palm_slant_axis` · `verify_palm_slant_pose` ·
 `verify_planar_pnp` · `verify_state_follows_hand` · `verify_tip_trim`
+
+⭐ **`verify_mate_connector` + `verify_object_assembly` (`AS1`–`AS4`, 2026-08-28)**
+are the assembly gates. The first pins the geometry — that a mate is
+**ANTI-PARALLEL**, that it lands **FASTENED** on one of the connector's symmetric
+rolls, and that the quaternion survives the **half turn** an anti-parallel mate
+routinely reaches. The second pins the wiring — that **one hand can never break a
+mate**, that grabbing the **child** moves the parent (re-rooting), and that the
+**play-volume wall** cannot break a joint. ⛔ Between them they caught three real
+defects and one harness bug before a camera ever ran; the details are in
+`Claude/00_CORE/queue_notes/AS2.md`–`AS4.md`.
+
+⛔⛔ **`verify_mate_handback` (`AS8`, 2026-08-28) is a STANDALONE FILE ON PURPOSE.**
+It first lived appended to `verify_debug_update_hands.py`, whose `main()` leaves
+the module-level `_hand_track_ids` mutated — and with a stale id the hand drives
+nothing, so its CONTROL arm reported 0.000 m of jump and read as a **pass of a
+check that had not run**. It now runs in a clean process AND asserts that the
+fixture reached the state it tests before trusting either arm. ⭐ That guard is
+the general lesson of the `AS` work: three separate probes reported passes they
+had not earned, each because the fixture never reached the product's state.
 
 ⭐ These are not investigations. Each is the artifact a JS/Swift/Kotlin port must
 reproduce, and each is dependency-free by design — no numpy, no camera, no

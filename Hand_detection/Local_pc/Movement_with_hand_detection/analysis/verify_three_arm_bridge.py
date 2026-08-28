@@ -82,7 +82,13 @@ check("only BLEND blends",
       and by["blend"].resync_blend_frames > 0)
 
 print("\n2. GRAB, then a SHORT dropout -- OFF drops it, ON and BLEND do not")
-cx, cy = W / 2, H / 2                      # the cubes start centred
+# ⚠⚠ AIM AT A CUBE'S ACTUAL POSITION, NEVER AT A HARD-CODED POINT. This read
+# `W/2, H/2` — "the cubes start centred" — which stopped being true on 2026-08-28
+# when objects were given separate home slots so they would not start inside each
+# other. The hand then reached empty space and every check below failed. ⭐ Asking
+# the tool where its cube IS cannot go stale; asserting where it OUGHT to be can.
+_target = sorted(arms[0].cubes)[0]
+cx, cy = arms[0].cube_center(_target)
 t = 0.0
 for _ in range(6):                          # settle and snap
     frame(arms, hand_at(cx, cy), t)

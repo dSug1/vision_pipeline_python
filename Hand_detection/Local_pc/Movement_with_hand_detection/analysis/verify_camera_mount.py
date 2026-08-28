@@ -254,5 +254,85 @@ def main():
     return 0
 
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ⭐⭐ THE GRIP-MARKER DEPTH GAUGE (owner, 2026-08-28)
+# ─────────────────────────────────────────────────────────────────────────────
+def _gauge_checks():
+    import math as _math
+    from Resources import palm_geometry as _PG
+    from Resources import camera_mount as _CM
+    frame = (640, 480)
+    fails = []
+
+    def ck(name, cond, detail=""):
+        print("  [%s] %-62s %s" % ("PASS" if cond else "FAIL", name, detail))
+        if not cond:
+            fails.append(name)
+
+    print()
+    print("=" * 82)
+    print("THE GRIP-MARKER DEPTH GAUGE")
+    print("=" * 82)
+
+    near, far = _PG.PLAY_DEPTH_MIN_M, _PG.PLAY_DEPTH_MAX_M
+
+    # ⛔ THE DIRECTION. The owner stated both mounts and they are opposite.
+    fu_near = _PG.grip_marker_diameter_px(near, frame, True)
+    fu_far = _PG.grip_marker_diameter_px(far, frame, True)
+    ck("⛔ facing camera: NEAR the camera reads SMALL (it is far from the USER)",
+       fu_near < fu_far, "%.0f px near vs %.0f px far" % (fu_near, fu_far))
+    hw_near = _PG.grip_marker_diameter_px(near, frame, False)
+    hw_far = _PG.grip_marker_diameter_px(far, frame, False)
+    ck("⛔ worn camera: NEAR the camera reads LARGE — the opposite, and natural",
+       hw_near > hw_far, "%.0f px near vs %.0f px far" % (hw_near, hw_far))
+    ck("⭐ the mount decides it, and `legacy` follows `head_worn` like depth_from_ratio",
+       _CM.near_camera_reads_small(_CM.FACING_USER) is True
+       and _CM.near_camera_reads_small(_CM.HEAD_WORN) is False
+       and _CM.near_camera_reads_small(_CM.LEGACY) is False)
+
+    # ⭐ THE RANGE. Real perspective is stuck at 2.83x across the play volume.
+    ratio = max(fu_near, fu_far) / min(fu_near, fu_far)
+    perspective_ratio = far / near
+    ck("⭐ the gauge spans far more than perspective could",
+       ratio > 2.0 * perspective_ratio,
+       "%.1fx against perspective's fixed %.2fx" % (ratio, perspective_ratio))
+
+    # ⭐⭐ THE PROPERTY THE OWNER NAMED: equal size <=> equal depth. It needs only
+    # strict monotonicity, which is what makes the exaggeration legitimate.
+    for near_is_small in (True, False):
+        xs = [near + (far - near) * i / 40.0 for i in range(41)]
+        ds = [_PG.grip_marker_diameter_px(x, frame, near_is_small) for x in xs]
+        mono = all((b - a) * (1 if near_is_small else -1) > 0
+                   for a, b in zip(ds, ds[1:]))
+        ck("⭐⭐ strictly monotonic (%s) — so equal rings mean equal depth"
+           % ("near small" if near_is_small else "near large"), mono)
+
+    # Saturation, not runaway, outside the play volume.
+    ck("⚠ it SATURATES outside the play volume rather than running off screen",
+       _PG.grip_marker_diameter_px(0.01, frame, True) == fu_near
+       and _PG.grip_marker_diameter_px(9.0, frame, True) == fu_far)
+
+    # Legibility brackets.
+    ck("⛔ never smaller than a ring, never wider than a third of the frame",
+       min(fu_near, fu_far) >= 20.0 and max(fu_near, fu_far) <= frame[0] / 3.0,
+       "%.0f..%.0f px" % (min(fu_near, fu_far), max(fu_near, fu_far)))
+    ck("⚠ unknown depth returns the midpoint, for a dashed ring",
+       abs(_PG.grip_marker_diameter_px(None, frame, True)
+           - (fu_near + fu_far) / 2.0) < 1e-9)
+    ck("⚠ no frame size returns None rather than a bogus size",
+       _PG.grip_marker_diameter_px(0.5, None, True) is None)
+    return fails
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    # ⚠ BOTH suites, and the guard lives at the END for a reason: an earlier
+    # version sat above the appended gauge block, so `sys.exit(main())` returned
+    # before the gauge checks ran at all. They reported nothing and read as green.
+    _rc = main()
+    _gauge_fails = _gauge_checks()
+    if _gauge_fails:
+        print("%d GAUGE CHECK(S) FAILED: %s" % (len(_gauge_fails), ", ".join(_gauge_fails)))
+        _rc = 1
+    sys.exit(_rc)

@@ -1,3 +1,5 @@
+import math
+
 import pygame
 
 try:                                    # imported, never copied (N6)
@@ -11,8 +13,32 @@ except ImportError:                     # pragma: no cover
     import depth_order
 
 from . import palm_geometry
-from dataclasses import dataclass
+from . import camera_mount                   # ⭐ the ONE place that knows the mount
+from . import object_assembly                # imported, never copied (N6)
+from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
+
+# ⭐⭐ AS5 -- the mate connectors, drawn. Their colours say what state a mate is in;
+# ⭐ drawing the NORMAL is the cheapest guard there is against the anti-parallel
+# sign convention being wrong, because a wrong sign is invisible in code and
+# obvious on screen. See `Claude/30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md`.
+CONNECTOR_IDLE_COLOR = (210, 210, 210)
+CONNECTOR_CANDIDATE_COLOR = (255, 190, 40)
+CONNECTOR_MATED_COLOR = (60, 230, 120)
+CONNECTOR_DOT_PX = 5
+# How far out of the surface the normal whisker is drawn, as a fraction of the
+# object's half-extent. Display only -- nothing reads it.
+CONNECTOR_NORMAL_FRACTION = 0.45
+
+# ⭐ The grip marker: where a grab would lock, sized by that hand's depth.
+GRIP_MARKER_COLOR = (255, 255, 255)
+GRIP_MARKER_WIDTH = 2
+GRIP_MARKER_DOT_PX = 3
+
+# ⭐ AS7 -- the ghost's translucency. Low enough that it never competes with the
+# real objects, high enough to read against the video behind it.
+GHOST_FILL_ALPHA = 70
+GHOST_EDGE_ALPHA = 190
 
 # The vision server sends each hand's landmarks as mirrored webcam-frame pixel
 # coordinates (see VisionPipeline.py's remap_keypoints call, invert_x=True).
@@ -37,7 +63,20 @@ LANDMARK_COLOR = (90, 200, 255)
 LANDMARK_CONNECTION_COLOR = (60, 130, 170)
 LANDMARK_RADIUS = 3
 LANDMARK_LINE_WIDTH = 2
-DEFAULT_CUBE_SIZE = 40  # the SMALL cube's edge length; the LARGE cube is 2x this (direct request, 2026-08-01)
+# ⭐⭐ EVERY OBJECT'S EDGE LENGTH AT THE REFERENCE DEPTH. Owner, 2026-08-28: *"make
+# the 2 cubes the same dimensions."*
+# ⚠ It used to be the SMALL cube's edge, with the large one 2x it (2026-08-01).
+# The 2:1 pair is gone; **the two objects now differ only in COLOUR**, which is
+# therefore the only thing that distinguishes them on screen.
+# ⚠⚠ THE KEYS `"large"` and `"small"` ARE KEPT and are now HISTORICAL LABELS, not
+# descriptions. ⛔ They are not renamed on purpose: they are on the wire, in 415
+# recordings, in every harness and in `_cube_holder_track`, so renaming would
+# invalidate the corpus to fix a word.
+# ⭐ 80 px, i.e. the OLD LARGE size (72.2 mm), not the old small one: `R1` measured
+# the operator's grip aperture at ~2 cm against a 7.2 cm object, so the large cube
+# is the one already sized against a real hand. Halving both would have made every
+# grab harder at the same time as making them equal.
+DEFAULT_CUBE_SIZE = 80
 
 # Snap/hover highlight (Claude/GESTURE_PIPELINE_SPEC.md §13.3, 2026-08-01):
 # a snapped cube gets bright edges so snap/release state is visible live
@@ -237,6 +276,29 @@ class Cube:
     # release like the rest of the grab baseline.
     depth_m: float = palm_geometry.REFERENCE_DEPTH_M
     grab_depth_m: Optional[float] = None
+    # ⭐⭐ AS1 -- the object's MATE CONNECTORS, in the mesh's own local frame, so
+    # they survive resize and depth exactly as the mesh does. Built by
+    # `object_assembly.cube_face_connectors` from the mesh itself, which is why a
+    # future imported object needs no per-object registration either -- an OBJ or
+    # glTF carries the outward normals this reads.
+    # ⛔ A connector's `normal` is the TRUE OUTWARD NORMAL, so a mate is
+    # ANTI-PARALLEL. One place knows that sign and it is `mate_connector.py`.
+    connectors: Tuple[object, ...] = ()
+    # Display only: "", "candidate" or "mated" (AS5). Nothing reads it back.
+    mate_state: str = ""
+    # ⭐⭐ AS7 -- the GHOST and the DROP LINE for the best candidate mate, or None.
+    # Display only. The play volume is personal space, where occlusion is the
+    # strongest depth cue -- but occlusion is SILENT until two shapes overlap on
+    # screen, which during a face-to-face approach is not until they nearly touch.
+    # So the depth has to be DRAWN (Herndon et al., Interactive Shadows, UIST 1992).
+    mate_preview: Optional[object] = None
+    # Display only: "", "driver" or "follower" this frame (AS3's enforcement).
+    mate_role: str = ""
+    # ⭐⭐ Set by the assembly step when the mate hands this object BACK to its hand.
+    # The hand loop re-seats the depth baseline on the next frame it drives it --
+    # without that the object teleports, because its baseline went stale while the
+    # mate owned its depth (measured 18 cm, 2026-08-28).
+    rebaseline_depth: bool = False
 
 
 class CubeWindow:
@@ -269,6 +331,11 @@ class CubeWindow:
         # "unknown", which `depth_order` sorts FARTHEST -- so a hand whose depth
         # estimate has dropped out is covered by the cubes rather than covering them.
         self._hand_depths: Dict[str, float] = {}
+        # ⛔ INITIALISED HERE, not only in `set_hand_landmarks`. `pump_and_draw`
+        # reads it every frame, and production draws frames before the first hand
+        # packet arrives -- so leaving it to the setter crashed the window on
+        # startup. Caught by a headless render smoke test, not by any suite.
+        self._hand_grips: Dict[str, tuple] = {}
         # ⚠ Per-JOINT depth, one list per hand. Absent falls back to the hand's
         # single depth, which is the coarser object-level behaviour rather than none.
         self._hand_depths_per_landmark: Dict[str, list] = {}
@@ -287,20 +354,37 @@ class CubeWindow:
         # ⚠ Rebuilt every frame by `_draw_object_3d`. A stale silhouette would
         # occlude against where an object USED to be.
         self._silhouettes = []
-        large_size = cube_size * 2
+        # ⭐ SAME dimensions since 2026-08-28 (owner). Kept as two names so the two
+        # objects stay separately addressable if they ever differ again.
+        large_size = cube_size
         small_size = cube_size
+        large_mesh = _make_cube_mesh(FACE_COLOR_YELLOW, FACE_COLOR_VIOLET, FACE_COLOR_TURQUOISE)
+        small_mesh = _make_cube_mesh(FACE_COLOR_GREEN, FACE_COLOR_RED, FACE_COLOR_BLUE)
         self.cubes: Dict[str, Cube] = {
             "large": Cube(
-                mesh=_make_cube_mesh(FACE_COLOR_YELLOW, FACE_COLOR_VIOLET, FACE_COLOR_TURQUOISE),
+                mesh=large_mesh,
                 size=large_size,
-                position=self._centered_position(large_size),
+                position=(0.0, 0.0),          # ⬇ set by _home_position below
+                # ⭐ ONE connector each for the first build (AS1), on the `+X` face
+                # -- the LARGE cube's YELLOW face and the SMALL cube's GREEN one.
+                # Those two faces are what assemble.
+                connectors=object_assembly.cube_face_connectors(
+                    large_mesh.vertices, large_mesh.faces),
             ),
             "small": Cube(
-                mesh=_make_cube_mesh(FACE_COLOR_GREEN, FACE_COLOR_RED, FACE_COLOR_BLUE),
+                mesh=small_mesh,
                 size=small_size,
-                position=self._centered_position(small_size),
+                position=(0.0, 0.0),          # ⬇ set by _home_position below
+                connectors=object_assembly.cube_face_connectors(
+                    small_mesh.vertices, small_mesh.faces),
             ),
         }
+        # ⛔ Homed only now that `self.cubes` exists — the layout needs to know how
+        # many objects there are. They must NOT start on top of each other.
+        for index, cube in enumerate(self.cubes.values()):
+            cube.position = self._home_position(index, cube.size)
+        # ⭐⭐ AS4 -- the object tree. Empty means nothing is assembled.
+        self.assembly = object_assembly.MC.Assembly()
         self.closed = False
 
     def _centered_position(self, size: int) -> Tuple[float, float]:
@@ -308,6 +392,19 @@ class CubeWindow:
             (self.window_size[0] - size) / 2,
             (self.window_size[1] - size) / 2,
         )
+
+    def _home_position(self, index: int, size: int) -> Tuple[float, float]:
+        """⭐⭐ Where object `index` STARTS — a row about the centre, not the centre.
+
+        ⛔ Both cubes used to start at the same point, interpenetrating. Harmless
+        while each had one connector; the moment `AS1` went to six faces it meant
+        an ordinary drag mated on frame 12 and `AS6` took the cube out of the
+        player's hand. The separation lives in `object_assembly` because both tools
+        must agree on it exactly (`N6`), and it is derived from the PREVIEW radius,
+        not chosen."""
+        cx, cy = object_assembly.home_center_px(index, len(self.cubes) or 1,
+                                                self.window_size)
+        return (cx - size / 2.0, cy - size / 2.0)
 
     def resize(self, window_size: Tuple[int, int]) -> None:
         """Re-size the window to the webcam's actual frame resolution, once
@@ -319,8 +416,8 @@ class CubeWindow:
             return
         self.window_size = window_size
         self.screen = pygame.display.set_mode(window_size)
-        for cube in self.cubes.values():
-            cube.position = self._centered_position(cube.size)
+        for index, cube in enumerate(self.cubes.values()):
+            cube.position = self._home_position(index, cube.size)
 
     def projected_size(self, cube_name: str) -> float:
         """The named object's on-screen extent at its CURRENT depth (4.2)."""
@@ -494,16 +591,199 @@ class CubeWindow:
                                          min(z for _xy, z in projected),
                                          palm_geometry.focal_px(self.window_size))))
 
-        edge_color = SNAP_BORDER_COLOR if obj.owner is not None else CUBE_EDGE_COLOR
-        edge_width = SNAP_BORDER_WIDTH if obj.owner is not None else 1
         for _avg_z, color, pts in visible_faces:
             int_pts = [(int(x), int(y)) for x, y in pts]
             pygame.draw.polygon(self.screen, color, int_pts)
-            pygame.draw.polygon(self.screen, edge_color, int_pts, edge_width)
+            pygame.draw.polygon(self.screen, CUBE_EDGE_COLOR, int_pts, 1)
+
+        # ⭐⭐ A HELD OBJECT IS OUTLINED BY ITS OWN CONTOUR (owner, 2026-08-28:
+        # *"highlight its contour in white instead of adding a white square in
+        # front of it"*). ⛔ This used to whiten EVERY face's edges, which on a
+        # face-on cube reads as a white square laid over it rather than a highlight
+        # of its shape. The hull is the very one just projected, so the highlight
+        # cannot disagree with what is drawn. N6: the debug tool draws the same
+        # hull the same way.
+        if obj.owner is not None:
+            hull = depth_order.convex_hull([xy for xy, _z in projected])
+            if len(hull) >= 3:
+                pygame.draw.polygon(self.screen, SNAP_BORDER_COLOR,
+                                    [(int(x), int(y)) for x, y in hull],
+                                    SNAP_BORDER_WIDTH)
+
+        self._draw_connectors(obj, cx, cy, half, camera_distance)
+        self._draw_mate_preview(obj)
+
+    def _draw_mate_preview(self, obj: Cube) -> None:
+        """⭐⭐ AS7 -- the GHOST and the DROP LINE.
+
+        The **ghost** is the object drawn translucent at the pose it would take if
+        it mated now; the **drop line** joins the two connectors that would meet.
+        They answer different questions and that is why both are drawn:
+
+            ghost      -> where would it land, and turned which way?
+            drop line  -> how far is there still to go?   <- the half z hides
+
+        ⛔ The ghost pose comes from `mate_connector.snap_pose` — the same function
+        that would actually place it — so the preview cannot teach the player
+        something the mate would then contradict.
+
+        ⚠ Drawn AFTER the object's own faces and with no depth test, so it reads as
+        a hint rather than as geometry. AMBER while the mate is still out of reach,
+        GREEN the moment only the dwell is left — which is what tells the player to
+        hold still rather than keep pushing.
+        """
+        preview = getattr(obj, "mate_preview", None)
+        if preview is None:
+            return
+        color = CONNECTOR_MATED_COLOR if preview.reachable else CONNECTOR_CANDIDATE_COLOR
+
+        # ⭐ THE DROP LINE. Dashed rather than solid: a solid line reads as a
+        # physical link between two objects that are not yet linked.
+        if preview.from_px and preview.to_px:
+            self._draw_dashed(preview.from_px, preview.to_px, color)
+
+        size = palm_geometry.projected_size_px(obj.size, preview.depth_m)
+        half = size / 2.0
+        camera_distance = size * CUBE_PERSPECTIVE_DISTANCE_RATIO
+        gx, gy = preview.center_px
+        projected = []
+        for v in obj.mesh.vertices:
+            local = (v[0] * half, v[1] * half, v[2] * half)
+            rx, ry, rz = _quat_rotate_vector(preview.orientation, local)
+            denom = camera_distance + rz
+            if denom <= 1e-6:
+                return
+            s = camera_distance / denom
+            projected.append(((gx + rx * s, gy + ry * s), rz))
+
+        # A translucent fill needs its own surface: pygame's polygon draw is
+        # opaque. ⚠ Sized to the window, not to the ghost, so no coordinate
+        # bookkeeping is needed and a ghost half off-screen still clips correctly.
+        ghost = pygame.Surface(self.window_size, pygame.SRCALPHA)
+        faces = []
+        for face in obj.mesh.faces:
+            rn = _quat_rotate_vector(preview.orientation, face.normal)
+            if rn[2] >= 0:
+                continue
+            avg_z = sum(projected[i][1] for i in face.vertex_indices) / len(face.vertex_indices)
+            faces.append((avg_z, [projected[i][0] for i in face.vertex_indices]))
+        faces.sort(key=lambda f: f[0], reverse=True)
+        for _z, pts in faces:
+            int_pts = [(int(x), int(y)) for x, y in pts]
+            pygame.draw.polygon(ghost, color + (GHOST_FILL_ALPHA,), int_pts)
+            pygame.draw.polygon(ghost, color + (GHOST_EDGE_ALPHA,), int_pts, 2)
+        self.screen.blit(ghost, (0, 0))
+
+    def _draw_dashed(self, a, b, color, dash=8, gap=6) -> None:
+        """A dashed segment. ⚠ Deliberately not a solid line: a solid one reads as
+        a link that already exists, and the whole point of the preview is that it
+        does not yet."""
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        length = math.hypot(dx, dy)
+        if length < 1.0:
+            return
+        ux, uy = dx / length, dy / length
+        pos = 0.0
+        while pos < length:
+            end = min(pos + dash, length)
+            pygame.draw.line(self.screen, color,
+                             (int(a[0] + ux * pos), int(a[1] + uy * pos)),
+                             (int(a[0] + ux * end), int(a[1] + uy * end)), 2)
+            pos = end + gap
+
+    def _draw_connectors(self, obj: Cube, cx: float, cy: float,
+                         half: float, camera_distance: float) -> None:
+        """⭐ AS5 -- the mate connectors, drawn on top of the object's faces.
+
+        The dot is the connector's position; the whisker is its OUTWARD NORMAL.
+        ⭐ Drawing the normal is deliberate and it is the cheapest guard in the
+        whole assembly build: the anti-parallel convention is invisible in code and
+        immediately obvious on screen, so a sign error cannot survive one look.
+
+        ⚠ Projected with the SAME five lines the faces just used, so a connector
+        can never draw somewhere the object is not. ⛔ Drawn after the faces and
+        without a depth test of their own: a connector on the far side shows
+        through, which is what makes it possible to aim a face you cannot see.
+        """
+        if not obj.connectors:
+            return
+        color = {"mated": CONNECTOR_MATED_COLOR,
+                 "candidate": CONNECTOR_CANDIDATE_COLOR}.get(obj.mate_state,
+                                                             CONNECTOR_IDLE_COLOR)
+        for conn in obj.connectors:
+            tip = tuple(conn.position[k] + conn.normal[k] * CONNECTOR_NORMAL_FRACTION
+                        for k in range(3))
+            pts = []
+            for v in (conn.position, tip):
+                local = (v[0] * half, v[1] * half, v[2] * half)
+                rx, ry, rz = _quat_rotate_vector(obj.orientation, local)
+                denom = camera_distance + rz
+                if denom <= 1e-6:
+                    pts = []
+                    break
+                scale = camera_distance / denom
+                pts.append((int(cx + rx * scale), int(cy + ry * scale)))
+            if len(pts) != 2:
+                continue
+            pygame.draw.line(self.screen, color, pts[0], pts[1], 2)
+            pygame.draw.circle(self.screen, color, pts[0], CONNECTOR_DOT_PX)
+            pygame.draw.circle(self.screen, (20, 20, 20), pts[0], CONNECTOR_DOT_PX, 1)
+
+    def _draw_grip_marker(self, name: str) -> None:
+        """⭐⭐ THE GRIP MARKER — a ring at the point that actually decides a grab,
+        sized by that hand's depth.
+
+        > **Owner, 2026-08-28:** *"instead of all the landmarks, draw a circle to
+        > show the center of the hand (where the grab would lock) and scale the
+        > center to display the z position. this will help me figure out where are
+        > my hands."*
+
+        ⛔ THE POSITION IS HANDED IN, NEVER RECOMPUTED. It is the very
+        `hand_pos` the snap test consumed this frame (`fingertips.grip_position_px`
+        under `F1`), so the ring cannot drift from the thing it depicts. A second
+        derivation of the same quantity is what made four harnesses report clean on
+        takes the owner had watched fail.
+
+        ⭐⭐ THE RADIUS OBEYS THE OBJECTS' OWN LAW. `projected_size_px` on a real
+        85 mm, so **two things that look the same size are at the same depth** —
+        the comparison the operator could not make before. And because the depth
+        used is the one the 3D grab gate compares, a ring that matches an object's
+        apparent size means the hand is within reach of it.
+
+        ⚠ Drawn as a RING, not a disc: it surrounds the grab point without hiding
+        what is under it, which is the object being aimed at.
+        ⚠ Unknown depth draws a DASHED ring at the reference size rather than
+        nothing — "I don't know where this hand is" is information the operator
+        needs, and a missing ring reads as "no hand".
+        """
+        point = self._hand_grips.get(name)
+        if not point:
+            return
+        depth = self._hand_depths.get(name)
+        # ⭐ The GAUGE, and the sign comes from the ONE place that knows where the
+        # camera is. ⛔ Do not decide `near_is_small` here (`CONSTRAINTS` §7bis).
+        diameter = palm_geometry.grip_marker_diameter_px(
+            depth, self.window_size, camera_mount.near_camera_reads_small())
+        if diameter is None:
+            return
+        radius = max(3, int(round(diameter / 2.0)))
+        cx, cy = int(round(point[0])), int(round(point[1]))
+        color = GRIP_MARKER_COLOR
+        if depth is None:
+            # A dashed ring, drawn as short arcs, says "depth unknown".
+            for k in range(0, 360, 30):
+                a0, a1 = math.radians(k), math.radians(k + 16)
+                pygame.draw.line(self.screen, color,
+                                 (cx + int(radius * math.cos(a0)), cy + int(radius * math.sin(a0))),
+                                 (cx + int(radius * math.cos(a1)), cy + int(radius * math.sin(a1))), 2)
+        else:
+            pygame.draw.circle(self.screen, color, (cx, cy), radius, GRIP_MARKER_WIDTH)
+        pygame.draw.circle(self.screen, color, (cx, cy), GRIP_MARKER_DOT_PX)
 
     def set_hand_landmarks(self, by_hand: Dict[str, list],
                            depths: Optional[Dict[str, float]] = None,
-                           per_landmark: Optional[Dict[str, list]] = None) -> None:
+                           per_landmark: Optional[Dict[str, list]] = None,
+                           grips: Optional[Dict[str, tuple]] = None) -> None:
         """This frame's landmarks per hand, in webcam-frame pixels. DISPLAY ONLY.
 
         ⚠ Called before `pump_and_draw`. Passing `{}` (or never calling it) simply
@@ -514,6 +794,9 @@ class CubeWindow:
         self._hand_landmarks = by_hand or {}
         self._hand_depths = depths or {}
         self._hand_depths_per_landmark = per_landmark or {}
+        # ⭐ The GRIP POINT this frame's snap test actually used, per hand. Handed
+        # in rather than recomputed -- see `_draw_grip_marker`.
+        self._hand_grips = grips or {}
 
     def _draw_one_hand(self, name: str) -> None:
         """One hand's skeleton, occluded PER LANDMARK and PER BONE SEGMENT.
@@ -605,6 +888,16 @@ class CubeWindow:
         if self.show_landmarks:
             for name in self._hand_landmarks:
                 self._draw_one_hand(name)
+        # ⭐⭐ THE GRIP MARKER REPLACES THE SKELETON AS THE DEFAULT (owner,
+        # 2026-08-28) -- one ring per hand at the point that decides a grab, sized
+        # by that hand's depth on the objects' own projection law.
+        # ⚠ Drawn OUTSIDE the `show_landmarks` gate on purpose: it is not a
+        # skeleton, it is the answer to *where is my hand, and how far away*, and
+        # it is the only hand cue on screen while the skeleton is hidden.
+        # ⛔ AFTER the objects, so it is never hidden by one -- the marker is a
+        # reticle for aiming AT objects, and an occluded reticle aims at nothing.
+        for name in self._hand_grips:
+            self._draw_grip_marker(name)
         pygame.display.flip()
         self.clock.tick(60)
 

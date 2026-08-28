@@ -11,6 +11,7 @@ from .CubeWindow import CubeWindow
 # cannot drift between them again (§13.6.1). Pure stdlib, no side effects.
 from . import owner_remap
 from . import object_extent
+from . import object_assembly
 from . import camera_mount
 from . import lean_trim
 from . import depth_order
@@ -188,6 +189,12 @@ _hand_depth_trackers: Dict[str, palm_depth.HandDepthTracker] = {
 # 2026-08-22/23 sessions cost four reverted builds to a harness recomputing what
 # production had already decided.
 _hand_depth: Dict[str, Optional[float]] = {h: None for h in TRACKED_HANDS}
+
+# ⭐⭐ AS6 -- which (object, hand) pairs may not re-grab yet, after the object was
+# released into a mate. ⚠ Module-level, alongside the rest of production's
+# per-session state; the debug tool keeps its copy on `CubeState` because that is
+# where its session state lives. The CLASS is shared (`N6`).
+_regrab_latch = object_assembly.RegrabLatch()
 _hand_depth_valid: Dict[str, bool] = {h: False for h in TRACKED_HANDS}
 
 # ⭐ Previous frame's grip point per hand. A1's fade is spent in HAND MOVEMENT, so
@@ -599,7 +606,8 @@ def _owner_key(handedness: str):
 
 
 def _try_snap(handedness: str, hand_pos: Tuple[float, float],
-              hand_depth_m: Optional[float] = None, exclude=frozenset()) -> Optional[str]:
+              hand_depth_m: Optional[float] = None, exclude=frozenset(),
+              now_ms: Optional[float] = None) -> Optional[str]:
     """Claims the nearest unowned cube within GRAB_RADIUS of hand_pos, if
     any (skipping names in `exclude` — see on_hands_frame's same-frame
     release/snap ordering note). Returns the claimed cube's name, or None.
@@ -648,6 +656,20 @@ def _try_snap(handedness: str, hand_pos: Tuple[float, float],
         ) * GRAB_RADIUS_MULTIPLIER
         cx, cy = cube_window.cube_center(name)
         dist = math.hypot(hand_pos[0] - cx, hand_pos[1] - cy)
+        # ⭐⭐ AS6 -- THE RE-GRAB LATCH, and it must be consulted HERE, before the
+        # radius test, because the far case is exactly the one that CLEARS it.
+        # After an object is released into a mate, the hand that placed it must
+        # leave -- past `REGRAB_RELEASE_FACTOR` x the grab radius, for the dwell --
+        # before it may take it back. Without it the next frame's proximity snap
+        # re-takes the object, it is driven again, and the mate breaks: mate,
+        # release, re-grab, break, repeat. ⛔ POSITIONAL, not a timer and not a
+        # gesture -- `U9`'s lesson, and `METHOD`'s "a trigger cannot enforce an
+        # invariant".
+        if _regrab_latch.blocked(name, _owner_key(handedness)):
+            if _regrab_latch.observe(name, _owner_key(handedness),
+                                     dist > grab_radius * object_assembly.REGRAB_RELEASE_FACTOR,
+                                     now_ms):
+                continue
         if dist > grab_radius:
             continue
         if hand_depth_m is not None and \
@@ -1503,6 +1525,16 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
     # exists for exactly this reason).
     _hi_pose: Dict[str, dict] = {}
 
+    # ⭐⭐ AS3 -- THE HAND-DRIVEN DESIRE, CAPTURED BEFORE THE PLAY-VOLUME CLAMP.
+    # The assembly step breaks a mate on the RESIDUAL between what the two objects
+    # WANT, and the clamp is a second driver: an object pinned at a wall would
+    # otherwise break its mate for a reason no player can see (owner decision,
+    # 2026-08-28). So the unclamped centre and depth are stashed here as the loop
+    # computes them, and `object_assembly.resolve` is fed these rather than the
+    # stored state. ⚠ A cube absent from this dict was not driven this frame, and
+    # its stored (already clamped) pose IS its desire.
+    _mate_desire: Dict[str, dict] = {}
+
     for handedness, landmarks in hands:
         tracking = _hand_state_trackers[handedness]
         if tracking.tracking_state != hand_state.TRACKING:
@@ -1725,7 +1757,8 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             if can_snap:
                 owned_cube = _try_snap(handedness, hand_pos,
                                        hand_depth_m=_hand_depth[handedness],
-                                       exclude=released_this_frame)
+                                       exclude=released_this_frame,
+                                       now_ms=now_ms)
                 if owned_cube is not None:
                     cube = cube_window.cubes[owned_cube]
                     # 4.2: freeze the Z baseline pair, exactly as the rotation
@@ -1818,6 +1851,30 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             # velocity fit measured on this project LOST to "hold the last
             # value", at every horizon.
             if Z_TRANSLATION and cube.grab_depth_m is not None:
+                # ⭐⭐ THE MATE JUST HANDED THIS OBJECT BACK -- re-seat before driving.
+                # N6: the identical block the debug tool runs, for the identical
+                # reason. While the object was a FOLLOWER the mate owned its depth
+                # and this baseline went stale; resuming the ratio drive from it
+                # teleports the object (measured 18 cm, 2026-08-28). Re-anchoring
+                # here makes the hand-over continuous -- ratio 1.0 against the
+                # object's CURRENT depth, so nothing moves on the changeover.
+                if getattr(cube, "rebaseline_depth", False):
+                    cube.grab_depth_m = cube.depth_m
+                    _rb_grip = fingertips.grip_depth_m(
+                        _hand_depth[handedness], world_landmarks)
+                    if (fingertips.GRIP_ALIGN_DEPTH_AT_GRAB
+                            and fingertips.USE_TIP_BARYCENTER
+                            and _rb_grip is not None):
+                        cube.grab_hand_depth_m = _rb_grip
+                        cube.grab_depth_offset_m = cube.depth_m - _rb_grip
+                    else:
+                        cube.grab_hand_depth_m = None
+                        cube.grab_depth_offset_m = None
+                    # ⛔ The RATIO baseline is stale too: depth = anchor x ratio, and
+                    # the ratio is measured against the hand's span at the ORIGINAL
+                    # grab. Re-anchoring without it would still jump.
+                    _depth_ratio_trackers[handedness].reset()
+                    cube.rebaseline_depth = False
                 # ⭐ Same shared helper as the debug tool -- N6, and the estimator
                 # stays clock-free.
                 _ratio, _ratio_valid = _depth_ratio_trackers[handedness].update(
@@ -1834,8 +1891,10 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                     # FROM THE CAMERA -- `projected_size_px` and `depth_order` both
                     # consume this, so only which way the hand drives it may change.
                     # `legacy`/`head_worn` compute `_anchor / _ratio`, as before.
-                    cube.depth_m = palm_geometry.clamp_depth(
-                        camera_mount.depth_from_ratio(_anchor, _ratio))
+                    _wanted_depth = camera_mount.depth_from_ratio(_anchor, _ratio)
+                    # ⭐ AS3: stash the UNCLAMPED wish before the wall is applied.
+                    _mate_desire.setdefault(owned_cube, {})["depth_m"] = _wanted_depth
+                    cube.depth_m = palm_geometry.clamp_depth(_wanted_depth)
             # ⭐⭐ F1 STEP 2 -- THE OBJECT FOLLOWS THE FINGERTIP BARYCENTRE.
             # Owner: "if the fingertips move while the cube is grabbed, the cube's
             # transform follow the transform of the barycenter."
@@ -1903,6 +1962,8 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             # derived from it with the current projected extent, so an object
             # moving in Z grows and shrinks about its own centre instead of its
             # corner. See `CubeWindow.set_target_center`.
+            # ⭐ AS3: the UNCLAMPED centre, same reason as the depth above.
+            _mate_desire.setdefault(owned_cube, {})["center_px"] = new_center
             cube_window.set_target_center(owned_cube, new_center)
             if hand_quat_now is not None:
                 cube = cube_window.cubes[owned_cube]
@@ -1933,6 +1994,23 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                 target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
                 cube.orientation = _quat_slerp(cube.orientation, target_quat,
                                                _rotation_slerp_factor(now_ms, handedness))
+
+    # ⭐⭐ AS3/AS4 -- ONE FRAME OF ASSEMBLY, AND IT MUST BE HERE.
+    # ⛔ AFTER the per-hand loop, because a mate is a relationship BETWEEN objects:
+    # running it inside the loop would judge the second cube against the first
+    # cube's PREVIOUS frame, and a mate decided on a stale partner is exactly the
+    # class of defect `_record_flush` exists to prevent.
+    # ⛔ BEFORE the draw, so what the screen shows is the enforced pose rather than
+    # the hand-driven one -- otherwise a mated object would render one frame behind
+    # its own constraint.
+    # ⚠ `_mate_desire` carries the UNCLAMPED wishes; the residual is measured on
+    # those, never on the stored state (spec §4.2 -- the clamp is exempt).
+    # ⭐ AS6: `release` + `latch` are what make the mate survive a two-handed
+    # assembly -- the child's grab is dropped at the mate, and the hand that
+    # placed it must step away before it can take it back.
+    object_assembly.step(cube_window.cubes, cube_window.assembly,
+                         cube_window.window_size, now_ms, desires=_mate_desire,
+                         release=cube_window.release_cube, latch=_regrab_latch)
 
     # ⚠ AFTER the per-hand loop, never inside it: `_rotation_slerp_factor` needs
     # the PREVIOUS frame's clock, and stamping it per hand would hand the second
@@ -1973,7 +2051,12 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
         # in-front-or-behind and is why this is not gated on the two matching.
         {name: depth_order.landmark_depths(_latest_world_landmarks.get(name),
                                            _hand_depth.get(name))
-         for name, lms in hands if lms})
+         for name, lms in hands if lms},
+        # ⭐⭐ THE GRIP POINT THE SNAP TEST ACTUALLY USED THIS FRAME -- handed to the
+        # renderer, never recomputed there. `_last_grip_px` is written by the per-hand
+        # loop from `fingertips.grip_position_px`, i.e. the exact `hand_pos` fed to
+        # `_try_snap`, so the ring on screen cannot disagree with the rule it depicts.
+        {name: _last_grip_px.get(name) for name, lms in hands if lms})
 
     cube_window.pump_and_draw()
 
