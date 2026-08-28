@@ -459,6 +459,45 @@ the scene with a ghost already showing. `verify_home_cube.py` now checks it agai
 the SHIPPED object sizes at 640, 1280 and 1920 — and the narrow camera is the hard
 case, because `size` is in pixels so an 80 px cube is 72 mm at 640 and 36 mm at 1280.
 
+## 8quater. ⭐ THE TWO RADII ARE LIVE — sliders, 33 %..300 % (2026-08-28)
+
+The debug tool carries **`MATE snap r %`** and **`MATE preview r %`**, each a
+percentage of the SHIPPED value, so 100 % is exactly what ships and the owner's
+third-to-triple range is 33 %..300 %.
+
+⭐⭐ **`MATE snap r %` drives the ANGLE TOLERANCE too** (owner: *"the mate snap %
+shall also control the tolerance for normal alignment"*). `can_mate` asks how
+CLOSE and how ALIGNED; they are one question, and moving only the distance made
+*"tighter snap"* mean half of what it says.
+
+| snap % | capture reach | angle tolerance |
+|---|---|---|
+| 33 | 23.8 mm | 9.9° |
+| **100** | **72.2 mm** | **30.0°** |
+| 150 | 108.3 mm | 45.0° |
+| 300 | 216.5 mm | **89.0°** (clamped) |
+
+⚠⚠ **It crosses BOTH of §8's angle brackets on purpose** — exploring them is what a
+slider is for — but the two ends mean different things:
+* **below ~85 %** the tolerance drops under **25.41°**, `F1`'s measured p95
+  orientation jump: the pipeline's OWN noise begins refusing mates during a steady
+  approach, so it feels *unreachable* rather than tight;
+* **above ~150 %** it passes **45°**, where an adjacent cube face also qualifies.
+  ⭐ That DEGRADES rather than breaks — `mate_score` still picks the best
+  candidate, so the wrong face is not chosen; there are simply two in the running.
+
+⛔⛔ **A HARD GEOMETRIC LIMIT the slider may reach and the predicate may not: 89°.**
+At 90° two outward normals are perpendicular; past it they point the SAME way and
+*"facing each other within tolerance"* stops meaning anything.
+
+⛔ **The PREVIEW angle widens to follow the mate's**, never falling below it —
+otherwise the ghost vanishes exactly as the mate becomes possible, which is an aid
+that stops guiding at the moment it matters.
+
+⚠ Both scales multiply a baseline captured **at import**. Scaling the modules' live
+values would compound every frame and the slider would run away by itself;
+`verify_slider_wiring.py` asserts three reads at 100 % change nothing.
+
 ## 8ter. ⛔⛔ AN UN-SNAP MUST SURVIVE MORE THAN ONE FRAME (`AS8`)
 
 > **Owner, fourth report:** *"once a cube has been un-snapped, I cannot move it on

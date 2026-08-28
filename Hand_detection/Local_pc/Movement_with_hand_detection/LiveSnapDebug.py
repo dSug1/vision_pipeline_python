@@ -65,6 +65,27 @@ from Resources import depth_order  # noqa: E402  (the game's one occlusion rule,
 from Resources import hand_anatomy  # noqa: E402  (HAND_CONNECTIONS, shared with production)
 from Resources import object_assembly  # noqa: E402  (AS3/AS4, one copy, both tools)
 
+# ⭐⭐ THE SHIPPED MATE RADII, captured HERE — before any slider can move them.
+# The two `MATE ... r %` sliders are a percentage OF THESE, so 100 % is exactly
+# what ships and the owner's third-to-triple range is 33 %..300 %.
+# ⛔ Read once at import: scaling the modules' live values instead would compound
+# on every frame and the slider would run away by itself.
+_SHIPPED_MATE_RADIUS_FRACTION = object_assembly.MC.MATE_RADIUS_FRACTION
+_SHIPPED_PREVIEW_RADIUS_FACTOR = object_assembly.PREVIEW_RADIUS_FACTOR
+# ⭐ The ANGLE tolerance rides the SNAP slider too (owner, 2026-08-28) -- "how
+# close must two connectors be to mate" is one question with two halves, and
+# tuning them apart made the panel lie about what a single setting meant.
+_SHIPPED_MATE_ANGLE_TOL_DEG = object_assembly.MC.MATE_ANGLE_TOL_DEG
+_SHIPPED_PREVIEW_ANGLE_DEG = object_assembly.PREVIEW_ANGLE_DEG
+
+# ⛔⛔ A HARD GEOMETRIC LIMIT, not a taste bracket. At 90 deg two outward normals
+# are perpendicular and past it they point the SAME way -- the objects are back to
+# back, and "facing each other within tolerance" stops meaning anything at all. The
+# slider may reach it; the predicate may not pass it.
+MATE_ANGLE_HARD_MAX_DEG = 89.0
+MATE_SNAP_R_SCALE = 1.0
+MATE_PREVIEW_R_SCALE = 1.0
+
 # ⭐⭐ WHAT PRODUCTION ACTUALLY RUNS, since 2026-08-17.
 # `Resources/HandsTriggeredActions.py` now drives cube orientation with Horn
 # least-squares over the FIVE PALM LANDMARKS. Any tool here that claims to show
@@ -256,6 +277,15 @@ SLIDERS = (
      "how much of the yaw's pitch contamination to remove"),
     ("LEAN roll %", 100, 66, lambda n: n / 100.0,
      "how much of the yaw's roll contamination to remove"),
+    # ⭐⭐ AS2/AS7 -- the two mate radii, live (owner, 2026-08-28). Both are a
+    # PERCENTAGE OF THE SHIPPED VALUE, so 100 is exactly what ships and the range
+    # is the third-to-triple the owner asked for: 33 % .. 300 %.
+    # ⚠ The floor is clamped to 33 rather than 0: at 0 the mate can never engage
+    # and the panel would look broken rather than tight.
+    ("MATE snap r %", 300, 100, lambda n: max(33, n) / 100.0,
+     "how close two connectors must be to mate, as % of the shipped radius"),
+    ("MATE preview r %", 300, 100, lambda n: max(33, n) / 100.0,
+     "how early the ghost and dotted line appear, as % of the shipped radius"),
 )
 
 # ⭐ OWNER'S CHOICE, 2026-08-24, settled live: **20 ms**. Reached by sweeping the
@@ -1952,6 +1982,7 @@ def _read_sliders() -> None:
     global DEPTH_RATE_PER_S, SLANT_AXIS_GAIN, POSE_BLEND
     global STEADY_RELEASE_DEG_S, STEADY_FREEZE_FRAMES
     global LEAN_PITCH_GAIN, LEAN_ROLL_GAIN
+    global MATE_SNAP_R_SCALE, MATE_PREVIEW_R_SCALE
     try:
         vals = [spec[3](cv2.getTrackbarPos(spec[0], SLIDER_WIN)) for spec in SLIDERS]
     except cv2.error:
@@ -1961,9 +1992,42 @@ def _read_sliders() -> None:
     # ⚠ NINE now. `TRIM gain %`, `SLANT axis %` and `POSE blend %` were retired
     # 2026-08-28 (see `SLIDERS`); their constants keep their module defaults and the
     # rigs set them directly, so nothing that used them stopped working.
+    # ⚠ ELEVEN now: `MATE snap r %` and `MATE preview r %` were added 2026-08-28.
     (SLERP_TAU_MS, GRAB_RADIUS_MULTIPLIER, GRIP_ALIGN_MOVING_MS,
      GRIP_ALIGN_MASK_RATIO, STEADY_RELEASE_DEG_S, STEADY_FREEZE_FRAMES,
-     GRAB_Z_TOLERANCE_M, LEAN_PITCH_GAIN, LEAN_ROLL_GAIN) = vals
+     GRAB_Z_TOLERANCE_M, LEAN_PITCH_GAIN, LEAN_ROLL_GAIN,
+     MATE_SNAP_R_SCALE, MATE_PREVIEW_R_SCALE) = vals
+    # ⭐⭐ THE TWO MATE RADII, driven from the SHIPPED baselines captured at import.
+    # ⛔ Scaling the module's CURRENT value instead would compound every frame --
+    # the slider would run away on its own.
+    # ⚠ N6: these are the shared modules' own constants, so the debug tool and
+    # production apply ONE value; they cannot run at once (one camera, DSHOW is
+    # exclusive), and production never moves them off the shipped number.
+    object_assembly.MC.MATE_RADIUS_FRACTION = (
+        _SHIPPED_MATE_RADIUS_FRACTION * MATE_SNAP_R_SCALE)
+    object_assembly.PREVIEW_RADIUS_FACTOR = (
+        _SHIPPED_PREVIEW_RADIUS_FACTOR * MATE_PREVIEW_R_SCALE)
+    # ⭐⭐ THE SNAP SLIDER ALSO DRIVES THE NORMAL-ALIGNMENT TOLERANCE (owner,
+    # 2026-08-28). `can_mate` has two clauses -- how CLOSE and how ALIGNED -- and
+    # they are one question; moving only the distance made "tighter snap" mean half
+    # of what it says.
+    # ⚠⚠ IT CROSSES BOTH OF THE ANGLE'S DOCUMENTED BRACKETS, deliberately, because
+    # exploring them is what the slider is for. Know what you are seeing:
+    #   below ~85 % the tolerance drops under **25.41 deg**, `F1`'s measured
+    #     per-frame orientation-jump p95 -- the pipeline's OWN noise starts
+    #     refusing mates during a steady approach, so it will feel unreachable;
+    #   above ~150 % it passes **45 deg**, where a cube's ADJACENT face also
+    #     qualifies. ⭐ That degrades rather than breaks: `mate_score` still picks
+    #     the best candidate (the bubble-cursor rule), so the WRONG face is not
+    #     chosen -- there are simply two in the running.
+    _tol = min(MATE_ANGLE_HARD_MAX_DEG,
+               _SHIPPED_MATE_ANGLE_TOL_DEG * MATE_SNAP_R_SCALE)
+    object_assembly.MC.MATE_ANGLE_TOL_DEG = _tol
+    # ⛔ THE PREVIEW MUST NEVER BE NARROWER THAN THE MATE, or the ghost disappears
+    # exactly as the mate becomes possible -- an aid that stops guiding at the
+    # moment it matters. It widens to follow, never shrinks below.
+    object_assembly.PREVIEW_ANGLE_DEG = min(
+        MATE_ANGLE_HARD_MAX_DEG, max(_SHIPPED_PREVIEW_ANGLE_DEG, _tol))
     # ⚠ N6: the sliders write the SHARED module's constants, so production and the
     # debug tool apply ONE value and `parity_replay` stays meaningful.
     _lean_trim.GAIN_PITCH = LEAN_PITCH_GAIN
@@ -3405,6 +3469,9 @@ def main():
                            int(round(GRIP_ALIGN_MASK_RATIO * 100)))
         cv2.setTrackbarPos("GRAB z margin cm", SLIDER_WIN,
                            int(round(GRAB_Z_TOLERANCE_M * 100)))
+        # ⭐ Both open at 100 % — exactly the shipped radii, with 33..300 either side.
+        cv2.setTrackbarPos("MATE snap r %", SLIDER_WIN, 100)
+        cv2.setTrackbarPos("MATE preview r %", SLIDER_WIN, 100)
         # ⛔ Z rate parked -- no trackbar to position.
         #   cv2.setTrackbarPos("Z rate %/s", SLIDER_WIN,
         #                      int(round(DEPTH_RATE_PER_S * 100)))

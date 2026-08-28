@@ -164,6 +164,60 @@ def main():
         cv2.getTrackbarPos = lambda name, win: 0
         L._read_sliders()
         ok("runs with every slider at 0", True)
+
+        # ⭐⭐ THE TWO MATE RADII (2026-08-28) SCALE THE SHIPPED VALUE, AND MUST NOT
+        # COMPOUND. They are a PERCENTAGE of a baseline captured at import; scaling
+        # the modules' LIVE values instead would multiply again on every frame and
+        # the slider would run away on its own. Reading three times at 100 % must
+        # leave both constants exactly where they ship.
+        from Resources import object_assembly as _OA
+        _pos = {name: dflt for (name, _mx, dflt, _fn, _doc) in L.SLIDERS}
+        cv2.getTrackbarPos = lambda name, win: _pos[name]
+        for _ in range(3):
+            L._read_sliders()
+        ok("⭐ three reads at 100% leave the SHIPPED radii unchanged",
+           abs(_OA.MC.MATE_RADIUS_FRACTION - L._SHIPPED_MATE_RADIUS_FRACTION) < 1e-12
+           and abs(_OA.PREVIEW_RADIUS_FACTOR - L._SHIPPED_PREVIEW_RADIUS_FACTOR) < 1e-12,
+           "snap %.3f, preview %.3f" % (_OA.MC.MATE_RADIUS_FRACTION,
+                                        _OA.PREVIEW_RADIUS_FACTOR))
+        _pos["MATE snap r %"], _pos["MATE preview r %"] = 300, 33
+        L._read_sliders()
+        ok("...and the owner's third-to-triple range reaches both ends",
+           abs(_OA.MC.MATE_RADIUS_FRACTION - 3.0 * L._SHIPPED_MATE_RADIUS_FRACTION) < 1e-9
+           and abs(_OA.PREVIEW_RADIUS_FACTOR - 0.33 * L._SHIPPED_PREVIEW_RADIUS_FACTOR) < 1e-9,
+           "snap %.3f, preview %.3f" % (_OA.MC.MATE_RADIUS_FRACTION,
+                                        _OA.PREVIEW_RADIUS_FACTOR))
+        # ⭐⭐ THE SNAP SLIDER ALSO DRIVES THE ANGLE TOLERANCE (owner, 2026-08-28):
+        # `can_mate` asks how CLOSE and how ALIGNED, and they are one question.
+        _pos["MATE snap r %"], _pos["MATE preview r %"] = 100, 100
+        L._read_sliders()
+        ok("the angle tolerance rides the SNAP slider, at 100% = shipped",
+           abs(_OA.MC.MATE_ANGLE_TOL_DEG - L._SHIPPED_MATE_ANGLE_TOL_DEG) < 1e-9,
+           "%.1f deg" % _OA.MC.MATE_ANGLE_TOL_DEG)
+        _pos["MATE snap r %"] = 50
+        L._read_sliders()
+        ok("...and it scales down with it",
+           abs(_OA.MC.MATE_ANGLE_TOL_DEG - 0.5 * L._SHIPPED_MATE_ANGLE_TOL_DEG) < 1e-9,
+           "%.1f deg" % _OA.MC.MATE_ANGLE_TOL_DEG)
+        # ⛔⛔ THE HARD GEOMETRIC LIMIT. At 90 deg two outward normals are
+        # perpendicular; past it they point the SAME way and "facing each other"
+        # stops meaning anything. The slider may reach it, the predicate may not.
+        _pos["MATE snap r %"] = 300
+        L._read_sliders()
+        ok("⛔ the tolerance is CLAMPED below 90 deg however far the slider goes",
+           _OA.MC.MATE_ANGLE_TOL_DEG <= L.MATE_ANGLE_HARD_MAX_DEG + 1e-9
+           and _OA.MC.MATE_ANGLE_TOL_DEG < 90.0,
+           "%.1f deg at 300%%" % _OA.MC.MATE_ANGLE_TOL_DEG)
+        ok("⛔ the PREVIEW angle never falls below the mate's — the aid must not "
+           "stop guiding at the moment it matters",
+           _OA.PREVIEW_ANGLE_DEG >= _OA.MC.MATE_ANGLE_TOL_DEG - 1e-9,
+           "preview %.1f vs mate %.1f deg" % (_OA.PREVIEW_ANGLE_DEG,
+                                              _OA.MC.MATE_ANGLE_TOL_DEG))
+        _pos["MATE snap r %"], _pos["MATE preview r %"] = 100, 100
+        L._read_sliders()                                  # restore before leaving
+        ok("...and everything returns to the shipped values",
+           abs(_OA.MC.MATE_ANGLE_TOL_DEG - L._SHIPPED_MATE_ANGLE_TOL_DEG) < 1e-9
+           and abs(_OA.PREVIEW_ANGLE_DEG - L._SHIPPED_PREVIEW_ANGLE_DEG) < 1e-9)
     except Exception as exc:                                   # noqa: BLE001
         ok("`_read_sliders` runs without raising", False,
            "%s: %s" % (type(exc).__name__, exc))
