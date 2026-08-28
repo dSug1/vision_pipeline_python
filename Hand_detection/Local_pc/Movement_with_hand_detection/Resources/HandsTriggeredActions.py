@@ -1850,31 +1850,42 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
             # finding is the reason there is no extrapolation here: every
             # velocity fit measured on this project LOST to "hold the last
             # value", at every horizon.
+            # ⭐⭐⭐ AN UN-SNAP IS A GRAB (owner, 2026-08-28: *"at un-snap, the
+            # grabbed cube should follow the logic for grab -- slerp to hand
+            # fingertips barycenter, including repositioning when the hand rotates,
+            # the running to catch the train which stops if the train stops"*).
+            # ⛔ The first version re-seated only the DEPTH, leaving the object with
+            # whatever IN-PLANE offset and ORIENTATION the mate had given it: it
+            # never walked to the fingertips, and its rotation baseline still
+            # referred to a grab from before the mate.
+            # ⭐ `grab_grip_fade_ms` IS the train: `decay_grip_offset` spends it in
+            # HAND MOVEMENT, so the gap closes only while the hand moves and never
+            # faster than the hand. N6: the identical capture the debug tool runs.
+            if getattr(cube, "rebaseline_depth", False):
+                _rb_grip = fingertips.grip_depth_m(
+                    _hand_depth[handedness], world_landmarks)
+                if _rb_grip is None:
+                    _rb_grip = _hand_depth[handedness]   # the palm's: never absent
+                cube.grab_depth_m = cube.depth_m
+                if _rb_grip is not None:
+                    cube.grab_hand_depth_m = _rb_grip
+                    cube.grab_depth_offset_m = cube.depth_m - _rb_grip
+                else:
+                    cube.grab_hand_depth_m = None
+                    cube.grab_depth_offset_m = None
+                # ⛔ FREEZE, not reset -- the same call the snap path makes, so the
+                # ratio is 1.0 against THIS frame and nothing moves on changeover.
+                _depth_ratio_trackers[handedness].freeze(landmarks)
+                _rb_centre = cube_window.cube_center(owned_cube)
+                cube.grab_grip_offset = (_rb_centre[0] - hand_pos[0],
+                                         _rb_centre[1] - hand_pos[1])
+                cube.grab_grip_fade_ms = fingertips.GRIP_ALIGN_MOVING_MS
+                if hand_quat_now is not None:
+                    cube.grab_hand_orientation = hand_quat_now
+                    cube.grab_cube_orientation = cube.orientation
+                    _tip_trims[handedness].freeze(world_landmarks, hand_quat_now)
+                cube.rebaseline_depth = False
             if Z_TRANSLATION and cube.grab_depth_m is not None:
-                # ⭐⭐ THE MATE JUST HANDED THIS OBJECT BACK -- re-seat before driving.
-                # N6: the identical block the debug tool runs, for the identical
-                # reason. While the object was a FOLLOWER the mate owned its depth
-                # and this baseline went stale; resuming the ratio drive from it
-                # teleports the object (measured 18 cm, 2026-08-28). Re-anchoring
-                # here makes the hand-over continuous -- ratio 1.0 against the
-                # object's CURRENT depth, so nothing moves on the changeover.
-                if getattr(cube, "rebaseline_depth", False):
-                    cube.grab_depth_m = cube.depth_m
-                    _rb_grip = fingertips.grip_depth_m(
-                        _hand_depth[handedness], world_landmarks)
-                    if (fingertips.GRIP_ALIGN_DEPTH_AT_GRAB
-                            and fingertips.USE_TIP_BARYCENTER
-                            and _rb_grip is not None):
-                        cube.grab_hand_depth_m = _rb_grip
-                        cube.grab_depth_offset_m = cube.depth_m - _rb_grip
-                    else:
-                        cube.grab_hand_depth_m = None
-                        cube.grab_depth_offset_m = None
-                    # ⛔ The RATIO baseline is stale too: depth = anchor x ratio, and
-                    # the ratio is measured against the hand's span at the ORIGINAL
-                    # grab. Re-anchoring without it would still jump.
-                    _depth_ratio_trackers[handedness].reset()
-                    cube.rebaseline_depth = False
                 # ⭐ Same shared helper as the debug tool -- N6, and the estimator
                 # stays clock-free.
                 _ratio, _ratio_valid = _depth_ratio_trackers[handedness].update(

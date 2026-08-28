@@ -54,8 +54,9 @@ lean, worse on the tail — which has decided every verdict.
 (2026-08-28).** The mount is `facing_user`; the trim removes the lean's swing at
 gains 0.66/0.66 while leaving the turn amount exact. ⚠ `V2`'s production live look
 is still owed.
-⭐⭐ **THE WORK HAS MOVED OFF THE HANDS AND ONTO THE OBJECTS (2026-08-28): `AS1`–`AS5`,
-ASSEMBLY BY MATE CONNECTORS** → [`30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md`](30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md).
+⭐⭐ **THE WORK IS OBJECT ASSEMBLY (2026-08-28): `AS1`–`AS9` ALL BUILT IN BOTH TOOLS,
+NONE SHIPPED** → [`30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md`](30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md),
+whose **§12 says what is left**. ⛔ A live look closes it; production has not been run.
 ⭐ The **platform decision** is still due and still the owner's — assembly does not
 wait on it, because `AS1`–`AS4` touch no renderer.
 Full status: [`00_CORE/QUEUE.md`](00_CORE/QUEUE.md)'s YOU-ARE-HERE block.

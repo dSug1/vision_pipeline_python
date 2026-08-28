@@ -559,12 +559,18 @@ class CubeWindow:
         half = size / 2.0
         camera_distance = size * CUBE_PERSPECTIVE_DISTANCE_RATIO
 
-        projected = []  # (screen_xy, rotated_z) per local vertex, in obj.mesh.vertices order
-        for v in obj.mesh.vertices:
-            local = (v[0] * half, v[1] * half, v[2] * half)
-            rx, ry, rz = _quat_rotate_vector(obj.orientation, local)
-            scale = camera_distance / (camera_distance + rz)
-            projected.append(((cx + rx * scale, cy + ry * scale), rz))
+        # ⭐⭐⭐ ONE SCENE CAMERA. Was: each object projected through its OWN virtual
+        # camera at `3 x its size`, centred on itself, while its CENTRE was placed
+        # by the linear pinhole -- two inconsistent projections, which drew two
+        # objects whose faces COINCIDE in world space with a gap of up to 18.4 px
+        # on an 80 px cube, present even at 0 deg. See
+        # `object_assembly.project_vertices_px` for the arithmetic and the numbers.
+        # ⚠ `projected` keeps its shape `((x, y), z)`, but z is now WORLD depth in
+        # metres, not a local offset -- larger is FARTHER, which is what the
+        # painter's sort and the near-face occluder both want.
+        projected = object_assembly.project_vertices_px(obj, self.window_size)
+        if not projected:
+            return
 
         visible_faces = []
         for face in obj.mesh.faces:
@@ -585,11 +591,13 @@ class CubeWindow:
         # is solid, and its near half was transparent until 2026-08-27.
         # ⚠ `min(rz)` is this orientation's own nearest vertex, so a rotated cube
         # reaches correctly further forward than an axis-aligned one.
+        # ⭐ The near face is now READ DIRECTLY: every vertex carries its own world
+        # depth, so the nearest one IS the occluding plane. `near_face_depth`'s job
+        # was to convert a LOCAL offset into a depth, and there is no longer a local
+        # offset to convert.
         self._silhouettes.append(
             (depth_order.convex_hull([xy for xy, _z in projected]),
-             depth_order.near_face_depth(obj.depth_m,
-                                         min(z for _xy, z in projected),
-                                         palm_geometry.focal_px(self.window_size))))
+             min(z for _xy, z in projected)))
 
         for _avg_z, color, pts in visible_faces:
             int_pts = [(int(x), int(y)) for x, y in pts]
@@ -610,7 +618,7 @@ class CubeWindow:
                                     [(int(x), int(y)) for x, y in hull],
                                     SNAP_BORDER_WIDTH)
 
-        self._draw_connectors(obj, cx, cy, half, camera_distance)
+        self._draw_connectors(obj)
         self._draw_mate_preview(obj)
 
     def _draw_mate_preview(self, obj: Cube) -> None:
@@ -642,19 +650,17 @@ class CubeWindow:
         if preview.from_px and preview.to_px:
             self._draw_dashed(preview.from_px, preview.to_px, color)
 
-        size = palm_geometry.projected_size_px(obj.size, preview.depth_m)
-        half = size / 2.0
-        camera_distance = size * CUBE_PERSPECTIVE_DISTANCE_RATIO
-        gx, gy = preview.center_px
-        projected = []
-        for v in obj.mesh.vertices:
-            local = (v[0] * half, v[1] * half, v[2] * half)
-            rx, ry, rz = _quat_rotate_vector(preview.orientation, local)
-            denom = camera_distance + rz
-            if denom <= 1e-6:
-                return
-            s = camera_distance / denom
-            projected.append(((gx + rx * s, gy + ry * s), rz))
+        # ⭐ The ghost is a HYPOTHETICAL pose of this object, projected through the
+        # same scene camera — so it lands exactly where the object will.
+        pose = object_assembly.pose_of(obj, self.window_size,
+                                       center_px=preview.center_px,
+                                       depth_m=preview.depth_m,
+                                       orientation=preview.orientation)
+        if pose is None:
+            return
+        projected = object_assembly.project_vertices_px_at(pose, obj, self.window_size)
+        if not projected:
+            return
 
         # A translucent fill needs its own surface: pygame's polygon draw is
         # opaque. ⚠ Sized to the window, not to the ghost, so no coordinate
@@ -691,8 +697,7 @@ class CubeWindow:
                              (int(a[0] + ux * end), int(a[1] + uy * end)), 2)
             pos = end + gap
 
-    def _draw_connectors(self, obj: Cube, cx: float, cy: float,
-                         half: float, camera_distance: float) -> None:
+    def _draw_connectors(self, obj: Cube) -> None:
         """⭐ AS5 -- the mate connectors, drawn on top of the object's faces.
 
         The dot is the connector's position; the whisker is its OUTWARD NORMAL.
@@ -710,21 +715,20 @@ class CubeWindow:
         color = {"mated": CONNECTOR_MATED_COLOR,
                  "candidate": CONNECTOR_CANDIDATE_COLOR}.get(obj.mate_state,
                                                              CONNECTOR_IDLE_COLOR)
+        # ⭐ THE SAME SCENE CAMERA the faces use. Projecting connectors through a
+        # different camera would drift the dots off the faces they mark, which is
+        # the very confusion this whole change removes.
+        pose = object_assembly.pose_of(obj, self.window_size)
+        if pose is None:
+            return
         for conn in obj.connectors:
             tip = tuple(conn.position[k] + conn.normal[k] * CONNECTOR_NORMAL_FRACTION
                         for k in range(3))
-            pts = []
-            for v in (conn.position, tip):
-                local = (v[0] * half, v[1] * half, v[2] * half)
-                rx, ry, rz = _quat_rotate_vector(obj.orientation, local)
-                denom = camera_distance + rz
-                if denom <= 1e-6:
-                    pts = []
-                    break
-                scale = camera_distance / denom
-                pts.append((int(cx + rx * scale), int(cy + ry * scale)))
-            if len(pts) != 2:
+            marks = object_assembly.project_locals_px(pose, (conn.position, tip),
+                                                      self.window_size)
+            if len(marks) != 2:
                 continue
+            pts = [(int(m[0][0]), int(m[0][1])) for m in marks]
             pygame.draw.line(self.screen, color, pts[0], pts[1], 2)
             pygame.draw.circle(self.screen, color, pts[0], CONNECTOR_DOT_PX)
             pygame.draw.circle(self.screen, (20, 20, 20), pts[0], CONNECTOR_DOT_PX, 1)

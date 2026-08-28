@@ -1,6 +1,6 @@
 # 30 — 3D OBJECTS · meshes, import, rendering
 
-> **STATUS** · ⭐ **live — the first build started 2026-08-28** (`AS1`–`AS5`, assembly)
+> **STATUS** · ⭐ **live — `AS1`–`AS9` BUILT 2026-08-28, none SHIPPED**
 > **OWNS** · imported 3D assets, the mesh pipeline, object assembly, whatever renders them
 > **READ IF** · you are touching assembly or connectors, starting real 3D-file
 > import, or choosing the renderer
@@ -14,7 +14,15 @@ Owner, 2026-08-28: *"we will stop working on the hands and start working on the
 cube objects. I want the objects to be able to assemble into an assembly."*
 
 **Design of record → [`SPEC_ASSEMBLY_MATE_CONNECTORS.md`](SPEC_ASSEMBLY_MATE_CONNECTORS.md).**
-Rows `AS1`–`AS5` in [`../00_CORE/QUEUE.md`](../00_CORE/QUEUE.md).
+⭐⭐ **A NEW SESSION SHOULD READ ITS §12 FIRST — *what is left to build*.**
+Rows `AS1`–`AS9` in [`../00_CORE/QUEUE.md`](../00_CORE/QUEUE.md).
+
+✅ **`AS1`–`AS9` are all BUILT in both tools (2026-08-28); NONE is SHIPPED.**
+44/44 suites, `parity_replay` clean — ⛔ necessary and not sufficient, because only
+a live look in both tools closes a change and **production has never been run**.
+
+⛔⛔ **One design fork is open and unanswered: a ONE-HANDED DETACH.** An un-snap
+needs TWO hands today. *A tug* was recommended; nothing was chosen.
 
 The four things a session must not rediscover:
 
@@ -27,7 +35,9 @@ The four things a session must not rediscover:
 * ⭐⭐ **Parent ≠ root.** Parent (the bigger object) stores the transform; the root
   is whoever is *held*, re-rooted every frame. Spec §6.1.
 * ⭐ **`AS1`–`AS4` are NOT blocked on the platform decision** — no renderer,
-  stdlib-only. Only `AS5` (drawing) is renderer-shaped. Spec §10.
+  stdlib-only. Only `AS5` (drawing) is renderer-shaped. Spec §11.
+* ⛔⛔ **ONE SCENE CAMERA — never give an object its own.** Two projections for one
+  scene drew coincident faces **18.4 px apart**. Spec §8bis.
 
 ---
 
@@ -67,7 +77,8 @@ platform call is `U3`'s, and it is still the owner's to make
 
 | | |
 |---|---|
-| ⭐⭐ **assembly — connectors, the residual rule, the object tree** | [`SPEC_ASSEMBLY_MATE_CONNECTORS.md`](SPEC_ASSEMBLY_MATE_CONNECTORS.md) |
+| ⭐⭐ **assembly — connectors, the residual rule, the object tree** | [`SPEC_ASSEMBLY_MATE_CONNECTORS.md`](SPEC_ASSEMBLY_MATE_CONNECTORS.md) — **§13 says what is left** |
+| the NARRATIVE — every live defect, and the fixes that caused the next one | [`history/ASSEMBLY_BUILD_LOG.md`](history/ASSEMBLY_BUILD_LOG.md) ⚠ opened by name, never loaded by default |
 | the original asset pipeline design (Blender → glTF → Three.js) | [`ORIGINAL_SPEC_PIPELINE_B.md`](ORIGINAL_SPEC_PIPELINE_B.md) (was `Specification.md` §8) |
 | the mesh-generic renderer as built | [`../10_HAND_TRACKING/spec/SPEC_13_snap_rotate_release.md`](../10_HAND_TRACKING/spec/SPEC_13_snap_rotate_release.md) §13.8 |
 | what depth and the play volume already give you | [`../10_HAND_TRACKING/spec/SPEC_14_manipulation.md`](../10_HAND_TRACKING/spec/SPEC_14_manipulation.md) §14.3.5 |

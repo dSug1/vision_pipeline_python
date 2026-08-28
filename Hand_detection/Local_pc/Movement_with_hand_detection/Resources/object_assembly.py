@@ -587,7 +587,15 @@ def _edges_from(driver, group, assembly):
 # a margin. 260 mm gives 187.8 mm against 144.4 mm.
 # ⚠ Still fits: at 640 px the centres land 288 px apart, at 176 and 464, and the
 # play-area clamp allows 87..553.
-HOME_SEPARATION_M = 0.260
+# ⚠⚠ RE-DERIVED A THIRD TIME, 2026-08-28, when the snap radius went to 150 %.
+# Capture reach 72.2 -> 108.3 mm and the preview 144.3 -> 216.5 mm, so:
+#     gap(D) = D - 36.1 - 36.1 mm   must exceed   216.5 mm   =>   D > 288.7 mm
+# ⛔ The previous 260 mm NO LONGER CLEARED IT -- the scene would have opened with a
+# ghost already showing. 340 mm gives 267.8 mm against 216.5 mm.
+# ⚠ It still fits, but the margin is now thin: at 640 px the centres land at 132
+# and 508 px, against a play area of 87..553. A wider snap radius than this would
+# start pushing the objects off the usable area at low camera resolutions.
+HOME_SEPARATION_M = 0.340
 
 
 def home_center_px(index, total, frame_size, separation_m=HOME_SEPARATION_M,
@@ -611,6 +619,78 @@ def home_center_px(index, total, frame_size, separation_m=HOME_SEPARATION_M,
     return (cx - span / 2.0 + index * step_px, cy)
 
 
+def project_vertices_px(cube, frame_size):
+    """⭐⭐⭐ PROJECT AN OBJECT'S MESH THROUGH **THE SCENE CAMERA** — one projection
+    for the whole scene, the same one the mate is solved in.
+
+    Returns `[((px, py), world_z), ...]`, one entry per mesh vertex.
+
+    ⛔⛔ WHAT THIS REPLACES, AND WHY IT WAS A DEFECT. Each object used to be drawn
+    through its OWN virtual camera at `cam = 3 x its projected size`, centred on
+    itself — while its CENTRE was placed by the linear pinhole `px_from_world`.
+    **Two inconsistent projections for one scene.** Each object's faces were pulled
+    inward by `s = cam/(cam+rz) = 6/7`, but the centre-to-centre distance stayed
+    linear, so two objects whose faces COINCIDE in world space were drawn with a gap
+    of `2 x half x (1 - s)`:
+
+        predicted 11.4 px in x, measured 13.9 px including y, worst 18.4 px
+        on an 80 px cube -- 23% of its width, and present even at 0 deg rotation
+
+    The owner reported it as *"an offset and misalignment between the cubes' faces,
+    as if the snap was not done properly on the centers of the faces"*, and it was
+    not the snap: the mate is exact to **0.0000 mm** in world space every time.
+
+    ⭐ The local camera also EXAGGERATED foreshortening: it applied a near/far ratio
+    of **1.400** where the real camera at 0.50 m gives **1.156**. So the true
+    projection is both consistent AND more physical -- objects still foreshorten,
+    by the amount they actually should.
+
+    ⚠ `CUBE_PERSPECTIVE_DISTANCE_RATIO`'s original purpose survives: it existed to
+    avoid a 2026-08-01 morphing bug where a naive per-vertex scale could send the
+    denominator negative. A real pinhole at the object's own depth cannot do that
+    while the object is inside the play volume, because `depth - half_extent` is
+    0.464 m at the near wall -- nowhere near zero.
+    """
+    pose = pose_of(cube, frame_size)
+    if pose is None:
+        return []
+    return project_locals_px(pose, cube.mesh.vertices, frame_size)
+
+
+def project_vertices_px_at(pose, cube, frame_size):
+    """An object's mesh at a GIVEN pose — the ghost's case."""
+    return project_locals_px(pose, cube.mesh.vertices, frame_size)
+
+
+def pose_of(cube, frame_size, center_px=None, depth_m=None, orientation=None):
+    """`(centre_m, orientation, half_extent_m)` for an object — or for a HYPOTHETICAL
+    pose of it, which is what the ghost needs."""
+    half = half_extent_m(cube.size, frame_size)
+    if half is None:
+        return None
+    center = to_world(ObjectDesire("_", cube.size,
+                                   center_px if center_px is not None else center_px_of(cube),
+                                   cube.depth_m if depth_m is None else depth_m,
+                                   cube.orientation, ()), frame_size, actual=True)
+    if center is None:
+        return None
+    return (center, cube.orientation if orientation is None else orientation, half)
+
+
+def project_locals_px(pose, locals_xyz, frame_size):
+    """Project unit-mesh local points through the SCENE camera. `[((px,py), wz), ...]"""
+    center, orientation, half = pose
+    out = []
+    for v in locals_xyz:
+        off = MC.quat_rotate(orientation, MC._scale(v, half))
+        wx, wy, wz = center[0] + off[0], center[1] + off[1], center[2] + off[2]
+        px = palm_geometry.px_from_world(wx, wy, wz, frame_size)
+        if px is None:
+            return []
+        out.append((px, wz))
+    return out
+
+
 def center_px_of(cube):
     """An object's centre on screen, from its stored top-left.
 
@@ -622,15 +702,31 @@ def center_px_of(cube):
     return (cube.position[0] + size / 2.0, cube.position[1] + size / 2.0)
 
 
-def place_center(cube, center_px, frame_size):
-    """Write a centre back onto an object, clamped into the play volume.
+def place_center(cube, center_px, frame_size, clamp=True):
+    """Write a centre back onto an object, optionally clamped into the play volume.
 
     ⭐ The one copy of this conversion. Both tools had their own `set_target_center`
     and both may keep it; assembly writes through here so the two cannot disagree
     about where a mated object ended up (`N6`).
+
+    ⛔⛔ `clamp=False` FOR A MATE-PLACED FOLLOWER, and it is not a loosening.
+    A follower's position is DETERMINED by the mate; clamping it afterwards is a
+    second authority silently overriding the constraint, and the faces then visibly
+    fail to meet. Measured 2026-08-28: with the solved pose outside the play area
+    the clamp displaced the follower by **87 px** while the mate itself was exact to
+    0.0000 mm — the owner saw it as *"an offset and misalignment between the cubes'
+    faces, as if the snap was not done properly"*.
+    ⭐ It is the same rule §4.2 already states for the residual: the clamp is a
+    SECOND DRIVER and must not be mistaken for the mate's intent.
+    ⚠ The assembly stays reachable because the DRIVER is still clamped by its own
+    hand logic, so a follower can only ever sit one object-extent beyond the line —
+    and it is re-clamped the moment the mate breaks and it becomes its own object.
     """
-    cx, cy = palm_geometry.clamp_to_play_volume(
-        center_px[0], center_px[1], cube.depth_m, cube.size, frame_size)
+    if clamp:
+        cx, cy = palm_geometry.clamp_to_play_volume(
+            center_px[0], center_px[1], cube.depth_m, cube.size, frame_size)
+    else:
+        cx, cy = center_px
     size = palm_geometry.projected_size_px(cube.size, cube.depth_m)
     cube.position = (cx - size / 2.0, cy - size / 2.0)
 
@@ -680,7 +776,10 @@ def step(cubes, assembly, frame_size, now_ms, desires=None,
         cube = cubes[name]
         cube.depth_m = depth_m
         cube.orientation = orientation
-        place_center(cube, center_px, frame_size)
+        # ⛔ NOT CLAMPED -- see `place_center`. A follower is placed BY the mate;
+        # clamping it here is a second authority overriding the constraint, and it
+        # was measured displacing a perfectly solved mate by 87 px.
+        place_center(cube, center_px, frame_size, clamp=False)
 
     # ⭐⭐ AS6 -- RELEASE AT MATE. The child is now driven by the mate, so the hand
     # must let go of it: two authorities on one transform is what broke the snap
@@ -725,10 +824,34 @@ def step(cubes, assembly, frame_size, now_ms, desires=None,
             # driven the object from its stale anchor and the 18 cm jump has
             # already happened. Setting it on the event means the flag is true at
             # the START of the next frame, which is when the hand loop reads it.
-            for _name in (child_name, parent_name):
-                _obj = cubes.get(_name)
-                if _obj is not None and _obj.owner is not None:
-                    _obj.rebaseline_depth = True
+            # ⛔⛔ ONLY THE FOLLOWER. Re-seating the DRIVER is not merely
+            # unnecessary, it RATCHETS: the driver's depth was always its own, so
+            # re-anchoring bakes the current offset in as a new zero and resets the
+            # ratio to 1.0 — and doing that on every break ACCUMULATES.
+            # ⚠ Measured live 2026-08-28 across three mate/break cycles: the parent
+            # climbed **0.589 → 0.774 m** toward the far wall while its anchor sat
+            # at 0.670, never released. The owner reported it as *"still a problem
+            # to control the parent on z axis translation after un-snap"* — and it
+            # was caused by the fix for the CHILD's jump, applied one object too
+            # wide.
+            # ⭐ `mate_role` still holds LAST frame's value here (the roles are
+            # recomputed below), which is exactly what is needed: the follower is
+            # the object whose depth the mate was owning.
+            # ⛔⛔ NO WALL GATE HERE, AND THAT WAS TRIED AND REVERTED THE SAME DAY.
+            # Skipping the re-seat when the object sits at a play-volume wall looks
+            # protective and is the exact opposite: the re-seat is what walks the
+            # object BACK TO ITS HAND (`A1`), so refusing it at a wall is refusing
+            # the one thing that recovers from the wall.
+            _obj = cubes.get(child_name)
+            if _obj is not None and _obj.owner is not None \
+                    and getattr(_obj, "mate_role", "") == "follower":
+                _obj.rebaseline_depth = True
+            _par = cubes.get(parent_name)
+            if _par is not None and _par.owner is not None \
+                    and getattr(_par, "mate_role", "") == "follower":
+                # Re-rooting can make the structural PARENT the follower, so this
+                # is not dead code — it is the same rule, applied by ROLE.
+                _par.rebaseline_depth = True
             if latch is not None:
                 # ⚠ Nothing to hold off once the mate is gone: the pair are two
                 # free objects again, and a stale latch would refuse an ordinary

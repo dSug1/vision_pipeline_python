@@ -128,3 +128,47 @@ once, and the new baseline matches the object's own depth.
 
 ⭐⭐⭐ All three are the same rule in different clothes, and it is `T6`'s:
 **a fixture whose state does not match the product's cannot validate the product.**
+
+---
+
+## 2026-08-28 (later still) — ⭐⭐⭐ AN UN-SNAP IS A GRAB
+
+> **Owner:** *"at un-snap, the grabbed cube should follow the logic for grab
+> (slerp to hand fingertips barycenter, including repositioning when the hand
+> rotates — the running to catch the train which stops if the train stops)."*
+
+⛔ **The re-seat above was only the DEPTH third of a grab.** It left the object
+holding whatever **in-plane offset** and **orientation** the mate had given it: it
+never walked to the fingertips, and its rotation baseline still referred to a grab
+from before the mate. The un-snap now captures the same three baselines the snap
+path captures:
+
+| | |
+|---|---|
+| depth | anchor on the grip point, whole gap as an offset |
+| in-plane | `grab_grip_offset` + `grab_grip_fade_ms` — **the train** |
+| rotation | `grab_hand_orientation` / `grab_cube_orientation` + the tip-trim freeze |
+
+⭐ `grab_grip_fade_ms` **is** the train: `decay_grip_offset` spends it in HAND
+MOVEMENT, so the gap closes only while the hand moves and never faster than it.
+
+⛔ One call had to change with it: the ratio tracker takes **`freeze(landmarks)`**,
+not `reset()` — the same call the snap path makes, so the ratio is 1.0 against THIS
+frame and nothing moves on the changeover.
+
+⚠⚠ **A WALL GUARD WAS BUILT AND REVERTED THE SAME HOUR.** "Do not re-seat when the
+object is at a play-volume wall" looks protective and is the exact opposite: the
+re-seat is what walks the object OFF the wall, so refusing it there refuses the
+recovery. Deleted, not parked.
+
+✅ Measured from an object the mate had left 150 px aside and pinned at 0.850:
+**gap 81 px → 0 px, z 0.850 → 0.504** (hand at 0.50), closing only while the hand
+moved, with no teleport on the changeover frame.
+`analysis/verify_mate_wall_recovery.py` — its own file, because the per-hand
+trackers are module level and the other scenarios leak into it.
+
+✅✅ **CONFIRMED IN A LIVE SESSION** (the tool's own `[z]` log, four mate/break
+cycles): `RESEAT-PENDING` on frame +1 for the FOLLOWER only; the follower's z
+unchanged across the re-seat frame; **the parent's anchor pinned at 0.500 for all
+four cycles** (it had climbed 0.557 → 0.670 before), parent z stable at
+0.503–0.537 (it had drifted 0.589 → 0.774), and **no object reached 0.850**.

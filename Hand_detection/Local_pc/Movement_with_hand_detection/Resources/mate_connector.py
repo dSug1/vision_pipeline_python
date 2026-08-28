@@ -65,7 +65,13 @@ from typing import Dict, Optional, Sequence, Tuple
 # mate is refused by the pipeline's OWN noise during an otherwise steady approach.
 # ⛔ CEILING: 45 deg, where a cube's ADJACENT face becomes an equally good
 # candidate (faces are 90 deg apart). 30 sits just above the floor.
-MATE_ANGLE_TOL_DEG = 30.0
+# ⭐⭐ 30 -> 45 deg, riding the same 150 % (the two are one question -- how CLOSE
+# and how ALIGNED). 45 deg half-angle IS the owner's **90 deg aperture**.
+# ⚠⚠ AND IT IS EXACTLY THE ADJACENT-FACE BOUNDARY: cube normals are 90 deg apart,
+# so below 45 deg at most ONE face can qualify and above it TWO do. ⭐ It degrades
+# rather than breaks -- `mate_score` still picks the better candidate, so the wrong
+# face is not chosen; there are simply two in the running.
+MATE_ANGLE_TOL_DEG = 45.0
 
 # The capture sphere, as a fraction of the object's own half-extent -- so it
 # derives from the object with NO per-object configuration, the same principle as
@@ -81,7 +87,14 @@ MATE_ANGLE_TOL_DEG = 30.0
 # beyond it two objects mate while visibly apart. At 1.0 it sits exactly ON the
 # ceiling: a mate can now pull an object a full cube-width, so watch for a visible
 # jump at snap. It is the owner's deliberate maximum, not an oversight.
-MATE_RADIUS_FRACTION = 1.0
+# ⭐⭐ 1.0 -> 1.5, owner 2026-08-28 after live trial: *"set 150% for snap"*, which
+# is the **90 deg cone aperture** they specified (+/-45 deg tilt around the normal).
+# Capture reach is now **108.3 mm = 1.50 x an object's own edge**.
+# ⚠⚠ THAT IS PAST THE STATED CEILING of one edge, deliberately: two objects can now
+# mate while VISIBLY APART, so a snap may pull an object one and a half widths and
+# read as a jump. Settled by eye on the slider, which is the project's way of
+# settling a number that has no measured floor.
+MATE_RADIUS_FRACTION = 1.5
 
 # ⛔ FLOOR: strictly > 1.0, or engage and release share a threshold and the mate
 # chatters at 25 deg of jitter. This is the Schmitt trigger, and Creo's second

@@ -147,9 +147,15 @@ check("angle: %.0f° mates, %.0f° does not" % (MC.MATE_ANGLE_TOL_DEG - 1.0, MC.
       MC.can_mate(a_pose, tilted(MC.MATE_ANGLE_TOL_DEG - 1.0))
       and not MC.can_mate(a_pose, tilted(MC.MATE_ANGLE_TOL_DEG + 1.0)))
 
-check("⭐ the tolerance clears F1's measured jitter floor and stays under 45°",
-      25.41 < MC.MATE_ANGLE_TOL_DEG < 45.0,
-      "%.1f° in (25.41, 45)" % MC.MATE_ANGLE_TOL_DEG)
+# ⚠⚠ THE TOLERANCE NOW SITS EXACTLY ON THE ADJACENT-FACE BOUNDARY, by owner
+# decision (2026-08-28, *"set 150% for snap"* = the 90° aperture). Cube normals are
+# 90° apart, so BELOW 45° at most one face can qualify and ABOVE it two do; at
+# exactly 45° they tie. ⭐ It degrades rather than breaks — `mate_score` picks the
+# better candidate — but the comparison moved from `<` to `<=` and that is a real
+# loosening, recorded here rather than buried.
+check("⚠ the tolerance is ON the 45° adjacent-face boundary, above the jitter floor",
+      25.41 < MC.MATE_ANGLE_TOL_DEG <= 45.0,
+      "%.1f° — floor 25.41° (F1 p95), boundary 45°" % MC.MATE_ANGLE_TOL_DEG)
 # ⚠⚠ THE CEILING, AND WE ARE NOW SITTING EXACTLY ON IT. The rule is that capture
 # must not exceed an object's own edge, or two objects mate while VISIBLY APART and
 # the snap becomes a jump. The owner doubled `MATE_RADIUS_FRACTION` to 1.0 on
@@ -158,10 +164,15 @@ check("⭐ the tolerance clears F1's measured jitter floor and stays under 45°"
 # recorded here rather than buried, because ANY further increase crosses a boundary
 # this project chose on purpose. If snaps look like teleports live, this is why.
 _edge = 2.0 * HALF_SMALL
-check("⚠ capture is AT the object's own edge — the deliberate ceiling",
-      reach <= _edge + 1e-9,
-      "%.1f mm vs a %.1f mm edge (ratio %.2f, ceiling 1.00)"
-      % (reach * 1000.0, _edge * 1000.0, reach / _edge))
+# ⚠⚠ AND CAPTURE IS NOW **PAST** THE STATED CEILING OF ONE OBJECT EDGE — 1.50x it,
+# by owner decision after a live trial. Two objects therefore mate while VISIBLY
+# APART, and a snap can pull an object one and a half widths. ⛔ This assertion no
+# longer defends the ceiling; it RECORDS where the value sits relative to it, so a
+# later reader sees the boundary was crossed on purpose and not by drift.
+check("⚠ capture is PAST the one-edge ceiling — deliberate, watch for a visible jump",
+      1.0 <= reach / _edge <= 2.0,
+      "%.1f mm = %.2f x the %.1f mm edge (ceiling was 1.00)"
+      % (reach * 1000.0, reach / _edge, _edge * 1000.0))
 
 print()
 print("=" * 82)
@@ -224,7 +235,11 @@ check("⛔ the ENFORCED gap is zero — a break test reading THIS can never fire
       "%.3e m / %.3e°" % (enforced_lin, enforced_ang))
 
 # Desired: a second hand drags the child 60 mm away. THIS is what breaks it.
-pulled = MC.world_pose(conn, (2.0 * HALF_SMALL + 0.060, 0.0, 0.5), b_orient, HALF_SMALL)
+# ⚠ DERIVED FROM THE REACH, never a hard-coded distance: this read 0.060 m and
+# stopped breaking the mate the moment the capture radius grew — a fixture that
+# tracks a constant it does not own.
+_pull = reach * MC.MATE_BREAK_FACTOR * 1.5
+pulled = MC.world_pose(conn, (2.0 * HALF_SMALL + _pull, 0.0, 0.5), b_orient, HALF_SMALL)
 pulled_lin, _ = MC.residual(a_pose, pulled)
 check("⭐ the DESIRED residual sees the pull, and breaks the mate",
       pulled_lin > 0.0 and MC.should_break(a_pose, pulled),

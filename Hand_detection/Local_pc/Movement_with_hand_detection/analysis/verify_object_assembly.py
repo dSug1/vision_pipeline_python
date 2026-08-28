@@ -519,6 +519,42 @@ a2.unlink("small", cooldown=False)
 run(c2, a2, 6)
 check("...so a home-then-remate is not refused", bool(a2.links))
 
+print()
+print("=" * 82)
+print("⛔⛔ THE PLAY-VOLUME CLAMP MUST NOT OVERRIDE A SOLVED MATE")
+print("=" * 82)
+
+# ⭐⭐ Owner, 2026-08-28: *"there is an offset and misalignment between the cubes'
+# faces, as if the snap was not done properly on the centers of the faces"*.
+# The mate was exact to 0.0000 mm in world space; `place_center` then CLAMPED the
+# follower into the play area and silently moved it — measured **87 px**. Same rule
+# as §4.2: the clamp is a SECOND DRIVER and must not be mistaken for the mate.
+_hL = OA.half_extent_m(80, FRAME)
+_hS = OA.half_extent_m(80, FRAME)
+_conn = MC.face_center_connector(CUBE_V, (1, 2, 6, 5), (1.0, 0.0, 0.0))
+_connB = MC.face_center_connector(CUBE_V, (0, 3, 7, 4), (-1.0, 0.0, 0.0))
+_worst = 0.0
+for _cx in (320.0, 480.0, 560.0, 620.0):
+    _parent = FakeCube(80, (_cx, 240.0))
+    _ctr = OA.to_world(OA.ObjectDesire("l", 80, OA.center_px_of(_parent),
+                                       _parent.depth_m, IDENT, ()), FRAME, actual=True)
+    _pp = MC.world_pose(_conn, _ctr, IDENT, _hL)
+    _q, _c = MC.snap_pose(_pp, _connB, IDENT, _hS)
+    _scr = OA.to_screen(_c, FRAME)
+    _child = FakeCube(80, (0.0, 0.0))
+    _child.orientation = _q
+    _child.depth_m = _scr[1]
+    OA.place_center(_child, _scr[0], FRAME, clamp=False)
+    _worst = max(_worst, abs(OA.center_px_of(_child)[0] - _scr[0][0]))
+check("⛔⛔ a mate-placed follower is NOT displaced, even outside the play area",
+      _worst < 0.5, "worst displacement %.1f px across four parent positions" % _worst)
+
+_c2 = FakeCube(80, (0.0, 0.0))
+OA.place_center(_c2, (620.0, 240.0), FRAME, clamp=True)
+check("...while an ordinary placement IS still clamped — `U9` is not weakened",
+      abs(OA.center_px_of(_c2)[0] - 620.0) > 0.5,
+      "620 -> %.1f px" % OA.center_px_of(_c2)[0])
+
 print("=" * 82)
 if _fails:
     print("%d CHECK(S) FAILED: %s" % (len(_fails), ", ".join(_fails)))

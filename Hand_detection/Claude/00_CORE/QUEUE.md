@@ -90,29 +90,39 @@ Gains **0.66/0.66**, both tools, `gain 0` still bit-exact. ⚠ The gate is clear
 ⭐⭐⭐ **The method rule it cost a session to learn: A GOLDEN VECTOR BUILT FROM A
 MATHEMATICALLY PURE INPUT TESTS A CASE THE PRODUCT NEVER SEES.**
 
-⭐⭐⭐ **THE NEXT BUILD IS CHOSEN, AND IT LEAVES THE HAND SUBSYSTEM: `AS1`–`AS5`,
-OBJECT ASSEMBLY BY MATE CONNECTORS** (owner, 2026-08-28 — *"we will stop working on
-the hands and start working on the cube objects"*). Design of record:
-[`../30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md`](../30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md);
-rows in the **Phase AS** block below. ⭐⭐ It is **not** blocked on the platform
-decision the way `U2` is — `AS1`–`AS4` touch no renderer, which is the same argument
-that let `F1` proceed. ⛔⛔ The owner's rules 2 and 3 **conflict as written** and
-`AS3` is the fix; read it before touching a mate.
+⭐⭐⭐ **THE WORK IS IN `30_OBJECTS_3D`: OBJECT ASSEMBLY BY MATE CONNECTORS,
+`AS1`–`AS9`, ALL BUILT IN BOTH TOOLS ON 2026-08-28 AND NONE OF IT SHIPPED.**
+Design of record and — ⭐ **the first thing a new session should read** — its §12
+*"what is left to build"*:
+[`../30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md`](../30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md).
 
-✅✅ **`AS1`–`AS5` ARE BUILT IN BOTH TOOLS (2026-08-28).** One connector on each
-cube's `+X` face — the large cube's **YELLOW** face against the small cube's
-**GREEN** one. `Resources/mate_connector.py` (the maths, stdlib-only/numpy-free/
-clock-free) + `Resources/object_assembly.py` (the seam, and the ONE `step()` both
-tools call). **42/42 suites pass; `parity_replay` NO DIVERGENCE on 4 takes.**
-⛔⛔ **THE LIVE LOOK IN BOTH TOOLS IS OWED and nothing else closes it** — automated
-green is necessary, not sufficient (`METHOD`; §13.6.1 shipped **inverted** while
-passing an "end-to-end confirmed" claim).
-⭐⭐ **Three defects the golden vectors caught before any camera ran**: `would_cycle`
-was written **backwards**; the `outward` gate was **strictly positive**, which
-refuses the one pose a perfect mate reaches; and ENFORCE read the **desire** instead
-of the actual pose, so a parent stopped at a wall **shed its child through it**.
-⭐ A fourth "failure" was the **harness**, not the module. ⚠ **The capture radius has
-no measured floor — settle it live**, the way `V2`'s 0.66 was.
+**44/44 golden-vector suites; `parity_replay` clean.** ⛔ That is necessary and NOT
+sufficient: `METHOD` says a live look in BOTH tools closes a change, and it has not
+happened. ⚠ **Production has never been run at all** — every judgement so far is
+from the debug tool, and `parity_replay` covers the LOGIC, not the DRAWING.
+
+⛔⛔ **THE OPEN DESIGN FORK: a ONE-HANDED DETACH.** An un-snap needs TWO hands,
+because `AS3`'s residual needs two independent drivers. Three options were put to
+the owner (two-handed only · a **tug** breaks it · unheld means anchored); *a tug*
+was recommended and **nothing was chosen**. Until then a mated pair is permanent to
+a single hand.
+
+⚠ **Three numbers still have no measured floor**, and all three now have live
+sliders: the capture radius sits **exactly on its ceiling** (one object edge,
+72.2 mm), the preview radius, and the angle tolerance (which rides the snap
+slider). The owner proposed a **90° aperture** = `snap 150 %`, which is also the
+exact adjacent-face ambiguity boundary. ⚠ And `AS2`'s own acceptance metric —
+snap/break transitions per minute — has never been measured, because **no recording
+of an assembly session exists**.
+
+⭐⭐⭐ **THE METHOD LESSON OF THE WHOLE ROW, and it cost most of a day: FOUR
+"z is broken" reports were THREE different defects, two of them introduced by the
+fix for the first.** Six offline reproductions failed; what finally found each one
+was making the TOOL LOG ITS OWN EVIDENCE (`[z]` lines on every mate/break) instead
+of constructing scenarios. ⛔ Along the way three separate golden vectors PASSED FOR
+THE WRONG REASON — a fixture that never reached the tested state, another inheriting
+a sibling suite's module globals, and one asserting `True`. Every fixture in this
+row now asserts it reached the state before trusting its own numbers.
 
 ⚠ **Still owed from the hand subsystem, and NOT closed by leaving it**: `V2`'s
 production live look. The debug tool settled it; production applies the same
