@@ -125,7 +125,7 @@ still, and a magnitude deadzone measured WORSE), and some **smoothing**.
 | `RB1` | landmarks un-mirrored + `Ry180` | ⭐ **yaw sign IDENTICAL in both mounts** (§2's invariant, as an assertion) |
 | `RB2` | chirality | ✅ **done** — determinant matches the declared hand and is **unchanged** by the viewpoint. ⛔ `head_worn` unresolved |
 | `RB3` | Horn orientation | ✅ **done offline** — invariants pass, all three axes agree between the hands (§8quater). ⛔ The live look is still owed |
-| `RB4` | hand identity | two hands, no swap across a dropout |
+| `RB4` | hand identity | ✅ **done** — 0 swaps / 1652 frames; degenerate hands REFUSED (§8quinquies) |
 | `RB5` | the delta, integrated, no filters | closure: hand returns to a pose → object returns. Drift **measured** |
 | `RB6` | drift control, then anything else | only when a measurement asks for it |
 
@@ -337,6 +337,51 @@ impossible** at this layer. The real exposure was in the deleted `delta_orbit`
 GATING code, which read the chirality-odd palm normal. ⭐ The take still earns its
 place — it is the project's only two-hand declared-motion recording, and it found
 the edge-on trap — but the claim was too strong.
+
+## 8quinquies. ✅ `RB4` — IDENTITY FROM CHIRALITY, HELD THROUGH DEGENERACY
+
+`Resources/hand_identity.py`. **Zero swaps across 1652 two-hand frames**, each hand
+holding its own side of the screen; and on the degenerate back-of-hand take it
+**refuses all 151 frames** rather than guessing.
+
+⭐⭐⭐ **IT IS FOUR SCREENS OF CODE INSTEAD OF A TRACKER, AND THAT IS THE RESULT.**
+The old pipeline used DR-1 track ids plus a slot↔track resolution layer
+(`hand_tracks.py`). ⛔ `4.1` was **built, patched five times and REVERTED**, and the
+machinery around it — `_owner_hand_of_cube`, `_owner_absent_since`, the degrade
+window — existed only to bridge *"ownership is track-keyed but its coast is
+slot-keyed"*.
+
+⭐ None of it is needed once `RB2` made chirality reliable: **a left hand and a right
+hand are distinguishable by their own geometry, frame by frame** — no history, no
+association step, nothing to drift. **Identity that cannot drift needs no machinery
+to correct drift.**
+
+### The two rules that make it safe
+
+⛔⛔ **A FLIP REQUIRES CONFIDENCE *AND* DISAGREEMENT.** `RB2` measured the
+determinant collapsing on a back-of-hand view (agreement wandering 57.6 / 88.7 /
+58.3% — the sign of ~zero). A build that read it every frame would flip identity
+mid-gesture and inherit the other hand's state: the `T3` / `U8` defect class exactly.
+So identity is **HELD** through low confidence. `U9`'s rule — *a trigger cannot
+enforce an invariant* — applied to a label instead of a gesture.
+
+⛔ **A SAME-CHIRALITY COLLISION IS REFUSED, NOT MERGED.** Two hands reported as one
+would share per-hand state. The less confident one returns `None`.
+
+### ⚠ The floor, and why it is absolute
+
+`CONFIDENT_DET = 3.0e-06`, placed in the **two-order-of-magnitude gap** between
+palm-side p5 (**3.19e-05**) and degenerate p95 (**2.57e-07**) — measured, not chosen.
+⚠ It is absolute, in metres cubed, so a port that changes landmark scale must
+re-derive it. ⛔ A scale-free version was considered and is WORSE: normalising by the
+palm size divides by a length that is itself collapsing in the degenerate case this
+guards.
+
+### ⚠ What it deliberately does not solve
+
+**Two hands of the same chirality** (two people) collapse to one key and the second
+is refused. The game is single-player with two hands; when that stops being true this
+module must be **REPLACED, not patched**.
 
 ## 9. Acceptance
 

@@ -7,8 +7,11 @@
 
 ⭐⭐⭐ **BRANCH `1.7.42-` IS A REBUILD FROM THE LANDMARKS UP** — read
 [`spec/SPEC_FRAME_AND_REBUILD.md`](spec/SPEC_FRAME_AND_REBUILD.md) before touching
-the frame, chirality, depth, occlusion or the object's rotation. `RB0`–`RB2` are
-built. ⚠ The archive of everything before it is commit `4dd0fc5`.
+the frame, chirality, depth, occlusion or the object's rotation.
+✅ **`RB0`–`RB4` are built**: the sign harness, `hand_frame` (the viewpoint),
+`hand_orientation` (Horn, nothing wrapped around it) and `hand_identity`
+(0 swaps / 1652 frames). ⛔ **NEXT is `RB5`** — the delta, integrated, no
+filters, with drift MEASURED against the old build's 43/35/48° per minute. ⚠ The archive of everything before it is commit `4dd0fc5`.
 
 ⛔⛔ **THE FRAME RULE THAT NOW BINDS EVERYTHING**: the viewpoint is applied to the
 **LANDMARKS**, as a **ROTATION** (`Ry180`), and there is **no mirror in the

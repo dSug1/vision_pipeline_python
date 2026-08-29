@@ -48,7 +48,10 @@ name.** They are the record, not the briefing.
 rotation stack had accumulated into a **REFLECTION** (det −1), which no rigid
 hand→object mapping can be, so it is being rebuilt one measured step at a time:
 [`10_HAND_TRACKING/spec/SPEC_FRAME_AND_REBUILD.md`](10_HAND_TRACKING/spec/SPEC_FRAME_AND_REBUILD.md).
-`RB0`–`RB2` built. ⚠ Archive of the old build: commit `4dd0fc5`.
+✅ **`RB0`–`RB4` built** (sign harness · frame · chirality · orientation · identity).
+⛔ **NEXT: `RB5`** — the delta, integrated, no filters, drift MEASURED.
+⛔ **OWED: the live look** — nothing in `1.7.42` has been run live.
+⚠ Archive of the old build: commit `4dd0fc5`.
 
 
 ✅✅ **`AS1`–`AS9`, OBJECT ASSEMBLY BY MATE CONNECTORS, IS SHIPPED** (2026-08-28) —

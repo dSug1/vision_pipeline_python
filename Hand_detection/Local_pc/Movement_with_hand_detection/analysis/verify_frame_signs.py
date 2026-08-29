@@ -475,6 +475,49 @@ def main():
     print("       That needs a two-hand DECLARED take and a live look — `RB3` is")
     print("       not closed until then.")
 
+    # ── 10. `RB4` — identity from chirality, held through degeneracy ───────
+    print()
+    print("10. ⭐⭐ RB4 — IDENTITY: stable, and REFUSED rather than flipped")
+    from Resources import hand_identity as HI                   # noqa: E402
+    for key in ("2026-08-29_212855_rb3_two_hands_axes",
+                "2026-08-29_214029_rb3_yaw_only"):
+        _s4, f4 = load(key)
+        if not f4:
+            continue
+        # ⚠ `load` gives one hand per row; regroup by frame is not available here,
+        # so this exercises the SINGLE-hand path. The two-hand stability numbers
+        # (0 swaps in 1652 frames) are in the spec; what is asserted here is that
+        # a confident palm-side hand is always identified.
+        ident = HI.Identity()
+        named = sum(1 for wl, _h, _st in f4
+                    if ident.classify([wl], 0.0)[0] is not None)
+        ok("%-34s every confident hand is identified" % key[11:45],
+           named == len(f4), "%d/%d" % (named, len(f4)))
+    # ⛔⛔ THE ONE THAT MATTERS: a DEGENERATE hand must be REFUSED, never guessed.
+    # `RB2` measured the determinant collapsing on a back-of-hand view with sign
+    # agreement wandering 57.6/88.7/58.3% — the sign of ~zero. A build that read it
+    # anyway would flip identity mid-gesture and inherit the other hand's state,
+    # which is the `T3` / `U8` defect class exactly.
+    _s5, f5 = load("2026-08-29_203414_rb2_worn_right_back")
+    if f5:
+        ident = HI.Identity()
+        refused = sum(1 for wl, _h, _st in f5
+                      if ident.classify([wl], 0.0)[0] is None)
+        ok("⛔⛔ a DEGENERATE hand is REFUSED, not guessed",
+           refused == len(f5), "%d/%d refused" % (refused, len(f5)))
+    # ⛔ A same-chirality collision must be refused, not merged — shared per-hand
+    # state between two hands is the defect this rule exists to prevent.
+    _s6, f6 = load("2026-08-29_202939_rb2_facing_right_palm")
+    if f6:
+        wl = f6[len(f6) // 2][0]
+        ident = HI.Identity()
+        both = ident.classify([wl, wl], 0.0)      # the SAME hand twice
+        ok("⛔ two hands of the SAME chirality: one is refused",
+           sum(1 for k in both if k is not None) == 1, "%s" % (both,))
+    ok("⚠ the confidence floor sits in the measured GAP",
+       2.57e-07 < HI.CONFIDENT_DET < 3.19e-05,
+       "%.1e, between degenerate p95 and palm-side p5" % HI.CONFIDENT_DET)
+
     print("\n" + "=" * 78)
     if FAILURES:
         print("FAILED %d check(s):" % len(FAILURES))

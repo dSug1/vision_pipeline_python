@@ -17,6 +17,77 @@ newest-first is restored, the entry bodies are byte-identical, and
 
 ---
 
+## 2026-08-29 (end of session) — `RB3` closed offline, `RB4` built; handoff written
+
+✅ **`RB3` — ALL THREE AXES AGREE BETWEEN THE HANDS**, on the project's first
+two-hand declared-motion takes. Identity from geometry, **zero swaps**.
+
+⛔⛔ **AND THE EDGE-ON TRAP, WHICH THE OWNER CAUGHT AND I DID NOT.** The first yaw
+attempts disagreed and I reported *"the right hand simply did not turn"* — on the
+strength of THREE agreeing measures: the fitted rotation, the projected/true knuckle
+width, and the palm z-spread.
+
+> **Owner:** *"both hands did absolutely the same thing, but I think we catch the
+> edge on issue."*
+
+✅ Right. With smaller turns every axis agrees; on the large-turn take one palm's
+z-spread hit **56.8 mm** against the other's **8.7 mm**.
+⭐⭐⭐ **ALL THREE OF MY MEASURES DERIVE FROM THE WORLD LANDMARKS, so near edge-on
+they degrade TOGETHER and agree on a wrong answer.** The width ratio was worst: it
+divides a projected length by a 3-D length, so a flattened cloud shrinks both and it
+returns to ~1.0 — reading *face-on* for a hand that is anything but.
+**THREE MEASURES SHARING A FAILURE MODE LOOK LIKE CORROBORATION AND ARE NOT.** Now a
+`METHOD` rule. ⚠ The owner could see their own hands; I had three numbers.
+
+## ✅ `RB4` — identity, and it is four screens instead of a tracker
+
+`Resources/hand_identity.py`: **0 swaps across 1652 two-hand frames**, and the
+degenerate back-of-hand take **refused all 151** rather than guessing.
+
+⭐⭐ The old path used DR-1 track ids and a slot↔track layer; `4.1` was **built,
+patched five times and reverted**, and `_owner_hand_of_cube` / `_owner_absent_since`
+/ the degrade window existed only to bridge track-keyed ownership against slot-keyed
+state. ⛔ None of it is needed once `RB2` made chirality reliable.
+**IDENTITY THAT CANNOT DRIFT NEEDS NO MACHINERY TO CORRECT DRIFT.**
+
+⛔ Two rules keep it safe: **a flip requires CONFIDENCE AND disagreement** (else a
+hand turning its back flips mid-gesture and inherits the other's state — `T3`/`U8`
+exactly), and **a same-chirality collision is REFUSED, not merged**.
+⚠ `CONFIDENT_DET = 3.0e-06` sits in the measured two-order gap between palm-side p5
+(3.19e-05) and degenerate p95 (2.57e-07).
+
+## ⚠ What the recording sessions cost, and what they bought
+
+Five `rb3` attempts before a usable take. Each failure was a **protocol** defect, not
+a pipeline one, and each is now fixed in the recorder:
+
+* the visibility check killed stepped takes at **12.7 s of 51**;
+* prompts said *"both hands at the opposite pitch"* — the owner's reply was the only
+  review that matters: *"what does it mean?"*;
+* *"toward you"* was ambiguous with a facing camera;
+* mirror-vs-same-direction was unspecified, and the owner asked the right question:
+  **with mirrored input the CORRECT answer is opposite signs**, so the test could not
+  have distinguished a leak from a pass;
+* and the operator **needs a hand to press SPACE**, so one hand arrived late — which
+  would have corrupted exactly the two-hand comparison. Now SPACE starts a **2 s
+  grace**, not the step. Hand coverage went **42% → 100%**.
+
+⭐ **A PROMPT NOBODY HAS TIME TO READ IS NOT AN INSTRUCTION, IT IS A DECORATION, AND
+THE FRAMES IT LABELS ARE JUNK.**
+
+⚠ Two crashes came from the pacing change and both were mine — overlay code reading
+`elapsed`, then `record`, neither existing while a paced step waits.
+
+## ⛔ Where it stands, for a fresh session
+
+`RB0`–`RB4` built and committed. **`RB5` is next**: the delta, integrated, no
+filters, drift MEASURED against the old build's 43/35/48° per minute.
+⛔ **The live look is owed** — nothing in `1.7.42` has been run live.
+⚠ Every take ran **8.5–20 fps**, under the floor: fine for signs, useless for timing,
+so `RB5` needs a brighter room.
+
+---
+
 ## 2026-08-29 (late night) — `RB3` built and HALF-closed; the recorder learned to wait
 
 ✅ `Resources/hand_orientation.py` — Horn over the palm, in the corrected frame,

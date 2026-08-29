@@ -24,186 +24,65 @@ The binding one, restated: **A10 — measure or revert.**
 
 ---
 
-## ⭐⭐⭐ YOU ARE HERE (2026-08-29) — `1.7.41` DELTA-ORBIT BUILT; ⛔ TWO LIVE LOOKS OWED
+## ⭐⭐⭐ YOU ARE HERE (2026-08-29) — BRANCH `1.7.42-`, REBUILDING FROM THE LANDMARKS UP
 
-⭐⭐ **`DO1`–`DO3` ARE BUILT IN BOTH TOOLS** (branch `1.7.41-Hand-delta-orbit`): the
-object's ROTATION becomes an INTEGRAL of hand motion; its POSITION is unchanged.
-`ORBIT gain %` defaults to **0 = today's build, bit-for-bit**, and `parity_replay`
-is clean. Design: [`../10_HAND_TRACKING/spec/SPEC_DELTA_ORBIT.md`](../10_HAND_TRACKING/spec/SPEC_DELTA_ORBIT.md).
-⛔ **`DO4` — the window's OUTER EDGE — is the one open number**, deferred by the owner.
-⛔ **Two live looks are owed: `V2`'s double-cover fix, and `DO1`–`DO3`.**
+⭐ **START WITH** [`../10_HAND_TRACKING/spec/SPEC_FRAME_AND_REBUILD.md`](../10_HAND_TRACKING/spec/SPEC_FRAME_AND_REBUILD.md).
+It is the design of record for this branch and it is short.
 
+### Why the rebuild exists
 
-✅✅ **`F1` IS SHIPPED AND LIVE** — fingertip grip, `A1`'s motion-masked walk, depth
-anchoring at grab, footprint grab radius. ⛔ **The rotation TRIM was REMOVED**:
-§10.1 measured it non-monotonic in the declared finger angle at every gain and
-clamp. `A10` reproduces exactly, `parity_replay` clean on four takes.
+⛔⛔ **THE ROTATION STACK HAD BECOME A REFLECTION.** `camera_mount` reversed
+pitch+yaw, then `delta_orbit.AXIS_SIGN` reversed pitch back — net, **yaw reversed
+alone, determinant −1**. A rigid hand→object correspondence cannot do that. Every
+layer was locally defensible; the stack was not. Owner: *"I think we have patched too
+much this script."*
+⚠ The archive of everything before it is commit **`4dd0fc5`**. Nothing on this branch
+patches that work — it replaces the frame handling and rebuilds the control law.
 
-✅✅ **`R1` IS SHIPPED TO BOTH TOOLS** — depth-ordered occlusion as ONE rule for every
-object, per-landmark and per-SEGMENT bone occlusion, a SOLID near-face occluder, and
-⭐ **landmarks drawn in PRODUCTION for the first time**. A **FREEZE** damper ships for
-rotation AND translation (`RELEASE 60 / FREEZE 1`) — *damping is not stillness*, and
-three softer designs were live-rejected before it. ⛔ The defect the owner found by
-eye was OUR logic: cube **x,y** from the fingertips, cube **z** from the palm.
+### ✅ Built and committed: `RB0`–`RB4`
 
-⛔⛔ **`T6` IS SPENT. BOTH LIVE BUILDS WERE OWNER-REJECTED THE DAY THEY WERE BUILT.**
-The ratio table died first (`Rwl` is a **lossy projection** — one number, two
-unknowns), and the slant/tilt regression that replaced it scored genuinely better
-than Horn on both axes. Then the axis correction drew *"the feel is very bad …
-discontinuities everywhere"*, and the owner's own halves 1+2 drew *"much worse than
-panel 1 … lot of jumps, lot of jitter"*.
+| | |
+|---|---|
+| `RB0` | the **sign harness**, `analysis/verify_frame_signs.py` — 10 sections, all passing |
+| `RB1` | `Resources/hand_frame.py` — `Ry180` on the LANDMARKS, no mirror, no conjugation |
+| `RB2` | chirality from the palm determinant — **788/788** on declared hands |
+| `RB3` | `Resources/hand_orientation.py` — Horn in the corrected frame, nothing wrapped around it |
+| `RB4` | `Resources/hand_identity.py` — **0 swaps / 1652 frames**, degenerate hands refused |
 
-⭐⭐ **THE SCORES WERE GOOD, WHICH IS THE POINT.** Halves 1+2 produced the best yaw
-this project has ever measured — **lean 27.2° → 8.6°** — and were rejected anyway,
-because per-frame orientation jump p95 went **12.6° → 30.3°** while the MEDIAN
-improved. **Smoother most of the time, occasionally much worse; the tail decides the
-feel, every time.** Three 2-D-shape estimators have now died of exactly that.
+### ⭐⭐⭐ The physics that decides everything, and it is the owner's
 
-⭐⭐⭐ **THE METHOD RULE THIS COST, and it outlives the row: A CORPUS WHOSE MOTION
-DOES NOT MATCH THE PRODUCT'S CANNOT VALIDATE AN ESTIMATOR FOR THE PRODUCT.** All six
-`T6` takes are OPEN hands; the game GRIPS. Every offline score in that row was earned
-on a motion the product never performs, and the gap was named before the first wiring
-and not closed — twice.
+Two observers facing each other are related by a **180° rotation about the vertical**
+(`Ry180 = diag(−1,1,−1)`, det **+1**), not a mirror: **yaw is UNCHANGED** because the
+vertical is shared; pitch and roll reverse.
+⛔⛔ **ANY VIEWPOINT THAT CHANGES THE SIGN OF YAW IS WRONG BY CONSTRUCTION.** The old
+`pitch_yaw` reversed yaw. One assertion would have killed it on day one.
 
-⛔ **THE GATE ON ANY FOURTH ATTEMPT OF THIS SHAPE**: demonstrate a per-frame
-orientation jump **at or under shipped Horn's, on a GRABBING take, BEFORE** any lean
-number is quoted. Nothing in this family has come within 1.8x. **The lean score is
-not the gate and never was.**
+### ⭐⭐ Findings a new session must not re-derive
 
-✅ **Nothing was reverted** — both builds defaulted to gain 0, production never
-constructed them, `parity_replay` is clean. `Resources/palm_slant.py`,
-`palm_slant_axis.py`, `palm_slant_pose.py` and their harnesses are kept and
-regenerable. ⭐ Strategy B (reconstruct `z` from a validated orientation) is
-**untouched and now unsupported**: it needs an orientation that survives live, and
-none does.
+* ⛔ **MediaPipe's label was never broken — our MIRRORING was breaking it.** It
+  agreed on **0 of 788** mirrored frames and **201/201** un-mirrored. `U7`'s
+  *"10.8% wrong"* is largely self-inflicted. Nothing here reads the label anyway.
+* ⛔ **`head_worn` has NO chirality.** Three back-of-hand takes gave the sign of
+  ~zero (`T1` / MediaPipe #5156). It is ABSENT there, not weak. **Do not invent one.**
+* ⚠ **The palm is not rigid** — 2.5–8.0 mm Horn residual on a 91.5 mm palm — so
+  rotations do not compose exactly, and a test asserting they do is wrong.
+* ⭐ **Identity that cannot drift needs no machinery to correct drift.** `4.1`'s
+  tracker was built, patched 5x and reverted; chirality replaces it in four screens.
 
-✅ **THE YAW LEAN IS NO LONGER OPEN.** It was the owner's show-stopper from
-2026-08-22 (~27° at a 60–90° turn), and `F1` did not fix it — the apparent
-improvement was the trim's constant offset, now removed. **`V2` corrected it and is
-accepted in both tools** (see below). ⚠ Corrected, not eliminated: `V2` trims the
-swing, and its gate is cleared on 3 of 4 takes.
+### ⛔ What is next, and what is owed
 
-✅✅ **`V1` SHIPPED 2026-08-28 — the CAMERA MOUNT, and the default is now `facing_user`.** The owner reported yaw, pitch and z-translation all reading backwards; the cause is that the old build took its **mirror** from one camera mounting and its **depth** from the other — a REFLECTION, which is no physical viewpoint at all. ⭐ The diagnosis predicted the symptom: the fix reverses yaw and pitch and leaves **roll** exactly alone, and roll is the axis the owner did not name. ⛔ `CAMERA_MOUNT=legacy` is now a DIAGNOSTIC BASELINE only (bit-for-bit reproduction for `A10`/`parity_replay`), and `head_worn` ships UNVALIDATED — no glasses, no head-worn corpus.
+* **`RB5`** — the delta, integrated, **no filters**. Closure, and drift MEASURED.
+  ⚠ Baseline to beat: **43 / 35 / 48° per minute** on the old build; ⛔ a magnitude
+  deadzone measured WORSE.
+* **`RB6`** — a drift control, then anything else, **only when a measurement asks**.
+* ⛔ **OWED: the live look.** Whether pitch reads right ON SCREEN is not settleable
+  offline, and nothing in `1.7.42` has been run live.
+* ⚠ **Every take of 2026-08-29 ran 8.5–20 fps, under the 20 fps floor** — fine for
+  signs, useless for timing. `RB5`'s drift numbers need a brighter room.
+* ⚠ **`RB2`'s `head_worn` half and `RB3`'s live half are the two open ends.**
 
-✅✅ **`V2` SHIPPED 2026-08-28 — THE YAW LEAN HAS ITS FIRST SURVIVING CORRECTION.**
-A multiplicative correction quaternion (the MEKF's own architecture, owner-proposed)
-trims the SWING of a swing/twist decomposition while leaving the turn amount exact.
-Gains **0.66/0.66**, both tools, `gain 0` still bit-exact. ⚠ The gate is cleared on
-3 of 4 takes; `stripped` sits at **1.072x**, and the owner shipped knowing it.
-✅ The production live look was DONE (2026-08-28). ⛔⛔ **RE-OPENED 2026-08-29 by a
-DOUBLE-COVER fix in the shipped trim — a live look is OWED again** (see below).
-⭐⭐⭐ **The method rule it cost a session to learn: A GOLDEN VECTOR BUILT FROM A
-MATHEMATICALLY PURE INPUT TESTS A CASE THE PRODUCT NEVER SEES.**
-
-✅✅✅ **OBJECT ASSEMBLY BY MATE CONNECTORS — `AS1`–`AS9` ARE SHIPPED
-(2026-08-28), LIVE-CONFIRMED IN BOTH TOOLS.** Design of record, and ⭐ **the first
-thing a new session should read** — its §13 *"what is left to build"*:
-[`../30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md`](../30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md).
-
-⭐⭐ **WHAT CLOSED IT WAS THE PRODUCTION RUN, AND NOTHING ELSE WOULD HAVE.** 44/44
-golden-vector suites and a clean `parity_replay` had been true since the build —
-`METHOD` calls that necessary and not sufficient, and §13.6.1 once shipped
-**inverted** while passing an *"end-to-end confirmed"* claim. The debug tool had
-settled the sliders and the behaviour; production had **never been run at all**, so
-every judgement stood on one renderer and `parity_replay` covers the LOGIC, not the
-DRAWING. The owner ran it: *"production run was done by me and it is ok"*.
-
-✅ **THE DESIGN FORK IS CLOSED, NOT OPEN: an un-snap needs TWO HANDS** (owner,
-2026-08-28 — *"unsnapping needs two hands"*). So `AS3`'s consequence is the RULE and
-not merely tolerated: a residual needs two independent drivers, therefore **one hand
-can never break a mate** and a mated pair is permanent to a single hand. ⛔ The **tug**
-(which I had recommended) and **unheld-means-anchored** are DECLINED, not deferred —
-do not re-propose either without new evidence.
-
-✅ **Two of the three unfloored numbers were SETTLED LIVE at `snap 150 %`**: the
-capture reach **108.3 mm = 1.50 × an object's edge**, and the angle **45° = the 90°
-aperture** the owner asked for. ⚠⚠ Both sit PAST or ON their stated boundaries,
-deliberately — objects can mate while visibly apart, and 45° is exactly where an
-adjacent cube face also qualifies (it degrades rather than breaks: `mate_score` still
-picks the better candidate). ⚠ **The PREVIEW radius is still unsettled**, and it now
-stands alone.
-
-⚠⚠ **`AS2`'s OWN ACCEPTANCE METRIC IS STILL UNMEASURED, and shipping did not close
-it**: snap/break transitions per minute on a recorded take. **No recording of an
-assembly session exists** — the newest take on `E:` is `2026-08-28_000559_stripped`,
-which predates this work, and the shipping production run was not recorded. ⛔ It
-could not have been made to count either: **neither recorder carries mate state**
-(`_record_flush` writes `owner / position / size / depth_m / projected_size /
-orientation` per cube and no mate fields), so the metric could only be produced by
-RE-DERIVING what the tool already knew — which is the exact trap that docstring
-exists to warn about: *record what ran; never re-derive it*.
-
-⭐⭐⭐ **THE METHOD LESSON OF THE WHOLE ROW, and it cost most of a day: FOUR
-"z is broken" reports were THREE different defects, two of them introduced by the
-fix for the first.** Six offline reproductions failed; what finally found each one
-was making the TOOL LOG ITS OWN EVIDENCE (`[z]` lines on every mate/break) instead
-of constructing scenarios. ⛔ Along the way three separate golden vectors PASSED FOR
-THE WRONG REASON — a fixture that never reached the tested state, another inheriting
-a sibling suite's module globals, and one asserting `True`. Every fixture in this
-row now asserts it reached the state before trusting its own numbers.
-
-⛔⛔ **`V2` IS OWED A LIVE LOOK AGAIN (2026-08-29), AND IT IS THE ONLY THING OWED.**
-Its production look was given on 2026-08-28 and closed the row — then answering a
-question about *where* rotation is accurate found a **DOUBLE-COVER defect in the
-shipped trim**, now fixed. `twist_angle_deg` read a 15° turn as **−345°** whenever the
-quaternion carried the negative sign of the double cover, and `yaw_dominance` divides
-by that: **`authority` reached 1.0 on pure PITCH gestures that must receive none**, and
-a pitch is entirely SWING here, so the trim shrank the gesture it exists to protect.
-✅✅ **The fix is BIT-IDENTICAL on the yaw and roll takes**, so it cannot regress what
-was accepted live; it changes only frames that were already mis-scored
-(`pitch_sweep_slow`: gate ratio **1.166x → 1.031x**).
-⭐⭐⭐ **THE METHOD RULE IT COST: A GOLDEN VECTOR MUST FEED THE REPRESENTATIONS THE
-PRODUCT ACTUALLY PRODUCES, NOT ONLY THE CANONICAL ONE.** Every vector built its
-quaternions with a helper that always returns `w >= 0`. ⛔ And **`parity_replay` cannot
-see this class at all** — one shared module means both tools were wrong *identically*
-and agreed perfectly. **Parity proves the tools match; it never proves either is
-right.**
-
-⭐⭐ **AND THE ANSWER THE QUESTION WAS ASKED FOR — WHERE EACH AXIS IS ACCURATE, POST-`V2`.**
-Full table and the harness (`analysis/rotation_accuracy_bands.py`) in
-[`10_HAND_TRACKING/spec/ROTATION_ACCEPTANCE_AND_TRAPS.md`](../10_HAND_TRACKING/spec/ROTATION_ACCEPTANCE_AND_TRAPS.md)'s
-2026-08-29 amendment. ⚠ **There are THREE floors and they disagree**: resolvability,
-scale, and the product's own `RELEASE 60 deg/s` rate gate — and the often-quoted
-*“~30° axis noise floor”* is none of them.
-* **ROLL is the precision axis** — usable from ~5°, gain ~1.00 at every magnitude,
-  steadiest by 2–3x, and `V2` correctly never fires on it (94.4% silent).
-* **YAW: 10–40° for faithful DIRECTION** (lean 1.9–2.9° post-`V2`) · **60–90° for
-  faithful AMOUNT**. ⚠ **No band gives both** — yaw's gain RAMPS ~0.5→1.2 and crosses
-  1.0 near 60°, so the documented single “1.13” is only the large-turn end.
-* ⛔ **PITCH has no reliable range below ~50–60°**: it wobbles **±29° at p95 while the
-  hand is STILL**, 15x yaw's. Design around it, not with it.
-
-⭐⭐⭐ **WHAT IS NEXT.** ⛔ One thing is owed — **`V2`'s live look, re-opened by the
-2026-08-29 double-cover fix** — and it is cheap: the fix is bit-identical on yaw and
-roll, so the only thing to judge is PITCH. Nothing else is blocked, and the
-show-stopper that shaped every session since 2026-08-22 stays corrected:
-
-* ⭐⭐ **The PLATFORM decision is DUE, and it is the owner's.**
-  [`DECISIONS.md`](DECISIONS.md) sequenced it *right after `F1`*, and `F1` shipped
-  three sessions ago. Everything renderer-shaped is waiting behind it — `U2` (real
-  3D-file import), `U12`, `T7`, and the whole game layer — and `IS4` is its
-  prerequisite. ⛔ It is the only item here that no amount of building can advance.
-* ⭐ **Make an assembly session RECORDABLE, then measure `AS2`.** Its acceptance
-  metric has never been taken and cannot be, because neither recorder carries mate
-  state. Small, stdlib-only, guarded by `verify_recorder_parity` — and it is what
-  turns the next live session into evidence instead of an opinion. It also gives the
-  PREVIEW radius (the last unfloored constant) something to be settled against.
-* **More than TWO objects.** The tree is written for N and nothing has exercised it:
-  `order_by_size`'s tie-break, cycle refusal, and the home row's outer slots (which
-  need the play-area clamp — `verify_home_cube` shows a third cube landing outside
-  at 1280). ⚠ Broad phase is `O((objects × connectors)²)`; a spatial index earns its
-  weight past ~50 objects, not before.
-* **What an assembly MEANS to the game** — targets, scoring, *“is this the right
-  assembly”*. `20_GAME_RULES` territory, and it does not exist: assembly is today a
-  manipulation capability with **no objective attached**.
-* **`B5` + `4.4`** — the grab signal from the finger arcs and the hand-open release
-  trigger, ONE project, and `N8` (⚠ re-opened and widened by `F1`) rides on it.
-* **`T1` / `T4` / `N12`** — the open pipeline defects, deliberately not next.
-
-⭐ The full block, and every superseded one back to 2026-08-03, is
-[`10_HAND_TRACKING/history/SESSION_LOG.md`](../10_HAND_TRACKING/history/SESSION_LOG.md) — newest first.
-
----
+✅ KEPT by owner instruction: the cube's own scripts — `CubeWindow` occlusion,
+`object_assembly`, `mate_connector`, `object_extent`, `depth_order`, `handinput`.
 
 ## Phase 0 — instrumentation
 
@@ -269,7 +148,7 @@ instruction: the cube's own scripts — `CubeWindow` occlusion, `object_assembly
 | [RB1](queue_notes/RB1.md) | ⭐⭐ The FRAME — one viewpoint, on the landmarks, as a ROTATION | HAND | perception | ✅ **BUILT 2026-08-29** — `Resources/hand_frame.py`. `Ry180 = diag(-1,1,-1)` for `facing_user`, identity for `head_worn`. ⛔ No mirror, no quaternion conjugation, no per-axis sign. ⭐⭐⭐ **THE OWNER'S PHYSICS IS THE DESIGN**: two observers facing each other share the VERTICAL, so *any viewpoint that changes the sign of YAW is wrong by construction* — shipped `pitch_yaw` reversed yaw, and one assertion would have killed it on day one. ⭐⭐ **WHY THE LANDMARKS**: `V1` conjugated the ORIENTATION only, so chirality, depth, occlusion and rendering kept reading the raw frame — the hybrid was not removed, it MOVED ONE LAYER DOWN. ⭐ **AND WHY A ROTATION**: `V1` rightly refused "negate the landmark z" (det −1, inverts chirality), but that was never the right operation — `Ry180` negates x AND z, det +1, and a rotation cannot change handedness. ⚠ The owner's `1 − z` proposal measured IDENTICAL to the shipped conjugation (Horn centres, so the offset vanishes); the missing half was negating x. ✅ Measured: yaw **+28.27° in BOTH mounts**, pitch/roll flip cleanly, chirality unchanged | RB0 |
 | [RB2](queue_notes/RB2.md) | ⭐⭐ CHIRALITY from geometry — and the label discarded | HAND | perception | ✅ **BUILT 2026-08-29, `facing_user` CLOSED** — `is_right_hand` reads the palm determinant. **788/788** on the four declared-hand takes, and ⭐ **independent of FACING** (palm and back agree), which is what a chirality must do and what `is_thumb_outward` — a palm/back cue — never could. Conflating those two produced the polarity defect that killed both hands. ⛔⛔ **THE LABEL AGREED ON 0 OF 788** on the mirrored corpus — and then read **201/201 CORRECT** on a new UN-MIRRORED take. **The label was never broken; OUR MIRRORING was breaking it**, so `U7`'s "10.8% wrong" is largely self-inflicted. ✅ The mirrored→un-mirrored sign flip is now MEASURED (788/788 positive vs 201/201 negative), so `CAPTURE_MIRRORED=False` is right by measurement. ⛔⛔ **BUT `head_worn` HAS NO CHIRALITY**: three back-of-hand takes gave \|det\| 60–950x weaker than palm-side with agreement WANDERING 57.6/88.7/58.3% — the sign of ~zero. `T1` / MediaPipe #5156, measured. A head-worn camera mostly sees the BACK of the wearer's hand, so the cue is ABSENT there, not weak. ⚠ Confound not separated: every take ran 15.17 fps, under the floor | RB1 |
 | [RB3](queue_notes/RB3.md) | Orientation — Horn in the corrected frame | HAND | perception | ✅ **DONE OFFLINE 2026-08-29** — `Resources/hand_orientation.py`, Horn in the corrected frame with **nothing wrapped around it**. ✅ Invariants pass (translation-free, composes, canonical `w≥0`, mirroring the hand mirrors the rotation) and ✅ **ALL THREE AXES AGREE BETWEEN THE HANDS** on the two-hand declared take. ⚠⚠ **THE COMPOSITION CHECK WAS WRONG FIRST AND THE TEST WAS AT FAULT** — it asserted composition was EXACT and failed by 0.191°; **the palm is not rigid** (2.5–8.0 mm Horn residual on a 91.5 mm palm). Tolerance now derived from that residual, with a wrong-order control proving it still bites. ⛔⛔ **THE EDGE-ON TRAP, SPOTTED BY THE OWNER**: the first yaw attempts disagreed and I reported *“the right hand did not turn”* on THREE agreeing measures — all three derive from the world landmarks and **degrade together** near edge-on, so they agreed on a wrong answer. ⭐⭐ **THREE MEASURES SHARING A FAILURE MODE LOOK LIKE CORROBORATION AND ARE NOT.** With smaller turns every axis agrees. ⚠ The take says nothing about MAGNITUDE (hands turn unequally) or timing (11.4 fps). ⛔ The live look — does pitch read right ON SCREEN — is still owed | RB2 |
-| [RB4](queue_notes/RB4.md) | Hand identity across frames | HAND | perception | queued — two hands, no swap across a dropout | RB3 |
+| [RB4](queue_notes/RB4.md) | ⭐⭐ Hand identity — from CHIRALITY, not a tracker | HAND | perception | ✅ **BUILT 2026-08-29** — `Resources/hand_identity.py`. **0 swaps across 1652 two-hand frames**, each hand on its own side of the screen; the degenerate back-of-hand take **refused all 151 frames** rather than guessing. ⭐⭐⭐ **FOUR SCREENS INSTEAD OF A TRACKER, AND THAT IS THE RESULT**: the old path used DR-1 track ids plus a slot↔track layer, and `4.1` was **built, patched 5x and REVERTED** — with `_owner_hand_of_cube` / `_owner_absent_since` / the degrade window existing only to bridge track-keyed ownership against slot-keyed state. ⛔ None of it is needed once `RB2` made chirality reliable: **identity that cannot drift needs no machinery to correct drift**. ⭐ Two rules keep it safe: **a flip requires CONFIDENCE AND disagreement** (else a hand turning its back flips mid-gesture and inherits the other's state — `T3`/`U8` exactly), and **a same-chirality collision is REFUSED, not merged**. ⚠ `CONFIDENT_DET = 3.0e-06` sits in the measured two-order gap between palm-side p5 (3.19e-05) and degenerate p95 (2.57e-07). ⚠ Two hands of the SAME chirality collapse to one key — single-player assumption, and when it breaks this module is REPLACED, not patched | RB3 |
 | [RB5](queue_notes/RB5.md) | The delta, integrated, NO filters | HAND | feature | queued — closure, and drift MEASURED not assumed. ⚠ Baseline to beat: 43/35/48° per minute | RB4 |
 | [RB6](queue_notes/RB6.md) | Drift control, then anything else | HAND | feature | queued — ⛔ only when a measurement asks. ⚠ A magnitude deadzone measured WORSE | RB5 |
 
