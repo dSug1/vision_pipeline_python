@@ -90,19 +90,22 @@ def ok(name, cond, detail=""):
         FAILURES.append(name)
 
 
-# ── the two viewpoints, as LANDMARK transforms ──────────────────────────────
-# ⭐⭐ BOTH ARE PROPER ROTATIONS. `Ry180` negates x AND z; negating z alone would be
-# a REFLECTION (det -1) and would invert chirality -- which is exactly why the
-# 2026-08-28 build's "negate the z" idea was rejected, correctly, for the wrong
-# operation. See the spec §3.
+# ── the two viewpoints ──────────────────────────────────────────────────────
+# ⭐⭐ TAKEN FROM THE REAL MODULE, never restated here. `RB0` keeps its own Horn fit
+# and determinant deliberately -- so it can fail on those -- but the VIEWPOINT is
+# the thing under test, and a harness that re-implements the transform it checks
+# would agree with itself while the product was wrong. That is precisely how
+# `lean_trim`'s double cover survived every suite: the helper knew the rule and
+# never fed the product's own representation in.
+from Resources import hand_frame as HF                         # noqa: E402
+
+
 def head_worn(p):
-    """The camera sees what the user sees: nothing to correct."""
-    return p
+    return HF.to_user_frame([p], mount=HF.HEAD_WORN)[0]
 
 
 def facing_user(p):
-    """Ry180: the camera and the user look at each other."""
-    return (-p[0], p[1], -p[2])
+    return HF.to_user_frame([p], mount=HF.FACING_USER)[0]
 
 
 MOUNTS = (("head_worn", head_worn), ("facing_user", facing_user))
@@ -307,6 +310,21 @@ def main():
         mono = all(sw[i][1][idx] * sw[-1][1][idx] >= -1e-9 for i in range(1, len(sw)))
         ok("%-5s never reverses mid-sweep" % axis, mono,
            "one direction throughout")
+
+    # ── 6. the module and the harness must AGREE ───────────────────
+    print()
+    print("6. ⭐ THE MODULE'S OWN determinant agrees with this file's")
+    for axis, (session, frames, _i) in data.items():
+        wl = frames[len(frames) // 2][0]
+        mine = signed_palm_volume(wl)
+        theirs = HF.signed_palm_volume(wl)
+        ok("%-5s two independent determinants agree" % axis,
+           abs(mine - theirs) < 1e-15 and (mine * theirs) > 0.0,
+           "%+.3e vs %+.3e" % (mine, theirs))
+    ok("⭐ the module declares yaw invariant for every mount it offers",
+       all(HF.yaw_is_invariant(m) for m in HF.MOUNTS), "%s" % (HF.MOUNTS,))
+    ok("⛔ DISPLAY_MIRROR is a drawing choice, never geometry",
+       isinstance(HF.DISPLAY_MIRROR, bool), "not a function of the mount")
 
     print("\n" + "=" * 78)
     if FAILURES:
