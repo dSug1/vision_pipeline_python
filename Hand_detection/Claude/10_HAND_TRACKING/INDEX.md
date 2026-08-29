@@ -3,7 +3,27 @@
 > **STATUS** · live · **OWNS** · everything from the webcam to the object's transform
 > **READ IF** · you are building or debugging detection, identity, chirality,
 > snap, translate, rotate, release, depth or the play volume
-> **LAST VERIFIED** · 2026-08-28
+> **LAST VERIFIED** · 2026-08-29
+
+⭐⭐⭐ **BRANCH `1.7.42-` IS A REBUILD FROM THE LANDMARKS UP** — read
+[`spec/SPEC_FRAME_AND_REBUILD.md`](spec/SPEC_FRAME_AND_REBUILD.md) before touching
+the frame, chirality, depth, occlusion or the object's rotation. `RB0`–`RB2` are
+built. ⚠ The archive of everything before it is commit `4dd0fc5`.
+
+⛔⛔ **THE FRAME RULE THAT NOW BINDS EVERYTHING**: the viewpoint is applied to the
+**LANDMARKS**, as a **ROTATION** (`Ry180`), and there is **no mirror in the
+detection path**. Two observers facing each other share the vertical, so **any
+viewpoint that changes the sign of YAW is wrong by construction** — which is what
+the shipped `pitch_yaw` did. ⭐ A rotation cannot change handedness, which is why
+this fixes the hybrid where `V1`'s quaternion conjugation could not.
+
+⭐⭐ **CHIRALITY IS SOLVED AND THE LABEL IS DISCARDED**: the palm determinant reads
+**788/788** on declared hands, independent of palm-vs-back. ⛔ MediaPipe's label
+agreed on **0 of 788** mirrored frames and **201/201** un-mirrored — **the label
+was never broken, our mirroring was breaking it**.
+⛔ **`head_worn` has NO chirality**: three back-of-hand takes gave the sign of
+~zero (`T1` / MediaPipe #5156). Do not invent one.
+
 
 ⭐ **Load this file plus [`../00_CORE/`](../00_CORE/) and you have the subsystem.**
 Everything else here is opened **by name**, when this file points at it.

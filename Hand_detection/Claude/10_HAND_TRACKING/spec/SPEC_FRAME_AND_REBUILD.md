@@ -123,7 +123,7 @@ still, and a magnitude deadzone measured WORSE), and some **smoothing**.
 |---|---|---|
 | **`RB0`** | the **sign harness** | declared holds → expected sign, per axis, **both hands**, **both mounts** |
 | `RB1` | landmarks un-mirrored + `Ry180` | ⭐ **yaw sign IDENTICAL in both mounts** (§2's invariant, as an assertion) |
-| `RB2` | chirality | determinant matches the declared hand and is **unchanged** by the viewpoint |
+| `RB2` | chirality | ✅ **done** — determinant matches the declared hand and is **unchanged** by the viewpoint. ⛔ `head_worn` unresolved |
 | `RB3` | Horn orientation | a declared 30° pitch reads +30°, both hands |
 | `RB4` | hand identity | two hands, no swap across a dropout |
 | `RB5` | the delta, integrated, no filters | closure: hand returns to a pose → object returns. Drift **measured** |
@@ -168,12 +168,54 @@ mirrored capture, i.e. systematically the opposite of the physical one. `METHOD`
 rule 4 already forbids keying a stream on it; this is that rule with a number.
 **Nothing in `1.7.42` reads the label**, and §7 asserts it stays that way.
 
-⚠⚠ **THE ONE UNTESTED THING, AND IT IS NAMED RATHER THAN ASSUMED**: the sign
-convention above is measured on **MIRRORED** capture, because every one of the 415
-corpus takes is mirrored. `1.7.42` detects **un-mirrored**, and a mirror is det −1,
-so the determinant is **predicted to flip**. That prediction cannot be tested from
-this corpus. It ships as `CAPTURE_MIRRORED = False` — a named switch rather than a
-silent assumption — and **one un-mirrored known-hand recording closes it**.
+✅✅ **AND THE FLIP IS NOW MEASURED, NOT PREDICTED.** Two un-mirrored takes were
+recorded for it the same evening:
+
+| capture | right hand | determinant |
+|---|---|---|
+| corpus, **mirrored** | 788/788 | **positive** |
+| `rb2_facing_right_palm`, **un-mirrored** | 201/201 | **negative** |
+
+A mirror is det −1 and the determinant duly flips, so `CAPTURE_MIRRORED = False` is
+correct by measurement for the path `1.7.42` uses.
+
+⭐⭐ **AND IT REFRAMES `U7`.** On that same un-mirrored take MediaPipe's handedness
+label read **Right on 201/201 frames** — correct — against **0 of 788** on the
+mirrored corpus. **The label was never broken; OUR MIRRORING was breaking it.**
+`U7`'s *"10.8% wrong"* is largely self-inflicted. ⚠ Nothing here reads the label
+regardless: a determinant needs no label and cannot be fooled by one.
+
+### ⛔⛔ THE LIMIT THAT CAME WITH IT: `head_worn` HAS NO CHIRALITY
+
+Three `rb2_worn_right_back` takes, all un-mirrored, all the declared RIGHT hand:
+
+| attempt | \|det\| median | sign agreement | palm z-spread |
+|---|---|---|---|
+| #1 | 7.3e−07 | 57.6% | 30.0 mm |
+| #2 | 8.4e−08 | 88.7% | 9.0 mm |
+| #3 | 4.8e−08 | 58.3% | 17.1 mm |
+| *palm take* | *4.5e−05* | *100.0%* | *38.8 mm* |
+
+**60–950× weaker than palm-side, and the agreement WANDERS** (57.6 / 88.7 / 58.3)
+instead of converging — which is what taking the sign of ~zero looks like. The five
+palm landmarks go near-coplanar and the triple product loses the quantity its sign
+comes from. That is `T1` / MediaPipe issue **#5156**, measured rather than cited.
+⚠ The retakes got **worse**, which rules out *"one bad attempt"*.
+
+⛔ **So `head_worn` gets no chirality convention, and one must not be invented from
+a coin flip.** It matters because a head-worn camera mostly sees the **BACK** of the
+wearer's own hand: the cue is not weak there, it is **ABSENT**. Whoever takes
+`head_worn` forward needs a different cue (thumb geometry) or a rule that HOLDS the
+last palm-side reading through the degenerate region.
+
+⚠ **Unseparated confound, stated rather than buried**: every take that evening
+measured **15.17 fps**, under the 20 fps floor. The mechanism does not need dim light
+to explain it — the corpus's own *mirrored* back-of-hand take had 72 mm of spread and
+read 100% clean — but lighting and geometry were not separated.
+
+⭐ **Recorder change that made this possible**: `--no-mirror` and `--mount`, plus
+`detection_on_mirrored_frame` in `meta.json`. ⛔ A take without that field is
+ambiguous about chirality, because a mirror inverts the determinant.
 
 ## 9. Acceptance
 

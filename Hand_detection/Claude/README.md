@@ -44,6 +44,13 @@ name.** They are the record, not the briefing.
 
 ## Where it stands, in five lines
 
+⭐⭐⭐ **BRANCH `1.7.42-` IS A REBUILD FROM THE LANDMARKS UP** (2026-08-29). The
+rotation stack had accumulated into a **REFLECTION** (det −1), which no rigid
+hand→object mapping can be, so it is being rebuilt one measured step at a time:
+[`10_HAND_TRACKING/spec/SPEC_FRAME_AND_REBUILD.md`](10_HAND_TRACKING/spec/SPEC_FRAME_AND_REBUILD.md).
+`RB0`–`RB2` built. ⚠ Archive of the old build: commit `4dd0fc5`.
+
+
 ✅✅ **`AS1`–`AS9`, OBJECT ASSEMBLY BY MATE CONNECTORS, IS SHIPPED** (2026-08-28) —
 one production run closed it and `V2`'s long-owed production look together.
 ⛔⛔ **BUT `V2` RE-OPENED ON 2026-08-29 AND IS THE ONE THING OWED**: a **double-cover**

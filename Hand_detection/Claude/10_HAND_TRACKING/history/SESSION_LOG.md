@@ -17,6 +17,92 @@ newest-first is restored, the entry bodies are byte-identical, and
 
 ---
 
+## 2026-08-29 (night) — `1.7.42`: the stack was a REFLECTION, so it is being rebuilt
+
+> **Owner:** *"I think we have patched too much this script."*
+
+⛔⛔ **AND THE SHARP FORM OF WHY THEY WERE RIGHT: THE COMPOSITE MAPPING HAD BECOME A
+REFLECTION.** `camera_mount` reversed pitch+yaw; `delta_orbit.AXIS_SIGN` reversed
+pitch back; net, **yaw reversed alone**, determinant **−1**. A rigid hand→object
+correspondence cannot do that. ⭐ Every layer was locally defensible and the stack
+was not — `METHOD`'s *no heuristic pile-up*, arriving in the one place nobody had
+ever computed: **the composition**.
+
+## ⭐⭐⭐ THE OWNER'S PHYSICS IS NOW THE DESIGN
+
+> *"if the hand is rotating around the vertical axis, any observer which watches the
+> hand will see the hand rotating in the same direction ... Roll and pitch will be
+> reversed if the camera and the user are watching in opposite directions."*
+
+Two observers facing each other are related by a **180° rotation about the
+vertical**, not a mirror. `Ry180 = diag(−1,1,−1)`, det **+1**. ⛔⛔ **ANY VIEWPOINT
+THAT CHANGES THE SIGN OF YAW IS WRONG BY CONSTRUCTION** — and the shipped
+`pitch_yaw` reversed yaw. **One assertion would have killed it on day one; there was
+no such assertion anywhere.** It is now `verify_frame_signs.py` §1.
+
+⚠ My own "mirror" analysis was stated badly and the owner pushed back correctly. A
+mirror reverses yaw and roll, but the mirror is *already in the input* — so a
+setting that "reverses yaw" is cancelling it, and the NET yaw is unchanged. I
+described the step and not the net.
+
+## ⭐⭐ THE DECISION: THE VIEWPOINT GOES ON THE LANDMARKS, AS A ROTATION
+
+`V1` conjugated the **orientation only**, so chirality, depth, occlusion and
+rendering kept reading the raw frame — the hybrid was not removed, it **moved one
+layer down**. ⛔ `V1` rightly refused *"negate the landmark z"* (det −1, inverts
+chirality) — ⭐⭐ **but that was never the right operation.** `Ry180` negates x AND
+z, is a rotation, and **cannot change handedness**. So the hybrid is fixable at
+source, cheaply, and every consumer reads one frame.
+⚠ The owner's first form, `z = 1 − z`, measured **identical to the shipped
+conjugation to the decimal** — Horn centres its points, so the offset vanishes. The
+missing half was negating **x**. ⭐ A good idea, one term short, and measuring it
+took two minutes where arguing would have taken an hour.
+
+## ✅ BUILT: `RB0`–`RB2`
+
+* **`RB0`** `analysis/verify_frame_signs.py` — 8 sections. Yaw **+28.27° in BOTH
+  mounts**; pitch/roll flip cleanly; chirality unchanged by the viewpoint; and
+  **negate-z alone inverts it**, kept as the counter-example.
+* **`RB1`** `Resources/hand_frame.py` — the whole viewpoint in one small module.
+* **`RB2`** chirality from the palm determinant: **788/788** on declared hands, and
+  **independent of facing** — which `is_thumb_outward`, a palm/back cue, never could
+  be. Conflating those two is what produced the polarity defect that killed both
+  hands.
+
+## ⭐⭐⭐ THE FINDING THAT REFRAMES `U7`
+
+MediaPipe's handedness label agreed with the declared hand on **0 of 788** mirrored
+frames — and on **201/201** of a new **un-mirrored** take. **THE LABEL WAS NEVER
+BROKEN. OUR MIRRORING WAS BREAKING IT.** `U7`'s *"10.8% wrong"* is largely
+self-inflicted. ⚠ Nothing in `1.7.42` reads the label regardless — a determinant
+needs no label and cannot be fooled by one — but the cost of that mirror was larger
+than anyone had priced.
+
+## ⛔⛔ AND THE LIMIT IT EXPOSED: `head_worn` HAS NO CHIRALITY
+
+Three un-mirrored back-of-hand takes, all the declared RIGHT hand:
+
+    attempt   |det| median   agreement   palm z-spread
+       #1       7.3e-07        57.6%        30.0 mm
+       #2       8.4e-08        88.7%         9.0 mm
+       #3       4.8e-08        58.3%        17.1 mm
+    palm take   4.5e-05       100.0%        38.8 mm
+
+60–950x weaker than palm-side, and the agreement **WANDERS** rather than converging
+— the sign of ~zero. The palm landmarks go near-coplanar and the triple product
+loses what its sign comes from: `T1` / MediaPipe **#5156**, measured rather than
+cited. ⚠ The retakes got **worse**, ruling out one bad attempt.
+⛔ **A head-worn camera mostly sees the BACK of the wearer's own hand, so the cue is
+ABSENT there, not weak** — and no sign may be invented from a coin flip. Caught while
+`head_worn` is one line, rather than after a port is built on it.
+⚠ **Confound not separated**: every take measured 15.17 fps, under the floor.
+
+⭐ Recorder gained `--no-mirror` and `--mount`, and `meta.json` now records
+`detection_on_mirrored_frame` — without which a take is **ambiguous** about
+chirality, because a mirror inverts the determinant.
+
+---
+
 ## 2026-08-29 (late) — the owner refused a build that defaulted to the old one
 
 > *"I do not want to have a mix of hand follow and integral of hand motion. I want

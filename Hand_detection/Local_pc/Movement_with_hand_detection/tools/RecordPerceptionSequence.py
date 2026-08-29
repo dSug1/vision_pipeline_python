@@ -338,6 +338,22 @@ SEQUENCES = {
         "LEFT hand only, PALM to camera, held steady - ground truth clip",
         "the M5d `K` fixture test (item 1.1)",
     ),
+    # ⭐⭐ `RB2`'s CLOSERS (2026-08-29). Declared hand AND declared facing AND
+    # declared mount, recorded UN-MIRRORED -- the one thing the 415-take corpus
+    # cannot provide, and the only thing standing between `hand_frame`'s chirality
+    # sign and a measurement.
+    "rb2_facing_right_palm": (
+        10.0,
+        "RIGHT hand, PALM to the camera, held steady - camera FACING you",
+        "`RB2`: fixes the palm-determinant sign for UN-MIRRORED capture with the "
+        "camera facing the user (`hand_frame.CAPTURE_MIRRORED`)",
+    ),
+    "rb2_worn_right_back": (
+        10.0,
+        "RIGHT hand, BACK of hand to the camera, held steady - camera WORN by you",
+        "`RB2`: the head-worn half of the same question -- the mount must not change "
+        "the chirality, because every mount is a proper rotation",
+    ),
     "known_left_back": (
         8.0,
         "LEFT hand only, BACK of hand to camera, held steady - ground truth",
@@ -440,6 +456,17 @@ def _window_open(name):
 
 def main():
     parser = argparse.ArgumentParser(description="Record a scripted perception-layer test sequence.")
+    # ⭐⭐ `1.7.42` DETECTS UN-MIRRORED, so a take meant for it must be recorded
+    # that way. ⛔ EVERY ONE OF THE 415 CORPUS TAKES IS MIRRORED, which is why the
+    # new frame layer's chirality sign is currently a PREDICTION rather than a
+    # measurement -- `hand_frame.CAPTURE_MIRRORED`. This flag is what closes it.
+    # ⚠ A mirror is det -1: it INVERTS the palm determinant, so a mirrored and an
+    # un-mirrored take of the same hand disagree about which hand it is. They are
+    # not interchangeable and `meta.json` records which one this is.
+    parser.add_argument("--no-mirror", action="store_true",
+                        help="detect and record on the UN-MIRRORED frame (1.7.42)")
+    parser.add_argument("--mount", default="", choices=("", "facing_user", "head_worn"),
+                        help="declare where the camera is; recorded into meta.json")
     parser.add_argument("--sequence", required=True, choices=sorted(SEQUENCES),
                         help="which §7.2 sequence to record")
     parser.add_argument("--duration", type=float, default=None, help="override the default duration")
@@ -585,7 +612,8 @@ def main():
             if not ret:
                 aborted = True
                 break
-            frame = cv2.flip(frame, 1)  # mirrored preview, matching the debug tools
+            if not args.no_mirror:
+                frame = cv2.flip(frame, 1)  # mirrored preview, matching the debug tools
             # ⭐ A STEPPED take gets a longer runway, and the reason is
             # structural: its FIRST step is `hold_0`, so the operator must
             # already be in position and still when recording starts. A
@@ -622,7 +650,8 @@ def main():
                     # 30s) with no way to tell which cause it was.
                     stop_reason = "camera read failed (cap.read() returned False)"
                     break
-                frame = cv2.flip(frame, 1)
+                if not args.no_mirror:
+                    frame = cv2.flip(frame, 1)
 
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
@@ -768,7 +797,11 @@ def main():
         "mediapipe_version": getattr(mp, "__version__", "unknown"),
         "model": os.path.basename(HAND_LANDMARKER_MODEL_PATH),
         "mirrored_preview": True,
-        "detection_on_mirrored_frame": True,
+        # ⛔ THE SINGLE MOST IMPORTANT FIELD FOR A CHIRALITY CONSUMER. A mirror
+        # is det -1, so this flag decides which sign of the palm determinant
+        # means "right hand". A take without it is ambiguous.
+        "detection_on_mirrored_frame": not args.no_mirror,
+        "declared_mount": args.mount or None,
         "recorded_at": stamp,
         "stop_reason": stop_reason,
         "completed_full_duration": span_s >= duration - 1.0,

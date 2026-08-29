@@ -370,9 +370,37 @@ def main():
         HF.CAPTURE_MIRRORED = _saved
     # ⚠⚠ UNTESTED AND SAID SO: the corpus has no UN-MIRRORED take, so the shipped
     # switch position cannot be verified from it. One recording closes this.
-    print("     ⚠ UN-MIRRORED capture is PREDICTED to flip the sign — untested;")
-    print("       CAPTURE_MIRRORED=%s ships. One known-hand recording closes it."
-          % HF.CAPTURE_MIRRORED)
+    # ── 8. `RB2` closed on UN-MIRRORED capture ─────────────────────────
+    print()
+    print("8. ✅ RB2 — UN-MIRRORED capture (the prediction, now measured)")
+    sess, fr = load("2026-08-29_202939_rb2_facing_right_palm")
+    if fr:
+        good = sum(1 for wl, _hd, _st in fr
+                   if HF.is_right_hand(HF.to_user_frame(wl, mount=HF.FACING_USER)))
+        ok("un-mirrored RIGHT hand reads RIGHT, with the shipped switch",
+           good == len(fr), "%d/%d, CAPTURE_MIRRORED=%s" % (good, len(fr),
+                                                           HF.CAPTURE_MIRRORED))
+        lab = sum(1 for _wl, hd, _st in fr if hd == "Right")
+        # ⭐⭐ Kept as an assertion because it reframes `U7`: the label is CORRECT on
+        # un-mirrored capture. It was our own mirroring that broke it.
+        ok("⭐ and MediaPipe's LABEL is correct here (it was the MIRROR all along)",
+           lab == len(fr), "%d/%d" % (lab, len(fr)))
+    # ⛔⛔ The back-of-hand limit, asserted so it cannot be quietly forgotten.
+    worst = None
+    for key in ("2026-08-29_203002_rb2_worn_right_back",
+                "2026-08-29_203217_rb2_worn_right_back"):
+        _s2, f2 = load(key)
+        if not f2:
+            continue
+        dets = [abs(HF.signed_palm_volume(wl)) for wl, _h, _s in f2]
+        med = sorted(dets)[len(dets) // 2]
+        worst = med if worst is None else min(worst, med)
+    if worst is not None:
+        ok("⛔ BACK-of-hand is DEGENERATE — no chirality sign exists there",
+           worst < 1e-06, "|det| median %.1e vs 4.5e-05 palm-side" % worst)
+        print("     ⛔ `head_worn` therefore has NO chirality convention. It is not")
+        print("       weak there, it is ABSENT — and a head-worn camera mostly sees")
+        print("       the BACK of the wearer's own hand. Do not invent a sign.")
 
     print("\n" + "=" * 78)
     if FAILURES:

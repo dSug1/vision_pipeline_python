@@ -154,13 +154,48 @@ def signed_palm_volume(world_landmarks):
 # the physical one. `METHOD` rule 4 already says never to key a stream on it; this
 # is the same fact with a number on it. **Nothing in `1.7.42` reads the label.**
 #
-# ⚠⚠ THE SIGN BELOW IS FOR **MIRRORED** CAPTURE, WHICH IS WHAT THE WHOLE 415-TAKE
-# CORPUS IS. `1.7.42` detects UN-MIRRORED (§4), and a mirror is det -1, so the
-# determinant is PREDICTED to flip. That prediction is **NOT TESTED** -- it cannot
-# be, from a corpus that contains no un-mirrored take -- so it is a switch with its
-# own name rather than a silent assumption, and `RB2`'s remaining work is one
-# un-mirrored known-hand recording to fix it.
+# ✅✅ THE FLIP IS NOW MEASURED, NOT PREDICTED (2026-08-29,
+# `2026-08-29_202939_rb2_facing_right_palm`, UN-MIRRORED, declared RIGHT hand):
+#
+#     MIRRORED corpus, right hand   det > 0 in 100.0%   (788 frames)
+#     UN-MIRRORED, right hand       det > 0 in   0.0%   (201 frames)
+#
+# A mirror is det -1 and the determinant duly flips. `CAPTURE_MIRRORED = False` is
+# therefore correct BY MEASUREMENT for the capture path `1.7.42` uses.
+#
+# ⭐⭐ AND A BONUS THAT REFRAMES `U7`: on that same un-mirrored take MediaPipe's
+# handedness label was **Right on 201/201 frames** -- correct. On the mirrored
+# corpus it agreed on **0 of 788**. **The label was never broken; OUR MIRRORING was
+# breaking it.** `U7`'s "10.8% wrong" is largely self-inflicted. ⚠ Nothing here
+# reads the label regardless: the determinant needs no label and cannot be fooled
+# by one.
 CAPTURE_MIRRORED = False
+
+# ⛔⛔ AND THE LIMIT THAT CAME WITH IT: **THE DETERMINANT HAS NO USABLE SIGN ON A
+# BACK-OF-HAND VIEW.** Three separate `rb2_worn_right_back` takes, all un-mirrored,
+# all the declared RIGHT hand:
+#
+#     attempt   |det| median   sign agreement   palm z-spread
+#        #1       7.3e-07          57.6%           30.0 mm
+#        #2       8.4e-08          88.7%            9.0 mm
+#        #3       4.8e-08          58.3%           17.1 mm
+#     palm take   4.5e-05         100.0%           38.8 mm
+#
+# 60-950x weaker than palm-side, and the agreement WANDERS (57.6 / 88.7 / 58.3)
+# instead of converging -- which is what taking the sign of ~zero looks like. The
+# five palm landmarks go near-coplanar, so the triple product loses the quantity it
+# takes its sign from. That is `T1` / MediaPipe issue #5156, measured rather than
+# cited. ⚠ Retakes got WORSE, which rules out "one bad attempt".
+#
+# ⛔ SO `head_worn` HAS NO CHIRALITY CONVENTION HERE, AND ONE MUST NOT BE INVENTED
+# FROM A COIN FLIP. It matters because a head-worn camera mostly sees the BACK of
+# the wearer's own hand, so the cue is not weak there, it is ABSENT. Whoever takes
+# `head_worn` forward needs a different cue (thumb geometry) or a rule that HOLDS
+# the last palm-side reading through the degenerate region.
+# ⚠ UNSEPARATED CONFOUND: every take that day measured 15.17 fps, under the 20 fps
+# floor. The mechanism does not need dim light to explain it -- the corpus's own
+# MIRRORED back-of-hand take had 72 mm of spread and read 100% clean -- but the two
+# were not separated, and saying so is cheaper than re-deriving it later.
 _RIGHT_IS_POSITIVE_WHEN_MIRRORED = True
 
 

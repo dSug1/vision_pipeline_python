@@ -96,6 +96,28 @@ What came out of it, and is now standing practice:
   vectors were checked at **6/6 failing** pre-fix before being trusted — three
   vectors in the `AS` row had already passed for the wrong reason the same month.
 
+* ⭐⭐⭐ **A SIGN IS NOT TESTED BY ANY AMOUNT OF TESTING THE MAGNITUDE**
+  (2026-08-29). Four defects in one day — a symmetric edge-on gate, a
+  chirality-odd palm normal, an inverted palm/back polarity, and a composite
+  mapping that came out a REFLECTION — and **not one was caught by a suite**. All
+  four were found live by the owner. They share a shape: the magnitude right, the
+  sign wrong, in code that runs identically either way. ⭐ The answer is a harness
+  that pins SIGNS against DECLARED truth (`analysis/verify_frame_signs.py`), built
+  BEFORE anything stands on them.
+* ⛔⛔ **A HARNESS MUST NOT RE-IMPLEMENT THE THING IT CHECKS.** It then agrees
+  with itself while the product is wrong — which is exactly how `lean_trim`'s
+  double cover survived every suite (the helper knew the rule and never fed the
+  product's own representation in). ⭐ Keep the harness's own arithmetic for what
+  it must be able to FAIL on; take the thing under test FROM the module.
+* ⭐⭐ **A COMPOSITION IS A THING TO MEASURE, NOT AN EMERGENT PROPERTY.** Each
+  layer of the 2026-08-29 rotation stack was defensible alone; their product was a
+  reflection. Nobody had ever computed the composite. **Ask what the whole chain
+  does, in one expression, and check its determinant.**
+* ⚠ **A statistic pooled across a region cannot answer a question about that
+  region.** "Pitch is unusable" came from a ±29° figure that was almost entirely
+  the past-edge-on bin; per pose, gripping, pitch is 1.1–4.8°. The owner's premise
+  was right and the aggregate was hiding it.
+
 ⚠ **Automated green is necessary, not sufficient.** §13.6.1 shipped **inverted**
 while passing an "end-to-end confirmed" claim. **A live look in both tools is
 what closes a change** — nothing else does.
