@@ -4,7 +4,7 @@
 > Its one-line status and its place in the order are in [`../QUEUE.md`](../QUEUE.md)
 > — update **both** when it changes.
 >
-> **STATUS** · in build 2026-08-28 · **SUB** · 3D · **KIND** · feature · **DEP** · —
+> **STATUS** · ✅✅ **SHIPPED 2026-08-28** — built and live-confirmed in BOTH tools · **SUB** · 3D · **KIND** · feature · **DEP** · —
 
 Design of record: [`../../30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md`](../../30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md).
 
@@ -73,3 +73,22 @@ property `U9`'s clamp has. At today's sizes that is 9.0 mm (small) and 18.0 mm
 
 ✅ `analysis/verify_mate_connector.py`, 40 checks, all passing.
 
+
+## ✅✅ 2026-08-28 — SHIPPED. THE LIVE LOOK IN BOTH TOOLS IS DONE
+
+> **Owner, after running production:** *"production run was done by me and it is
+> ok"*.
+
+⭐⭐ **THIS IS WHAT THE ROW WAS WAITING FOR, AND NOTHING ELSE WOULD HAVE DONE.**
+44/44 golden-vector suites and a clean `parity_replay` on four takes had been true
+since the build — `METHOD` calls that necessary and not sufficient, and §13.6.1
+once shipped **inverted** while passing an *"end-to-end confirmed"* claim. The
+debug tool had settled the sliders and the behaviour; ⚠ **production had never
+been run at all**, so every judgement stood on one renderer. It has now been run
+and accepted, and the row moves **BUILT → SHIPPED**.
+
+⚠ **Still not exercised by anything**: `kind` (gendered connectors) stays unused, and the six-face default has never been run with MORE THAN TWO objects — 36 pair tests a frame is nil at two, and the broad phase is `O((objects × connectors)²)`.
+
+⚠ **What a live acceptance is not**: it is not a measurement, and it retires
+no number that was never taken. See `QUEUE.md`'s YOU-ARE-HERE
+block and the spec's §13 for what remains open across the whole `AS` row.

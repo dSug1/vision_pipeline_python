@@ -181,9 +181,48 @@ def _from_rotvec(v):
 
 
 def twist_angle_deg(q, axis=TWIST_AXIS):
-    """Signed rotation about `axis`, in degrees -- the yaw the operator asked for."""
+    """Signed rotation about `axis`, in degrees -- the yaw the operator asked for.
+
+    ⛔⛔ THE DOUBLE COVER, AND IT WAS A LIVE DEFECT (fixed 2026-08-29). `q` and `-q`
+    are the SAME rotation, and `horn_rotation` returns whichever sign its
+    largest-eigenvalue eigenvector happens to carry. Without the canonicalisation
+    below, `2*atan2(d, w)` with `w < 0` walks the long way round:
+
+        15 deg pure yaw                 ->   15.00 deg   (right)
+        the SAME rotation, negated quat -> -345.00 deg   (wrong)
+
+    ⭐⭐ WHY IT MATTERED, AND IT WAS NOT COSMETIC: `yaw_dominance` divides by this,
+    so a pitch gesture whose quaternion came back negated read `tw = 345` instead
+    of `15` and scored ~0.99 dominance instead of ~0.2. `authority` then went to
+    **1.0 on a gesture that must receive NO correction at all** -- and because a
+    pitch is entirely SWING in this decomposition, the trim then shrank the very
+    gesture it was supposed to leave alone.
+
+    ⭐ MEASURED on the corpus before the fix (`analysis/rotation_accuracy_bands.py`):
+    on `2026-08-02_191816_pitch_sweep_slow`, **23% of frames** carried a corrupted
+    authority (153 of them wrong by more than 0.5) and the take's mean authority
+    read **0.260 against a true 0.050** -- firing five times too often. The p95
+    orientation-jump ratio was **1.166x**, a clear fail of `V2`'s own gate; with
+    this fix it is **1.031x**.
+
+    ⭐⭐ AND THE FIX IS PROVABLY SAFE ON WHAT THE OWNER ACCEPTED LIVE: it is
+    **bit-identical** on the yaw take (0.892x -> 0.892x) and the roll take
+    (0.995x -> 0.995x), because neither reaches the wrap. It can only change
+    frames that were already being mis-scored.
+
+    ⚠ WHY NOTHING CAUGHT IT: `verify_lean_trim.py` knew about the double cover in
+    its comparison HELPER and never fed a negated quaternion IN, so every vector
+    exercised the canonical representation the product does not always produce.
+    `parity_replay` is blind to it by construction -- both tools import this one
+    module, so they were wrong identically. See `METHOD`'s instrument section.
+    """
     _, twist = swing_twist(q, axis)
     w, x, y, z = twist
+    # ⛔ SHORTEST ARC. With `w >= 0`, `atan2(d, w)` lands in [-pi/2, pi/2] and the
+    # doubled result in [-180, 180] -- so a 190 deg turn reads as -170 deg, the
+    # same rotation named the short way, which is what every caller here wants.
+    if w < 0.0:
+        w, x, y, z = -w, -x, -y, -z
     d = x * axis[0] + y * axis[1] + z * axis[2]
     return math.degrees(2.0 * math.atan2(d, w))
 

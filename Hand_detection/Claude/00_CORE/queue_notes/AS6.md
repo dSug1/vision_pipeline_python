@@ -4,7 +4,7 @@
 > Its one-line status and its place in the order are in [`../QUEUE.md`](../QUEUE.md)
 > — update **both** when it changes.
 >
-> **STATUS** · BUILT 2026-08-28, both tools — ⛔ live look owed · **SUB** · 3D
+> **STATUS** · ✅✅ **SHIPPED 2026-08-28** — built and live-confirmed in BOTH tools · **SUB** · 3D
 > **KIND** · feature · **DEP** · `AS3`
 
 Design of record:
@@ -82,6 +82,26 @@ break, or an ordinary grab would be refused later for no visible reason.
 `analysis/verify_object_assembly.py` include the live defect itself, as a
 regression: the mate now survives 145 px of the placing hand moving on.
 
-⛔ **LIVE LOOK OWED.** ⚠ And the consequence to judge live: **to detach you need two
+⚠ [SUPERSEDED — the live look was GIVEN 2026-08-28; see the closing section below] ⛔ **LIVE LOOK OWED.** ⚠ And the consequence to judge live: **to detach you need two
 hands**; one hand alone moves the whole assembly instead. Physically that is what
 taking a brick off a model requires — but it is a choice, not a law.
+
+
+## ✅✅ 2026-08-28 — SHIPPED. THE LIVE LOOK IN BOTH TOOLS IS DONE
+
+> **Owner, after running production:** *"production run was done by me and it is
+> ok"*.
+
+⭐⭐ **THIS IS WHAT THE ROW WAS WAITING FOR, AND NOTHING ELSE WOULD HAVE DONE.**
+44/44 golden-vector suites and a clean `parity_replay` on four takes had been true
+since the build — `METHOD` calls that necessary and not sufficient, and §13.6.1
+once shipped **inverted** while passing an *"end-to-end confirmed"* claim. The
+debug tool had settled the sliders and the behaviour; ⚠ **production had never
+been run at all**, so every judgement stood on one renderer. It has now been run
+and accepted, and the row moves **BUILT → SHIPPED**.
+
+⚠ The consequence to live with is now accepted live: **detaching needs two hands**; one hand alone moves the whole assembly. The scoping to both-objects-driven (owner, same day) is part of what was accepted.
+
+⚠ **What a live acceptance is not**: it is not a measurement, and it retires
+no number that was never taken. See `QUEUE.md`'s YOU-ARE-HERE
+block and the spec's §13 for what remains open across the whole `AS` row.

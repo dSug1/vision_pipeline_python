@@ -1,6 +1,6 @@
 # 30 — 3D OBJECTS · meshes, import, rendering
 
-> **STATUS** · ⭐ **live — `AS1`–`AS9` BUILT 2026-08-28, none SHIPPED**
+> **STATUS** · ✅✅ **`AS1`–`AS9` SHIPPED 2026-08-28, live-confirmed in BOTH tools**
 > **OWNS** · imported 3D assets, the mesh pipeline, object assembly, whatever renders them
 > **READ IF** · you are touching assembly or connectors, starting real 3D-file
 > import, or choosing the renderer
@@ -17,12 +17,20 @@ cube objects. I want the objects to be able to assemble into an assembly."*
 ⭐⭐ **A NEW SESSION SHOULD READ ITS §12 FIRST — *what is left to build*.**
 Rows `AS1`–`AS9` in [`../00_CORE/QUEUE.md`](../00_CORE/QUEUE.md).
 
-✅ **`AS1`–`AS9` are all BUILT in both tools (2026-08-28); NONE is SHIPPED.**
-44/44 suites, `parity_replay` clean — ⛔ necessary and not sufficient, because only
-a live look in both tools closes a change and **production has never been run**.
+✅✅ **`AS1`–`AS9` ARE SHIPPED (2026-08-28), live-confirmed in BOTH tools.** ⭐ What
+closed the row was the **production run** — *"production run was done by me and it is
+ok"* — not the 44/44 suites or the clean `parity_replay`, which had been true since
+the build and which `METHOD` calls necessary and not sufficient.
 
-⛔⛔ **One design fork is open and unanswered: a ONE-HANDED DETACH.** An un-snap
-needs TWO hands today. *A tug* was recommended; nothing was chosen.
+✅ **The design fork is CLOSED: an un-snap needs TWO HANDS** (owner, 2026-08-28).
+`AS3`'s consequence is the RULE, and the **tug** and **unheld-means-anchored** are
+DECLINED, not deferred.
+
+⚠ **What shipping did NOT close**, and it is what a next session picks up: `AS2`'s
+acceptance metric (snap/break transitions per minute) is still unmeasured and
+**cannot be measured until the recorders carry mate state**; the **preview radius**
+is the last constant with no measured floor; the tree has only ever held **two**
+objects; and **renderer parity remains unguarded**.
 
 The four things a session must not rediscover:
 

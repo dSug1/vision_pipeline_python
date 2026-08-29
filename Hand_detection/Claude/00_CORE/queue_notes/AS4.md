@@ -4,7 +4,7 @@
 > Its one-line status and its place in the order are in [`../QUEUE.md`](../QUEUE.md)
 > — update **both** when it changes.
 >
-> **STATUS** · in build 2026-08-28 · **SUB** · 3D · **KIND** · feature · **DEP** · `AS3`
+> **STATUS** · ✅✅ **SHIPPED 2026-08-28** — built and live-confirmed in BOTH tools · **SUB** · 3D · **KIND** · feature · **DEP** · `AS3`
 
 Design of record: [`../../30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md`](../../30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md) §6.
 
@@ -64,3 +64,22 @@ the child is clamped after placement); and with **two hands on one assembly** th
 structural parent wins the tie — not a deadlock, because that is precisely the case
 whose residual grows until the mate breaks.
 
+
+## ✅✅ 2026-08-28 — SHIPPED. THE LIVE LOOK IN BOTH TOOLS IS DONE
+
+> **Owner, after running production:** *"production run was done by me and it is
+> ok"*.
+
+⭐⭐ **THIS IS WHAT THE ROW WAS WAITING FOR, AND NOTHING ELSE WOULD HAVE DONE.**
+44/44 golden-vector suites and a clean `parity_replay` on four takes had been true
+since the build — `METHOD` calls that necessary and not sufficient, and §13.6.1
+once shipped **inverted** while passing an *"end-to-end confirmed"* claim. The
+debug tool had settled the sliders and the behaviour; ⚠ **production had never
+been run at all**, so every judgement stood on one renderer. It has now been run
+and accepted, and the row moves **BUILT → SHIPPED**.
+
+⚠ **The tree has still only ever held TWO objects.** `order_by_size`'s tie-break, cycle refusal and the home row's outer slots are written and un-exercised; today's cubes are 2:1 so the tie cannot bite yet.
+
+⚠ **What a live acceptance is not**: it is not a measurement, and it retires
+no number that was never taken. See `QUEUE.md`'s YOU-ARE-HERE
+block and the spec's §13 for what remains open across the whole `AS` row.

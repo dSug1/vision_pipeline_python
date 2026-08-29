@@ -65,11 +65,27 @@ measured out live in
 
 ## ⛔ Owed, and not closed by anything above
 
-⚠ **OWED as of 2026-08-28: `V2`'s PRODUCTION live look.** The yaw-lean trim was
-settled in the debug tool over 19 homed trials; production applies the same
-constants (0.66 / 0.66) and has **not** been run with them. ⛔ Leaving the hand
-subsystem for `AS` does not close it — `METHOD` is explicit that a live look in
-**both** tools is what closes a change, and nothing else does.
+⛔⛔ **RE-OPENED 2026-08-29: `V2` IS OWED A LIVE LOOK AGAIN.** A **double-cover**
+defect was found in the shipped trim while answering a question about where rotation
+is accurate: `twist_angle_deg` read a 15° turn as **−345°** whenever the quaternion
+carried the negative sign, and `yaw_dominance` divides by it — so **`authority` hit 1.0
+on pure PITCH gestures that must receive no correction**, and a pitch is entirely SWING
+in that decomposition, so the trim shrank the gesture it exists to protect.
+✅✅ The fix is **bit-identical on the yaw and roll takes**, so it cannot regress what
+was accepted live — but `METHOD` closes a change with a live look and nothing else.
+Full account: [`queue_notes/V2.md`](queue_notes/V2.md) §11.
+
+✅✅ **What WAS closed on 2026-08-28, and stays closed.** The last outstanding item — `V2`'s
+PRODUCTION live look — was closed the same evening the assembly row was, by one
+production run: *"production run was done by me and it is ok"*, owner-confirmed on
+asking to cover the yaw-lean trim as well as `AS1`–`AS9`. ⭐ It is kept here rather
+than deleted because of how long it stood: the trim was settled in the debug tool over
+19 homed trials and shipped, and `METHOD` still refused to call it closed until the
+OTHER tool had been run — which is the rule working, not bureaucracy.
+
+⚠ **A live acceptance is not a re-measurement.** `V2`'s gate is still cleared on only
+**3 of 4 takes** (`stripped` 1.072x) and the harness's LEAN numbers are still
+SELF-MEASURING (`B4`); a future revisit starts from those, not from this acceptance.
 
 ⭐ **Nothing else was outstanding as of 2026-08-25.** Both items below were closed
 the same evening; they are kept struck rather than deleted so the record of what

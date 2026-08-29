@@ -815,6 +815,45 @@ on the lean and worse on the jitter tail, and the tail decided every verdict.
 `f1_tip_census.py` (tip noise floor, 1.5 mm median) · `f1_trim_resolution.py`
 (§10.1 — the measurement that REMOVED the trim)
 
+## `V2` the yaw-lean trim — and where each axis is actually accurate (2026-08-29)
+
+`lean_trim_ab.py` — ⛔ **THE GATE, run first**: the p95 orientation-jump ratio vs
+shipped Horn. ⚠ Its LEAN numbers are self-measuring (`B4`); the jump ratio is the
+only independent evidence it prints.
+`lean_decomposition.py` — what contaminates yaw (both pitch and roll, ~1.3x, both
+one-directional biases) and whether it is depth-dependent (**it is not**).
+
+`rotation_accuracy_bands.py` — ⭐⭐ **the POST-`V2` table: yaw / pitch / roll, BINNED
+BY TURN SIZE**, trim off vs on, on each axis's own take. Answers *"where is rotation
+most accurate, and is there a minimum angle below which it is not reliable"*.
+It reproduces `ROTATION_ACCEPTANCE_AND_TRAPS` §5's baseline (yaw 14.5° / 1.13, pitch
+5.5° / 0.74) **before** reporting anything new, per `METHOD`'s reproduce-first rule.
+
+⭐ **THREE FLOORS, and they give different answers** — conflating them is why one
+answer said *"yaw is best 20–60°"* and the next said *"under 40°"*:
+* **resolvability** (signal vs the wobble **during holds**, not take-wide) — roll
+  ~3–5°, yaw ~8–10°, **pitch ~50–60°**;
+* **scale** (does it turn the right amount) — roll ~1.00 throughout, **yaw RAMPS
+  0.5→1.2 and crosses 1.0 near 60°**, pitch never reaches 0.85;
+* **the product's own `RELEASE 60 deg/s` + `FREEZE 1`**, a RATE gate, which is the
+  floor the player actually feels.
+⛔ The *"~30° axis noise floor"* is none of the three — it is about the AXIS
+DIRECTION being undefined near identity, and has been quoted as if it were a
+tracking limit.
+
+⛔⛔ **PITCH WOBBLES ±29° (p95) WHILE THE HAND IS STILL** — 15x yaw's 2.02° and 18x
+roll's 1.61°. Corroborated on both pitch takes (29.3° / 11.6°): the direction is
+solid, the magnitude is not.
+
+⭐⭐ **THIS HARNESS FOUND A SHIPPED DEFECT** — the double cover in
+`lean_trim.twist_angle_deg` (a negated quaternion read a 15° turn as −345°, so
+`authority` went to **1.0** on gestures that must receive none). Fixed 2026-08-29;
+full account in `Claude/00_CORE/queue_notes/V2.md` §11.
+⚠ Two of its OWN columns were wrong first and the mistakes are kept in its header:
+it reported the vertical-axis LEAN for all three axes (meaningless off yaw — roll
+scored 99.8° of "error" on a 90–120° roll, which was the gesture), and it put the
+axis noise floor on the TRUE angle instead of the FITTED one.
+
 ## Older one-offs, kept for the audit trail
 
 `b2_block_separability` · `b3_block_gate_eval` · `b3_full_eval` · `b4_anchor_ab` ·

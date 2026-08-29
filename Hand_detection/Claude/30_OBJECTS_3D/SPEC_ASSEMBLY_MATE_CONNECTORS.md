@@ -335,7 +335,7 @@ tier, the port's prerequisite) owns *grab-what, arbitration and ownership* — a
 assembly changes **what a grab owns**. Whether assembly rides with `IS4` or
 precedes it is still open.
 
-## 11bis. ✅ WHAT WAS BUILT, 2026-08-28 — and the live look that is owed
+## 11bis. ✅✅ WHAT WAS BUILT, 2026-08-28 — and the live look that CLOSED it
 
 | | |
 |---|---|
@@ -348,12 +348,18 @@ precedes it is still open.
 **Evidence**: 42/42 suites pass · `parity_replay` **NO DIVERGENCE on 4 takes**
 (`stripped`, `frob`, `steadytrans`, `freeze`).
 
-⛔⛔ **THE LIVE LOOK IN BOTH TOOLS IS OWED, and nothing above closes it.** `METHOD`
-is explicit: automated green is necessary, not sufficient — §13.6.1 shipped
-**inverted** while passing an "end-to-end confirmed" claim.
+✅✅ **THE LIVE LOOK IN BOTH TOOLS IS DONE (2026-08-28), AND IT IS WHAT CLOSED THE
+ROW.** `METHOD` is explicit that automated green is necessary and not sufficient —
+§13.6.1 shipped **inverted** while passing an "end-to-end confirmed" claim. The debug
+tool had settled the sliders and the behaviour; ⛔ production had **never been run at
+all**, so every judgement stood on one renderer and `parity_replay` covers the LOGIC,
+not the DRAWING. The owner ran production: *"production run was done by me and it is
+ok"*. `AS1`–`AS9` are **SHIPPED**.
 
-⚠ **The capture radius has no measured floor** (§8) and is the first thing to
-settle live, the way `V2`'s 0.66 and `L1`'s τ were.
+✅ **The capture radius and the angle were settled live at `snap 150 %`** — reach
+**108.3 mm = 1.50 × an object's edge**, angle **45° = the 90° aperture** — the way
+`V2`'s 0.66 and `L1`'s τ were. ⚠ **The PREVIEW radius was not**, and it is now the
+only constant in this spec with no measured floor.
 
 ⚠ **Two limits, both known and neither a bug**: a *child* pinned at a play-volume
 wall can drift off its parent visually (the parent is exempt, the child is clamped
@@ -381,21 +387,21 @@ feature, so the letter does not apply — but the discipline does.
 
 ## 13. ⭐⭐⭐ WHAT IS LEFT TO BUILD — read this first in a new session
 
-**Everything in `AS1`–`AS9` is BUILT in both tools. None of it is SHIPPED**, because
-`METHOD` is explicit that only a live look in both tools closes a change, and the
-owner has not given that verdict. 44/44 golden-vector suites pass and
-`parity_replay` is clean on the takes; that is necessary and not sufficient.
+✅✅ **`AS1`–`AS9` ARE SHIPPED (2026-08-28).** The owner ran production — *"production
+run was done by me and it is ok"* — and that, not the 44/44 suites or the clean
+`parity_replay`, is what closed the row: `METHOD` calls automated green necessary and
+not sufficient.
 
-### ⛔ Blocking, and the owner's call
+### ✅ Was blocking — all three cleared by the one production run
 
 | | |
 |---|---|
-| **The live verdict on `AS1`–`AS9`** | the whole row is BUILT-not-SHIPPED until it exists |
-| **`V2`'s production live look** | owed from BEFORE this work began, and still owed |
-| **Production has never been run at all** | every judgement so far is from the debug tool. `parity_replay` proves the LOGIC matches; it does not cover DRAWING, and renderer parity is unguarded |
+| ~~**The live verdict on `AS1`–`AS9`**~~ | ✅ **given 2026-08-28**, in both tools |
+| ~~**`V2`'s production live look**~~ | ✅ **DONE** — owed from before this work began; the same run covered it, owner-confirmed on asking. ⚠ An acceptance is not a re-measurement: `V2`'s gate is still cleared on 3 of 4 takes |
+| ~~**Production has never been run at all**~~ | ✅ **it has now.** ⚠ The reason it mattered stands for next time: `parity_replay` proves the LOGIC matches, it does not cover DRAWING, and **renderer parity remains unguarded** — a future renderer change needs the same two-tool look |
 | ✅ **A one-handed detach — DECIDED AND DECLINED** | owner, 2026-08-28: *"unsnapping needs two hands"*. `AS3`'s consequence is now the RULE: one hand can never break a mate, and a mated pair is permanent to a single hand. ⛔ The **tug** (which I had recommended) and **unheld-means-anchored** are declined, not deferred. ⚠ Live with: an assembly cannot be taken apart while only one hand is tracked |
 
-### ⚠ Numbers with no measured floor — settle them live
+### ⚠ Numbers with no measured floor — two settled, ONE still open
 
 `MATE_RADIUS_FRACTION`, `PREVIEW_RADIUS_FACTOR` and the angle tolerance all have
 live sliders (`MATE snap r %`, `MATE preview r %`, 33 %..300 %, the angle riding
@@ -410,9 +416,29 @@ at 640 px the objects sit at 132/508 against a play area of 87..553, so a wider
 snap radius would start pushing them off the usable area on a low-resolution
 camera. **The preview radius is still unsettled.**
 
-⚠ **`AS2`'s own acceptance metric has never been measured**: `snap/break
-transitions per minute` on a recorded take. **No recording of an assembly session
-exists yet** — every take on `E:` predates this work.
+⚠⚠ **`AS2`'s own acceptance metric has never been measured, and SHIPPING DID NOT
+CLOSE IT**: `snap/break transitions per minute` on a recorded take. **No recording of
+an assembly session exists** — the newest take on `E:` is
+`2026-08-28_000559_stripped`, which predates this work, and the production run that
+shipped the row was not recorded.
+
+⛔⛔ **AND RECORDING ONE TODAY WOULD NOT BE ENOUGH — NEITHER RECORDER CARRIES MATE
+STATE.** `HandsTriggeredActions._record_flush` writes, per cube, `owner / position /
+size / depth_m / projected_size / orientation`, and the debug recorder matches it;
+nothing says whether a pair is **mated**, which pair, or which connectors. So the
+metric could only be produced by RE-DERIVING the mate state from positions — a second
+implementation of `can_mate` that can silently disagree with the one that ran.
+⭐⭐ That is the exact trap `_record_flush`'s own docstring exists to warn about
+(*"record what ran; never re-derive it"*), and the trap `METHOD` records as the
+project's most expensive lesson: a recomputation once reported a production session
+CLEAN on a defect the owner had just watched happen.
+
+⭐ **So the metric's prerequisite is a recorder change, not a recording session**:
+add the mate state both tools already know to the frame row, guarded by
+`verify_recorder_parity` (the two recorders have diverged before — production once
+sampled cubes a frame earlier and skewed every harness that paired hands with cubes).
+⚠ It bumps the recorder schema; takes written before it lack the field, exactly as
+`4.2`'s `depth_m` did.
 
 ### ⛔ Not built at all
 

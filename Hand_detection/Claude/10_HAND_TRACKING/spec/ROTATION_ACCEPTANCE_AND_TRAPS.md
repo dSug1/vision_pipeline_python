@@ -38,6 +38,120 @@ corpus was held without a working squareness readout.
 
 ---
 
+## ⭐⭐⭐ AMENDMENT 2026-08-29 — THE POST-`V2` ACCURACY TABLE, AND THE THREE FLOORS
+
+> **Owner:** *"I want the accuracies on yaw, roll and pitch after we have shipped
+> v2. I want to find the ranges for each where the rotation accuracy is the best."*
+> — and then *"is there a min hand orientation in yaw and pitch for them to be
+> reliable?"*
+
+⛔ §5's table below is the **pre-`V2` baseline** and stays that way — it is the bar
+a change must beat. This amendment is what the pipeline does **after** `V2`.
+Harness: **`analysis/rotation_accuracy_bands.py`**, which reproduces §5's numbers
+first (yaw 14.5° / 1.13, pitch 5.5° / 0.74) before reporting anything new.
+
+### ⚠⚠ THERE ARE **THREE DIFFERENT FLOORS** AND THEY GIVE DIFFERENT ANSWERS
+
+Conflating them is why an earlier answer said *"yaw is best 20–60°"* and a later one
+said *"best under 40°"*. Both were reading a different floor.
+
+1. **RESOLVABILITY** — is the pose distinguishable from the pipeline's own wobble?
+2. **SCALE** — does it turn the *right amount*?
+3. **THE PRODUCT'S OWN GATE** — `RELEASE 60 deg/s` + `FREEZE 1`. A **rate** gate, not
+   an angle gate: below 60°/s of hand speed the object freezes dead still. ⭐ This is
+   the floor the player actually feels, and it is why none of the wobble below
+   reaches the screen during a hold.
+
+⛔ **The “~30° axis noise floor” in §7 trap 4 is NONE of these.** It is about the AXIS
+DIRECTION being undefined near identity — a caveat on a diagnostic column, not a
+statement that the product cannot track a small turn. It has been quoted as if it
+were, including by me.
+
+### 1. RESOLVABILITY — signal against the wobble **during holds**
+
+⚠ Measured against the p95 jump on frames where the hand is nearly still, **not**
+the take-wide p95: on the yaw take the take-wide figure is 7.17° and the holds-only
+figure is **2.02°**, and the difference is the sweep, i.e. motion the operator asked
+for. Using the wrong one overstates every floor.
+
+| axis | wobble at rest (p95) | resolves from |
+|---|---|---|
+| **ROLL** | **1.61°** | **~3–5°** |
+| **YAW** | **2.02°** | **~8–10°** |
+| **PITCH** | **29.3°** (2nd take 11.6°) | **~50–60°** |
+
+⛔⛔ **PITCH IS THE FINDING: its orientation wobbles ±29° at p95 WHILE THE HAND IS
+STILL** — 15x yaw's and 18x roll's. Every pitch band under 60° sits at snr ≤ 0.7,
+so a 25° pitch hold is *smaller than the pipeline's own frame-to-frame noise*.
+⚠ Confirmed on both pitch takes (29.3° and 11.6°): they agree on the direction and
+disagree on the size, so *"far worse"* is solid and the number is not.
+
+### 2. SCALE — the gain, about each axis's OWN axis
+
+⚠ Reported as rotation **about the take's expected axis**, never total-angle: the
+total conflates the wanted turn with the spurious lean, so `V2` removing lean reads
+there as a lower gain, which is error being removed rather than signal.
+
+| true turn | YAW fitted | YAW gain | ROLL gain | PITCH gain |
+|---|---|---|---|---|
+| 10–20° | 8.1° | **~0.5** | 1.05 | 0.12 |
+| 20–30° | 12.8° | ~0.5 | 1.05 | 0.21 |
+| 30–40° | 21.2° | ~0.6 | 1.06 | 0.16 |
+| 40–50° | 33.6° | ~0.75 | 1.04 | 0.18 |
+| 50–60° | 47.4° | ~0.86 | 1.03 | 0.43 |
+| 60–75° | 76.2° | **1.13** | 1.01 | **0.82** |
+| 90–120° | 125.6° | 1.20 | 0.99 | 0.77 |
+
+⭐⭐ **YAW'S GAIN IS NOT THE CONSTANT 1.13 THIS FILE RECORDS — IT RAMPS**, ~0.5 at
+15° to ~1.2 at 105°, crossing 1.0 near 60°. §5's single number is the LARGE-TURN
+average (it is measured over 40–140°). So a 15° hand turn moves the object ~8°:
+perfectly resolvable, and visibly short.
+
+⭐ **Roll shows no ramp at all** — gain ~1.00 from 5° up. Roll is the axis that never
+touches MediaPipe's world `z`, so this is the depth defect appearing as a SCALE
+error rather than as a lean. It is also what says the ramp is mostly real rather
+than an artifact of the foreshortening truth (which is ill-conditioned near
+face-on and would bias the low bands).
+
+### 3. THE POST-`V2` LEAN, on the yaw take
+
+| hand turned | lean, trim OFF | lean, trim ON | p90 ON |
+|---|---|---|---|
+| 10–20° | 5.6° | **1.9°** | 3.1° |
+| 20–30° | 8.4° | **2.8°** | 4.4° |
+| 30–40° | 8.6° | **2.9°** | 3.8° |
+| 40–50° | 14.6° | **5.0°** | 6.4° |
+| 50–60° | 22.4° | **7.6°** | 8.0° |
+| 60–75° | 27.3° | **9.3°** | 10.9° |
+| 75–90° | 23.4° | **8.0°** | 10.5° |
+| 90–120° | 28.5° | **9.7°** | 11.8° |
+
+⛔⛔ **`B4`: THIS COLUMN IS SELF-MEASURING AND MUST NOT BE READ AS A DISCOVERY.**
+The metric is the swing; `V2` multiplies the swing by 0.34. *"27.3 → 9.3"* is that
+multiplication, not evidence the object looks upright. ⭐ What IS independent: the
+authority is **1.00 on 100% of frames** here (so the factor really does apply across
+the whole range), and the per-frame jump **improves** (1.70°→1.36° median,
+7.17°→6.57° p95) rather than being bought with tail steadiness — which is how the
+three predecessors died.
+
+### ⭐ THE ANSWER, PER AXIS
+
+| | best range | why it ends there |
+|---|---|---|
+| **ROLL** | **anywhere, from ~5°** | no floor worth naming; gain ~1.00 throughout, steadiest by 2–3x. **The precision axis** |
+| **YAW** | **10–40°** for faithful DIRECTION (lean 1.9–2.9°) · **60–90°** for faithful AMOUNT | ⚠ **no band gives both** — that gap is the world-`z` defect showing up as scale |
+| **PITCH** | **nothing reliable below ~50–60°**, and snr is only 2–3 above it | design around it, not with it |
+
+⭐ For the stated use case — assembly-style alignment of small objects — the usable
+envelope is **roll at any angle, yaw and pitch under ~40°**, which is where fine
+alignment lives anyway.
+
+⚠ **Cross-take absolute numbers remain non-comparable** (§7 trap 5, the camera moved
+between recordings). Compare bins WITHIN a take; compare axes by shape and by gain.
+⚠ The roll take is the **card** take and the only roll recording that exists — §7
+trap 6 says the card perturbs the hand, so read its error magnitudes as an upper
+bound. Its **gain** is not affected the same way.
+
 <!-- PROVENANCE — machine-extracted, NOT edited.
      source : Claude/HANDOFF_T6_ORIENTATION_FROM_2D.md lines 1247-1373
      commit : 3d44c9a

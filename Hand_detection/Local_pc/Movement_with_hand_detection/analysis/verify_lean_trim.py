@@ -193,6 +193,52 @@ def main():
     ok("no step is AMPLIFIED by more than 0.05 deg", worst < 0.05,
        "worst amplification %.4f deg" % worst)
 
+    # -- 8b. the double cover -------------------------------------------------
+    # ⛔⛔ THE VECTOR THAT WAS MISSING, AND ITS ABSENCE WAS A LIVE DEFECT
+    # (added 2026-08-29). Every vector above builds its quaternion with `quat()`,
+    # which always returns `w >= 0` -- so the whole suite only ever exercised the
+    # CANONICAL representation. `horn_rotation` returns whichever sign its
+    # largest-eigenvalue eigenvector carries, and on a real pitch take 23% of
+    # frames came back negated. `twist_angle_deg` then read a 15 deg turn as
+    # -345 deg, `yaw_dominance` scored it ~0.99 instead of ~0.2, and `authority`
+    # went to 1.0 on a gesture that must receive NO correction.
+    # ⭐⭐ THE RULE IT COST, and it generalises past this file: A GOLDEN VECTOR
+    # MUST FEED THE REPRESENTATIONS THE PRODUCT ACTUALLY PRODUCES, NOT ONLY THE
+    # CANONICAL ONE. `q` and `-q` are the same rotation to the renderer and NOT to
+    # any function that reads an angle out of them.
+    # ⚠ `parity_replay` cannot catch this class at all: both tools import this one
+    # module, so they were wrong identically and agreed perfectly.
+    print("\n8b. ⛔⛔ q AND -q ARE THE SAME ROTATION — every reader must agree")
+    dc_cases = [quat(YAW, 15.0), quat(YAW, 90.0), quat(YAW, -40.0),
+                quat(PITCH, 30.0), quat(ROLL, 55.0),
+                qmul(quat(PITCH, 20.0), quat(YAW, 55.0)),
+                qmul(quat(ROLL, -18.0), quat(YAW, -70.0)),
+                quat((0.2, 0.9, -0.4), 63.0)]
+    for i, q in enumerate(dc_cases):
+        nq = tuple(-c for c in q)
+        ok("case %d  twist_angle_deg(q) == twist_angle_deg(-q)" % i,
+           abs(LT.twist_angle_deg(q) - LT.twist_angle_deg(nq)) < 1e-9,
+           "%.4f vs %.4f deg" % (LT.twist_angle_deg(q), LT.twist_angle_deg(nq)))
+        ok("case %d  yaw_dominance agrees" % i,
+           abs(LT.yaw_dominance(q) - LT.yaw_dominance(nq)) < 1e-9,
+           "%.4f vs %.4f" % (LT.yaw_dominance(q), LT.yaw_dominance(nq)))
+        ok("case %d  authority agrees" % i,
+           abs(LT.authority(q) - LT.authority(nq)) < 1e-9,
+           "%.4f vs %.4f" % (LT.authority(q), LT.authority(nq)))
+        ok("case %d  trim() gives the SAME rotation" % i,
+           angle_between(LT.trim(q), LT.trim(nq)) < 1e-9,
+           "%.2e deg apart" % angle_between(LT.trim(q), LT.trim(nq)))
+    # ⭐ And the specific number from the defect report, pinned so a regression
+    # names itself rather than showing up as a vague ratio months later.
+    ok("a NEGATED 15 deg yaw still reads 15 deg, not -345",
+       abs(LT.twist_angle_deg(tuple(-c for c in quat(YAW, 15.0))) - 15.0) < 1e-9,
+       "%.2f deg" % LT.twist_angle_deg(tuple(-c for c in quat(YAW, 15.0))))
+    # ⚠ The shortest-arc convention, stated as a vector so it cannot drift: past a
+    # half turn the SAME rotation is named the short way round.
+    ok("a 190 deg twist is named -170 deg (shortest arc)",
+       abs(LT.twist_angle_deg(quat(YAW, 190.0)) + 170.0) < 1e-9,
+       "%.2f deg" % LT.twist_angle_deg(quat(YAW, 190.0)))
+
     # -- 9. the port contract ------------------------------------------------
     print("\n9. PORT CONTRACT (CONSTRAINTS §2)")
     src = io.open(os.path.join(os.path.dirname(os.path.abspath(__file__)),

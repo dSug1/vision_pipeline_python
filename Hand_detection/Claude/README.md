@@ -44,21 +44,34 @@ name.** They are the record, not the briefing.
 
 ## Where it stands, in five lines
 
-✅✅ **`F1` and the rendering rebuild `R1` are SHIPPED (2026-08-27)** — the object is
-carried by the fingertip barycentre, grabbed inside its projected footprint, and
-occludes the hand by one depth rule in both tools. ⛔ The rotation **trim was
-removed**, and `T6`'s two orientation builds were **live-rejected**: better on the
-lean, worse on the tail — which has decided every verdict.
-**Open show-stopper**: the **yaw lean** (~27° at a 60–90° hand turn), still unfixed.
-✅✅ **`V1` (the CAMERA MOUNT) and `V2` (the YAW-LEAN TRIM) are BOTH SHIPPED
-(2026-08-28).** The mount is `facing_user`; the trim removes the lean's swing at
-gains 0.66/0.66 while leaving the turn amount exact. ⚠ `V2`'s production live look
-is still owed.
-⭐⭐ **THE WORK IS OBJECT ASSEMBLY (2026-08-28): `AS1`–`AS9` ALL BUILT IN BOTH TOOLS,
-NONE SHIPPED** → [`30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md`](30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md),
-whose **§12 says what is left**. ⛔ A live look closes it; production has not been run.
-⭐ The **platform decision** is still due and still the owner's — assembly does not
-wait on it, because `AS1`–`AS4` touch no renderer.
+✅✅ **`AS1`–`AS9`, OBJECT ASSEMBLY BY MATE CONNECTORS, IS SHIPPED** (2026-08-28) —
+one production run closed it and `V2`'s long-owed production look together.
+⛔⛔ **BUT `V2` RE-OPENED ON 2026-08-29 AND IS THE ONE THING OWED**: a **double-cover**
+defect in the shipped trim (a 15° turn read as −345°, so `authority` reached **1.0 on
+pure PITCH gestures that must receive none**), found while measuring *where* rotation
+is accurate. ✅✅ The fix is **bit-identical on yaw and roll**, so it cannot regress
+what was accepted live — but only a live look closes a change.
+⭐⭐ **WHERE EACH AXIS IS ACCURATE, measured 2026-08-29**: **ROLL is the precision
+axis** (usable from ~5°, gain ~1.00 throughout) · **YAW is 10–40° for direction and
+60–90° for amount, and no band gives both** · ⛔ **PITCH has no reliable range below
+~50–60°** (±29° p95 wobble while the hand is still).
+✅ **The YAW LEAN is corrected** — the owner's show-stopper from 2026-08-22 (~27° at a
+60–90° turn); `V2` is the fifth attempt and the first to survive live. ⚠ Corrected,
+not eliminated: its gate is cleared on 3 of 4 takes.
+✅ Also shipped and live: **`F1`** (the object carried by the fingertip barycentre),
+**`R1`** (depth-ordered occlusion in both tools), **`V1`** (the camera mount — the
+default is `facing_user`).
+⚠ **What shipping did NOT close**: `AS2`'s acceptance metric is unmeasured and
+**cannot be measured until the recorders carry mate state**; the preview radius has
+no measured floor; the object tree has only ever held two objects; renderer parity
+is unguarded.
+⭐⭐⭐ **TWO METHOD RULES WERE ADDED 2026-08-29 and they bind every future suite**: a
+**golden vector must feed the representations the product actually produces, not only
+the canonical one**; and **`parity_replay` is blind to any defect in a SHARED module**
+— it proves the two tools match, never that either is right.
+⭐⭐ **THE PLATFORM DECISION IS DUE AND IT IS THE OWNER'S** — sequenced right after
+`F1`, which shipped three sessions ago. `U2`, `U12`, `T7` and the game layer are all
+waiting behind it, and no amount of building advances it.
 Full status: [`00_CORE/QUEUE.md`](00_CORE/QUEUE.md)'s YOU-ARE-HERE block.
 Full narrative: [`10_HAND_TRACKING/history/SESSION_LOG.md`](10_HAND_TRACKING/history/SESSION_LOG.md).
 

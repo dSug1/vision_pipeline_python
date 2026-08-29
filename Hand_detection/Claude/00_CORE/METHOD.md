@@ -68,6 +68,25 @@ What came out of it, and is now standing practice:
   `SEC5` asserted a mechanism it had not measured and stood as fact for one day
   before being retracted. Deliberately kept as the audit's own lesson.
 
+* ⭐⭐⭐ **A GOLDEN VECTOR MUST FEED THE REPRESENTATIONS THE PRODUCT ACTUALLY
+  PRODUCES, NOT ONLY THE CANONICAL ONE** (2026-08-29, `V2` §11). Every vector in
+  `verify_lean_trim` built its quaternions with a helper that always returns
+  `w >= 0`, so the suite only ever exercised the canonical half of the **quaternion
+  double cover** — while `horn_rotation` returns whichever sign its eigenvector
+  carries. `twist_angle_deg` then read a 15° turn as **−345°**, and `authority`
+  reached **1.0 on pure pitch gestures that must receive none**. ⚠ The suite even
+  KNEW about the double cover — in its comparison HELPER — and still never fed one
+  in. **Handling a case when checking an answer is not the same as generating it as
+  an input.**
+* ⛔⛔ **`parity_replay` IS BLIND TO ANY DEFECT IN A SHARED MODULE, BY CONSTRUCTION.**
+  Both tools import the one module (`N6`), so on this bug they were wrong
+  *identically* and agreed on every frame. **Parity proves the two tools MATCH; it
+  can never prove either is RIGHT.** Reading a clean parity run as correctness is
+  the same error as reading a green suite as sufficiency.
+* ⭐ **A new vector must be shown to FAIL against the old code.** The double-cover
+  vectors were checked at **6/6 failing** pre-fix before being trusted — three
+  vectors in the `AS` row had already passed for the wrong reason the same month.
+
 ⚠ **Automated green is necessary, not sufficient.** §13.6.1 shipped **inverted**
 while passing an "end-to-end confirmed" claim. **A live look in both tools is
 what closes a change** — nothing else does.

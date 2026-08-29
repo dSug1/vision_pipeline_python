@@ -4,7 +4,7 @@
 > Its one-line status and its place in the order are in [`../QUEUE.md`](../QUEUE.md)
 > — update **both** when it changes.
 >
-> **STATUS** · in build 2026-08-28 · **SUB** · 3D · **KIND** · render · **DEP** · `AS3`
+> **STATUS** · ✅✅ **SHIPPED 2026-08-28** — built and live-confirmed in BOTH tools · **SUB** · 3D · **KIND** · render · **DEP** · `AS3`
 
 Design of record: [`../../30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md`](../../30_OBJECTS_3D/SPEC_ASSEMBLY_MATE_CONNECTORS.md) §10.
 
@@ -55,3 +55,22 @@ events, so it cannot get stuck showing a mate that has gone.
 one on the far side shows through — deliberate: it is what makes it possible to aim
 a face you cannot see.
 
+
+## ✅✅ 2026-08-28 — SHIPPED. THE LIVE LOOK IN BOTH TOOLS IS DONE
+
+> **Owner, after running production:** *"production run was done by me and it is
+> ok"*.
+
+⭐⭐ **THIS IS WHAT THE ROW WAS WAITING FOR, AND NOTHING ELSE WOULD HAVE DONE.**
+44/44 golden-vector suites and a clean `parity_replay` on four takes had been true
+since the build — `METHOD` calls that necessary and not sufficient, and §13.6.1
+once shipped **inverted** while passing an *"end-to-end confirmed"* claim. The
+debug tool had settled the sliders and the behaviour; ⚠ **production had never
+been run at all**, so every judgement stood on one renderer. It has now been run
+and accepted, and the row moves **BUILT → SHIPPED**.
+
+✅ **This is the row the production run was most needed for** — renderer parity is unguarded (`parity_replay` covers the LOGIC, not the DRAWING), and production had never been run at all. The owner has now seen the connectors and the mate state drawn by the OTHER renderer.
+
+⚠ **What a live acceptance is not**: it is not a measurement, and it retires
+no number that was never taken. See `QUEUE.md`'s YOU-ARE-HERE
+block and the spec's §13 for what remains open across the whole `AS` row.

@@ -84,7 +84,7 @@ it to `sys.path`). A copy is how the two drift.
 | | |
 |---|---|
 | production | `launch.bat` (or `PythonApp_Main.py`) |
-| ⭐ try the USER-viewpoint fix in either tool | prefix with `CAMERA_MOUNT=facing_user` — no edit needed. Default is `legacy` (today's build). `head_worn` is for vision glasses |
+| ⭐ the CAMERA MOUNT (`V1`, shipped 2026-08-28) | **the default is `facing_user`** — nothing to set. ⛔ `CAMERA_MOUNT=legacy` is a DIAGNOSTIC BASELINE only: it reproduces the pre-2026-08-28 build bit-for-bit, which is what `A10` and `parity_replay` compare against. `head_worn` is for vision glasses and ships UNVALIDATED — no glasses, no head-worn corpus |
 | debug, one window mirroring production | `debug_snap.bat` / `LiveSnapDebug.py` |
 | ⭐ tune **rotation smoothing** by feel | `LiveSnapDebug.py` — a second window carries one slider, `SMOOTH ms` (0–150; its integer **is** τ in ms). `--smooth-ms N`, `--no-sliders` |
 | ⭐ the **lag A/B** — same estimator, smoothing the only difference | `LiveSnapDebug.py --slerp-ab` — panel 1 = the old per-frame 0.35, panel 2 = the τ slider |

@@ -346,3 +346,60 @@ read 0.00 px and proved nothing.
 of per-object projections — a real renderer change that belongs with `AS5` and the
 platform decision, not a patch. ⭐ It is also a latent trap for `U2`: an imported
 mesh assembled from several parts will show the same seam.
+
+---
+
+## 2026-08-28 (later) — ✅✅ SHIPPED, and the run that closed it found one last thing
+
+> **Owner:** *"production run was done by me and it is ok"* — confirmed on asking
+> that it covered `V2`'s yaw-lean trim as well as the assembly.
+
+⭐⭐ **NINE ROWS CHANGED STATE WITH NO CODE WRITTEN.** `AS1`–`AS9` had sat at BUILT
+with 44/44 golden-vector suites and a clean `parity_replay` on four takes, and none
+of it counted: `METHOD` says a live look in **both** tools closes a change and
+nothing else does. The debug tool had settled every slider and every behaviour;
+⛔ **production had never been run at all**, so every judgement about a
+renderer-shaped row stood on the *other* renderer, and `parity_replay` covers the
+LOGIC and not the DRAWING. ⭐ The rule earned its standing here: §13.6.1 once shipped
+**inverted** while passing an *"end-to-end confirmed"* claim.
+
+## ⛔⛔ The finding: `AS2`'s metric is not merely unmeasured, it is UNMEASURABLE today
+
+The metric is `snap/break transitions per minute` on a recorded take. Two facts,
+both checked rather than assumed:
+
+1. **No assembly session is recorded.** The newest take on `E:` is
+   `2026-08-28_000559_stripped` — it predates this work, and the production run that
+   shipped the row was not recorded.
+2. ⛔⛔ **Neither recorder carries mate state.** `HandsTriggeredActions._record_flush`
+   writes, per cube, `owner / position / size / depth_m / projected_size /
+   orientation`; the debug recorder matches it. Nothing says whether a pair is
+   **mated**, which pair, or which connectors.
+
+⭐⭐ **So even a recorded session would yield the metric only by RE-DERIVING the mate
+state from positions — a second implementation of `can_mate` that can silently
+disagree with the one that ran.** That is precisely the trap `_record_flush`'s own
+docstring exists to warn about (*"record what ran; never re-derive it"*), written
+after a recomputation reported a production session CLEAN on a defect the owner had
+just watched happen. It is `METHOD`'s most expensive lesson arriving in a new place,
+which is the third time this row has managed that.
+
+⭐ **The consequence for planning: the prerequisite is a RECORDER CHANGE, not a
+recording session.** Add the mate state both tools already hold to the frame row,
+guard it with `verify_recorder_parity` — the two recorders have diverged before,
+when production sampled cubes a frame earlier and skewed every harness that paired
+hands with cubes. ⚠ It bumps the recorder schema, exactly as `4.2`'s `depth_m` did;
+takes written before it simply lack the field.
+
+## ⚠ What shipping did NOT close
+
+* **`AS2`'s metric**, above.
+* **The PREVIEW radius** — the last constant in this row with no measured floor. The
+  capture reach and the angle were settled live at `snap 150 %`; this one was not.
+* **More than two objects** — the tree is written for N and has only ever held two.
+* **Renderer parity is still unguarded.** It was cleared *this once*, by looking. A
+  future renderer change needs the same two-tool look, because no harness will catch
+  a drawing divergence.
+* ⭐ **Roll symmetry has never been live-judged** — `roll_order = 4` snaps to the
+  nearest of four rolls, and that it *feels* right remains unverified. Nothing in the
+  production run was aimed at it.

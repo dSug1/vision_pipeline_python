@@ -17,6 +17,152 @@ newest-first is restored, the entry bodies are byte-identical, and
 
 ---
 
+## 2026-08-29 — a question about ACCURACY found a defect in the shipped trim
+
+⭐⭐ **NOBODY WAS LOOKING FOR A BUG.** The owner asked where rotation is most
+accurate now that `V2` has shipped, then — on the pitch answer — *"doesn't pitch
+behave like yaw (resolves in a certain range, turns the right amount in another
+range due to the multiplicator matrix)?"* ⭐ **That question was right, and I had
+just told them otherwise.** Following it found the defect.
+
+### What I had claimed, and why it was wrong
+
+I wrote that `V2` leaves the turn amount *"untouched by construction, the twist is
+left exact"*. That holds **only about `V2`'s own twist axis**, the vertical — where
+it is confirmed exactly (identical to every decimal in all eight yaw bands). But a
+**PITCH is entirely SWING** in a decomposition about the vertical, so nothing
+protects it: wherever the gate lets the trim fire on pitch, **the trim shrinks the
+gesture**. The owner's *"multiplicator matrix"* intuition was the correct one.
+
+### ⛔⛔ The defect
+
+`twist_angle_deg` walked the long way round whenever the quaternion carried the
+negative sign of the double cover — `q` and `-q` are the same rotation, and
+`horn_rotation` returns whichever sign its largest-eigenvalue eigenvector carries:
+
+    15 deg pure yaw                 ->   15.00 deg
+    the SAME rotation, negated quat -> -345.00 deg
+
+⭐⭐ **It was not cosmetic, because `yaw_dominance` DIVIDES BY THAT ANGLE.** A
+negated pitch scored ~0.99 dominance instead of ~0.2, so **`authority` reached 1.0
+on a gesture that must receive no correction at all**. The single cleanest number:
+`authority` on a negated pure 30° pitch was **1.000**, and is now **0.000**.
+
+Measured on the corpus: **23% of frames** on `pitch_sweep_slow` carried a corrupted
+authority (153 wrong by more than 0.5), mean authority **0.260 against a true
+0.050**, gate ratio **1.166x → 1.031x**. ✅✅ **Bit-identical on the yaw take
+(0.892x) and the roll take (0.995x)** — neither reaches the wrap — so the fix
+cannot regress what the owner accepted live.
+
+⚠ **One hypothesis was raised and REFUTED, and it is kept because it is the more
+frightening one**: `Horn.freeze()` sets `seed: None`, so the first `delta()` after a
+grab has no sign continuity to inherit and could in principle randomise the
+correction at every grab. Tested across **61 simulated grabs on a real take: 0 came
+back negative.** It bit *during* a grab instead — **21 of 61 (34%)** — once the
+fitted rotation passed a half turn.
+
+### ⭐⭐⭐ Why nothing caught it, and the two rules it cost
+
+* **Every golden vector built its quaternions with a helper that always returns
+  `w >= 0`**, so the suite only ever exercised the canonical half of the double
+  cover. ⚠ It even KNEW about the double cover — in its comparison HELPER — and
+  still never fed one IN. **Handling a case when checking an answer is not the same
+  as generating it as an input.**
+* ⛔⛔ **`parity_replay` is blind to this class by construction.** Both tools import
+  the one shared module (`N6`), so they were wrong *identically* and agreed on every
+  frame. **Parity proves the tools MATCH; it never proves either is RIGHT.**
+
+Both are now in [`METHOD.md`](../../00_CORE/METHOD.md). ✅ The new vectors were
+checked to **FAIL 6/6 against the pre-fix code** before being trusted — three
+vectors in the `AS` row had already passed for the wrong reason this month.
+
+### ⭐ And the answer the question actually asked for
+
+`analysis/rotation_accuracy_bands.py`, which reproduces the documented baseline
+(yaw 14.5°/1.13, pitch 5.5°/0.74) before reporting anything new. Full table in
+[`../spec/ROTATION_ACCEPTANCE_AND_TRAPS.md`](../spec/ROTATION_ACCEPTANCE_AND_TRAPS.md)'s
+2026-08-29 amendment.
+
+⚠⚠ **THERE ARE THREE FLOORS AND THEY DISAGREE**, which is why one answer in this
+session said *"yaw is best 20–60°"* and the next said *"under 40°"* — they were
+reading different ones: **resolvability**, **scale**, and the product's own
+`RELEASE 60 deg/s` **rate** gate. ⛔ The often-quoted *"~30° axis noise floor"* is
+none of the three; it is about the axis DIRECTION being undefined near identity.
+
+* **ROLL is the precision axis** — usable from ~5°, gain ~1.00 at every magnitude,
+  steadiest by 2–3x, and `V2` correctly never fires on it (94.4% silent).
+* **YAW: 10–40° for faithful DIRECTION, 60–90° for faithful AMOUNT** — and **no band
+  gives both**, because the gain RAMPS ~0.5→1.2 and crosses 1.0 near 60°. The
+  documented “1.13” is only the large-turn end.
+* ⛔ **PITCH has no reliable range below ~50–60°**: it wobbles **±29° at p95 while
+  the hand is STILL**, 15x yaw's 2.02°. Corroborated on both pitch takes.
+
+⚠ **Two of the new harness's OWN columns were wrong first**, and the mistakes are
+kept in its header rather than quietly fixed: it reported the vertical-axis LEAN for
+all three axes (meaningless off yaw — roll scored 99.8° of "error" on a 90–120°
+roll, which *was* the gesture), and it put the axis noise floor on the TRUE angle
+instead of the FITTED one, inflating a band to 74°.
+
+⛔ **What it leaves owed**: a live look on `V2` again. The fix is bit-identical on
+yaw and roll and the pitch takes are instructed open-hand sweeps (`T6`'s rule cuts
+both ways — such a corpus cannot condemn a build any more than validate one), but
+`METHOD` closes a change with a live look and nothing else. ✅ 44/44 suites and
+`parity_replay` clean on all four takes.
+
+---
+
+## 2026-08-28 — one production run closed everything that was open
+
+✅✅✅ **THE SHORTEST SESSION IN WEEKS, AND IT CLOSED MORE THAN ANY BUILD DID.** The
+owner ran production and reported *"production run was done by me and it is ok"* —
+confirming on asking that it covered the yaw-lean trim as well as the assembly. That
+one run moved **`AS1`–`AS9` from BUILT to SHIPPED** and closed **`V2`'s production
+live look**, which had been owed since before the assembly work began.
+
+⭐⭐ **WHAT IT COSTS TO NOTICE: NOTHING WAS BUILT TODAY AND THE PROJECT ADVANCED
+ANYWAY.** Nine rows sat at BUILT with 44/44 golden-vector suites and a clean
+`parity_replay` on four takes, and none of it counted, because `METHOD` says a live
+look in **both** tools closes a change and nothing else does. The debug tool had
+settled every slider; production had **never been run at all**, so every judgement
+about a renderer-shaped row stood on the other renderer — and `parity_replay` covers
+the LOGIC, not the DRAWING. ⛔ The rule earned that standing the hard way: §13.6.1
+once shipped **inverted** while passing an *"end-to-end confirmed"* claim.
+
+⚠ **What was recorded, and what was deliberately NOT.** The verdict recorded is
+*acceptable in production*, which is not a measurement. `V2`'s gate is still cleared
+on **3 of 4 takes** (`stripped` 1.072x), its harness's LEAN numbers are still
+SELF-MEASURING (`B4`), and the preview radius still has no measured floor. A live
+acceptance retires no number that was never taken.
+
+⭐⭐ **THE ONE NEW FINDING, and it decides what is worth doing next: `AS2`'s
+ACCEPTANCE METRIC IS NOT MERELY UNMEASURED, IT IS UNMEASURABLE TODAY.** The metric is
+snap/break transitions per minute on a recorded take. Two facts, both checked rather
+than assumed: the newest take on `E:` is `2026-08-28_000559_stripped`, which predates
+the assembly work — so no assembly session is recorded; and
+`HandsTriggeredActions._record_flush` writes per cube `owner / position / size /
+depth_m / projected_size / orientation` and **no mate state at all**. ⛔ So even a
+recorded session would only yield the metric by RE-DERIVING the mate state from
+positions — a second implementation of `can_mate` that can silently disagree with the
+one that ran. ⭐⭐ **That is the exact trap `_record_flush`'s own docstring exists to
+warn about** (*"record what ran; never re-derive it"*), written after a recomputation
+reported a production session CLEAN on a defect the owner had just watched happen.
+**The metric's prerequisite is a recorder change, not a recording session.**
+
+⚠ **Two pieces of stale doc drift were fixed while recording this**, both dating from
+`V1` shipping: the YOU-ARE-HERE block still said `V1` was *waiting on a live look*
+with the default at `legacy`, and `ARCHITECTURE.md` §Running said the same — while
+[`camera_mount.py`](../../../Local_pc/Movement_with_hand_detection/Resources/camera_mount.py)
+has defaulted to `facing_user` since it shipped. ⭐ Worth noting as a pattern: the row
+was updated, the front doors were not — which is what rule 5 (*status changes in TWO
+places or neither*) exists to catch, applied one tier further out.
+
+⭐ **Where it leaves the project**: nothing owed, nothing blocked, and for the first
+time in weeks the next step is a genuine choice. The **PLATFORM DECISION** is due and
+is the owner's — sequenced right after `F1`, which shipped three sessions ago — and
+it is the only item no amount of building can advance.
+
+---
+
 ## 2026-08-28 (evening) — the yaw lean finally has a correction that survives
 
 Four attempts have died on this show-stopper. The fifth shipped, and it shipped

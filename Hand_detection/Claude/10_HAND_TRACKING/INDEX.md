@@ -3,7 +3,7 @@
 > **STATUS** · live · **OWNS** · everything from the webcam to the object's transform
 > **READ IF** · you are building or debugging detection, identity, chirality,
 > snap, translate, rotate, release, depth or the play volume
-> **LAST VERIFIED** · 2026-08-26
+> **LAST VERIFIED** · 2026-08-28
 
 ⭐ **Load this file plus [`../00_CORE/`](../00_CORE/) and you have the subsystem.**
 Everything else here is opened **by name**, when this file points at it.
@@ -170,7 +170,31 @@ remove. ⛔ **No depth dependence** — binned within takes, the four disagree o
 pitch gesture had its whole swing damped. ⭐⭐⭐ **THE METHOD RULE: A GOLDEN VECTOR
 BUILT FROM A MATHEMATICALLY PURE INPUT TESTS A CASE THE PRODUCT NEVER SEES.**
 ⚠ **The gate is cleared on 3 of 4 takes**; `stripped` is 1.072x, 7% over the bar.
-⚠ **OWED: the production live look.**
+✅ The production live look was DONE 2026-08-28 (*"production run was done by me and
+it is ok"*). ⛔⛔ **RE-OPENED 2026-08-29 — a DOUBLE-COVER defect in the shipped trim,
+found and fixed, so a live look is OWED again.** `twist_angle_deg` read a 15° turn as
+**−345°** on a negated quaternion; `yaw_dominance` divides by it, so **`authority` hit
+1.0 on pure PITCH gestures that must receive none** — and a pitch is entirely SWING
+here, so the trim shrank what it exists to protect. ✅✅ **Bit-identical on the yaw and
+roll takes**; `pitch_sweep_slow`'s gate ratio **1.166x → 1.031x**.
+⭐⭐⭐ **The method rule: a golden vector must feed the representations the product
+actually produces, not only the canonical one** — and **`parity_replay` is blind to a
+shared-module defect by construction**, because both tools were wrong identically.
+→ [`../00_CORE/queue_notes/V2.md`](../00_CORE/queue_notes/V2.md) §11
+
+⭐⭐ **WHERE EACH AXIS IS ACCURATE, POST-`V2`** (measured 2026-08-29,
+`analysis/rotation_accuracy_bands.py`; full table in
+[`spec/ROTATION_ACCEPTANCE_AND_TRAPS.md`](spec/ROTATION_ACCEPTANCE_AND_TRAPS.md)'s
+2026-08-29 amendment). ⚠ **Three floors, and they disagree** — resolvability, scale,
+and the product's own `RELEASE 60 deg/s` RATE gate; the often-quoted *“~30° axis noise
+floor”* is **none of them** (it is about axis DIRECTION near identity).
+* **ROLL — the precision axis**: usable from ~5°, gain ~1.00 everywhere, steadiest by
+  2–3x, and `V2` correctly never fires on it.
+* **YAW — 10–40° for DIRECTION** (lean 1.9–2.9°) · **60–90° for AMOUNT**. ⚠ No band
+  gives both: the gain RAMPS ~0.5→1.2, crossing 1.0 near 60°, so the documented
+  “1.13” is only the large-turn end.
+* ⛔ **PITCH — nothing reliable below ~50–60°**: ±29° p95 wobble **while the hand is
+  STILL**, 15x yaw's.
 → [`../00_CORE/queue_notes/V2.md`](../00_CORE/queue_notes/V2.md)
 
 **Open, deliberately not next**: the two-hand swap · `N8` cube-stealing
