@@ -118,6 +118,17 @@ What came out of it, and is now standing practice:
   the past-edge-on bin; per pose, gripping, pitch is 1.1–4.8°. The owner's premise
   was right and the aggregate was hiding it.
 
+* ⭐⭐⭐ **THREE MEASURES SHARING A FAILURE MODE LOOK LIKE CORROBORATION AND ARE
+  NOT** (2026-08-29). A two-hand yaw take was reported as *"the right hand simply
+  did not turn"* on the strength of three agreeing numbers — the fitted rotation,
+  the projected/true knuckle width, and the palm z-spread. **All three derive from
+  the world landmarks**, so near edge-on they degrade TOGETHER and agree on a wrong
+  answer. ⛔ The width ratio was worst: it divides a projected length by a 3-D one,
+  so a flattened landmark cloud shrinks both and the ratio returns to ~1.0 —
+  reading *face-on* for a hand that is anything but. ⭐ **Independence has to be
+  ARGUED, not inferred from numbers lining up**, and the owner — who could see
+  their own hands — was right against all three.
+
 ⚠ **Automated green is necessary, not sufficient.** §13.6.1 shipped **inverted**
 while passing an "end-to-end confirmed" claim. **A live look in both tools is
 what closes a change** — nothing else does.

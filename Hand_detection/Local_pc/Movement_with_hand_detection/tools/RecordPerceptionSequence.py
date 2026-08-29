@@ -74,6 +74,12 @@ HAND_LANDMARKER_MODEL_PATH = os.path.join(
 
 COUNTDOWN_S = 3.0
 
+# ⭐ Seconds between the operator pressing SPACE and the step actually recording.
+# ⛔ Sized for "put the pressing hand back in frame and settle", not for comfort:
+# the frames it protects are the ones where only ONE hand is visible, which is the
+# single worst kind of frame for a test that compares the two hands to each other.
+PACED_GRACE_S = 2.0        # owner, 2026-08-29: two seconds
+
 # Prescribed number of FULL cycles (palm -> back -> palm) per sequence. One cycle
 # is TWO sign changes, so the analyser's per-frame sign-inversion count must be
 # compared against 2x this. Overridable with --cycles when the operator does a
@@ -463,31 +469,69 @@ RB3_STEPS = []
 # mirrored input the CORRECT answer is opposite signs, so a chirality leak would be
 # indistinguishable from a correct result. The prompts below name a screen-relative
 # direction, which is unambiguous for both hands.
-for _axis, _pos, _neg in (
-        # ⚠ "toward you" was AMBIGUOUS and the owner caught it: with the camera
-        # facing the operator, "toward you" is AWAY from the camera. Every prompt
-        # here is SCREEN-RELATIVE, which is the only frame both the operator and
-        # the analysis can agree on without a convention.
-        ("PITCH", "tip BOTH sets of fingertips TOWARD THE CAMERA",
-                  "tip BOTH sets of fingertips AWAY FROM THE CAMERA"),
-        ("YAW", "turn BOTH hands to YOUR LEFT (same way, not outward)",
-                "turn BOTH hands to YOUR RIGHT (same way, not outward)"),
-        ("ROLL", "rotate BOTH hands CLOCKWISE on screen (not outward)",
-                 "rotate BOTH hands ANTICLOCKWISE on screen (not outward)")):
-    RB3_STEPS.append((3.0, "hold_%s_0" % _axis.lower(),
-                      "BOTH hands, palms to camera, NEUTRAL - hold still"))
-    RB3_STEPS.append((4.0, "move_%s_pos" % _axis.lower(),
-                      "%s - SAME direction, not mirrored" % _pos))
-    RB3_STEPS.append((3.0, "hold_%s_pos" % _axis.lower(),
-                      "HOLD - both hands at the same %s" % _axis))
-    RB3_STEPS.append((4.0, "move_%s_neg" % _axis.lower(),
-                      "%s - SAME direction, not mirrored" % _neg))
-    RB3_STEPS.append((3.0, "hold_%s_neg" % _axis.lower(),
-                      "HOLD - both hands at the opposite %s" % _axis))
+# ⚠⚠ EVERY PROMPT SAYS **MOVE** OR **HOLD STILL** AS ITS FIRST WORD, and names the
+# END POSE rather than an abstraction. The first draft said *"both hands at the
+# opposite PITCH"*, and the owner's reply was the only review that matters: *"what
+# does it mean?"* — plus *"it is not clear if a take has to be a movement or a
+# hold"*. A step whose instruction has to be decoded is a step performed wrong.
+_RB3_AXES = (
+    ("pitch",
+     "MOVE  -  tip BOTH sets of fingertips TOWARD THE CAMERA",
+     "HOLD STILL  -  keep fingertips pointing TOWARD THE CAMERA",
+     "MOVE  -  tip BOTH sets of fingertips AWAY, back past flat",
+     "HOLD STILL  -  keep fingertips pointing AWAY from the camera"),
+    ("yaw",
+     "MOVE  -  turn BOTH hands to YOUR LEFT (both the same way)",
+     "HOLD STILL  -  keep BOTH hands turned to YOUR LEFT",
+     "MOVE  -  turn BOTH hands to YOUR RIGHT, past flat",
+     "HOLD STILL  -  keep BOTH hands turned to YOUR RIGHT"),
+    ("roll",
+     "MOVE  -  tilt BOTH hands CLOCKWISE on screen (both the same way)",
+     "HOLD STILL  -  keep BOTH hands tilted CLOCKWISE",
+     "MOVE  -  tilt BOTH hands ANTICLOCKWISE, past upright",
+     "HOLD STILL  -  keep BOTH hands tilted ANTICLOCKWISE"),
+)
+for _ax, _mp, _hp, _mn, _hn in _RB3_AXES:
+    _A = _ax.upper()
+    RB3_STEPS.append((3.0, "hold_%s_0" % _ax,
+                      "HOLD STILL  -  both hands FLAT, palms to camera, fingers up"))
+    RB3_STEPS.append((4.0, "move_%s_pos" % _ax, _mp))
+    RB3_STEPS.append((3.0, "hold_%s_pos" % _ax, _hp))
+    RB3_STEPS.append((4.0, "move_%s_neg" % _ax, _mn))
+    RB3_STEPS.append((3.0, "hold_%s_neg" % _ax, _hn))
+
+# ⚠⚠ YAW ALONE, BECAUSE YAW ALONE WAS INCONCLUSIVE (2026-08-29). On the first
+# two-hand take pitch and roll agreed between the hands and yaw did not -- but the
+# RIGHT hand's palm swung only **+1.3 deg** on `yaw_neg` against the left's +51.7,
+# so that step was simply not performed symmetrically. ⛔ A disagreement produced by
+# one hand not moving is not evidence about the pipeline, and re-running the whole
+# 15-step script to fix one axis wastes the two axes that were already clean.
+#
+# ⭐ The prompts here say RETURN ALL THE WAY, which is what actually went wrong:
+# the hand stopped short rather than crossing back through flat.
+RB3_YAW_STEPS = [
+    (3.0, "hold_yaw_0",
+     "HOLD STILL  -  both hands FLAT, palms to camera, fingers up"),
+    # ⚠ A SMALL TURN, ON PURPOSE (owner, 2026-08-29: *"I will rotate less ... I
+    # think we catch the edge on issue"*). A large yaw takes one palm toward
+    # edge-on, where the world landmarks collapse and every derived quantity stops
+    # meaning anything -- so this take stays in the region where the measurement is
+    # trustworthy, and tests the owner's hypothesis by avoiding it rather than
+    # arguing about it. ⛔ Keep BOTH hands well inside the frame.
+    (4.0, "move_yaw_pos",
+     "MOVE  -  turn BOTH hands SLIGHTLY to YOUR LEFT (small, ~30 deg)"),
+    (3.0, "hold_yaw_pos",
+     "HOLD STILL  -  both hands slightly LEFT, both in frame"),
+    (4.0, "move_yaw_neg",
+     "MOVE  -  turn BOTH hands SLIGHTLY to YOUR RIGHT (small, past flat)"),
+    (3.0, "hold_yaw_neg",
+     "HOLD STILL  -  both hands slightly RIGHT, both in frame"),
+]
 
 STEPS = {
     # ⭐ `RB3` -- both hands, same motion, one axis at a time. 51 s.
     "rb3_two_hands_axes": RB3_STEPS,
+    "rb3_yaw_only": RB3_YAW_STEPS,
     # ⭐ YAW IS THE ONE THAT BLOCKS THE BUILD. `delta_orbit_window.py` cannot place
     # its window from the existing corpus: that take's holds sit at 120-180 deg
     # (n=140) with only 11-12 frames near face-on, where a p95 is barely the max.
@@ -506,6 +550,13 @@ STEPS = {
 
 # ⚠ The declared directions ride into `meta.json` with the take, so a future
 # analysis never has to guess what the operator was asked to do.
+SEQUENCES["rb3_yaw_only"] = (
+    sum(d for d, _l, _p in RB3_YAW_STEPS),
+    "YAW only, BOTH hands the SAME way - press SPACE to start each step",
+    "`RB3`: the yaw half of the two-hand sign test, which was inconclusive because "
+    "one hand did not return through flat",
+)
+
 SEQUENCES["rb3_two_hands_axes"] = (
     sum(d for d, _l, _p in RB3_STEPS),
     "BOTH hands, SAME motion (not mirrored) - press SPACE to start each step",
@@ -726,6 +777,7 @@ def main():
             # waiting are simply absent from the timeline -- steps stay contiguous
             # in the data even though they were not in the room.
             paced = bool(steps)
+            grace_until = 0.0
             step_i = 0
             step_t0 = None
             waiting = paced
@@ -784,6 +836,13 @@ def main():
                         # hands are doing meanwhile is not the step.
                         step_left = 0.0
                         record = None
+                    elif step_t0 is None:
+                        # ⚠ In the grace window: the prompt is up, the operator is
+                        # getting both hands back into frame, and NOTHING is written.
+                        step_left = grace_until - time.perf_counter()
+                        record = None
+                        if step_left <= 0.0:
+                            step_t0 = time.perf_counter()
                     else:
                         step_left = _d - (time.perf_counter() - step_t0)
                         record["step"] = _label
@@ -850,6 +909,10 @@ def main():
                         "%s  %.1fs" % ("HOLD" if holding else "move", step_left),
                         (10, 105), cv2.FONT_HERSHEY_DUPLEX, 1.0,
                         (0, 220, 0) if holding else (0, 190, 255), 2, cv2.LINE_AA)
+                if paced and not waiting and step_t0 is None:
+                    cv2.putText(frame, "BOTH HANDS UP  %.1fs" % max(0.0, step_left),
+                                (10, 140), cv2.FONT_HERSHEY_DUPLEX, 0.9,
+                                (0, 200, 255), 2, cv2.LINE_AA)
                 if paced and waiting:
                     # ⭐ The whole point: the prompt is on screen and NOTHING is being
                     # recorded until the operator says they have read it.
@@ -863,8 +926,21 @@ def main():
                     stop_reason = "operator pressed q"
                     break
                 if paced and waiting and _k == 32:          # SPACE
+                    # ⭐⭐⭐ GRACE BEFORE RECORDING, AND IT IS NOT POLITENESS.
+                    # Owner, 2026-08-29: *"I need a hand to press the space bar so
+                    # each time, one of the hands appears slightly later on the
+                    # recording."*
+                    # ⛔⛔ THAT WOULD HAVE CORRUPTED EXACTLY THE MEASUREMENT THIS
+                    # TAKE EXISTS FOR. `RB3` compares the TWO HANDS against each
+                    # other within a moment; frames where one hand has not returned
+                    # are not merely useless, they are the frames most likely to be
+                    # mistaken for a real disagreement between the hands.
+                    # ⭐ So SPACE starts a short countdown, not the step. The
+                    # operator gets both hands back up, and only then does anything
+                    # reach the file.
                     waiting = False
-                    step_t0 = time.perf_counter()
+                    grace_until = time.perf_counter() + PACED_GRACE_S
+                    step_t0 = None
                 # ⛔⛔ THE VISIBILITY CHECK IS ADVISORY, NOT FATAL, FOR A **STEPPED**
                 # TAKE (2026-08-29). It exists so a closed window ends a take
                 # cleanly -- good for a free-motion clip. But a stepped take is a
@@ -942,7 +1018,7 @@ def main():
         # ⭐ `RB3`: the declared physical direction of each `_pos` step, carried
         # with the take so the sign test has ground truth rather than a memory.
         "declared_directions": (RB3_DECLARED
-                                if args.sequence == "rb3_two_hands_axes" else None),
+                                if args.sequence.startswith("rb3_") else None),
         "prompt": prompt,
         "unblocks": unblocks,
         "note": args.note,

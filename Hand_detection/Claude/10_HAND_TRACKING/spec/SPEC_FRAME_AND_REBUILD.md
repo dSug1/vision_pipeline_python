@@ -124,7 +124,7 @@ still, and a magnitude deadzone measured WORSE), and some **smoothing**.
 | **`RB0`** | the **sign harness** | declared holds → expected sign, per axis, **both hands**, **both mounts** |
 | `RB1` | landmarks un-mirrored + `Ry180` | ⭐ **yaw sign IDENTICAL in both mounts** (§2's invariant, as an assertion) |
 | `RB2` | chirality | ✅ **done** — determinant matches the declared hand and is **unchanged** by the viewpoint. ⛔ `head_worn` unresolved |
-| `RB3` | Horn orientation | ⚠ **half-closed** — algebraic invariants pass; the **two-hand take is OWED** (§8ter) |
+| `RB3` | Horn orientation | ✅ **done offline** — invariants pass, all three axes agree between the hands (§8quater). ⛔ The live look is still owed |
 | `RB4` | hand identity | two hands, no swap across a dropout |
 | `RB5` | the delta, integrated, no filters | closure: hand returns to a pose → object returns. Drift **measured** |
 | `RB6` | drift control, then anything else | only when a measurement asks for it |
@@ -282,6 +282,61 @@ are junk.**
 ⚠ Two crashes came from that change and both were mine: overlay code reading
 `elapsed` and then `record`, neither of which exists while a paced step waits. Fixed,
 and the loop audited for a third.
+
+## 8quater. ✅ `RB3`'s TWO-HAND TEST — and the edge-on trap it walked into
+
+✅ **All three axes agree between the hands.** Pitch and roll from
+`2026-08-29_212855_rb3_two_hands_axes`, yaw from `..._214029_rb3_yaw_only`:
+
+| axis | LEFT | RIGHT | |
+|---|---|---|---|
+| pitch | −33.2° / +34.9° | −17.7° / +44.8° | ✅ |
+| roll | −24.9° / +39.2° | −31.1° / +36.1° | ✅ |
+| yaw *(small turns)* | −10.2° / +20.5° | −24.2° / +4.1° | ✅ |
+
+⭐ Hand identity from **geometry**, never the label; **zero swaps** across every
+step, each hand holding its own side of the screen (x≈150 vs x≈470).
+
+### ⛔⛔ THE EDGE-ON TRAP, AND IT WAS THE OWNER WHO SPOTTED IT
+
+The FIRST yaw attempts disagreed, and I reported that the right hand *"simply did
+not turn"* — on the strength of three measures agreeing: the fitted rotation, the
+projected/true knuckle width, and the palm z-spread.
+
+> **Owner:** *"both hands did absolutely the same thing, but I think we catch the
+> edge on issue."*
+
+✅ **Correct.** With smaller turns every axis agrees. On the large-turn take one
+palm's z-spread reached **56.8 mm** against the other's **8.7 mm** — one hand deep
+in the degenerate region where the world landmarks collapse.
+
+⚠⚠ **AND THE METHOD LESSON IS ABOUT MY EVIDENCE, NOT THE HAND: THREE MEASURES
+SHARING A FAILURE MODE LOOK LIKE CORROBORATION AND ARE NOT.** All three of mine
+derive from the world landmarks, so near edge-on they degrade *together* and agree
+on a wrong answer. ⛔ The projected/true width ratio was the worst of them: it
+divides a projected length by a 3-D length, so when the landmark cloud flattens both
+shrink together and the ratio returns to ~1.0 — **reading "face-on" for a hand that
+is anything but.** Independence has to be argued, not assumed from three numbers
+lining up.
+
+### ⚠ What this take does NOT say
+
+* **Nothing about MAGNITUDE.** The hands do not turn equally (−10.2 vs −24.2,
+  +20.5 vs +4.1). The invariant asserted is the SIGN and only the sign.
+* **Nothing about timing.** 11.4 fps — operator-paced capture leaves the camera idle
+  and auto-exposure winds down. Fine for signs, useless for rates.
+* ⛔ **Nothing about whether pitch reads right ON SCREEN.** That is a live look.
+
+### ⚠ And a correction to why this take was asked for
+
+It was justified as *"the invariant that would catch a chirality leak into
+orientation"*. ⛔ **It cannot**: `hand_orientation.between(a, b)` takes ONE hand's
+own two poses and has no handedness argument, and the viewpoint is one fixed
+rotation applied identically to both hands. Such a leak is **structurally
+impossible** at this layer. The real exposure was in the deleted `delta_orbit`
+GATING code, which read the chirality-odd palm normal. ⭐ The take still earns its
+place — it is the project's only two-hand declared-motion recording, and it found
+the edge-on trap — but the claim was too strong.
 
 ## 9. Acceptance
 
