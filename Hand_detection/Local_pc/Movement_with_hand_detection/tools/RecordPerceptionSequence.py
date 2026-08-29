@@ -424,7 +424,70 @@ def _sweep_steps(axis, hint, angles):
 # the measured angle mean the same thing. For roll, 0 is fingers straight up.
 WINDOW_ANGLES = (0, 15, 30, 45, 60, 75, 90)
 
+# ⭐⭐⭐ `RB3`'s TAKE: BOTH HANDS, THE SAME MOTION, ONE AXIS AT A TIME.
+#
+# ⛔ WHY BOTH HANDS TOGETHER AND NOT TWO SINGLE-HAND TAKES. **A rotation is a
+# property of the WORLD, not of the hand**: if both hands pitch the same way at the
+# same moment, the estimator must report the SAME sign for both. Two separate takes
+# cannot test that -- the operator cannot reproduce a motion exactly, so a
+# disagreement would be indistinguishable from having moved differently.
+# ⚠ EVERY take in this project's rotation work has been single-hand, so this
+# invariant has NEVER been tested. It is the one that would have caught a chirality
+# leak into orientation, which is the class that gated a whole hand to zero on
+# 2026-08-29.
+#
+# ⛔ ONE AXIS AT A TIME, named twice in the prompt: the 2026-08-04 yaw take was
+# measured AXIS-CONTAMINATED and every number from it was thrown away.
+# ⭐⭐⭐ THE DECLARED PHYSICAL DIRECTION OF EACH `_pos` STEP, AS DATA.
+#
+# Owner, 2026-08-29: *"I will pitch towards the camera. note that."* ⭐ So it is
+# noted HERE, where the analysis can read it, and not only in a prompt string that
+# a human has to remember having read. This is the GROUND TRUTH the `RB3` sign test
+# asserts against -- without it the take says only "something moved", and a sign
+# test with no declared direction is not a test.
+#
+# ⚠ SCREEN-RELATIVE, always: "toward you" was ambiguous in the first draft (with
+# the camera facing the operator it means AWAY from the camera) and the owner caught
+# it. The camera is the one reference both the operator and the analysis share.
+RB3_DECLARED = {
+    "pitch": "fingertips move TOWARD THE CAMERA",
+    "yaw": "both hands turn to the OPERATOR'S LEFT",
+    "roll": "both hands rotate CLOCKWISE as seen on screen",
+}
+
+RB3_STEPS = []
+#
+# ⛔⛔ SAME DIRECTION IN THE WORLD, **NEVER** MIRROR-SYMMETRIC (owner asked, and
+# the first prompts were ambiguous). The hands naturally want to move as a mirror
+# pair -- both rotating OUTWARD -- and that would make the test USELESS: with
+# mirrored input the CORRECT answer is opposite signs, so a chirality leak would be
+# indistinguishable from a correct result. The prompts below name a screen-relative
+# direction, which is unambiguous for both hands.
+for _axis, _pos, _neg in (
+        # ⚠ "toward you" was AMBIGUOUS and the owner caught it: with the camera
+        # facing the operator, "toward you" is AWAY from the camera. Every prompt
+        # here is SCREEN-RELATIVE, which is the only frame both the operator and
+        # the analysis can agree on without a convention.
+        ("PITCH", "tip BOTH sets of fingertips TOWARD THE CAMERA",
+                  "tip BOTH sets of fingertips AWAY FROM THE CAMERA"),
+        ("YAW", "turn BOTH hands to YOUR LEFT (same way, not outward)",
+                "turn BOTH hands to YOUR RIGHT (same way, not outward)"),
+        ("ROLL", "rotate BOTH hands CLOCKWISE on screen (not outward)",
+                 "rotate BOTH hands ANTICLOCKWISE on screen (not outward)")):
+    RB3_STEPS.append((3.0, "hold_%s_0" % _axis.lower(),
+                      "BOTH hands, palms to camera, NEUTRAL - hold still"))
+    RB3_STEPS.append((4.0, "move_%s_pos" % _axis.lower(),
+                      "%s - SAME direction, not mirrored" % _pos))
+    RB3_STEPS.append((3.0, "hold_%s_pos" % _axis.lower(),
+                      "HOLD - both hands at the same %s" % _axis))
+    RB3_STEPS.append((4.0, "move_%s_neg" % _axis.lower(),
+                      "%s - SAME direction, not mirrored" % _neg))
+    RB3_STEPS.append((3.0, "hold_%s_neg" % _axis.lower(),
+                      "HOLD - both hands at the opposite %s" % _axis))
+
 STEPS = {
+    # ⭐ `RB3` -- both hands, same motion, one axis at a time. 51 s.
+    "rb3_two_hands_axes": RB3_STEPS,
     # ⭐ YAW IS THE ONE THAT BLOCKS THE BUILD. `delta_orbit_window.py` cannot place
     # its window from the existing corpus: that take's holds sit at 120-180 deg
     # (n=140) with only 11-12 frames near face-on, where a p95 is barely the max.
@@ -440,6 +503,15 @@ STEPS = {
     "window_roll_grip": _sweep_steps("ROLL", "spin in the image plane; palm stays facing you",
                                      WINDOW_ANGLES),
 }
+
+# ⚠ The declared directions ride into `meta.json` with the take, so a future
+# analysis never has to guess what the operator was asked to do.
+SEQUENCES["rb3_two_hands_axes"] = (
+    sum(d for d, _l, _p in RB3_STEPS),
+    "BOTH hands, SAME motion (not mirrored) - press SPACE to start each step",
+    "`RB3`: a rotation is a property of the WORLD, so both hands must report the "
+    "SAME sign for the same motion. Never tested -- every prior take is one hand",
+)
 
 for _name, _steps in STEPS.items():
     SEQUENCES[_name] = (
@@ -635,11 +707,38 @@ def main():
         # --- capture ---
         if not aborted:
             record_start = time.perf_counter()
+            # ⭐⭐⭐ OPERATOR-PACED STEPS (owner, 2026-08-29): *"there are a lot of
+            # different cases and I don't have time to read the prompts. ask me to
+            # press space to start the take each time so I have time to read the
+            # prompt."*
+            #
+            # ⛔ A TIMED SCRIPT ASSUMES THE OPERATOR HAS ALREADY READ IT. The first
+            # two-hand attempt produced a hand in only **429 of 1012 frames** -- the
+            # operator was still parsing each instruction while its window was
+            # already recording. A prompt nobody has time to read is not an
+            # instruction, it is a decoration, and the frames it labels are junk.
+            #
+            # ⭐ So each step now WAITS for SPACE, showing its prompt, and only then
+            # records for its own duration. The take's wall-clock becomes the
+            # operator's business; the RECORDED span per step is unchanged, which is
+            # what the analysis reads.
+            # ⚠ `tCapture` still comes from the monotonic clock, so the gaps while
+            # waiting are simply absent from the timeline -- steps stay contiguous
+            # in the data even though they were not in the room.
+            paced = bool(steps)
+            step_i = 0
+            step_t0 = None
+            waiting = paced
             while True:
-                elapsed = time.perf_counter() - record_start
-                if elapsed >= duration:
-                    stop_reason = "duration reached"
-                    break
+                if paced:
+                    if step_i >= len(steps):
+                        stop_reason = "all steps done"
+                        break
+                else:
+                    elapsed = time.perf_counter() - record_start
+                    if elapsed >= duration:
+                        stop_reason = "duration reached"
+                        break
 
                 ret, frame = cap.read()
                 t_capture_ms = (time.perf_counter() - t0) * 1000.0  # real monotonic clock
@@ -677,7 +776,21 @@ def main():
                 # ⚠ Stamped from `elapsed`, the same monotonic clock the take is
                 # cut on -- never from a frame counter, which drifts with fps.
                 step_prompt = prompt
-                if steps:
+                if paced:
+                    _d, _label, _p = steps[step_i]
+                    step_prompt = _p
+                    if waiting:
+                        # ⛔ NOT RECORDED. The operator is reading, and whatever the
+                        # hands are doing meanwhile is not the step.
+                        step_left = 0.0
+                        record = None
+                    else:
+                        step_left = _d - (time.perf_counter() - step_t0)
+                        record["step"] = _label
+                        if step_left <= 0.0:
+                            step_i += 1
+                            waiting = True
+                elif steps:
                     acc = 0.0
                     for _d, _label, _p in steps:
                         acc += _d
@@ -697,15 +810,25 @@ def main():
                 # oracle fed a later copy would be reading the REC banner and the
                 # prompt text baked into the image. .copy() is also required
                 # because cap.read() may reuse its buffer.
-                if args.save_frames and (len(records) % args.frame_stride == 0):
-                    name = f"{len(records):06d}.{args.frame_format}"
-                    frame_buffer.append((name, frame.copy()))
-                    record["frame"] = f"frames/{name}"
-                records.append(record)
+                if record is not None:
+                    if args.save_frames and (len(records) % args.frame_stride == 0):
+                        name = f"{len(records):06d}.{args.frame_format}"
+                        frame_buffer.append((name, frame.copy()))
+                        record["frame"] = f"frames/{name}"
+                    records.append(record)
 
                 # minimal overlay: no landmark drawing, to keep this tool free of
                 # any dependency on the gesture/visualiser layer
-                cv2.putText(frame, f"REC {duration - elapsed:4.1f}s  frames:{len(records)}  hands:{len(hands)}",
+                # ⚠ A PACED take has no meaningful "time left": its length is the
+                # operator's. Show the STEP position instead, which is what they
+                # actually need. (`elapsed` does not exist on the paced path -- and
+                # reading it here is exactly what crashed the first paced run.)
+                _hdr = ("STEP %d/%d  frames:%d  hands:%d"
+                        % (step_i + 1, len(steps), len(records), len(hands))
+                        if paced else
+                        "REC %4.1fs  frames:%d  hands:%d"
+                        % (duration - elapsed, len(records), len(hands)))
+                cv2.putText(frame, _hdr,
                             (10, 30), cv2.FONT_HERSHEY_DUPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
                 cv2.putText(frame, step_prompt, (10, 62),
                             cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
@@ -714,16 +837,47 @@ def main():
                 # were held. So the step's own countdown is drawn big, and a HOLD is
                 # green while a MOVE is amber: the colour is readable out of the
                 # corner of an eye while the operator is looking at their hand.
-                if steps:
-                    holding = record.get("step", "").startswith("hold")
+                # ⚠ `record is None` WHILE A PACED STEP IS WAITING — the operator is
+                # reading and nothing is being recorded. Two consecutive crashes came
+                # from overlay code reading state that only exists while RECORDING
+                # (`elapsed`, then `record`), so the label is taken from `steps`
+                # directly and the countdown is drawn only when it means something.
+                if steps and not (paced and waiting):
+                    _lbl = steps[step_i][1] if paced else record.get("step", "")
+                    holding = _lbl.startswith("hold")
                     cv2.putText(
                         frame,
                         "%s  %.1fs" % ("HOLD" if holding else "move", step_left),
                         (10, 105), cv2.FONT_HERSHEY_DUPLEX, 1.0,
                         (0, 220, 0) if holding else (0, 190, 255), 2, cv2.LINE_AA)
+                if paced and waiting:
+                    # ⭐ The whole point: the prompt is on screen and NOTHING is being
+                    # recorded until the operator says they have read it.
+                    cv2.putText(frame, "step %d/%d  -  press SPACE when ready"
+                                % (step_i + 1, len(steps)), (10, 140),
+                                cv2.FONT_HERSHEY_DUPLEX, 0.8, (0, 220, 255), 2,
+                                cv2.LINE_AA)
                 cv2.imshow(window_name, frame)
-                cv2.waitKey(1)
-                if not _window_open(window_name):
+                _k = cv2.waitKey(1) & 0xFF
+                if _k == ord("q"):
+                    stop_reason = "operator pressed q"
+                    break
+                if paced and waiting and _k == 32:          # SPACE
+                    waiting = False
+                    step_t0 = time.perf_counter()
+                # ⛔⛔ THE VISIBILITY CHECK IS ADVISORY, NOT FATAL, FOR A **STEPPED**
+                # TAKE (2026-08-29). It exists so a closed window ends a take
+                # cleanly -- good for a free-motion clip. But a stepped take is a
+                # SCRIPT: three consecutive `rb3` recordings died at 12.7 s of 51 s
+                # with `preview window reported not visible`, losing two of the
+                # three axes each time, because OpenCV reports the window hidden
+                # when it is merely not foreground (which it is not, when the tool
+                # is launched from a shell that keeps focus).
+                # ⚠ A take that ends early is WORSE than one that fails loudly: it
+                # looks complete in the folder listing and silently lacks the steps
+                # the analysis needs. So a stepped take runs its script out, and the
+                # operator ends it with `q` or Ctrl-C.
+                if not _window_open(window_name) and not steps:
                     stop_reason = "preview window reported not visible"
                     break
     finally:
@@ -785,6 +939,10 @@ def main():
     span_s = (records[-1]["tCapture"] - records[0]["tCapture"]) / 1000.0
     meta = {
         "sequence": args.sequence,
+        # ⭐ `RB3`: the declared physical direction of each `_pos` step, carried
+        # with the take so the sign test has ground truth rather than a memory.
+        "declared_directions": (RB3_DECLARED
+                                if args.sequence == "rb3_two_hands_axes" else None),
         "prompt": prompt,
         "unblocks": unblocks,
         "note": args.note,

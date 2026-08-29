@@ -402,6 +402,79 @@ def main():
         print("       weak there, it is ABSENT — and a head-worn camera mostly sees")
         print("       the BACK of the wearer's own hand. Do not invent a sign.")
 
+    # ── 9. `RB3` — orientation in the corrected frame ─────────────────
+    # ⭐⭐ These are ALGEBRAIC INVARIANTS, and that is deliberate. "Does a pitch
+    # look right on screen" is a live question; what a suite CAN pin is that the
+    # estimator is translation-free, composes, survives the double cover, and does
+    # not leak chirality. Every one of those has been violated by a shipped build
+    # in the last two days.
+    print()
+    print("9. ⭐⭐ RB3 — ORIENTATION: the invariants a suite CAN pin")
+    from Resources import hand_orientation as HO                # noqa: E402
+    _s3, fr3 = load("2026-08-29_123058_window_pitch_grip")
+    if fr3:
+        a = fr3[0][0]
+        mid = fr3[len(fr3) // 2][0]
+        b = fr3[-1][0]
+        # ⛔ TRANSLATION INVARIANCE. A hand that moves across the frame without
+        # turning must produce NO rotation. `F1` shipped a defect of exactly this
+        # shape -- translation read as rotation -- and it cost a live session.
+        moved = [(p[0] + 0.37, p[1] - 0.11, p[2] + 0.05) for p in mid]
+        ok("⛔ pure TRANSLATION produces no rotation",
+           HO.angle_deg(HO.between(mid, moved)) < 1e-6,
+           "%.2e deg" % HO.angle_deg(HO.between(mid, moved)))
+        # ⚠⚠ COMPOSITION IS **NOT** EXACT, AND THE FIRST VERSION OF THIS CHECK
+        # ASSERTED THAT IT WAS. It failed by 0.19 deg and the test was wrong, not
+        # the code: **the palm is not RIGID.** Horn fits a rigid rotation and leaves
+        # a real residual -- measured 2.5-8.0 mm on a 91.5 mm palm across this
+        # sweep -- so `Horn(A->C)` genuinely cannot equal `Horn(A->B)` composed with
+        # `Horn(B->C)`. The difference IS the hand deforming.
+        # ⭐ So the invariant is that composition is CLOSE, not exact, and the
+        # tolerance is derived from the deformation rather than tuned until green:
+        # 0.19 deg over a ~72 deg sweep is 0.26%.
+        # ⛔ A tolerance chosen to make a failing test pass is how a build talks
+        # itself into shipping; this one is chosen from a measured residual.
+        ab, bc, ac = HO.between(a, mid), HO.between(mid, b), HO.between(a, b)
+        comp = HO.compose(ab, bc)
+        d = HO.angle_deg(HO._qmul(comp, HO._qconj(ac)))
+        ok("⚠ A→C ≈ (A→B) then (B→C), to under 1% of the sweep",
+           d < 0.01 * HO.angle_deg(ac),
+           "%.3f deg over a %.0f deg sweep" % (d, HO.angle_deg(ac)))
+        # ⛔ But it must be COMPOSITION and not luck: a wrong ORDER must fail it.
+        wrong = HO.compose(bc, ab)
+        dw = HO.angle_deg(HO._qmul(wrong, HO._qconj(ac)))
+        ok("⛔ ...and the WRONG order is clearly worse (so this tests something)",
+           dw > 10.0 * max(d, 1e-9), "wrong order %.3f deg vs %.3f" % (dw, d))
+        # ⛔ THE DOUBLE COVER, fed IN rather than merely known about.
+        ok("⛔⛔ every output is canonical (w >= 0)",
+           all(HO.delta(HO.freeze(a), fr3[i][0])[0] >= 0.0
+               for i in range(0, len(fr3), 37)),
+           "the 2026-08-29 defect, asserted away")
+        # ⚠ IDENTITY: the reference against itself is exactly no rotation.
+        ok("⚠ the reference pose against itself is EXACTLY identity",
+           HO.angle_deg(HO.delta(HO.freeze(a), a)) < 1e-9)
+    # ⭐⭐⭐ THE CHIRALITY-LEAK TEST. The SAME physical motion must give the SAME
+    # rotation whichever hand performs it -- rotation is a property of the world,
+    # not of the hand. A mirrored landmark set IS the other hand, so feeding one
+    # through must give the MIRRORED rotation and nothing stranger: yaw and roll
+    # flip, pitch does not. ⛔ If the estimator instead produced an unrelated
+    # rotation, chirality would be leaking into orientation -- which is the class
+    # that gated one whole hand to zero on 2026-08-29.
+    if fr3:
+        a, b = fr3[0][0], fr3[-1][0]
+        q = HO.between(a, b)
+        mir = lambda L: [(-p[0], p[1], p[2]) for p in L]
+        qm = HO.between(mir(a), mir(b))
+        v, vm = HO.rotvec_deg(q), HO.rotvec_deg(qm)
+        ok("⭐ mirroring the HAND mirrors the rotation: pitch keeps its sign",
+           abs(v[0] - vm[0]) < 1e-6, "%+.2f vs %+.2f" % (v[0], vm[0]))
+        ok("⭐ ...and yaw and roll flip, as a reflection requires",
+           abs(v[1] + vm[1]) < 1e-6 and abs(v[2] + vm[2]) < 1e-6,
+           "yaw %+.2f/%+.2f  roll %+.2f/%+.2f" % (v[1], vm[1], v[2], vm[2]))
+    print("     ⚠ WHAT THIS CANNOT PIN: whether a pitch looks RIGHT on screen.")
+    print("       That needs a two-hand DECLARED take and a live look — `RB3` is")
+    print("       not closed until then.")
+
     print("\n" + "=" * 78)
     if FAILURES:
         print("FAILED %d check(s):" % len(FAILURES))

@@ -124,7 +124,7 @@ still, and a magnitude deadzone measured WORSE), and some **smoothing**.
 | **`RB0`** | the **sign harness** | declared holds → expected sign, per axis, **both hands**, **both mounts** |
 | `RB1` | landmarks un-mirrored + `Ry180` | ⭐ **yaw sign IDENTICAL in both mounts** (§2's invariant, as an assertion) |
 | `RB2` | chirality | ✅ **done** — determinant matches the declared hand and is **unchanged** by the viewpoint. ⛔ `head_worn` unresolved |
-| `RB3` | Horn orientation | a declared 30° pitch reads +30°, both hands |
+| `RB3` | Horn orientation | ⚠ **half-closed** — algebraic invariants pass; the **two-hand take is OWED** (§8ter) |
 | `RB4` | hand identity | two hands, no swap across a dropout |
 | `RB5` | the delta, integrated, no filters | closure: hand returns to a pose → object returns. Drift **measured** |
 | `RB6` | drift control, then anything else | only when a measurement asks for it |
@@ -216,6 +216,72 @@ read 100% clean — but lighting and geometry were not separated.
 ⭐ **Recorder change that made this possible**: `--no-mirror` and `--mount`, plus
 `detection_on_mirrored_frame` in `meta.json`. ⛔ A take without that field is
 ambiguous about chirality, because a mirror inverts the determinant.
+
+## 8ter. ⚠ `RB3` — BUILT, AND HALF-CLOSED. The two-hand take is OWED.
+
+`Resources/hand_orientation.py`: Horn over the palm, in the corrected frame, and
+**nothing wrapped around it**. `horn_rotation` is imported, never re-derived
+(`N6`) — it is exact to 0.000° on synthetic input and four estimator replacements
+have died against it under `A10`. **The rebuild is about the FRAME and the CONTROL
+LAW; the fit was never the problem.**
+
+### ✅ What a suite CAN pin, and does (`verify_frame_signs` §9)
+
+| invariant | result |
+|---|---|
+| pure **translation** produces no rotation | 0.00e+00° |
+| **composition** A→C ≈ (A→B) then (B→C) | 0.191° over a 74° sweep |
+| …and the **wrong order** is clearly worse | 2.548° — so the check tests something |
+| every output **canonical** (`w ≥ 0`) | the 2026-08-29 double cover, asserted away |
+| reference against itself | exactly identity |
+| **mirroring the hand** mirrors the rotation | pitch keeps its sign; yaw and roll flip |
+
+⚠⚠ **THE COMPOSITION CHECK WAS WRONG FIRST, AND THE TEST WAS AT FAULT, NOT THE
+CODE.** It asserted composition was EXACT and failed by 0.191°. **The palm is not
+rigid**: Horn fits a rigid rotation and leaves a measured **2.5–8.0 mm residual on a
+91.5 mm palm** across that sweep, so `Horn(A→C)` genuinely cannot equal the two
+halves composed. The difference IS the hand deforming.
+⛔ The tolerance is therefore derived from that residual (under 1% of the sweep) and
+**a wrong-order control proves the check still bites** — a tolerance widened until a
+test goes green is how a build talks itself into shipping.
+
+### ⛔ What a suite CANNOT pin, and why `RB3` is not closed
+
+**Whether a pitch looks RIGHT on screen.** That needs a take with **both hands
+performing the SAME world motion**, and every take in this project's rotation work
+is single-hand — so the invariant that matters most has never been tested:
+
+> ⭐⭐ **A rotation is a property of the WORLD, not of the hand.** If both hands
+> pitch the same way at the same moment, the estimator must report the **same sign**
+> for both. Two separate single-hand takes cannot test this: the operator cannot
+> reproduce a motion exactly, so a disagreement would be indistinguishable from
+> having moved differently.
+
+⛔ It is the invariant that would have caught a chirality leak into orientation —
+the class that gated one whole hand to zero on 2026-08-29.
+
+### ⭐ The take, specified (recorder work already done)
+
+`rb3_two_hands_axes`: both hands, **same world direction, never mirrored**, one axis
+at a time, un-mirrored capture, `facing_user`.
+⛔⛔ **SAME-DIRECTION IS LOAD-BEARING.** Hands naturally move as a mirror pair (both
+rotating *outward*), and with mirrored input the CORRECT answer is opposite signs —
+so a chirality leak would be indistinguishable from a correct result.
+⚠ Prompts are **screen-relative**: *"toward you"* was ambiguous (with the camera
+facing the operator it means AWAY from the camera) and the owner caught it. The
+declared directions ride into `meta.json` as `declared_directions`, so the sign test
+has ground truth rather than someone's memory.
+
+⭐ **Recorder gained OPERATOR-PACED steps** (owner: *"I don't have time to read the
+prompts. ask me to press space to start the take each time"*). Each step waits for
+SPACE showing its prompt, and **records nothing while the operator reads**. The first
+timed attempt produced a hand in only **429 of 1012 frames** — the operator was still
+parsing each instruction while its window was already recording. **A prompt nobody
+has time to read is not an instruction, it is a decoration, and the frames it labels
+are junk.**
+⚠ Two crashes came from that change and both were mine: overlay code reading
+`elapsed` and then `record`, neither of which exists while a paced step waits. Fixed,
+and the loop audited for a third.
 
 ## 9. Acceptance
 

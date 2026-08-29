@@ -17,6 +17,75 @@ newest-first is restored, the entry bodies are byte-identical, and
 
 ---
 
+## 2026-08-29 (late night) — `RB3` built and HALF-closed; the recorder learned to wait
+
+✅ `Resources/hand_orientation.py` — Horn over the palm, in the corrected frame,
+**nothing wrapped around it**. `horn_rotation` imported, never re-derived (`N6`).
+
+## ⚠⚠ THE COMPOSITION CHECK WAS WRONG, AND THE TEST WAS AT FAULT
+
+It asserted `Horn(A→C)` equals `Horn(A→B)` composed with `Horn(B→C)`, exactly, and
+failed by **0.191°**. ⭐ **The palm is not rigid.** Horn fits a RIGID rotation and
+leaves a measured **2.5–8.0 mm residual on a 91.5 mm palm** across that sweep, so the
+two halves genuinely cannot compose to the whole — the difference IS the hand
+deforming.
+
+⛔ The fix was to derive the tolerance from that residual (under 1% of the sweep) and
+add a **wrong-order control** proving the check still bites. **A tolerance widened
+until a test goes green is how a build talks itself into shipping**; measuring the
+thing the tolerance is about is not the same act.
+
+## ⛔ WHAT A SUITE CANNOT PIN, AND WHY `RB3` IS NOT CLOSED
+
+⭐⭐ **A rotation is a property of the WORLD, not of the hand.** If both hands pitch
+the same way at the same moment, the estimator must report the **same sign** for
+both. ⛔ **Every take in this project's rotation work is SINGLE-HAND**, so the
+invariant that would catch a chirality leak into orientation — the class that gated
+one whole hand to zero the same day — has never been tested. Two separate takes
+cannot substitute: the operator cannot reproduce a motion exactly, so a disagreement
+would be indistinguishable from having moved differently.
+
+## ⭐⭐ WHAT THE ATTEMPTS TAUGHT, WHICH IS MOSTLY ABOUT PROMPTS
+
+* ⛔⛔ **SAME-DIRECTION, NEVER MIRRORED** — the owner asked *"when the hands roll,
+  they shall roll as mirror or same direction both?"*, which is the right question
+  and my first prompts did not answer it. Hands naturally move as a mirror pair, and
+  **with mirrored input the CORRECT answer is opposite signs**, so a chirality leak
+  would be indistinguishable from a correct result. The prompts now name a
+  SCREEN-RELATIVE direction.
+* ⚠ *"toward you"* was **ambiguous** and the owner caught it: with the camera facing
+  the operator, toward-you is AWAY from the camera. The camera is the only reference
+  the operator and the analysis share.
+* ⭐ The declared directions now ride into `meta.json` as `declared_directions`, so
+  the sign test has ground truth rather than someone's memory of a prompt.
+* ⛔ **The visibility check was killing stepped takes.** Three consecutive runs died
+  at **12.7 s of 51 s** with *"preview window reported not visible"* — OpenCV reports
+  a window hidden when it is merely not foreground. ⚠ A take that ends early is
+  WORSE than one that fails loudly: it looks complete in the folder listing and
+  silently lacks the steps the analysis needs. Now advisory for a stepped take.
+
+## ⭐⭐⭐ AND THE ONE THE OWNER ASKED FOR: OPERATOR-PACED STEPS
+
+> *"there are a lot of different cases and I don't have time to read the prompts.
+> ask me to press space to start the take each time so I have time to read the
+> prompt."*
+
+The first timed attempt produced a hand in **429 of 1012 frames**. The operator was
+still parsing each instruction while its window was already recording.
+⭐ **A PROMPT NOBODY HAS TIME TO READ IS NOT AN INSTRUCTION, IT IS A DECORATION — AND
+THE FRAMES IT LABELS ARE JUNK.** Each step now waits for SPACE, showing its prompt,
+and records nothing while the operator reads. The waiting gaps are simply absent from
+`tCapture`, so steps stay contiguous in the data though they were not in the room.
+
+⚠ **Two crashes came out of that change and both were mine**: overlay code reading
+`elapsed`, then `record`, neither of which exists while a paced step waits. Fixed,
+and the loop audited line by line for a third rather than discovering it at the
+owner's expense.
+
+⚠ The take is **owed**, deferred by the owner to tomorrow. Nothing else is blocked.
+
+---
+
 ## 2026-08-29 (night) — `1.7.42`: the stack was a REFLECTION, so it is being rebuilt
 
 > **Owner:** *"I think we have patched too much this script."*
