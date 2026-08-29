@@ -45,6 +45,27 @@ except (AttributeError, ValueError):                          # pragma: no cover
 FAILURES = []
 
 
+def _raises_keyerror(L):
+    try:
+        L._set_slider("NO SUCH SLIDER", 1)
+    except KeyError:
+        return True
+    except Exception:                                          # noqa: BLE001
+        return False
+    return False
+
+
+def _silent_for_collapsed(L, collapsed):
+    """A collapsed name must be a NO-OP -- not an error, and no window call."""
+    if not collapsed:
+        return True
+    try:
+        L._set_slider(collapsed[0], 1)
+    except Exception:                                          # noqa: BLE001
+        return False
+    return True
+
+
 def ok(name, cond, detail=""):
     print("  [%s] %-56s %s" % ("PASS" if cond else "FAIL", name, detail))
     if not cond:
@@ -171,7 +192,11 @@ def main():
         # the slider would run away on its own. Reading three times at 100 % must
         # leave both constants exactly where they ship.
         from Resources import object_assembly as _OA
-        _pos = {name: dflt for (name, _mx, dflt, _fn, _doc) in L.SLIDERS}
+        # ⛔ INDEXED, NOT UNPACKED — and this line WAS a fixed 5-tuple unpack
+        # until 2026-08-29, when the `active` field made the rows 6-tuples and
+        # this suite died with `too many values to unpack`. **The guard carried
+        # the exact fragility it exists to catch**, one file over.
+        _pos = {spec[0]: spec[2] for spec in L.SLIDERS}
         cv2.getTrackbarPos = lambda name, win: _pos[name]
         for _ in range(3):
             L._read_sliders()
@@ -180,6 +205,17 @@ def main():
            and abs(_OA.PREVIEW_RADIUS_FACTOR - L._SHIPPED_PREVIEW_RADIUS_FACTOR) < 1e-12,
            "snap %.3f, preview %.3f" % (_OA.MC.MATE_RADIUS_FRACTION,
                                         _OA.PREVIEW_RADIUS_FACTOR))
+        # ⛔⛔ THE MATE ROWS ARE **COLLAPSED** FOR THE `1.7.41` BUILD, AND THE
+        # SCALING THEY DRIVE STILL SHIPS. A collapsed slider feeds `_read_sliders`
+        # its DEFAULT, so without forcing them active here this whole section would
+        # silently test nothing while still printing PASS -- which is precisely the
+        # "passed for the wrong reason" failure three `AS` vectors had.
+        # ⭐ Forced for the duration and restored in `finally`, so the check
+        # exercises the REAL code path rather than a lookalike.
+        _saved_sliders = L.SLIDERS
+        L.SLIDERS = tuple(
+            (sp[:5] + (True,)) if sp[0].startswith("MATE ") else sp
+            for sp in L.SLIDERS)
         _pos["MATE snap r %"], _pos["MATE preview r %"] = 300, 33
         L._read_sliders()
         ok("...and the owner's third-to-triple range reaches both ends",
@@ -222,6 +258,10 @@ def main():
         ok("`_read_sliders` runs without raising", False,
            "%s: %s" % (type(exc).__name__, exc))
     finally:
+        try:
+            L.SLIDERS = _saved_sliders        # undo the forced-active MATE rows
+        except NameError:
+            pass
         cv2.getTrackbarPos = real
         for _n, _v in _saved_cv2.items():
             setattr(cv2, _n, _v)
@@ -232,14 +272,45 @@ def main():
     # -- 5. the panel is tall enough ----------------------------------------
     print("\n5. ⚠ THE PANEL MUST FIT WHAT IT DECLARES")
     rs = re.search(r"resizeWindow\(SLIDER_WIN,\s*\d+,\s*(.+)\)", src)
+    # ⚠ `_active_count()` is ALSO table-derived, and since 2026-08-29 it is the
+    # CORRECT derivation: a collapsed slider has no trackbar, so sizing from
+    # `len(SLIDERS)` would leave exactly the dead space collapsing removes.
     ok("height is derived from the table, not a constant",
-       rs is not None and "len(SLIDERS)" in rs.group(1) + ")",
+       rs is not None and ("len(SLIDERS)" in rs.group(1) + ")"
+                           or "_active_count()" in rs.group(1) + ")"),
        rs.group(1).strip() if rs else "not found")
     print("      ⭐ 12 trackbars in a fixed 400 px window pushed the 12th OFF the")
     print("        panel; a newly added slider was invisible. A dead control does")
     print("        not merely take space -- it hides a live one.")
 
-    print("\n" + "=" * 78)
+    # -- 6. collapsing (2026-08-29) -----------------------------------------
+    print()
+    print("6. ⭐⭐ COLLAPSED SLIDERS — present, parked, and never positioned")
+    collapsed = [sp[0] for sp in L.SLIDERS if not L._is_active(sp)]
+    active = [sp[0] for sp in L.SLIDERS if L._is_active(sp)]
+    ok("at least one slider is EXPANDED", bool(active), "%d active" % len(active))
+    ok("every collapsed control is STILL IN THE TABLE",
+       all(any(sp[0] == n for sp in L.SLIDERS) for n in collapsed),
+       "%d collapsed: %s" % (len(collapsed), ", ".join(collapsed)) if collapsed
+       else "none collapsed")
+    # ⛔ THE FAILURE THIS CATCHES: a collapsed slider has NO trackbar, so a raw
+    # `cv2.setTrackbarPos` naming one raises `cv2.error` and kills the tool at
+    # startup -- the same shape as the 2026-08-28 `NameError` this file was written
+    # for, and equally invisible to every other suite.
+    # ⚠ The ONE legitimate call is inside `_set_slider` itself, and it names the
+    # bare parameter `name`. Everything else must be a caller, and a caller naming
+    # a slider directly is what this check forbids.
+    raw = [c for c in re.findall(r"^\s*cv2\.setTrackbarPos\(\s*([^,]+),", src, re.M)
+           if c.strip() != "name"]
+    ok("⛔ no LIVE raw setTrackbarPos — all go through `_set_slider`",
+       not raw, ", ".join(r.strip() for r in raw) if raw else "none")
+    ok("`_set_slider` refuses a name that is in NO row", _raises_keyerror(L))
+    ok("`_set_slider` is a silent NO-OP for a COLLAPSED row",
+       _silent_for_collapsed(L, collapsed),
+       collapsed[0] if collapsed else "n/a")
+
+    print()
+    print("=" * 78)
     if FAILURES:
         print("FAILED %d check(s):" % len(FAILURES))
         for f in FAILURES:

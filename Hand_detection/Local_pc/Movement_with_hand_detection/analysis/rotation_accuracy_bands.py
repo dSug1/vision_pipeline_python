@@ -189,14 +189,46 @@ def load(key, head_s):
             h = hs[0]
             px, wl = h.get("landmarks"), h.get("world_landmarks")
             if px and wl and len(px) >= 21 and len(wl) >= 21:
-                out.append((px, wl, h.get("handedness", "Right")))
+                # ⭐ 4th field, added 2026-08-29: the DECLARED step label a
+                # stepped take stamps on every frame (`RecordPerceptionSequence`
+                # `STEPS`). `None` on every take recorded before that, and every
+                # consumer must treat it as optional — the corpus is 400+ takes
+                # deep and none of them carry it.
+                out.append((px, wl, h.get("handedness", "Right"), r.get("step")))
     return session, out
+
+
+# ⭐ The five fingertips. `F1` already takes the object's GRIP POINT from their
+# barycentre, so this is the product's own notion of "where the fingers are",
+# reused rather than a second definition (`N6`).
+TIPS = (4, 8, 12, 16, 20)
 
 
 def span(px, kind):
     if kind == "width":
         return math.hypot(px[INDEX_MCP][0] - px[PINKY_MCP][0],
                           px[INDEX_MCP][1] - px[PINKY_MCP][1])
+    if kind == "tip_length":
+        # ⭐⭐⭐ THE OWNER'S OWN AXIS (2026-08-29): *"in my game, the angle is
+        # between the fingertips and the basis of the palm (palm-wrist
+        # connection)"*. It is not a relabelling -- it is MEASURABLY the better
+        # pitch truth, and the palm one is broken in a way that had already cost
+        # a wrong conclusion:
+        #
+        #   declared    0    15    30    45    60    75    90
+        #   tip axis  1.000 0.979 0.952 0.883 0.794 0.677 0.265   monotone
+        #   palm len  1.000 1.023 1.022 0.991 0.908 0.828 0.523   ⛔ NOT monotone
+        #
+        # ⛔ The palm length RISES over the first three holds, so `acos` folded
+        # declared 0 / 15 / 30 into one 8-14 deg bucket -- which is exactly why an
+        # earlier run of this harness could not separate them and the pitch window
+        # had to be binned by the declared label instead.
+        # ⭐ The fingers are a LONGER LEVER, so the same rotation foreshortens more
+        # and the reading is better conditioned: 0.265 reads ~75 deg against the
+        # palm's 0.523 (~58 deg) for the same declared 90.
+        tx = sum(px[i][0] for i in TIPS) / len(TIPS)
+        ty = sum(px[i][1] for i in TIPS) / len(TIPS)
+        return math.hypot(px[WRIST][0] - tx, px[WRIST][1] - ty)
     return math.hypot(px[WRIST][0] - px[MIDDLE_MCP][0],
                       px[WRIST][1] - px[MIDDLE_MCP][1])
 
@@ -213,11 +245,11 @@ def ground_truth(frames, kind):
         # ⭐ reference = the SQUAREST frame, which is roll's own analogue of
         # "most face-on" (t5j). Under a pure roll nothing foreshortens, so the
         # squareness is flat and the choice is stable.
-        eo = [PG.edge_on_measure(px) for px, _w, _h in frames]
+        eo = [PG.edge_on_measure(px) for px, _w, _h, _s in frames]
         ref = max(range(len(frames)), key=lambda i: (eo[i] if eo[i] is not None else -1))
         a0 = knuckle_angle(frames[ref][0])
         truth = []
-        for px, _w, _h in frames:
+        for px, _w, _h, _s in frames:
             d = knuckle_angle(px) - a0
             while d > 180.0:
                 d -= 360.0
@@ -230,7 +262,7 @@ def ground_truth(frames, kind):
     s0 = span(frames[ref][0], kind)
     sign0 = PG.is_thumb_outward(frames[ref][0], frames[ref][2])
     truth = []
-    for px, _w, hd in frames:
+    for px, _w, hd, _st in frames:
         a = math.degrees(math.acos(max(-1.0, min(1.0, span(px, kind) / (s0 or 1.0)))))
         if PG.is_thumb_outward(px, hd) != sign0:
             a = 180.0 - a          # trap #1: past edge-on, acos folds -- unwrap
@@ -266,7 +298,7 @@ def run_take(key, axis_name, expected, kind, head_s):
     # re-fits would be a second implementation, and `delta()` returning None on a
     # degenerate frame would silently shift the pairing by one.
     paired = []                    # (true_deg, q_trim_OFF, q_trim_ON)
-    for i, (px, wl, _hd) in enumerate(frames):
+    for i, (px, wl, _hd, _st) in enumerate(frames):
         q = horn.delta(st, px, wl)
         if q is None:
             continue

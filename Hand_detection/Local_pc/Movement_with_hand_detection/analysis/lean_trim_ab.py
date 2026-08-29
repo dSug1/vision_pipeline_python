@@ -43,14 +43,43 @@ except (AttributeError, ValueError):                          # pragma: no cover
 
 
 def geo_deg(a, b):
-    """Geodesic angle between unit quaternions -- stable near identity."""
+    """ROTATION angle between two orientations, in degrees -- stable near identity.
+
+    ⛔⛔ THE FACTOR OF 2, FIXED 2026-08-29, AND IT WAS WRONG FOR AS LONG AS THIS
+    FILE HAS EXISTED. `2*atan2(|a-b|, |a+b|)` is the geodesic on the unit quaternion
+    sphere S3 -- and S3 DOUBLE-COVERS SO(3), so that angle is **exactly half the
+    rotation angle**. Verified against `palm_rotation.quat_angle_deg`:
+
+        true rotation      geo_deg (before)      quat_angle_deg
+             1.0 deg            0.500                1.000
+            20.0 deg           10.000               20.000
+            90.0 deg           45.000               90.000
+
+    ⭐⭐ WHAT IT DID **NOT** BREAK, AND THAT IS WHY IT SURVIVED: THE GATE THIS FILE
+    EXISTS FOR IS A RATIO (trimmed p95 / shipped p95), and a constant factor cancels
+    exactly. **Every `V2` verdict stands unchanged** -- 1.072x on `stripped`, the
+    0.892x / 0.995x no-ops of the double-cover fix, the 1.166x pitch failure. A
+    dimensionless comparison was immune to a scale error in its own instrument.
+
+    ⛔ WHAT IT DID BREAK: every ABSOLUTE per-frame number ever read off this helper
+    was half its true value -- including the 2026-08-29 delta-orbit window and noise
+    tables, which had to be doubled. ⚠ `analysis/` ONLY: `geo_deg` is imported by no
+    shipped module, so neither tool ever consumed it.
+
+    ⭐⭐⭐ THE METHOD RULE, and it is a new one: **A METRIC USED ONLY IN RATIOS IS
+    NEVER SCALE-CHECKED BY ITS OWN CONSUMERS.** This file's gate could not have
+    caught it, and did not, for the whole life of the row. A helper returning a
+    PHYSICAL quantity must be checked against a KNOWN input at least once --
+    `verify_delta_orbit.py` now does exactly that, on a hand-computed 20 deg step.
+    ⚠ `4.0 *` rather than a rewrite: the `atan2(d, s)` form is KEPT because it is
+    what stays conditioned near identity, which is why it was chosen originally."""
     if a is None or b is None:
         return None
     if sum(x * y for x, y in zip(a, b)) < 0.0:
         b = tuple(-c for c in b)
     d = math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
     s = math.sqrt(sum((x + y) ** 2 for x, y in zip(a, b)))
-    return math.degrees(2.0 * math.atan2(d, s))
+    return math.degrees(4.0 * math.atan2(d, s))
 
 
 def lean_deg(q):

@@ -83,6 +83,15 @@ What came out of it, and is now standing practice:
   *identically* and agreed on every frame. **Parity proves the two tools MATCH; it
   can never prove either is RIGHT.** Reading a clean parity run as correctness is
   the same error as reading a green suite as sufficiency.
+* ⭐⭐⭐ **A METRIC USED ONLY IN RATIOS IS NEVER SCALE-CHECKED BY ITS OWN
+  CONSUMERS** (2026-08-29). `lean_trim_ab.geo_deg` returned the geodesic on the
+  quaternion sphere S³ — which double-covers SO(3), so it reported **half the
+  rotation angle** — for the entire life of that file. ⭐ It survived because the
+  gate it exists for is a RATIO, and a constant factor cancels exactly: every `V2`
+  verdict is unaffected. ⛔ But every ABSOLUTE number ever read off it was half.
+  **A helper that returns a physical quantity must be checked against a KNOWN
+  input at least once** — asserting that two things are close to each other can
+  never catch a scale error in the thing measuring both.
 * ⭐ **A new vector must be shown to FAIL against the old code.** The double-cover
   vectors were checked at **6/6 failing** pre-fix before being trusted — three
   vectors in the `AS` row had already passed for the wrong reason the same month.

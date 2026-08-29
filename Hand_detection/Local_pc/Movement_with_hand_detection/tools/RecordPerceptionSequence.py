@@ -346,6 +346,94 @@ SEQUENCES = {
 }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ⭐⭐⭐ STEPPED SEQUENCES — the recorder walks the operator through timed steps
+# and STAMPS WHICH STEP EACH FRAME BELONGS TO (2026-08-29, for `1.7.41`).
+#
+# ⛔⛔ WHY THIS EXISTS, AND IT IS NOT CONVENIENCE. `delta_orbit_window.py` has to
+# separate frames where the hand was HELD from frames where it was MOVING -- a
+# hold's per-frame delta is pure error, and that is the number the whole
+# delta-orbit window is drawn around. Today it INFERS the split, by thresholding
+# the depth-free truth at 1 deg/frame. That truth is `acos` of a foreshortening
+# ratio: ill-conditioned near face-on, and past ~120 deg it leans on the chirality
+# bit that is least trustworthy exactly there. **So the hold/move split is inferred
+# from the noisiest available signal, at the poses where it is noisiest.**
+#
+# ⭐ A stepped take DECLARES the split instead. `METHOD`: *record what ran; never
+# re-derive it* -- the same rule that made production record its own cue after a
+# recomputation reported a session clean on a defect the owner had just watched.
+#
+# ⭐⭐ AND THE HAND MUST BE GRIPPING. `T6`'s closing rule, which cost that row
+# twice: **a corpus whose MOTION does not match the product's cannot validate an
+# estimator for the product.** Every take that has misled this project on rotation
+# was an OPEN hand; the game GRIPS. Every prompt below says so.
+#
+# ⚠ The angles are what the operator is ASKED for, not ground truth -- a person
+# cannot place their own hand to a degree. They label the SEGMENT; the depth-free
+# truth still supplies the measured angle. When the two disagree that is itself a
+# finding, which is why both are kept (the pattern `U7`'s declared-ground-truth
+# acceptance take established).
+#
+# ⚠ Hold the DISTANCE roughly constant across the take. `CAVEAT ZERO` (the six
+# T6 takes) retracted every depth-derived reading because the hand moved; this
+# measurement is angular and survives that, but a distance that drifts changes the
+# landmark noise itself and would smear the window.
+#
+#   name -> [(seconds, step label, on-screen prompt), ...]
+STEP_HOLD_S = 3.0          # long enough for a p95 over ~90 frames at 30fps
+STEP_MOVE_S = 2.0          # transition; its frames are labelled and EXCLUDED
+
+
+def _sweep_steps(axis, hint, angles):
+    """HOLD / MOVE / HOLD ... across `angles`, every step labelled.
+
+    ⚠ The prompt names the axis AND the motion, because the single most expensive
+    recording mistake this project has made was an AXIS-CONTAMINATED take: the
+    2026-08-04 yaw take said "doorknob", which is ROLL, and both palm spans
+    collapsed -- it measured a mixture and every number from it had to be thrown
+    away (`YAW_AXIS_NOTE` above, spec §14.3.3). One axis at a time, named twice."""
+    steps = []
+    for i, a in enumerate(angles):
+        if i:
+            steps.append((STEP_MOVE_S, "move_%d" % a,
+                          "MOVE to %s %d deg  (%s)  - keep gripping" % (axis, a, hint)))
+        steps.append((STEP_HOLD_S, "hold_%d" % a,
+                      "HOLD STILL @ %s %d deg  - grip as if holding a small cube"
+                      % (axis, a)))
+    return steps
+
+
+# ⚠ 0 deg is PALM SQUARE TO THE CAMERA for yaw and pitch -- the same face-on
+# reference `delta_orbit_window.py` measures angles from, so the declared label and
+# the measured angle mean the same thing. For roll, 0 is fingers straight up.
+WINDOW_ANGLES = (0, 15, 30, 45, 60, 75, 90)
+
+STEPS = {
+    # ⭐ YAW IS THE ONE THAT BLOCKS THE BUILD. `delta_orbit_window.py` cannot place
+    # its window from the existing corpus: that take's holds sit at 120-180 deg
+    # (n=140) with only 11-12 frames near face-on, where a p95 is barely the max.
+    "window_yaw_grip": _sweep_steps("YAW", "turn like a page; fingers stay UP", WINDOW_ANGLES),
+    # ⭐ PITCH CONFIRMS a window already measured on two takes (clean 1.1-2.1 deg
+    # below 30, degrading past 50, 9.6-13.6 at 60-75). This take is what turns two
+    # agreeing accidents into a placed fade.
+    "window_pitch_grip": _sweep_steps("PITCH", "tip fingertips toward/away; do NOT twist",
+                                      WINDOW_ANGLES),
+    # ⚠ ROLL IS THE CONTROL, and it is worth the 35 s precisely because it should
+    # come out FLAT (1.33-2.10 deg at every pose on the existing take). A window
+    # that appears here would mean the method is manufacturing windows.
+    "window_roll_grip": _sweep_steps("ROLL", "spin in the image plane; palm stays facing you",
+                                     WINDOW_ANGLES),
+}
+
+for _name, _steps in STEPS.items():
+    SEQUENCES[_name] = (
+        sum(d for d, _l, _p in _steps),
+        "stepped take - follow the on-screen step (grip, do not open the hand)",
+        "the delta-orbit rate window (`1.7.41`): the per-pose noise floor a "
+        "rate-control build would integrate, on DECLARED holds and a GRIPPING hand",
+    )
+
+
 def _window_open(name):
     return cv2.getWindowProperty(name, cv2.WND_PROP_VISIBLE) >= 1
 
@@ -395,6 +483,20 @@ def main():
     capture_root = args.capture_root or (LOCAL_CAPTURE_ROOT if args.local else CAPTURE_ROOT)
 
     default_duration, prompt, unblocks = SEQUENCES[args.sequence]
+    # ⭐ A stepped sequence carries its own timed script; a classic one does not.
+    # ⚠ `steps` stays empty for every pre-2026-08-29 sequence, so their frames
+    # carry no `step` key and every existing harness reads them unchanged.
+    steps = STEPS.get(args.sequence, ())
+    countdown_s = 8.0 if steps else COUNTDOWN_S
+    step_left = 0.0
+    if steps and args.duration and abs(args.duration - default_duration) > 1e-6:
+        # ⛔ A stepped take's length IS its script. Letting `--duration` cut it
+        # short would drop the last holds silently -- and the last holds are the
+        # large angles, which is the half of the window that is actually in doubt.
+        print(f'[perception] ** --duration is ignored for the stepped sequence '
+              f'{args.sequence}: its length is its script '
+              f'({default_duration:.0f}s).')
+
     duration = args.duration if args.duration is not None else default_duration
 
     # PREFLIGHT: create and write-test the session directory BEFORE capturing a
@@ -465,7 +567,7 @@ def main():
     stop_reason = "unknown"
 
     print(f"[perception] sequence : {args.sequence}")
-    print(f"[perception] duration : {duration:.1f}s (after a {COUNTDOWN_S:.0f}s countdown)")
+    print(f"[perception] duration : {duration:.1f}s (after a {countdown_s:.0f}s countdown)")
     print(f"[perception] DO THIS  : {prompt}")
     if args.sequence.startswith("palm_back") or args.sequence.startswith("pitch_sweep"):
         print(f"[perception] AXIS     : {PITCH_AXIS_NOTE}")
@@ -484,7 +586,12 @@ def main():
                 aborted = True
                 break
             frame = cv2.flip(frame, 1)  # mirrored preview, matching the debug tools
-            remaining = COUNTDOWN_S - (time.perf_counter() - countdown_start)
+            # ⭐ A STEPPED take gets a longer runway, and the reason is
+            # structural: its FIRST step is `hold_0`, so the operator must
+            # already be in position and still when recording starts. A
+            # free-motion take can afford to lose its first second; a take
+            # whose opening 3 s IS one of the measured holds cannot.
+            remaining = countdown_s - (time.perf_counter() - countdown_start)
             if remaining <= 0:
                 break
             cv2.putText(frame, f"Get ready... {remaining:.1f}s", (10, 30),
@@ -534,6 +641,27 @@ def main():
                     })
                 record = {"tCapture": round(t_capture_ms, 2), "hands": hands}
 
+                # ⭐⭐ STAMP THE STEP THIS FRAME BELONGS TO. Declared, not inferred:
+                # `delta_orbit_window.py` currently guesses hold-vs-move by
+                # thresholding a depth-free truth that is ill-conditioned exactly
+                # where the answer matters. A labelled frame removes that guess.
+                # ⚠ Stamped from `elapsed`, the same monotonic clock the take is
+                # cut on -- never from a frame counter, which drifts with fps.
+                step_prompt = prompt
+                if steps:
+                    acc = 0.0
+                    for _d, _label, _p in steps:
+                        acc += _d
+                        if elapsed < acc:
+                            record["step"] = _label
+                            step_prompt = _p
+                            step_left = acc - elapsed
+                            break
+                    else:                      # past the last step: keep the last
+                        record["step"] = steps[-1][1]
+                        step_prompt = steps[-1][2]
+                        step_left = 0.0
+
                 # Buffer the frame BEFORE any overlay is drawn. `frame` is the
                 # mirrored array `rgb` (and therefore MediaPipe) was derived from,
                 # and cv2.putText mutates it in place a few lines below -- so an
@@ -550,8 +678,20 @@ def main():
                 # any dependency on the gesture/visualiser layer
                 cv2.putText(frame, f"REC {duration - elapsed:4.1f}s  frames:{len(records)}  hands:{len(hands)}",
                             (10, 30), cv2.FONT_HERSHEY_DUPLEX, 0.7, (0, 0, 255), 2, cv2.LINE_AA)
-                cv2.putText(frame, prompt, (10, 62),
+                cv2.putText(frame, step_prompt, (10, 62),
                             cv2.FONT_HERSHEY_DUPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
+                # ⭐ A stepped take is USELESS if the operator cannot see when the
+                # step changes -- the whole point is that the labelled frames really
+                # were held. So the step's own countdown is drawn big, and a HOLD is
+                # green while a MOVE is amber: the colour is readable out of the
+                # corner of an eye while the operator is looking at their hand.
+                if steps:
+                    holding = record.get("step", "").startswith("hold")
+                    cv2.putText(
+                        frame,
+                        "%s  %.1fs" % ("HOLD" if holding else "move", step_left),
+                        (10, 105), cv2.FONT_HERSHEY_DUPLEX, 1.0,
+                        (0, 220, 0) if holding else (0, 190, 255), 2, cv2.LINE_AA)
                 cv2.imshow(window_name, frame)
                 cv2.waitKey(1)
                 if not _window_open(window_name):

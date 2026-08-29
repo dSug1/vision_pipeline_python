@@ -14,6 +14,9 @@ from . import object_extent
 from . import object_assembly
 from . import camera_mount
 from . import lean_trim
+# ⭐ `DO1`: one module, both tools (`N6`). Production has no sliders; it reads
+# `delta_orbit`'s own constants, and `MODE` defaults to `orbit` -- the build.
+from . import delta_orbit as _delta_orbit
 from . import depth_order
 from . import palm_depth
 from . import palm_geometry
@@ -2001,8 +2004,70 @@ def on_hands_frame(left_landmarks: List[Tuple[float, float]], right_landmarks: L
                     tip_trim.palm_span_m(world_landmarks), now_ms)
                 _q_eff = (hand_quat_now if _trim_q is tip_trim.IDENTITY
                           else _quat_multiply(hand_quat_now, _trim_q))
-                delta = _quat_multiply(_q_eff, _quat_conjugate(cube.grab_hand_orientation))
-                target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
+                # ⭐⭐⭐ `DO1` -- DELTA-ORBIT IS THE BUILD. The object's rotation is the
+                # INTEGRAL of the hand's, from the grab onward, and nothing else contributes.
+                #
+                #   MODE = "orbit"  (default, and what the game runs)
+                #        target = scale(q_eff . q_eff(t-1)^-1) . cube(now)      RATE control
+                #   MODE = "legacy" (diagnostic ONLY -- `A10` / `parity_replay`)
+                #        target = (q_eff . q_eff(grab)^-1) . cube(grab)          the 1.7.40 path
+                #
+                # ⛔ THE TWO NEVER MIX, AND THE DEFAULT IS THE NEW ONE. Owner, 2026-08-29:
+                # *"I do not want to have a mix of hand follow and integral of hand motion. I
+                # want pure integral of hand motion since the beginning with no interference of
+                # what we previously built."* ⚠ The first draft was not a blend either -- it was
+                # a hard switch -- but it DEFAULTED to the legacy path, so the build only became
+                # itself once a slider moved. `legacy` is not a deployment: it exists so the
+                # pre-change build stays reachable bit-for-bit, which `A10` requires. Same shape
+                # as `CAMERA_MOUNT=legacy`.
+                #
+                # ⭐⭐ THE SLERP BELOW IS NOT THE OLD PATH LEAKING IN -- IT IS THE DAMPER. The
+                # drift control for an integrating build is the shipped FREEZE (`RELEASE deg/s`
+                # + `FREEZE frames`), and the freeze lives in the slerp factor. Composing
+                # straight onto `cube.orientation` would bypass it and reinstate the measured
+                # 43/35/48 deg-per-minute drift.
+                # ⚠ Consequence: the effective CD gain is `rate_gain x slerp_factor` (~0.86 at
+                # tau 20 ms / 40 ms frames) -- a constant the `RATE` sliders absorb.
+                if _delta_orbit.MODE == _delta_orbit.ORBIT:
+                    _prev_hq = getattr(cube, "orbit_prev_hand_q", None)
+                    if _prev_hq is None:
+                        _prev_hq = cube.grab_hand_orientation
+                    # ⚠ Clamped like the slerp's own dt: a long stall must not
+                    # arrive as one enormous increment.
+                    _odt = 40.0
+                    if _last_frame_ms is not None and now_ms is not None:
+                        _odt = max(1e-3, min(now_ms - _last_frame_ms, 200.0))
+                    target_quat = _delta_orbit.step(
+                        cube.orientation, _q_eff, _prev_hq, _odt,
+                        edge_on=palm_geometry.edge_on_measure(landmarks),
+                    edge_on_threshold=palm_geometry.EDGE_ON_THRESHOLD,
+                    # ⭐⭐ `DO3` v2 -- THE PER-AXIS POSE WINDOW. `edge_on` alone
+                    # is SYMMETRIC (palm-on and back-on both read ~1.0), so it
+                    # re-opened the gate past edge-on -- the defect the owner
+                    # found live. The palm normal carries the SIGN that
+                    # separates them, and splits per axis.
+                    # ⛔ THE PALM/BACK CUE IS THE PIPELINE'S OWN, NOT THE
+                    # NORMAL'S SIGN: that normal is CHIRALITY-ODD, and deriving
+                    # palm-vs-back from it gated the whole LEFT hand to zero.
+                    window=_delta_orbit.pose_window(
+                        _delta_orbit.palm_normal(world_landmarks),
+                        # ⛔⛔ `not`: `is_thumb_outward` is TRUE for the BACK
+                        # of the hand. Feeding it straight through inverted the
+                        # gate and killed rotation on BOTH hands.
+                        # ⚠ `is False`, not `not ...`: a MISSING cue returns None,
+                        # and `not None` is True -- which would OPEN the gate on
+                        # exactly the frames that know least. Only an explicit
+                        # False (palm to camera) opens it.
+                        _last_known_thumb_outward.get(handedness) is False))
+                    cube.orbit_prev_hand_q = _q_eff
+                else:
+                    # ⛔ DIAGNOSTIC BASELINE ONLY -- reached by `DELTA_ORBIT=legacy`.
+                    delta = _quat_multiply(_q_eff, _quat_conjugate(cube.grab_hand_orientation))
+                    target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
+                    # ⚠ Kept fresh even while the orbit path is off, so switching the slider
+                    # ON mid-session starts from THIS frame rather than from the grab -- which
+                    # would otherwise dump the whole accumulated difference in one increment.
+                    cube.orbit_prev_hand_q = _q_eff
                 cube.orientation = _quat_slerp(cube.orientation, target_quat,
                                                _rotation_slerp_factor(now_ms, handedness))
 

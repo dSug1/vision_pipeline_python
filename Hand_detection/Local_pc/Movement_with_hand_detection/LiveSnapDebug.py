@@ -52,6 +52,7 @@ import hand_identity  # noqa: E402  (path set immediately above)
 import capture_policy  # noqa: E402  (same directory; shared with production, N6)
 from Resources import camera_mount as _CMount
 from Resources import lean_trim as _lean_trim  # noqa: E402  (N6: one mount, both tools)
+from Resources import delta_orbit as _delta_orbit  # noqa: E402  (N6: one mount, both tools)
 from Resources import palm_rotation as _PRot
 from Resources import palm_depth as _PDepth  # noqa: E402  (4.1/M9, read-only)
 from Resources import session_paths  # noqa: E402  (tag sanitising, shared with production)
@@ -184,6 +185,48 @@ POSE_BLEND = 0.0
 LEAN_PITCH_GAIN = 0.0
 LEAN_ROLL_GAIN = 0.0
 
+# ⭐⭐ `DO1`/`DO2` -- delta-orbit's live values, mirrored here so `--no-sliders`
+# still runs. ⛔ SEEDED FROM THE MODULE, never repeated as literals (`L1`/`N6`: a
+# tuning constant lives in exactly one place). ⚠ There is no gain mirror: the MODE
+# is not a tunable, it is what the build IS.
+ORBIT_RATE_LO = _delta_orbit.RATE_LO
+ORBIT_RATE_HI = _delta_orbit.RATE_HI
+ORBIT_KNEE_DEG_S = _delta_orbit.KNEE_DEG_S
+# ⚠ Diagnostic only: last logged window weights per hand, so `[win]` prints on
+# CHANGE rather than every frame.
+_LAST_WIN = {}
+ORBIT_WIN_YAW = _delta_orbit.WINDOW_YAW_DEG
+ORBIT_WIN_PITCH = _delta_orbit.WINDOW_PITCH_DEG
+ORBIT_PITCH_SIGN = _delta_orbit.AXIS_SIGN[0]
+
+
+def _is_active(spec):
+    """Is this slider EXPANDED for the current build? (`SLIDERS` 6th field.)
+
+    ⚠ Absent field defaults to True, so a row written before collapsing existed
+    keeps its trackbar rather than silently vanishing."""
+    return spec[5] if len(spec) > 5 else True
+
+
+def _active_count():
+    return sum(1 for spec in SLIDERS if _is_active(spec))
+
+
+def _set_slider(name, value):
+    """Position a trackbar, tolerating a COLLAPSED slider that has none.
+
+    ⛔ Silent by design for a collapsed control -- it has no trackbar and its
+    constant already holds the value. ⚠ But a name that is in NO row at all is a
+    real defect (a rename that missed a caller), so that still raises."""
+    if not any(spec[0] == name for spec in SLIDERS):
+        raise KeyError("no slider named %r" % name)
+    if not any(spec[0] == name and _is_active(spec) for spec in SLIDERS):
+        return
+    try:
+        cv2.setTrackbarPos(name, SLIDER_WIN, value)
+    except cv2.error:
+        pass
+
 # ⭐ Measured on `2026-08-24_205729_t6d_ab_ghost`, every arm fed identical input,
 # lag read by shift-aligning against an unsmoothed replay of the same take:
 #     tau 149 ms -> 128 ms lag, cube step p95 11.44 deg   (== the shipped 0.35)
@@ -258,34 +301,88 @@ TRIM_MAX_DEG_MAX = 30
 # "damping is not stillness". It is the RELEASE deg/s + FREEZE frames pair below.
 #
 # ⚠ The displayed integer IS the applied value in its stated unit. Never an index.
+# ⭐⭐⭐ THE 6th FIELD IS `active`, AND A FALSE ONE IS **COLLAPSED**, NOT DELETED
+# (owner, 2026-08-29: *"any slider which is not in use for this build shall be
+# collapsed in the sliders window (same as collapsing a row in a html file)"*).
+#
+# A collapsed slider:
+#   * gets NO TRACKBAR, so the window is only as tall as what this build tunes --
+#     OpenCV stacks trackbars above the canvas and cannot hide one individually,
+#     so not creating it is the only way to actually shorten the panel;
+#   * KEEPS ITS CONSTANT at the module default, and `_read_sliders` carries that
+#     value through untouched -- `verify_slider_wiring` check 3 exists because
+#     retiring a control once DELETED the behaviour it controlled and killed the
+#     tool with a `NameError` on the first frame;
+#   * still prints ONE dim line in the legend, so the operator can see it exists
+#     and is collapsed. ⛔ An invisible control is how the panel came to describe
+#     things that no longer existed.
+#
+# ⚠ Flipping one back on is a single `True` -- that is the whole point of
+# collapsing rather than removing.
 SLIDERS = (
     ("SMOOTH ms", SLERP_TAU_MAX_MS, 20, lambda n: float(n),
-     "how long the cube takes to catch up to the hand's rotation"),
+     "how long the cube takes to catch up to the hand's rotation", True),
     ("GRAB radius %", 300, 100, lambda n: n / 100.0,
-     "how big the grab zone is, as % of the cube's projected footprint"),
+     "how big the grab zone is, as % of the cube's projected footprint", False),
     ("FADE ms moving", 1000, 300, lambda n: float(n),
-     "how long the cube takes to settle onto the fingertips after a grab"),
+     "how long the cube takes to settle onto the fingertips after a grab", False),
     ("WALK % of hand", 100, 25, lambda n: n / 100.0,
-     "how much of the hand's own step the cube may spend closing that gap"),
+     "how much of the hand's own step the cube may spend closing that gap", False),
     ("RELEASE deg/s", 400, 60, lambda n: float(n),
-     "hand speed above which the cube unfreezes and follows again"),
+     "hand speed above which the cube unfreezes and follows again", True),
     ("FREEZE frames", 2, 1, lambda n: int(n),
-     "how many calm frames before the cube freezes dead still"),
+     "how many calm frames before the cube freezes dead still", True),
     ("GRAB z margin cm", 30, 15, lambda n: n / 100.0,
-     "how far off the cube's depth a hand may be and still grab it"),
+     "how far off the cube's depth a hand may be and still grab it", False),
     ("LEAN pitch %", 100, 66, lambda n: n / 100.0,
-     "how much of the yaw's pitch contamination to remove"),
+     "how much of the yaw's pitch contamination to remove", True),
     ("LEAN roll %", 100, 66, lambda n: n / 100.0,
-     "how much of the yaw's roll contamination to remove"),
+     "how much of the yaw's roll contamination to remove", True),
     # ⭐⭐ AS2/AS7 -- the two mate radii, live (owner, 2026-08-28). Both are a
     # PERCENTAGE OF THE SHIPPED VALUE, so 100 is exactly what ships and the range
     # is the third-to-triple the owner asked for: 33 % .. 300 %.
     # ⚠ The floor is clamped to 33 rather than 0: at 0 the mate can never engage
     # and the panel would look broken rather than tight.
     ("MATE snap r %", 300, 100, lambda n: max(33, n) / 100.0,
-     "how close two connectors must be to mate, as % of the shipped radius"),
+     "how close two connectors must be to mate, as % of the shipped radius", False),
     ("MATE preview r %", 300, 100, lambda n: max(33, n) / 100.0,
-     "how early the ghost and dotted line appear, as % of the shipped radius"),
+     "how early the ghost and dotted line appear, as % of the shipped radius", False),
+    # ⭐⭐ `DO1`/`DO2` -- DELTA-ORBIT, WHICH IS THE BUILD (owner, 2026-08-29: *"I
+    # want pure integral of hand motion since the beginning"*). ⛔ THERE IS NO
+    # MASTER-GAIN SLIDER: a first draft had one, defaulting to the legacy path, so
+    # the build only became itself once the slider moved -- and it was a THIRD gain
+    # multiplying these two. The mode is `delta_orbit.MODE`, and `legacy` is an env
+    # var for `A10` only, never a control.
+    # ⛔ NONE OF THE THREE BELOW IS DERIVED (owner, 2026-08-29: sliders, not fixed
+    # values). Only the KNEE has a measured constraint and it is ONE-SIDED: above
+    # ~80 deg/s the hand is clear of the noise band, below ~50 deg/s it is inside
+    # it. The two gains are FEEL, settled live the way `V2`'s 0.66 was.
+    ("RATE lo %", 300, 50, lambda n: n / 100.0,
+     "cube-per-hand when moving slowly -- the precision setting", True),
+    ("RATE hi %", 300, 150, lambda n: n / 100.0,
+     "cube-per-hand when moving fast -- travel, and the clutch", True),
+    ("RATE knee deg/s", 300, 90, lambda n: float(n),
+     "hand speed where lo hands over to hi -- keep it above ~80", True),
+    # ⭐⭐ `DO3` v2 -- THE POSE WINDOW, live (owner, 2026-08-29, after the first
+    # run: *"I want to limit the delta increment to be possible only when the hand
+    # yaw angle is between zero degrees (palm facing) and 80 degrees"*, and the
+    # same for pitch at 60-70).
+    # ⚠ THESE READ IN PALM-NORMAL SWING DEGREES, WHICH ARE COMPRESSED against the
+    # hand's real angle -- the owner's ~80 deg of yaw measured ~60 here. Sliders,
+    # so the FELT edge is what gets set rather than the mapping trusted.
+    # ⛔ Past edge-on (the back of the hand toward the camera) every axis is zero
+    # regardless of these, and that is not tunable: the landmarks collapse there.
+    ("YAW window deg", 90, 60, lambda n: float(n),
+     "how far the palm may turn away before yaw stops driving", True),
+    ("PITCH window deg", 90, 45, lambda n: float(n),
+     "how far the palm may tip before pitch stops driving", True),
+    # ⭐⭐ THE PITCH SIGN, live (owner, 2026-08-29: *"yaw and roll are right ...
+    # pitch is mirrored"*). ⛔ It CANNOT be a `camera_mount` option: a conjugation
+    # reverses exactly TWO axes, so no viewpoint reverses pitch alone. This is a
+    # CONTROL-MAPPING sign, which rate control makes available. Opens INVERTED,
+    # which is the owner's reported reading.
+    ("PITCH invert 0/1", 1, 0, lambda n: -1.0 if int(n) == 0 else 1.0,
+     "0 = pitch mirrored back (owner's setting); 1 = raw", True),
 )
 
 # ⭐ OWNER'S CHOICE, 2026-08-24, settled live: **20 ms**. Reached by sweeping the
@@ -1960,11 +2057,16 @@ def _create_sliders():
     # the canvas, so a fixed height silently CLIPS the last ones -- which is how a
     # newly added slider went unseen. Sized from the table so adding one cannot
     # hide another.
-    cv2.resizeWindow(SLIDER_WIN, 520, 200 + 30 * len(SLIDERS))
+    # ⚠ SIZED FROM THE **ACTIVE** COUNT, not from `len(SLIDERS)`: a collapsed
+    # slider has no trackbar, so counting all of them would leave a tall empty
+    # panel and defeat the collapsing.
+    cv2.resizeWindow(SLIDER_WIN, 520, 200 + 30 * _active_count())
     # ⚠ INDEXED, NOT UNPACKED. A fixed-arity unpack here broke the tool the
     # day the description field was added -- `_create_sliders` needs a window,
     # so no fixture reached it. Indexing tolerates the row growing again.
     for spec in SLIDERS:
+        if not _is_active(spec):
+            continue          # collapsed: no trackbar, constant keeps its default
         name, maxv, start = spec[0], spec[1], spec[2]
         cv2.createTrackbar(name, SLIDER_WIN, start, maxv, lambda _v: None)
 
@@ -1988,8 +2090,17 @@ def _read_sliders() -> None:
     global STEADY_RELEASE_DEG_S, STEADY_FREEZE_FRAMES
     global LEAN_PITCH_GAIN, LEAN_ROLL_GAIN
     global MATE_SNAP_R_SCALE, MATE_PREVIEW_R_SCALE
+    global ORBIT_RATE_LO, ORBIT_RATE_HI, ORBIT_KNEE_DEG_S
+    global ORBIT_WIN_YAW, ORBIT_WIN_PITCH, ORBIT_PITCH_SIGN
+    # ⛔ A COLLAPSED SLIDER STILL PRODUCES A VALUE -- its own default, converted the
+    # same way. That keeps this list the SAME LENGTH as `SLIDERS` and therefore the
+    # positional unpack below exactly as it was. ⚠ `verify_slider_wiring` check 1
+    # guards that arity because getting it wrong shifts every slider's meaning by
+    # one, silently.
     try:
-        vals = [spec[3](cv2.getTrackbarPos(spec[0], SLIDER_WIN)) for spec in SLIDERS]
+        vals = [spec[3](cv2.getTrackbarPos(spec[0], SLIDER_WIN))
+                if _is_active(spec) else spec[3](spec[2])
+                for spec in SLIDERS]
     except cv2.error:
         return
     # ⚠ THREE sliders now -- three others are parked (see `SLIDERS`). The parked
@@ -1998,10 +2109,27 @@ def _read_sliders() -> None:
     # 2026-08-28 (see `SLIDERS`); their constants keep their module defaults and the
     # rigs set them directly, so nothing that used them stopped working.
     # ⚠ ELEVEN now: `MATE snap r %` and `MATE preview r %` were added 2026-08-28.
+    # ⚠ SEVENTEEN now: `DO2` three rate constants, `DO3` two window ones, and the
+    # pitch sign (`DO5`).
+    # 2026-08-29. Six of the fifteen are COLLAPSED for this build and simply carry
+    # their defaults through (see `SLIDERS`).
     (SLERP_TAU_MS, GRAB_RADIUS_MULTIPLIER, GRIP_ALIGN_MOVING_MS,
      GRIP_ALIGN_MASK_RATIO, STEADY_RELEASE_DEG_S, STEADY_FREEZE_FRAMES,
      GRAB_Z_TOLERANCE_M, LEAN_PITCH_GAIN, LEAN_ROLL_GAIN,
-     MATE_SNAP_R_SCALE, MATE_PREVIEW_R_SCALE) = vals
+     MATE_SNAP_R_SCALE, MATE_PREVIEW_R_SCALE,
+     ORBIT_RATE_LO, ORBIT_RATE_HI, ORBIT_KNEE_DEG_S,
+     ORBIT_WIN_YAW, ORBIT_WIN_PITCH, ORBIT_PITCH_SIGN) = vals
+    # ⭐ `L1`: the tuning constant lives in ONE module. The sliders write
+    # `delta_orbit`'s own names; production reads the same module and has no
+    # sliders, which is what keeps `parity_replay` meaningful.
+    _delta_orbit.RATE_LO = ORBIT_RATE_LO
+    _delta_orbit.RATE_HI = ORBIT_RATE_HI
+    _delta_orbit.KNEE_DEG_S = ORBIT_KNEE_DEG_S
+    _delta_orbit.WINDOW_YAW_DEG = ORBIT_WIN_YAW
+    _delta_orbit.WINDOW_PITCH_DEG = ORBIT_WIN_PITCH
+    # ⚠ Only the PITCH component is driven from the panel; yaw and roll were
+    # judged correct live, so they stay +1 and are not exposed as knobs.
+    _delta_orbit.AXIS_SIGN = (ORBIT_PITCH_SIGN, 1.0, 1.0)
     # ⭐⭐ THE TWO MATE RADII, driven from the SHIPPED baselines captured at import.
     # ⛔ Scaling the module's CURRENT value instead would compound every frame --
     # the slider would run away on its own.
@@ -2188,19 +2316,39 @@ def _draw_slider_panel(open_: bool):
     """
     if not open_ or cv2.getWindowProperty(SLIDER_WIN, cv2.WND_PROP_VISIBLE) < 1:
         return
-    row_h, top = 34, 34
-    canvas = np.zeros((top + row_h * len(SLIDERS) + 10, 520, 3), dtype=np.uint8)
+    # ⭐⭐ TWO ROW HEIGHTS: an EXPANDED row carries its value AND its one-line
+    # purpose (the owner's standing rule); a COLLAPSED row is a single dim line.
+    # ⚠ The canvas is sized from the actual mix, not from `len(SLIDERS)` -- sizing
+    # for the worst case would leave the dead space collapsing exists to remove.
+    row_h, small_h, top = 34, 16, 34
+    height = top + 10 + sum(row_h if _is_active(sp) else small_h for sp in SLIDERS)
+    canvas = np.zeros((height, 520, 3), dtype=np.uint8)
     cv2.putText(canvas, "value  --  what it does", (10, 22),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (110, 110, 110), 1, cv2.LINE_AA)
-    for i, spec in enumerate(SLIDERS):
+    y = top
+    for spec in SLIDERS:
         name, _maxv, _start, conv = spec[0], spec[1], spec[2], spec[3]
         what = spec[4] if len(spec) > 4 else ""
-        try:
-            raw = cv2.getTrackbarPos(name, SLIDER_WIN)
-        except cv2.error:
-            raw = _start
+        active = _is_active(spec)
+        if active:
+            try:
+                raw = cv2.getTrackbarPos(name, SLIDER_WIN)
+            except cv2.error:
+                raw = _start
+        else:
+            raw = _start          # collapsed: no trackbar exists to read
         val = conv(raw)
-        y = top + i * row_h
+        if not active:
+            # ⛔ COLLAPSED, NOT HIDDEN. One dim line, marked, with the value it is
+            # holding -- an operator must be able to see that the control exists,
+            # what it is parked at, and that this build is not using it. A panel
+            # that simply omitted them is how it came to describe controls that no
+            # longer existed at all.
+            cv2.putText(canvas, "  %-16s %-6s   (collapsed)" % (name, "%g" % val),
+                        (10, y + 11), cv2.FONT_HERSHEY_SIMPLEX, 0.38,
+                        (95, 95, 95), 1, cv2.LINE_AA)
+            y += small_h
+            continue
         # ⭐ The applied value, in the slider's own unit. Dim when the control is at
         # zero, because "off" is a state the operator needs to read at a glance --
         # several of these are bit-exact passthrough at 0.
@@ -2210,6 +2358,7 @@ def _draw_slider_panel(open_: bool):
                     (120, 255, 200) if live else (120, 120, 255), 1, cv2.LINE_AA)
         cv2.putText(canvas, what, (10, y + 28), cv2.FONT_HERSHEY_SIMPLEX, 0.38,
                     (165, 165, 165), 1, cv2.LINE_AA)
+        y += row_h
     try:
         cv2.imshow(SLIDER_WIN, canvas)
     except cv2.error:
@@ -2867,8 +3016,80 @@ def update_hands(state: CubeState, hand_data_by_hand, snap_blocked=frozenset(),
                 tip_trim.palm_span_m(data["world_landmarks"]), now_ms, gain=_gain)
             _q_eff = (hand_quat_now if _trim_q is tip_trim.IDENTITY
                       else _quat_multiply(hand_quat_now, _trim_q))
-            delta = _quat_multiply(_q_eff, _quat_conjugate(cube.grab_hand_orientation))
-            target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
+            # ⭐⭐⭐ `DO1` -- DELTA-ORBIT IS THE BUILD. The object's rotation is the
+            # INTEGRAL of the hand's, from the grab onward, and nothing else contributes.
+            #
+            #   MODE = "orbit"  (default, and what the game runs)
+            #        target = scale(q_eff . q_eff(t-1)^-1) . cube(now)      RATE control
+            #   MODE = "legacy" (diagnostic ONLY -- `A10` / `parity_replay`)
+            #        target = (q_eff . q_eff(grab)^-1) . cube(grab)          the 1.7.40 path
+            #
+            # ⛔ THE TWO NEVER MIX, AND THE DEFAULT IS THE NEW ONE. Owner, 2026-08-29:
+            # *"I do not want to have a mix of hand follow and integral of hand motion. I
+            # want pure integral of hand motion since the beginning with no interference of
+            # what we previously built."* ⚠ The first draft was not a blend either -- it was
+            # a hard switch -- but it DEFAULTED to the legacy path, so the build only became
+            # itself once a slider moved. `legacy` is not a deployment: it exists so the
+            # pre-change build stays reachable bit-for-bit, which `A10` requires. Same shape
+            # as `CAMERA_MOUNT=legacy`.
+            #
+            # ⭐⭐ THE SLERP BELOW IS NOT THE OLD PATH LEAKING IN -- IT IS THE DAMPER. The
+            # drift control for an integrating build is the shipped FREEZE (`RELEASE deg/s`
+            # + `FREEZE frames`), and the freeze lives in the slerp factor. Composing
+            # straight onto `cube.orientation` would bypass it and reinstate the measured
+            # 43/35/48 deg-per-minute drift.
+            # ⚠ Consequence: the effective CD gain is `rate_gain x slerp_factor` (~0.86 at
+            # tau 20 ms / 40 ms frames) -- a constant the `RATE` sliders absorb.
+            if _delta_orbit.MODE == _delta_orbit.ORBIT:
+                _prev_hq = getattr(cube, "orbit_prev_hand_q", None)
+                if _prev_hq is None:
+                    _prev_hq = cube.grab_hand_orientation
+                # ⚠ Clamped like the slerp's own dt: a long stall must not arrive
+                # as one enormous increment.
+                _odt = 40.0
+                if state.last_frame_ms is not None and now_ms is not None:
+                    _odt = max(1e-3, min(now_ms - state.last_frame_ms,
+                                         _SLERP_MAX_DT_MS))
+                # ⭐⭐ THE WINDOW, COMPUTED ON ITS OWN LINE AND LOGGED WHEN IT
+                # CHANGES. This gate has now been wrong twice in one session -- once
+                # on the normal's chirality, once on the cue's polarity -- and both
+                # times the tool looked identical from outside while an axis was
+                # silently dead. `METHOD`: make the tool log its OWN evidence rather
+                # than reconstruct scenarios; that is what found `AS8` after six
+                # failed offline reproductions.
+                # ⛔ `not`: `is_thumb_outward` is TRUE for the BACK of the hand.
+                _win = _delta_orbit.pose_window(
+                    _delta_orbit.palm_normal(data["world_landmarks"]),
+                    state.last_known_thumb_outward[handedness] is False)
+                _wkey = (handedness, tuple(round(w, 1) for w in _win))
+                if _wkey != _LAST_WIN.get(handedness):
+                    _LAST_WIN[handedness] = _wkey
+                    print("[win] %-5s pitch %.2f  yaw %.2f  roll %.2f%s"
+                          % (handedness, _win[0], _win[1], _win[2],
+                             "   <-- CLOSED" if max(_win) == 0.0 else ""))
+                target_quat = _delta_orbit.step(
+                    cube.orientation, _q_eff, _prev_hq, _odt,
+                    edge_on=palm_geometry.edge_on_measure(data["pixel_landmarks"]),
+                    edge_on_threshold=palm_geometry.EDGE_ON_THRESHOLD,
+                    # ⭐⭐ `DO3` v2 -- THE PER-AXIS POSE WINDOW. `edge_on` alone
+                    # is SYMMETRIC (palm-on and back-on both read ~1.0), so it
+                    # re-opened the gate past edge-on -- the first defect the
+                    # owner found live. The normal splits the pose PER AXIS.
+                    # ⛔⛔ THE PALM/BACK CUE IS THE PIPELINE'S OWN, NEVER THE
+                    # NORMAL'S SIGN: that normal is CHIRALITY-ODD (out of the
+                    # palm for one hand, out of the back for the other), and
+                    # deriving palm-vs-back from it gated the whole LEFT hand
+                    # to zero -- the second defect, found in one run.
+                    window=_win)
+                cube.orbit_prev_hand_q = _q_eff
+            else:
+                # ⛔ DIAGNOSTIC BASELINE ONLY -- reached by `DELTA_ORBIT=legacy`.
+                delta = _quat_multiply(_q_eff, _quat_conjugate(cube.grab_hand_orientation))
+                target_quat = _quat_multiply(delta, cube.grab_cube_orientation)
+                # ⚠ Kept fresh even while the orbit path is off, so switching the slider
+                # ON mid-session starts from THIS frame rather than from the grab -- which
+                # would otherwise dump the whole accumulated difference in one increment.
+                cube.orbit_prev_hand_q = _q_eff
             # Slerp was temporarily disabled 2026-08-01 to isolate and
             # diagnose the back-toward-camera noise from any smoothing
             # artifact (confirmed: the chaos was a faithful reflection of
@@ -3539,19 +3760,28 @@ def main():
     # it onto a second screen while turning their hand.
     if args.sliders:
         _create_sliders()
-        cv2.setTrackbarPos(SLIDERS[0][0], SLIDER_WIN, int(round(SLERP_TAU_MS)))
+        # ⛔ VIA `_set_slider`, NEVER `cv2.setTrackbarPos` DIRECTLY. A COLLAPSED
+        # slider has no trackbar, and positioning one that does not exist raises
+        # `cv2.error` and kills the tool on startup -- the exact shape of the
+        # 2026-08-28 `NameError` that `verify_slider_wiring` was written for.
+        _set_slider(SLIDERS[0][0], int(round(SLERP_TAU_MS)))
         # ⭐ The applied value, not the table's placeholder.
-        cv2.setTrackbarPos("GRAB radius %", SLIDER_WIN,
-                           int(round(GRAB_RADIUS_MULTIPLIER * 100)))
-        cv2.setTrackbarPos("FADE ms moving", SLIDER_WIN,
-                           int(round(GRIP_ALIGN_MOVING_MS)))
-        cv2.setTrackbarPos("WALK % of hand", SLIDER_WIN,
-                           int(round(GRIP_ALIGN_MASK_RATIO * 100)))
-        cv2.setTrackbarPos("GRAB z margin cm", SLIDER_WIN,
-                           int(round(GRAB_Z_TOLERANCE_M * 100)))
+        _set_slider("GRAB radius %", int(round(GRAB_RADIUS_MULTIPLIER * 100)))
+        _set_slider("FADE ms moving", int(round(GRIP_ALIGN_MOVING_MS)))
+        _set_slider("WALK % of hand", int(round(GRIP_ALIGN_MASK_RATIO * 100)))
+        _set_slider("GRAB z margin cm", int(round(GRAB_Z_TOLERANCE_M * 100)))
         # ⭐ Both open at 100 % — exactly the shipped radii, with 33..300 either side.
-        cv2.setTrackbarPos("MATE snap r %", SLIDER_WIN, 100)
-        cv2.setTrackbarPos("MATE preview r %", SLIDER_WIN, 100)
+        _set_slider("MATE snap r %", 100)
+        _set_slider("MATE preview r %", 100)
+        # ⭐ `DO2`: the rate controls open at the MODULE's values, so the panel and
+        # the module cannot disagree at startup. ⚠ There is no mode control here —
+        # delta-orbit IS the build; `DELTA_ORBIT=legacy` is an env var for `A10`.
+        _set_slider("RATE lo %", int(round(ORBIT_RATE_LO * 100)))
+        _set_slider("RATE hi %", int(round(ORBIT_RATE_HI * 100)))
+        _set_slider("RATE knee deg/s", int(round(ORBIT_KNEE_DEG_S)))
+        _set_slider("YAW window deg", int(round(ORBIT_WIN_YAW)))
+        _set_slider("PITCH window deg", int(round(ORBIT_WIN_PITCH)))
+        _set_slider("PITCH invert 0/1", 0 if ORBIT_PITCH_SIGN < 0 else 1)
         # ⛔ Z rate parked -- no trackbar to position.
         #   cv2.setTrackbarPos("Z rate %/s", SLIDER_WIN,
         #                      int(round(DEPTH_RATE_PER_S * 100)))

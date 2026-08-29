@@ -76,14 +76,27 @@ for. Using the wrong one overstates every floor.
 
 | axis | wobble at rest (p95) | resolves from |
 |---|---|---|
-| **ROLL** | **1.61°** | **~3–5°** |
-| **YAW** | **2.02°** | **~8–10°** |
-| **PITCH** | **29.3°** (2nd take 11.6°) | **~50–60°** |
+| **ROLL** | **3.22°** | **~3–5°** |
+| **YAW** | **4.04°** | **~8–10°** |
+| **PITCH** | **58.6°** (2nd take 23.2°) | **~50–60°** |
 
-⛔⛔ **PITCH IS THE FINDING: its orientation wobbles ±29° at p95 WHILE THE HAND IS
-STILL** — 15x yaw's and 18x roll's. Every pitch band under 60° sits at snr ≤ 0.7,
+⛔⛔ **THESE THREE DOUBLED ON 2026-08-29 and the first version of this table was
+half.** `lean_trim_ab.geo_deg` returned the geodesic on the quaternion sphere S³,
+which double-covers SO(3) — so it reported **half the rotation angle**, for the whole
+life of that file. ⭐⭐ **Every `V2` verdict is unaffected**, because that gate is a
+RATIO and a constant factor cancels exactly (1.072x, 1.166x, 0.892x all stand).
+⭐ Caught by `analysis/verify_delta_orbit.py`, which asserts a hand-computed 20°
+instead of only asserting two things are close. ⚠ `analysis/` only — no shipped
+module imports it. ⭐⭐⭐ **THE RULE: A METRIC USED ONLY IN RATIOS IS NEVER
+SCALE-CHECKED BY ITS OWN CONSUMERS.**
+
+⛔⛔ **PITCH IS THE FINDING: its orientation wobbles ±59° at p95 WHILE THE HAND IS
+STILL** — 15x yaw's and 18x roll's. ⚠⚠ **AND THIS FIGURE IS POOLED ACROSS POSES,
+WHICH LATER TURNED OUT TO BE THE WRONG CUT** — it is almost entirely the 120–180°
+bin, past edge-on. Per pose, on a GRIPPING hand, pitch is 1.1–4.8°. See
+`analysis/delta_orbit_window.py` and `SPEC_DELTA_ORBIT.md` §14. Every pitch band under 60° sits at snr ≤ 0.7,
 so a 25° pitch hold is *smaller than the pipeline's own frame-to-frame noise*.
-⚠ Confirmed on both pitch takes (29.3° and 11.6°): they agree on the direction and
+⚠ Confirmed on both pitch takes (58.6° and 23.2°): they agree on the direction and
 disagree on the size, so *"far worse"* is solid and the number is not.
 
 ### 2. SCALE — the gain, about each axis's OWN axis
@@ -130,8 +143,8 @@ face-on and would bias the low bands).
 The metric is the swing; `V2` multiplies the swing by 0.34. *"27.3 → 9.3"* is that
 multiplication, not evidence the object looks upright. ⭐ What IS independent: the
 authority is **1.00 on 100% of frames** here (so the factor really does apply across
-the whole range), and the per-frame jump **improves** (1.70°→1.36° median,
-7.17°→6.57° p95) rather than being bought with tail steadiness — which is how the
+the whole range), and the per-frame jump **improves** (3.39°→2.98° median,
+14.34°→13.52° p95) rather than being bought with tail steadiness — which is how the
 three predecessors died.
 
 ### ⭐ THE ANSWER, PER AXIS

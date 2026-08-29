@@ -17,6 +17,167 @@ newest-first is restored, the entry bodies are byte-identical, and
 
 ---
 
+## 2026-08-29 (late) — the owner refused a build that defaulted to the old one
+
+> *"I do not want to have a mix of hand follow and integral of hand motion. I want
+> pure integral of hand motion since the beginning with no interference of what we
+> previously built."*
+
+⚠ **The wiring was not a blend, and saying so was not the point.** `ORBIT_GAIN` was
+a hard switch; no frame ever had both paths contributing. But two things about it
+were genuinely wrong, and the objection found both:
+
+1. ⛔ **It DEFAULTED to the legacy path.** The build only became itself once a
+   slider moved — that is an option bolted onto the old build, not a build.
+2. ⛔ **It carried a THIRD gain**, multiplying the two `RATE` ones. Two controls
+   doing one job, and a half-open master that reads exactly like a partial mix.
+   **A third gain is a blend by another name**, whatever the code does underneath.
+
+✅ Both removed. `delta_orbit.MODE` defaults to `orbit`; `step()` takes no gain
+argument; the `ORBIT gain %` slider is gone. `DELTA_ORBIT=legacy` survives ONLY as a
+diagnostic, because `A10` requires the pre-change build to stay reachable
+bit-for-bit — which is `V1`'s shape exactly, and the owner had already accepted it
+there (`CAMERA_MOUNT=legacy`).
+
+✅ 46/46 suites, `verify_delta_orbit` 10/10, and **`parity_replay` NO DIVERGENCE in
+BOTH modes**. ⭐ §2 of the vectors now asserts the default mode and that no `gain`
+argument exists, so neither mistake can return quietly.
+
+⭐⭐ **THE REUSABLE PART: A SWITCH THAT DEFAULTS TO THE OLD BEHAVIOUR IS NOT A
+BUILD.** The project already had the right pattern in `V1` and this row reached for
+the wrong one — defaulting to safety looks conservative and instead ships the thing
+the branch exists to replace.
+
+---
+
+## 2026-08-29 (evening) — `DO1`–`DO3` BUILT in both tools, and sliders that collapse
+
+✅ **`Resources/delta_orbit.py` + `analysis/verify_delta_orbit.py` (10/10), wired
+into BOTH tools behind `ORBIT gain %` = 0.** 46/46 suites; `parity_replay` clean on
+`stripped` and `freeze` — so gain 0 really is today's build, bit-for-bit.
+
+⭐⭐⭐ **THE WIRING'S ONE REAL DECISION, and it is the whole reason the design is
+safe: DELTA-ORBIT PRODUCES A `target_quat` AND GOES THROUGH THE EXISTING SLERP**,
+rather than composing onto `cube.orientation`. The drift control for an integrating
+build is the shipped FREEZE — and the freeze lives in the slerp factor. Composing
+directly would have bypassed it and reinstated the measured 43/35/48°-per-minute
+drift the row exists to avoid. ⚠ The cost is a constant (`rate_gain × slerp_factor`,
+~0.86 at τ 20 ms) that the `RATE` sliders absorb — a scale, not a distortion.
+
+## ⭐⭐ COLLAPSING (owner)
+
+> *"any slider which is not in use for this build shall be collapsed in the sliders
+> window (same as collapsing a row in a html file)."*
+
+A 6th field per `SLIDERS` row. Collapsed ⇒ **no trackbar** (OpenCV stacks trackbars
+above the canvas and cannot hide one individually, so not creating it is the only
+way to actually shorten the panel), **constant kept**, and **one dim line** still
+printed so the control reads as parked rather than gone — the panel had previously
+drifted into describing controls that no longer existed at all. Nine expanded, six
+collapsed; flipping one back is a single `True`.
+
+⛔ `_set_slider` replaces every raw `cv2.setTrackbarPos`: positioning a trackbar that
+does not exist raises and kills the tool at startup, which is the same shape as the
+2026-08-28 `NameError` that `verify_slider_wiring` was written for.
+
+⚠⚠ **AND THE GUARD ITSELF CARRIED THE FRAGILITY IT EXISTS TO CATCH.**
+`verify_slider_wiring` built its fake trackbar map with a fixed **5-tuple unpack**,
+so the new 6th field broke it — in a file whose own comments say *"INDEXED, NOT
+UNPACKED"* and whose whole purpose is guarding against arity drift. Fixed, and it
+gained a §6 covering collapsing, `_set_slider`, and the no-raw-`setTrackbarPos`
+rule. ⭐ One of its own MATE checks then started passing while testing nothing (a
+collapsed slider feeds its default), so those rows are now forced active for the
+duration of that check and restored after — otherwise it would have printed PASS on
+an empty test, which is the `AS` row's "passed for the wrong reason" failure again.
+
+⛔ **Owed: a live look in both tools**, for this and for `V2`'s double-cover fix.
+⛔ `DO4`, the window's outer edge, remains the one open number.
+
+---
+
+## 2026-08-29 (later) — `1.7.41` opened: rate control, three takes, and a factor of two
+
+Branch `1.7.41-Hand-delta-orbit`. The object's POSITION keeps following the hand
+exactly as `F1` shipped; its ROTATION becomes an INTEGRAL of hand motion. Design of
+record: [`../spec/SPEC_DELTA_ORBIT.md`](../spec/SPEC_DELTA_ORBIT.md), rows
+`DO1`–`DO4`.
+
+⭐⭐ **THE OWNER SUPPLIED A UNITY `OrbitMovement` AS THE PATTERN**, and the useful
+work was deciding which parts of it to port. The leaky accumulator and the clamp
+translate; ⛔ **the Euler angles must not** (`M6a`, queue `1.3`), and ⛔⛔ **neither
+must its deadzone** — see below.
+
+## ⭐ Three stepped, GRIPPING takes were recorded for this
+
+The first takes in the project whose holds are **declared** (`RecordPerceptionSequence`
+now walks the operator through timed steps and stamps every frame with its step)
+rather than inferred from a threshold on a noisy truth, and whose hand **grips**
+rather than opens — `T6`'s closing rule, which had already cost that row twice.
+⚠ The first roll attempt recorded 985 frames with a hand in **0** of them; kept on
+`E:` as evidence about the protocol, re-recorded clean.
+
+## ⛔⛔ FOUR OF MY OWN CONCLUSIONS WERE OVERTURNED BY MEASUREMENT, IN ONE SESSION
+
+1. **"Pitch is unusable for this design."** From a POOLED ±29° figure that was
+   almost entirely the 120–180° bin — past edge-on, the `T1` collapse. Per pose,
+   gripping, pitch is 1.1–4.8°. **A pooled statistic answered a question about a
+   region.** The owner's premise — that a usable window exists — was right.
+2. **"The rate curve does double duty as a noise rejector."** Refuted: noise and
+   slow deliberate motion are the SAME SIZE (yaw 0.62/1.45 vs 0.66/1.50 deg/frame).
+   **No knee separates them.** Two jobs, two mechanisms — the shipped FREEZE handles
+   noise, the curve handles feel.
+3. **"A deadzone controls drift."** Measured making it WORSE: 43 → 72 deg/min on
+   yaw. ⭐⭐ The noise is a random walk whose small steps CANCEL; a deadzone throws
+   the cancellation away and keeps the excursions. **The curve must SCALE, never
+   REJECT** — which is precisely the one line of the Unity reference to leave behind.
+4. **"`V2` may become unnecessary in delta mode."** The opposite: it costs +10% on
+   the yaw delta noise, but the lean is ~0.35 × the turn and now ACCUMULATES instead
+   of staying bounded. It matters more here.
+
+⭐ And a fifth, from the owner: **the harness's pitch truth was the wrong axis.**
+*"in my game, the angle is between the fingertips and the basis of the palm"* — the
+palm length is NON-MONOTONE over the first three holds, so `acos` folded declared
+0/15/30 into one bucket; the fingertip axis is monotone throughout.
+`span(kind="tip_length")` now carries it. ⚠ It does NOT fix yaw: for yaw the
+fingertip axis IS the rotation axis (measured 1.3–11.9° off vertical through the
+whole take) and carries almost no signal.
+
+## ⛔⛔ AND A FACTOR OF TWO, IN AN INSTRUMENT THAT HAD CARRIED IT ALL ALONG
+
+`lean_trim_ab.geo_deg` returned `2*atan2(|a-b|,|a+b|)` — the geodesic on the
+quaternion sphere S³. **S³ double-covers SO(3), so that is HALF the rotation angle.**
+Verified against `palm_rotation.quat_angle_deg`: a 90° rotation read 45°.
+
+⭐⭐ **IT SURVIVED BECAUSE THE GATE IT EXISTS FOR IS A RATIO.** `V2`'s p95 jump
+ratio divides one by the other and a constant factor cancels exactly — every verdict
+that row ever reached is unchanged (1.072x, 1.166x, 0.892x, 0.995x, re-run and
+identical). ⛔ But every ABSOLUTE number read off it was half, including the tables
+written into this log and into `ROTATION_ACCEPTANCE_AND_TRAPS` earlier the same day.
+All corrected; ⚠ `analysis/` only — no shipped module imports it.
+
+⭐ **It was caught by the new row's own golden vectors**, because
+`verify_delta_orbit` §4 asserts a **hand-computed 20°** rather than only asserting
+that two things are close to each other.
+
+⭐⭐⭐ **THE METHOD RULE: A METRIC USED ONLY IN RATIOS IS NEVER SCALE-CHECKED BY ITS
+OWN CONSUMERS.** A helper returning a physical quantity must be checked against a
+KNOWN input at least once. ⚠ The concrete cost here: the first `KNEE_DEG_S` default
+sat on the **wrong side** of the one measured constraint this design has.
+
+## What is built
+
+`Resources/delta_orbit.py` (stdlib, clock-free, `gain 0` → today's build
+bit-for-bit) and `analysis/verify_delta_orbit.py` — **10 sections, all passing**,
+including the negated-quaternion vectors the previous day's double-cover defect
+bought. ⛔ **Nothing is wired into either tool yet**, deliberately: `CONSTRAINTS` §3
+is golden vectors before wiring.
+
+⚠ Still owed: `V2`'s live look, and `DO4` — the outer edge of the window, which the
+three takes did not reach (they stopped at ~57° yaw / ~75° pitch of measured pose,
+and the collapse is at 120–180°). The owner deferred the wide-range take.
+
+---
+
 ## 2026-08-29 — a question about ACCURACY found a defect in the shipped trim
 
 ⭐⭐ **NOBODY WAS LOOKING FOR A BUG.** The owner asked where rotation is most
