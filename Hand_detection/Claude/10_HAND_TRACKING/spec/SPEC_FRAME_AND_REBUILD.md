@@ -139,6 +139,42 @@ pins signs against declared truth catches all four before they reach a camera.
 2026-08-29 (`window_yaw_grip`, `window_pitch_grip`, `window_roll_grip`), whose holds
 are **declared** rather than inferred.
 
+## 8bis. ✅ `RB0`–`RB2` BUILT 2026-08-29 — and the one thing still untested
+
+| | |
+|---|---|
+| `Resources/hand_frame.py` | the whole viewpoint + chirality. Stdlib, clock-free |
+| `analysis/verify_frame_signs.py` | §1–7. Keeps its OWN Horn fit and determinant so it can fail on the module, but takes the VIEWPOINT from it |
+
+✅ **`RB0` — the invariant holds, measured**: yaw reads **+28.27° in BOTH mounts**,
+identical rather than merely same-signed; pitch and roll flip cleanly
+(+68.35/−68.35, +69.60/−69.60); the chirality determinant is unchanged by the
+viewpoint on all three takes; and **negate-z alone inverts it**, kept as the
+counter-example so nobody re-proposes the operation `V1` rightly refused.
+
+✅✅ **`RB2` — chirality is SOLVED, on declared ground truth: 788/788.**
+
+| take | declared | `is_right_hand` |
+|---|---|---|
+| `known_right_palm` / `_back` | Right | **198/198**, **199/199** |
+| `known_left_palm` / `_back` | Left | **200/200**, **191/191** |
+
+⭐ **And it is independent of FACING** — palm and back takes agree, which is what a
+chirality must do and what `is_thumb_outward` (a palm/back cue) never could. That
+conflation is exactly what produced the 2026-08-29 polarity defect.
+
+⛔⛔ **MediaPipe's LABEL agreed on 0 of 788 frames.** It names the APPARENT hand of a
+mirrored capture, i.e. systematically the opposite of the physical one. `METHOD`
+rule 4 already forbids keying a stream on it; this is that rule with a number.
+**Nothing in `1.7.42` reads the label**, and §7 asserts it stays that way.
+
+⚠⚠ **THE ONE UNTESTED THING, AND IT IS NAMED RATHER THAN ASSUMED**: the sign
+convention above is measured on **MIRRORED** capture, because every one of the 415
+corpus takes is mirrored. `1.7.42` detects **un-mirrored**, and a mirror is det −1,
+so the determinant is **predicted to flip**. That prediction cannot be tested from
+this corpus. It ships as `CAPTURE_MIRRORED = False` — a named switch rather than a
+silent assumption — and **one un-mirrored known-hand recording closes it**.
+
 ## 9. Acceptance
 
 1. `RB0` passes for both mounts and both hands before `RB1` is written.

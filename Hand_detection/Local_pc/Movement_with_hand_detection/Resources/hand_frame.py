@@ -137,6 +137,47 @@ def signed_palm_volume(world_landmarks):
     return cx[0] * c[0] + cx[1] * c[1] + cx[2] * c[2]
 
 
+# ⭐⭐⭐ `RB2` — CHIRALITY, AND WHICH SIGN MEANS WHICH HAND.
+#
+# MEASURED on the four DECLARED-hand takes of 2026-08-03, through
+# `to_user_frame`, **788/788 frames**:
+#
+#     known_right_palm   det > 0 in 100.0%      known_left_palm   det > 0 in 0.0%
+#     known_right_back   det > 0 in 100.0%      known_left_back   det > 0 in 0.0%
+#
+# ⭐ Perfect separation, and INDEPENDENT OF FACING -- palm and back agree, which is
+# what a chirality must do and what `is_thumb_outward` (a palm/back cue) never
+# could. ⭐⭐ It is also frame-invariant: every mount here is a rotation.
+#
+# ⛔⛔ AND THE LABEL DISAGREED ON **100.0%** OF THOSE FRAMES. MediaPipe's handedness
+# is the APPARENT hand of a MIRRORED capture, i.e. systematically the opposite of
+# the physical one. `METHOD` rule 4 already says never to key a stream on it; this
+# is the same fact with a number on it. **Nothing in `1.7.42` reads the label.**
+#
+# ⚠⚠ THE SIGN BELOW IS FOR **MIRRORED** CAPTURE, WHICH IS WHAT THE WHOLE 415-TAKE
+# CORPUS IS. `1.7.42` detects UN-MIRRORED (§4), and a mirror is det -1, so the
+# determinant is PREDICTED to flip. That prediction is **NOT TESTED** -- it cannot
+# be, from a corpus that contains no un-mirrored take -- so it is a switch with its
+# own name rather than a silent assumption, and `RB2`'s remaining work is one
+# un-mirrored known-hand recording to fix it.
+CAPTURE_MIRRORED = False
+_RIGHT_IS_POSITIVE_WHEN_MIRRORED = True
+
+
+def is_right_hand(world_landmarks):
+    """The physical hand, from geometry alone. `None` when degenerate.
+
+    ⛔ NEVER from MediaPipe's label: measured to disagree with the declared hand on
+    100% of 788 frames, because it names the APPARENT hand of a mirrored capture."""
+    v = signed_palm_volume(world_landmarks)
+    if v is None or v == 0.0:
+        return None
+    positive_is_right = _RIGHT_IS_POSITIVE_WHEN_MIRRORED
+    if not CAPTURE_MIRRORED:
+        positive_is_right = not positive_is_right
+    return (v > 0.0) == positive_is_right
+
+
 # ⭐⭐ DISPLAY ONLY, AND THE NAME SAYS SO. The player should see themselves as in a
 # mirror; that is a drawing decision and it must never reach the geometry. ⛔ It is
 # deliberately NOT a function of `MOUNT`: coupling them is how the 2026-08-28 build

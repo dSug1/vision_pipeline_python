@@ -326,6 +326,54 @@ def main():
     ok("⛔ DISPLAY_MIRROR is a drawing choice, never geometry",
        isinstance(HF.DISPLAY_MIRROR, bool), "not a function of the mount")
 
+    # ── 7. `RB2` — chirality against DECLARED hands ──────────────────
+    # ⭐⭐ The four 2026-08-03 takes declare BOTH the hand and the facing, so they
+    # separate two things that are constantly confused: CHIRALITY (which hand) and
+    # PALM/BACK (which way it points). A chirality must be independent of facing;
+    # `is_thumb_outward` is a facing cue and never could be.
+    print()
+    print("7. ⭐⭐ RB2 — CHIRALITY vs DECLARED HANDS (and NOT the label)")
+    declared = (("2026-08-03_164709_known_right_palm", True),
+                ("2026-08-03_164745_known_right_back", True),
+                ("2026-08-03_164805_known_left_palm", False),
+                ("2026-08-03_164825_known_left_back", False))
+    # ⚠ The corpus is MIRRORED capture; the module ships for un-mirrored. Force
+    # the convention to the corpus for the duration, and restore -- otherwise this
+    # section would silently test the wrong switch position and still print PASS.
+    _saved = HF.CAPTURE_MIRRORED
+    HF.CAPTURE_MIRRORED = True
+    try:
+        tot_ok = tot_n = label_agree = 0
+        for key, want_right in declared:
+            sess, fr = load(key)
+            if not fr:
+                print("     -- %s: not found" % key)
+                continue
+            good = 0
+            for wl, hd, _st in fr:
+                got = HF.is_right_hand(HF.to_user_frame(wl))
+                good += (got is want_right)
+                label_agree += ((hd == "Right") is want_right)
+            tot_ok += good
+            tot_n += len(fr)
+            ok("%-34s %s" % (key[11:45], "Right" if want_right else "Left "),
+               good == len(fr), "%d/%d" % (good, len(fr)))
+        ok("⭐⭐ geometry is RIGHT on every declared frame",
+           tot_n > 0 and tot_ok == tot_n, "%d/%d" % (tot_ok, tot_n))
+        # ⛔ The counter-fact, kept as an assertion so nobody reaches for the label.
+        ok("⛔ MediaPipe's LABEL is wrong on (almost) all of them",
+           tot_n > 0 and label_agree < 0.05 * tot_n,
+           "label agreed %d/%d" % (label_agree, tot_n))
+        ok("⭐ chirality does not depend on PALM vs BACK",
+           tot_n > 0 and tot_ok == tot_n, "palm and back takes both clean")
+    finally:
+        HF.CAPTURE_MIRRORED = _saved
+    # ⚠⚠ UNTESTED AND SAID SO: the corpus has no UN-MIRRORED take, so the shipped
+    # switch position cannot be verified from it. One recording closes this.
+    print("     ⚠ UN-MIRRORED capture is PREDICTED to flip the sign — untested;")
+    print("       CAPTURE_MIRRORED=%s ships. One known-hand recording closes it."
+          % HF.CAPTURE_MIRRORED)
+
     print("\n" + "=" * 78)
     if FAILURES:
         print("FAILED %d check(s):" % len(FAILURES))
