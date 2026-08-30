@@ -40,7 +40,6 @@ is Guiard's asymmetry, and it is also the only choice that cannot oscillate: two
 independent drivers on one constraint have no fixed point. The pair is not stuck --
 that is exactly the case where the residual grows and the mate BREAKS.
 """
-from typing import Dict, List, Optional, Sequence, Tuple
 
 from . import mate_connector as MC
 from . import palm_geometry

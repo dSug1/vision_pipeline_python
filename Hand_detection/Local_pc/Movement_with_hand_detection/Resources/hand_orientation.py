@@ -128,6 +128,20 @@ def rotvec_deg(q):
     return hand_frame.rotvec_deg(q) if q is not None else (0.0, 0.0, 0.0)
 
 
+def from_rotvec_deg(v):
+    """`(x, y, z)` degrees about the axes -> quaternion. ⭐ The inverse of `rotvec_deg`.
+
+    ⚠ It lives HERE, beside its inverse, and not in the one module that happens to
+    call it: a log map and an exp map in different files drift apart, and this pair
+    is the whole arithmetic of `RB5`'s control law (`N6`)."""
+    ang = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+    if ang < 1e-12:
+        return IDENTITY
+    half = math.radians(ang) * 0.5
+    s = math.sin(half) / ang
+    return _canon((math.cos(half), v[0] * s, v[1] * s, v[2] * s))
+
+
 def angle_deg(q):
     """Total rotation magnitude, degrees. Stable near identity."""
     if q is None:

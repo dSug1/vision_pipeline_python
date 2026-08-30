@@ -406,6 +406,15 @@ STEP_HOLD_S = 3.0          # long enough for a p95 over ~90 frames at 30fps
 STEP_MOVE_S = 2.0          # transition; its frames are labelled and EXCLUDED
 
 
+def _lbl(a):
+    """Step-label spelling for a signed angle: `45` -> "45", `-45` -> "m45".
+
+    ⚠ `m` rather than a bare minus: a step label rides into filename-ish fields and
+    log lines, and a leading `-` has bitten shell tooling in this project before.
+    `analysis/rb5_window_calibration.py` parses both spellings."""
+    return ("m%d" % -a) if a < 0 else ("%d" % a)
+
+
 def _sweep_steps(axis, hint, angles):
     """HOLD / MOVE / HOLD ... across `angles`, every step labelled.
 
@@ -417,10 +426,10 @@ def _sweep_steps(axis, hint, angles):
     steps = []
     for i, a in enumerate(angles):
         if i:
-            steps.append((STEP_MOVE_S, "move_%d" % a,
-                          "MOVE to %s %d deg  (%s)  - keep gripping" % (axis, a, hint)))
-        steps.append((STEP_HOLD_S, "hold_%d" % a,
-                      "HOLD STILL @ %s %d deg  - grip as if holding a small cube"
+            steps.append((STEP_MOVE_S, "move_%s" % _lbl(a),
+                          "MOVE to %s %+d deg  (%s)  - keep gripping" % (axis, a, hint)))
+        steps.append((STEP_HOLD_S, "hold_%s" % _lbl(a),
+                      "HOLD STILL @ %s %+d deg  - grip as if holding a small cube"
                       % (axis, a)))
     return steps
 
@@ -546,6 +555,32 @@ STEPS = {
     # that appears here would mean the method is manufacturing windows.
     "window_roll_grip": _sweep_steps("ROLL", "spin in the image plane; palm stays facing you",
                                      WINDOW_ANGLES),
+
+    # ⭐⭐⭐ `RB5`'s CALIBRATION TAKES (2026-08-30). The owner specified the control
+    # law in REAL hand degrees -- pitch +15..+50, yaw 0..+60, roll -45..+45 -- and
+    # NOTHING in the code reads real degrees. These takes are what maps one to the
+    # other, so the window edges and the gain come from a measurement.
+    #
+    # ⛔⛔ RUN THEM WITH `--no-mirror --mount facing_user`. Every `hold_0..hold_90`
+    # take in the corpus is MIRRORED, `1.7.42` detects un-mirrored, and post-hoc
+    # un-mirroring is a REJECTED operation (MediaPipe is not mirror-equivariant:
+    # 7.7-10 mm, 12-20 deg). A mirrored take cannot calibrate this build.
+    #
+    # ⭐ THE ANGLES BRACKET THE WINDOW RATHER THAN FILLING IT. An edge read by
+    # INTERPOLATION is measured; an edge read by EXTRAPOLATION is a guess, and the
+    # dry run on the old takes flagged exactly that on roll. So each list carries a
+    # hold AT each edge and one BEYOND it -- the beyond-steps are where the fade
+    # lives, and the fade is 15 deg wide.
+    # ⚠ `hold_0` is also the Horn REFERENCE every later hold is measured from, which
+    # is why PITCH keeps a 0 step even though its window starts at +15.
+    "rb5_pitch_window": _sweep_steps(
+        "PITCH", "tip fingertips TOWARD the camera; do NOT twist",
+        (0, 15, 25, 35, 50, 60)),
+    "rb5_yaw_window": _sweep_steps(
+        "YAW", "turn like a page; fingers stay UP", (0, 15, 30, 45, 60, 75)),
+    "rb5_roll_window": _sweep_steps(
+        "ROLL", "spin in the image plane; palm stays facing you",
+        (-60, -45, -20, 0, 20, 45, 60)),
 }
 
 # ⚠ The declared directions ride into `meta.json` with the take, so a future
@@ -564,13 +599,28 @@ SEQUENCES["rb3_two_hands_axes"] = (
     "SAME sign for the same motion. Never tested -- every prior take is one hand",
 )
 
+_RB5_UNBLOCKS = ("`RB5` step 1: the map from the owner's REAL hand degrees to the "
+                 "pose reading (sets the WINDOW) and to Horn's delta (sets the GAIN). "
+                 "Run with --no-mirror --mount facing_user")
+for _n, _hint in (("rb5_pitch_window", "PITCH +15..+50, bracketed"),
+                  ("rb5_yaw_window", "YAW 0..+60, bracketed"),
+                  ("rb5_roll_window", "ROLL -45..+45, bracketed")):
+    SEQUENCES[_n] = (sum(d for d, _l, _p in STEPS[_n]),
+                     "%s - press SPACE to start each step (grip, do not open)" % _hint,
+                     _RB5_UNBLOCKS)
+
+# ⚠ `setdefault`, NOT assignment. As plain assignment this loop ran AFTER the two
+# `rb3_*` entries above and overwrote them, so every `rb3` take in the corpus carries
+# the generic delta-orbit `unblocks` text instead of its own -- visible in the
+# 2026-08-29 meta.json files. Harmless there, misleading here: an `RB5` take labelled
+# as `1.7.41` window work would send a future session to the wrong spec.
 for _name, _steps in STEPS.items():
-    SEQUENCES[_name] = (
+    SEQUENCES.setdefault(_name, (
         sum(d for d, _l, _p in _steps),
         "stepped take - follow the on-screen step (grip, do not open the hand)",
         "the delta-orbit rate window (`1.7.41`): the per-pose noise floor a "
         "rate-control build would integrate, on DECLARED holds and a GRIPPING hand",
-    )
+    ))
 
 
 def _window_open(name):

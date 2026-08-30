@@ -3,7 +3,16 @@
 > **STATUS** · ⭐ live — the design of record for branch `1.7.41-Hand-delta-orbit`
 > **OWNS** · how the object's ROTATION is driven, from `1.7.41` onward
 > **READ IF** · you are touching the object's rotation, the rate curve, or the window
-> **LAST VERIFIED** · 2026-08-29
+> **LAST VERIFIED** · 2026-08-30
+>
+> ⛔⛔ **PARTLY SUPERSEDED 2026-08-30 BY `RB5`.** The owner specified one **fixed gain
+> matrix, independent of hand rotation speed** — *"no fine vs. rapid coarse rotation
+> control"* — so **§6 (the rate curve `RATE lo/hi/knee`) and §7 ("the curve IS the
+> clutch") are DELETED, not deferred**; grab/release becomes the only clutch. ✅ The
+> rest of this file stands and is still the reasoning of record — especially §3 (error
+> integrates), §4 (a deadzone is WORSE), §5 (noise and slow signal are the same size),
+> §8bis (the gate must be signed) and §9 (no Euler). → `SPEC_FRAME_AND_REBUILD.md`
+> §8sexies.
 
 ⚠ **Position is NOT in scope and does not change.** The object's position keeps
 following the hand exactly as `F1` shipped it (fingertip barycentre, `A1`'s

@@ -49,7 +49,9 @@ rotation stack had accumulated into a **REFLECTION** (det −1), which no rigid
 hand→object mapping can be, so it is being rebuilt one measured step at a time:
 [`10_HAND_TRACKING/spec/SPEC_FRAME_AND_REBUILD.md`](10_HAND_TRACKING/spec/SPEC_FRAME_AND_REBUILD.md).
 ✅ **`RB0`–`RB4` built** (sign harness · frame · chirality · orientation · identity).
-⛔ **NEXT: `RB5`** — the delta, integrated, no filters, drift MEASURED.
+⛔ **NEXT: `RB5`** — the delta, integrated, no filters, drift MEASURED. ⭐ Its control
+law was **specified by the owner 2026-08-30** (hand windows → ±90° of cube, one fixed
+gain matrix, no velocity term): spec §8sexies.
 ⛔ **OWED: the live look** — nothing in `1.7.42` has been run live.
 ⚠ Archive of the old build: commit `4dd0fc5`.
 

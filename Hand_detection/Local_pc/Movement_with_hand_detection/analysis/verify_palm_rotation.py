@@ -228,6 +228,46 @@ for est in PR.estimators():
     check(f"{est.name}: pure translation -> 0 deg", d is not None and d < 1e-3,
           f"{d:.2e} deg")
 
+# ── ⛔⛔ `last_terms` MUST RECORD WHAT WAS APPLIED, NOT WHAT WAS COMPUTED ─────
+#
+# `AnisoHorn._c` used to store the rebuild terms UNCONDITIONALLY, while
+# `rebuild_world_normal` bails on `enabled=False`, on `terms["gated"]` and on an
+# unusable measured normal -- so the HUD could show a tilt and a gain that never
+# reached the landmarks. That is the display/pipeline disagreement the comment on
+# the field itself cites 2026-08-22 for. Found by review 2026-08-30.
+#
+# ⭐ The applied-signal is OBJECT IDENTITY, and these checks are what make that a
+# CONTRACT rather than a coincidence: every bail returns the caller's own `world`,
+# the success path returns a fresh list. An invariant carried only by a comment is
+# one refactor away from being false.
+print()
+print("last_terms records only what was APPLIED")
+_px, _w = hand()
+APPLIED_SEEN = []
+
+_off = PR.RebuiltNormalHorn(params=PR.AnisoParams(enabled=False))
+_out = _off._c(_px, _w)
+check("disabled: rebuild_world_normal returns the INPUT OBJECT", _out is _w)
+check("disabled: last_terms is None, not a computed-but-unused set",
+      _off.last_terms is None, "%r" % (_off.last_terms,))
+
+# ⚠ BOTH SIDES OF THE IFF, or the check only proves the bail path. The face-on
+# hand is REFUSED by the rebuild's own near-face-on gate (`u -> 1` has unbounded
+# `acos` sensitivity), so a TILTED hand is what exercises the applied side.
+for _label, _M in (("face-on (gated)", None), ("tilted 35 deg", rot_matrix((0.0, 1.0, 0.0), 35.0))):
+    _pxi, _wi = hand(_M)
+    _est = PR.RebuiltNormalHorn(params=PR.AnisoParams(enabled=True))
+    _o = _est._c(_pxi, _wi)
+    _ap = _o is not _wi
+    check("enabled/%s: last_terms set IFF the rebuild applied" % _label,
+          (_est.last_terms is not None) == _ap,
+          "applied=%s last_terms=%s" % (_ap, _est.last_terms is not None))
+    if _ap:
+        APPLIED_SEEN.append(_label)
+check("⚠ at least one case actually APPLIED (so the iff is two-sided)",
+      bool(APPLIED_SEEN), "applied on: %s" % (APPLIED_SEEN or "NOTHING -- "
+      "every case bailed, so only the refusal path is tested"))
+
 print("\n" + "=" * 78)
 print(f"{len(FAILS)} failure(s)" + ("" if not FAILS else ": " + ", ".join(FAILS)))
 print("=" * 78)

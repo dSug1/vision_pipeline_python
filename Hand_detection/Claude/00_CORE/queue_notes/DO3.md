@@ -57,3 +57,29 @@ compressed normal-swing degrees and the felt edge is what matters.
 
 ✅ 46/46 suites; `verify_delta_orbit` §6b added (10 checks, every one of which fails
 against the v1 gate); `parity_replay` clean.
+
+---
+
+## 2026-08-30 — review: the window passed ROLL through on a missing normal
+
+⛔⛔ `pose_window` returned **`(0.0, 0.0, 1.0)`** when the palm normal was `None` —
+roll at **full weight** — directly contradicting the comment on the two lines above it
+(*"No pose information is NOT an open gate"*) and the `palm_facing` branch below,
+which returns all zeros. ⚠ **This is live in both tools**, and in rate mode a garbage
+roll increment is integrated permanently rather than recovered from next frame.
+
+⭐ **The confusion was between two different statements**: *"roll has no bad POSE
+region"* (true — roll never touches world `z`, which is why the normal-available path
+returns 1.0) and *"roll is fine when the LANDMARKS are unusable"* (false). A `None`
+normal means the palm quad has collapsed and every axis derived from it is garbage.
+
+⛔ **And the suite certified it.** `verify_delta_orbit` asserted `pose_window(None, …)`
+was zero on components `[0]` and `[1]` — and never checked `[2]`, the one that was
+wrong. Testing two of three axes at exactly the spot where the third fails is how a
+suite comes to certify a defect (`METHOD`: an invariant tested on one axis is not
+tested). ✅ The new vector was shown to **FAIL against the committed code** before
+being trusted.
+
+✅ `parity_replay` clean on four takes; 48/48 suites pass.
+⛔ **OWED: a live look.** This closes a gate that was open, so it can only ever remove
+motion — but `METHOD` closes a change with a live look and nothing else.

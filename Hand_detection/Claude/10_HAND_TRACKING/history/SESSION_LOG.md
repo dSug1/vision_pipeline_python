@@ -17,6 +17,121 @@ newest-first is restored, the entry bodies are byte-identical, and
 
 ---
 
+## 2026-08-30 (review) — a review of the whole estimator layer, and it found four
+
+Widened from the new `RB5` scripts to the modules around them. **Four defects fixed,
+two deferred, and one of the fixes was to the harness that should have caught them.**
+
+⛔⛔ **`delta_orbit.pose_window` passed ROLL through at full weight on a missing palm
+normal** — live in both tools, and in rate mode that increment is permanent. Its own
+comment two lines above said the opposite. ⛔ The suite checked components `[0]` and
+`[1]` and never `[2]`.
+
+⛔⛔ **`RB4` held identity on the detector's INDEX**, which MediaPipe does not
+guarantee — the module's own comment said so while the code depended on it. Two
+degenerate hands in swapped order each inherited the other's identity. ⭐ Replaced by
+**elimination**, which is a counting argument and needs no history at all — and which
+*names more hands* than the hold it replaced.
+
+⛔⛔ **`hand_frame` had become the FOURTH place that knows about the camera** — its own
+`HAND_MOUNT` beside the shipped `CAMERA_MOUNT`. The composite-hybrid defect that
+caused this rebuild, reproduced inside it. Now derived, with a disagreement raising.
+
+⭐⭐⭐ **AND THE SIGN HARNESS WAS SKIPPING IN SILENCE.** `verify_frame_signs` §10 fed
+TWO-hand takes to a loader that keeps only SINGLE-hand frames, got nothing back, and
+skipped on a `continue` — so `RB4`'s headline claim had **never been asserted**, and
+the run still printed ALL CHECKS PASSED. Skips are now announced and named in the
+verdict, and the claim is real: **0 swaps over 1239 two-hand frames**.
+
+⚠⚠ **And I nearly reported a fifth defect that was my own instrument.** The first swap
+metric used the **world** wrist x as a screen position — MediaPipe's world landmarks
+are hand-RELATIVE, so it "found" 62 swaps that were the wrist's offset *within* the
+hand. Screen position lives in the pixel landmarks. **Three sessions running, the
+harness has been the suspect worth checking first.**
+
+✅ 48/48 suites, `parity_replay` clean on four takes, the `legacy` diagnostic baseline
+still runs.
+
+✅ **And the three deferred items were taken the same day**: `palm_depth.depth_valid`
+now reports what `update()` decided rather than re-deriving it from a band that
+stopped being the gate; `palm_rotation.last_terms` records only what was APPLIED,
+with the object-identity contract pinned on **both** sides of the iff; and the dead
+pinch-era trio left the port-contract folder, so `CONSTRAINTS` §2's *numpy-free
+estimator layer* is now true of the **folder** and not merely of the module list
+(`classifier.py` imports numpy and had sat there, unimported, since 2026-08-01).
+⚠ `handinput/actions.DEFAULT_CONFIG` was flagged by the same sweep and is a
+deliberate `__all__` re-export — **not** removed.
+
+⛔ **Still deferred, deliberately: `lean_trim`'s reference.** It is live, it changes
+feel, and it wants a measured A/B rather than a patch.
+
+---
+
+## 2026-08-30 — ⭐⭐⭐ `RB5`'s CONTROL LAW SPECIFIED BY THE OWNER (no code written)
+
+A specification session, deliberately: *"before to build RB5, I want to specify the
+following."* Nothing was built.
+
+**What the owner specified**: hand windows **pitch +15…+50° · yaw 0…+60° · roll
+−45…+45°** (0° = hand vertical, palm facing the camera) drive **−90…+90°** of cube on
+each axis, *"similar to a mouse in 2d"*; outside the windows the delta *"shall not
+fire (smoothly and rapidly decaying to zero gain)"*; and ⛔ **one fixed gain matrix,
+independent of rotation speed — "no fine vs. rapid coarse rotation control."**
+
+⛔⛔ **THAT DELETES `DO2`'s RATE CURVE, AND WITH IT THE CLUTCH.** `SPEC_DELTA_ORBIT.md`
+§7 said *"the curve IS the clutch"* — a fast stroke out at `hi` gain, a slow return at
+`lo`. With one flat gain a stroke out and back **cancel exactly**, so grab/release is
+the only clutch left and **±90° per axis is the whole travel in one grab**. Stated
+now because it follows from the specification rather than contradicting it, and it is
+what the live look should watch.
+
+### ⭐⭐ Four ambiguities were put to the owner rather than guessed
+
+Absolute mapping vs integrated delta → **integrated, mouse-like**. Window numbers in
+real angles vs estimator readings → **REAL angles**. One axis out of range →
+**zero that axis only**. Pitch 15–50 excluding neutral → **intended**, `+` is
+fingertips toward the camera.
+
+⭐ Asking was worth it: three of the four read the other way from the literal text.
+*"These ranges shall control the cube's ranges"* reads as an **absolute** mapping, and
+the row is an **integrator**; they coincide only because the gain is flat.
+
+### ⛔⛔ THE UNIT TRAP — three scales, and the nominal gain is wrong
+
+`180/35 = 5.14` is the gain in **real-hand** degrees. But **nothing in the code reads
+real degrees.** The pose gate reads palm-normal swing (the owner's ~80° of real yaw
+reads **~60°**, and the declared zero reads **−12°/−14°**, not 0) and the object is
+driven by **Horn's** delta, whose own yaw gain **ramps ~0.5 → 1.2** across the range.
+⛔ Applying 5.14 to a compressed delta under-rotates. ⭐ **The gain is
+`180° ÷ the MEASURED estimator span of the real window`, per axis, and the window
+edges come from the same measurement** so the two cannot disagree.
+
+⚠ **And a constant gain cannot do both jobs**: because Horn's gain is non-linear, it
+can match the full-window sweep to ±90° **or** feel uniform locally. The owner ruled
+out the curve that would fix the other half, so the full-window match is what ships.
+
+### ⚠ Two things the specification needs that do not exist yet
+
+* ⛔ **Roll has NO pose estimator.** The window gate reads the palm normal, and **a
+  roll cannot move the palm normal — the normal IS the roll axis** (measured: 27° of
+  normal-yaw wander on a pure-roll take). Roll's window needs the knuckle-row angle
+  about the normal. ⭐ It is the easy one: `x, y` only, never world `z`, which is why
+  roll is the precision axis.
+* ⛔⛔ **Drift multiplies by the gain.** Old-stack drift 43/35/48 °/min → **129 / 180 /
+  96 °/min** at these gains, with the hand *still* — a full turn every 20–40 s. The
+  old control (`FREEZE 1` / `RELEASE 60 deg/s`) was **stripped by this branch**. So
+  `RB6` stops being *"only when a measurement asks"*. ⚠ *If* the new stack drifts like
+  the old one — those numbers came from the old frame handling and **do not carry**.
+  `RB5` measures its own, at gain 1 **and** at the shipped gains.
+
+⭐ Recorded in the spec as **§8sexies** (the design of record), with the reasoning in
+[`../../00_CORE/queue_notes/RB5.md`](../../00_CORE/queue_notes/RB5.md). ⚠ `DO4`'s one
+open number — the outer edge — is now answered **by declaration, not by the deferred
+wide-range take**; read the edges as the owner's felt preference if a later take
+disagrees.
+
+---
+
 ## 2026-08-29 (end of session) — `RB3` closed offline, `RB4` built; handoff written
 
 ✅ **`RB3` — ALL THREE AXES AGREE BETWEEN THE HANDS**, on the project's first

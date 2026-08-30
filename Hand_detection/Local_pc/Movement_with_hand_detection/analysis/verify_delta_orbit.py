@@ -205,9 +205,18 @@ def main():
     back = DO.pose_window(_n(0, 0), False)
     ok("⛔⛔ BACK OF HAND: every axis is ZERO, roll included",
        back == (0.0, 0.0, 0.0), "%s" % (back,))
-    ok("⛔ a degenerate/absent normal is a CLOSED gate, not an open one",
-       DO.pose_window(None, True)[0] == 0.0 and DO.pose_window(None, True)[1] == 0.0)
-    ok("⭐ ROLL is never gated by pose — it never touches world z",
+    # ⛔⛔ ALL THREE COMPONENTS. This check used to read `[0]` and `[1]` only, and
+    # the component it left out was the one that was wrong: `pose_window(None, ...)`
+    # returned roll at FULL weight for the life of the file. Testing two of three
+    # axes at exactly the spot where the third fails is how a suite certifies a
+    # defect -- `METHOD`: an invariant tested on one axis is not tested.
+    ok("⛔ a degenerate/absent normal is a CLOSED gate on EVERY axis, roll included",
+       DO.pose_window(None, True) == (0.0, 0.0, 0.0),
+       "%s" % (DO.pose_window(None, True),))
+    ok("...and that holds whatever `palm_facing` claims",
+       DO.pose_window(None, False) == (0.0, 0.0, 0.0)
+       and DO.pose_window(None, None) == (0.0, 0.0, 0.0))
+    ok("⭐ ROLL is never gated by POSE (given a usable normal) — it never touches world z",
        all(DO.pose_window(_n(a_, b_), True)[2] == 1.0
            for a_ in (0, 45, 85) for b_ in (0, 45, 85)))
     # and the window must actually reach `step`

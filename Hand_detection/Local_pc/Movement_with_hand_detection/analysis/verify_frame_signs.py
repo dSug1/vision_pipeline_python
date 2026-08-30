@@ -82,6 +82,7 @@ WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP = 0, 5, 9, 13, 17
 PALM = (WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP)
 
 FAILURES = []
+SKIPS = []
 
 
 def ok(name, cond, detail=""):
@@ -98,6 +99,7 @@ def ok(name, cond, detail=""):
 # `lean_trim`'s double cover survived every suite: the helper knew the rule and
 # never fed the product's own representation in.
 from Resources import hand_frame as HF                         # noqa: E402
+from Resources import camera_mount as CM                       # noqa: E402
 
 
 def head_worn(p):
@@ -215,6 +217,58 @@ def load(key):
             if wl and len(wl) >= 21:
                 out.append((wl, h.get("handedness", "?"), r.get("step")))
     return m[-1], out
+
+
+def load_frames(key):
+    """Every frame of a take, grouped, WHATEVER the hand count. `(session, frames)`.
+
+    ⛔⛔ WHY THIS EXISTS. `load` above keeps only frames with exactly ONE hand, so
+    handing it a TWO-hand take returns an empty list -- and §10 did exactly that for
+    `rb3_two_hands_axes` and `rb3_yaw_only`, guarded by `if not f4: continue`. Those
+    two checks therefore **never ran**, and the suite still printed ALL CHECKS
+    PASSED. Found by review 2026-08-30.
+
+    ⭐ `METHOD`: a silent skip is worse than a failure -- it reports coverage the run
+    did not have. Every skip in this file is now announced (`skipped()`).
+    """
+    m = [d for d in sorted(os.listdir(CAPTURE)) if key in d]
+    if not m:
+        return None, []
+    path = os.path.join(CAPTURE, m[-1], "raw_landmarks.jsonl")
+    if not os.path.isfile(path):
+        return m[-1], []
+    out = []
+    with io.open(path, encoding="utf-8") as fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            hands = []
+            for h in (r.get("hands") or []):
+                wl = h.get("world_landmarks")
+                px = h.get("landmarks")
+                if wl and len(wl) >= 21:
+                    # ⛔⛔ BOTH. `world_landmarks` are HAND-RELATIVE metres -- they say
+                    # nothing about where the hand is on screen, and a first version
+                    # of §10's swap test used the world wrist x as a position witness
+                    # and "found" 62 swaps that were the wrist's offset WITHIN the
+                    # hand changing sign. Screen position lives in `landmarks`, in
+                    # pixels. Keeping the pair here makes that impossible to confuse.
+                    hands.append((wl, px))
+            if hands:
+                out.append((hands, r.get("step")))
+    return m[-1], out
+
+
+def skipped(what, why):
+    """⛔ Announce a check that did NOT run. A suite that skips in silence is
+    reporting coverage it does not have -- which is how §10's two-hand checks sat
+    dead while the run said ALL CHECKS PASSED."""
+    SKIPS.append("%s -- %s" % (what, why))
+    print("  [SKIP] %-56s %s" % (what, why))
 
 
 def sweep(frames, xf):
@@ -479,20 +533,42 @@ def main():
     print()
     print("10. ⭐⭐ RB4 — IDENTITY: stable, and REFUSED rather than flipped")
     from Resources import hand_identity as HI                   # noqa: E402
+    # ⭐⭐ THE TWO-HAND STABILITY CLAIM, NOW AN ASSERTION RATHER THAN A SPEC LINE.
+    # `RB4`'s headline is "0 swaps across 1652 two-hand frames"; until 2026-08-30
+    # this loop passed TWO-hand takes to `load`, which keeps only SINGLE-hand
+    # frames, so it received an empty list and skipped in silence.
     for key in ("2026-08-29_212855_rb3_two_hands_axes",
                 "2026-08-29_214029_rb3_yaw_only"):
-        _s4, f4 = load(key)
+        _s4, f4 = load_frames(key)
         if not f4:
+            skipped("%s two-hand identity" % key[11:45], "take not present")
             continue
-        # ⚠ `load` gives one hand per row; regroup by frame is not available here,
-        # so this exercises the SINGLE-hand path. The two-hand stability numbers
-        # (0 swaps in 1652 frames) are in the spec; what is asserted here is that
-        # a confident palm-side hand is always identified.
         ident = HI.Identity()
-        named = sum(1 for wl, _h, _st in f4
-                    if ident.classify([wl], 0.0)[0] is not None)
-        ok("%-34s every confident hand is identified" % key[11:45],
-           named == len(f4), "%d/%d" % (named, len(f4)))
+        swaps = 0
+        prev_left = None
+        named = total = pairs = 0
+        for hands, _st in f4:
+            keys = ident.classify([wl for wl, _px in hands], 0.0)
+            total += len(hands)
+            named += sum(1 for k in keys if k is not None)
+            # ⭐ THE WITNESS IS RELATIVE SCREEN ORDER, not an absolute coordinate:
+            # which identity is the LEFT-most on screen. It needs no centre line, no
+            # calibration and no tracker, and it is immune to both hands drifting
+            # across the frame together.
+            named_pairs = [(px[0][0], k) for (wl, px), k in zip(hands, keys)
+                           if k is not None and px]
+            if len(named_pairs) != 2 or named_pairs[0][1] == named_pairs[1][1]:
+                continue
+            pairs += 1
+            leftmost = min(named_pairs)[1]
+            if prev_left is not None and leftmost != prev_left:
+                swaps += 1
+            prev_left = leftmost
+        ok("%-30s two-hand identity: ZERO swaps" % key[11:41],
+           swaps == 0, "%d swap(s) over %d two-hand frames (%d/%d hands named)"
+           % (swaps, pairs, named, total))
+        ok("%-30s ...and most hands ARE named" % key[11:41],
+           named >= 0.5 * total, "%d/%d named" % (named, total))
     # ⛔⛔ THE ONE THAT MATTERS: a DEGENERATE hand must be REFUSED, never guessed.
     # `RB2` measured the determinant collapsing on a back-of-hand view with sign
     # agreement wandering 57.6/88.7/58.3% — the sign of ~zero. A build that read it
@@ -518,13 +594,106 @@ def main():
        2.57e-07 < HI.CONFIDENT_DET < 3.19e-05,
        "%.1e, between degenerate p95 and palm-side p5" % HI.CONFIDENT_DET)
 
+    # ── 10bis. ⛔⛔ THE TWO-HAND PATH, WHICH NOTHING USED TO TEST ─────────────
+    #
+    # The section above says so in its own comment -- "this exercises the SINGLE-hand
+    # path" -- and the defect was in the half that was not exercised: `_held` was
+    # read for ANY hand count, keyed on the DETECTION'S INDEX, which MediaPipe does
+    # not guarantee between frames. Two simultaneously-degenerate hands returned in
+    # swapped order each inherited the OTHER's identity, and the same-chirality check
+    # could not see it because the two keys stay distinct. Found by review
+    # 2026-08-30, before this module was ever wired into either tool.
+    #
+    # ⭐ The synthetic hands are IMPORTED from the pose-window suite, not rebuilt
+    # here (`N6`): one hand builder, one place to be wrong.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from verify_hand_pose_window import (                        # noqa: E402
+        _canonical_user_hand, _as_world)
+    _R = _as_world(_canonical_user_hand(right=True))
+    _L = _as_world(_canonical_user_hand(right=False))
+    # A PLANAR palm has a zero triple product, which is the degeneracy this guards.
+    _FLAT = [(p[0], p[1], 0.0) for p in _R]
+
+    def _seq(frames):
+        ident = HI.Identity()
+        return [ident.classify(f, 0.0) for f in frames]
+
+    ok("two confident hands are named, and correctly",
+       _seq([[_R, _L]])[0] == [HI.RIGHT, HI.LEFT], "%s" % (_seq([[_R, _L]])[0],))
+
+    both_degenerate = _seq([[_R, _L], [_FLAT, _FLAT]])[1]
+    ok("⛔⛔ TWO hands going degenerate together are REFUSED, not held by index",
+       both_degenerate == [None, None],
+       "%s -- holding here names hands nobody can see" % (both_degenerate,))
+
+    # ⭐ ELIMINATION: with two hands and one named, the other IS the remaining
+    # chirality. A counting argument, so it needs no history, no clock and no index --
+    # and it is strictly stronger than the hold it replaced, which could go stale.
+    elim_a = _seq([[_R, _FLAT]])[0]
+    elim_b = _seq([[_FLAT, _R]])[0]
+    ok("⭐ one confident + one degenerate -> the degenerate one is named by ELIMINATION",
+       elim_a == [HI.RIGHT, HI.LEFT], "%s" % (elim_a,))
+    ok("...and the answer does NOT depend on the detector's ordering",
+       elim_b == [HI.LEFT, HI.RIGHT], "%s" % (elim_b,))
+
+    ok("⭐ a SINGLE hand going degenerate is still HELD (one slot, no ambiguity)",
+       _seq([[_R], [_FLAT]])[1] == [HI.RIGHT], "%s" % (_seq([[_R], [_FLAT]])[1],))
+    ok("⛔ a same-chirality pair is still refused, not merged",
+       sum(1 for k in _seq([[_R, _R]])[0] if k is not None) == 1,
+       "%s" % (_seq([[_R, _R]])[0],))
+    ok("⛔ two degenerate hands with NO prior frame are refused",
+       _seq([[_FLAT, _FLAT]])[0] == [None, None])
+
+    # ── 10ter. ⛔⛔ ONE PLACE KNOWS WHERE THE CAMERA IS (`CONSTRAINTS` §7bis) ──
+    # This module used to read its OWN env var (`HAND_MOUNT`) while the shipped path
+    # read `CAMERA_MOUNT` -- so setting one left the other on its default, and
+    # chirality could resolve in one frame while orientation resolved in another.
+    # Each module individually consistent, the COMPOSITE a hybrid: the exact defect
+    # that caused this rebuild. Found by review 2026-08-30, before wiring.
+    print()
+    print("10ter. ⛔⛔ THE MOUNT IS DERIVED, NOT DECIDED TWICE")
+    ok("the module's mount follows `camera_mount`",
+       HF.MOUNT == HF.resolve_mount(CM.MOUNT, ""), "%s" % (HF.MOUNT,))
+    ok("`facing_user` and `head_worn` pass straight through",
+       HF.resolve_mount("facing_user", "") == HF.FACING_USER
+       and HF.resolve_mount("head_worn", "") == HF.HEAD_WORN)
+    ok("an unset/unknown camera setting falls back to `facing_user`",
+       HF.resolve_mount("", "") == HF.FACING_USER
+       and HF.resolve_mount("nonsense", "") == HF.FACING_USER)
+    ok("⚠ `legacy` is a DIAGNOSTIC baseline, not a viewpoint -> `facing_user`",
+       HF.resolve_mount("legacy", "") == HF.FACING_USER)
+    ok("an AGREEING override is accepted",
+       HF.resolve_mount("head_worn", "head_worn") == HF.HEAD_WORN)
+
+    def _raises(cam, ovr):
+        try:
+            HF.resolve_mount(cam, ovr)
+        except ValueError:
+            return True
+        return False
+
+    ok("⛔⛔ a DISAGREEING override RAISES -- the hybrid is refused, not resolved",
+       _raises("head_worn", "facing_user") and _raises("facing_user", "head_worn"))
+    ok("⛔ an unknown override raises rather than falling back silently",
+       _raises("facing_user", "bogus"))
+    ok("⛔ `legacy` plus a contradicting override raises",
+       _raises("legacy", "head_worn"))
+
     print("\n" + "=" * 78)
+    if SKIPS:
+        # ⛔ Printed BEFORE the verdict, and the verdict says so: "all checks passed"
+        # over a run that skipped half its corpus is the claim this suite exists to
+        # make impossible.
+        print("⚠ %d CHECK(S) DID NOT RUN:" % len(SKIPS))
+        for sk in SKIPS:
+            print("  - " + sk)
     if FAILURES:
         print("FAILED %d check(s):" % len(FAILURES))
         for f in FAILURES:
             print("  - " + f)
         return 1
-    print("ALL CHECKS PASSED")
+    print("ALL CHECKS PASSED" if not SKIPS
+          else "no failures, but %d check(s) SKIPPED -- coverage is incomplete" % len(SKIPS))
     return 0
 
 

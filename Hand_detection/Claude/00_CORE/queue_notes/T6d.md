@@ -18,3 +18,23 @@
 <!-- VERBATIM-BEGIN -->
 | **T6d** | ⛔ **THE ANISOTROPIC 2×2 FIT — live, with sliders** | perception | ⛔⛔ **BUILT, LIVE-TESTED OVER FOUR SESSIONS, AND REJECTED BY THE OWNER 2026-08-24** (*"the anisotropic fit bring very minor improvement and I don't want to ship it"*). ⭐ **Nothing to revert — production never ran it.** Removed from `LiveSnapDebug.py` entirely (sliders, HUD, presets, A/B rig, recorder fields); the estimator survives in `palm_rotation.py` only because `analysis/t5i_zscale_sweep.py` and `t5j_roll_axis.py` drive it. ⭐ **The measured reason it was invisible: the two panels' cube orientations differ by a median of just 4.83° (p90 17.4), FLAT across every palm-tilt band.** Original status: How to run it: the top block of `HANDOFF_T6_ORIENTATION_FROM_2D.md`; what was built and the four decisions inside it: **§2.0.17**; the fit and its numbers: §2.0.16 | T6 (built) | **WHY IT EXISTS**: four estimator REPLACEMENTS were built and A10-rejected, but they mapped the problem exactly — **Horn's flaw is BIAS (it eats a fabricated z) and every per-frame replacement's flaw is VARIANCE**. The survivor is a CORRECTION that keeps Horn's five-point averaging and fixes only the tilt. ⭐⭐ **The correction must be ANISOTROPIC and that is the whole insight**: yaw compresses the palm's WIDTH, pitch its LENGTH — perpendicular directions — so a gain depending on the compression direction ψ can treat them oppositely, which no scalar can. `g(ψ) = a + b·cos2ψ + c·sin2ψ` **is a symmetric 2×2 evaluated on that direction**. Measured need: **1.15 for yaw-like ψ, 1.55 for pitch-like** — genuinely different, which is why every scalar attempt failed and why the docs' "no k improves both" conclusion was right about scalars and wrong about the general case. **RESULTS, fitted per recording against camera-independent objectives (SCATTER = spread about the take's own mean axis; DRIFT = mean axis at a low turn vs a high turn — ⭐ the owner's complaint as a number, since the lean grows with the turn)**: PITCH **drift 76.4° → 23.6°**, scatter 44.4° → 21.2°, gain 0.65 → 1.24; YAW scatter 9.5° → 7.4°, gain 0.82 → 0.95. ⛔⛔ **THE OPEN GAP, AND THE SLIDER RUN IS ITS ANSWER**: a yaw sweep exercises only ψ≈0 and a pitch sweep only ψ≈90°, so `b` and `c` are **fitted but UNCONSTRAINED** — the pitch fit puts gain 0.15 at a ψ its recording never visits. **Live hand exploration covers the intermediate ψ no recording does**, so ⭐ **RECORD the slider session with its parameter values in `meta.json`** — that take becomes the diagonal-ψ data needed to fit the 2×2 as ONE object. ⚠ Jitter deferred by the owner, and note it has only ever been measured RAW, bypassing the shipped `orientation_filter`. ⚠ Roll is not a target (owner) — guard only against the palm-facing degeneracy and division by zero. ✅ **AS BUILT**: `AnisoParams` + `rebuild_terms` + `RebuiltNormalHorn(params=...)` in `palm_rotation.py`, sliders/HUD/recorder in `LiveSnapDebug.py`, **production untouched**; 23 golden suites pass, `parity_replay` clean, and the toggle-OFF path is **measured byte-identical to shipped Horn over 975 frames**. ⭐⭐ **ψ IS NOW VALIDATED ON REAL DATA, not argued**: from the pixels alone the yaw take piles up at ψ≈0/180 (61%) and the pitch take at ψ≈90 (85%), exactly as the model-frame definition predicts, and ψ is invariant under in-plane roll on synthetic input. ⛔ **Nothing here has been through A10** — the run is a feel test plus a capture; the accept/reject numbers come from the recording it produces. |
 <!-- VERBATIM-END -->
+
+---
+
+## 2026-08-30 — review: the HUD could show a rebuild that never ran
+
+⛔ `RebuiltNormalHorn._c` stored `last_terms` **unconditionally**, while
+`rebuild_world_normal` bails on `enabled=False`, on `terms["gated"]` (the near-face-on
+refusal) and on an unusable measured normal. So the debug HUD could display a tilt and
+a gain that never reached the landmarks — **the display/pipeline disagreement the
+comment on that very field cites 2026-08-22 for.**
+
+⚠ Dormant in practice: `T6d` is owner-rejected and ships at gain 0. Fixed anyway,
+because the field's entire purpose is to record *what was applied*.
+
+⭐ **The applied-signal is object identity, and it is now a tested contract rather
+than a comment**: every bail path returns the caller's own `world` object, the success
+path returns a fresh `list(world)`. `verify_palm_rotation` pins both halves, and
+**both sides of the iff** — face-on is gated (`applied=False`, `last_terms=None`) and
+a 35°-tilted hand applies (`applied=True`, terms recorded). ⚠ A one-sided iff check
+would have proved only the refusal path, which is the half that was already correct.

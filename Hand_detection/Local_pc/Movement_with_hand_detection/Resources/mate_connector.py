@@ -55,7 +55,7 @@ decision the way `U2` is: nothing here touches a renderer.
 """
 import math
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Sequence, Tuple
+from typing import Dict, Optional, Tuple
 
 # ⭐⭐ THE CONSTANTS. Each is a BRACKET, not a derivation -- the shape `V2`'s 0.66
 # has. `METHOD.md` forbids a guessed constant; where a bound is not measurable

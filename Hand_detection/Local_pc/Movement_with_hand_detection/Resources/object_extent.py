@@ -41,7 +41,6 @@ agree on exactly: where an object can be picked up.
 
 Golden vectors: `analysis/verify_object_extent.py`.
 """
-import math
 
 
 def _quat_rotate_vector(q, v):

@@ -10,8 +10,13 @@
 the frame, chirality, depth, occlusion or the object's rotation.
 ✅ **`RB0`–`RB4` are built**: the sign harness, `hand_frame` (the viewpoint),
 `hand_orientation` (Horn, nothing wrapped around it) and `hand_identity`
-(0 swaps / 1652 frames). ⛔ **NEXT is `RB5`** — the delta, integrated, no
-filters, with drift MEASURED against the old build's 43/35/48° per minute. ⚠ The archive of everything before it is commit `4dd0fc5`.
+(0 swaps / 1652 frames). ⭐⭐⭐ **`RB5`'s CONTROL LAW IS NOW SPECIFIED** (owner, 2026-08-30) and is the next
+build: hand windows **pitch +15…+50 · yaw 0…+60 · roll ±45** (REAL degrees) drive
+**±90°** of cube per axis through **ONE fixed gain matrix** — ⛔ **no velocity term,
+`DO2`'s rate curve is DELETED.** ⛔ Read spec §8sexies first: the gain is
+`180° ÷ the MEASURED estimator span`, not the nominal ratio; **roll has no pose
+estimator yet**; and at those gains the old stack's drift becomes **129/180/96°/min**,
+which makes `RB6` likely mandatory. Drift is MEASURED on the new stack, never carried. ⚠ The archive of everything before it is commit `4dd0fc5`.
 
 ⛔⛔ **THE FRAME RULE THAT NOW BINDS EVERYTHING**: the viewpoint is applied to the
 **LANDMARKS**, as a **ROTATION** (`Ry180`), and there is **no mirror in the

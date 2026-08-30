@@ -1078,11 +1078,24 @@ class RebuiltNormalHorn:
         self.last_terms = None
 
     def _c(self, px, world):
+        """⭐ `last_terms` records what was APPLIED, which is the whole point of the
+        field -- and the first version stored the terms UNCONDITIONALLY while
+        `rebuild_world_normal` bails on `enabled=False`, on `terms["gated"]`, and on
+        an unusable measured normal. The HUD could therefore show a tilt and a gain
+        that never reached the landmarks: the display/pipeline disagreement the
+        comment above this field cites 2026-08-22 for. Found by review 2026-08-30.
+
+        ⚠ THE APPLIED-SIGNAL IS OBJECT IDENTITY, and that is a real contract rather
+        than a coincidence: EVERY bail path in `rebuild_world_normal` returns the
+        caller's own `world` object, and the success path returns a fresh
+        `list(world)`. `verify_palm_rotation` pins both halves, because an invariant
+        carried only by a comment is one refactor from being false."""
         terms = rebuild_terms(px, self.indices, self.model, self.params,
                               aniso_mirrored(world))
-        self.last_terms = terms
-        return rebuild_world_normal(px, world, self.indices, self.model,
-                                    self.params, _terms=terms)
+        out = rebuild_world_normal(px, world, self.indices, self.model,
+                                   self.params, _terms=terms)
+        self.last_terms = terms if out is not world else None
+        return out
 
     def freeze(self, px, world):
         return self.inner.freeze(px, self._c(px, world))

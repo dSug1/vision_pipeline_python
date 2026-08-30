@@ -129,6 +129,36 @@ What came out of it, and is now standing practice:
   ARGUED, not inferred from numbers lining up**, and the owner — who could see
   their own hands — was right against all three.
 
+* ⭐⭐⭐ **A GOLDEN VECTOR'S *FIXTURE* MUST BE A SPECIMEN THE PRODUCT WOULD ACCEPT**
+  (2026-08-30, `RB5`). `verify_hand_pose_window` built its synthetic hand with a
+  **perfectly planar palm**, whose triple product is exactly zero — a hand the
+  shipped code rightly REFUSES as having no chirality. Every vector in the suite was
+  therefore exercising a shape that **cannot occur**, and nothing noticed until the
+  module started reading the determinant and the whole suite went red at once.
+  ⚠ This is the 2026-08-29 double-cover rule's sibling: that one says a vector must
+  feed the *representations* the product produces; this one says it must feed a
+  *specimen* the product accepts. A fixture idealised for convenience is a fixture
+  testing a different program.
+* ⭐⭐⭐ **AN INVARIANT TESTED ON ONE AXIS IS NOT TESTED** (2026-08-30, `RB5`). The
+  same suite checked chirality-evenness on **ROLL only** — which was built from the
+  palm's long axis and never had the problem — while the palm NORMAL, and with it
+  **pitch and yaw, was chirality-ODD**: the same +20° physical yaw read `-20` on the
+  right hand and `+20` on the left. ⛔ With the owner's ASYMMETRIC windows that gates
+  the opposite motion on the left hand. **Picking the axis where the property is
+  easiest to demonstrate is how a suite comes to certify the two axes that fail.**
+  ⛔ It was a **re-introduction**: a chirality-odd palm normal was one of the four
+  sign defects of 2026-08-29. ⭐ A defect that has happened once needs a **standing**
+  check, not a fixed one.
+
+* ⭐⭐⭐ **A SKIPPED CHECK MUST BE ANNOUNCED, OR THE RUN REPORTS COVERAGE IT DID
+  NOT HAVE** (2026-08-30, `RB4`). `verify_frame_signs` §10 passed the two TWO-hand
+  takes to a loader that keeps only frames with **exactly one hand**, got an empty
+  list, and skipped on `if not f4: continue` — so `RB4`'s headline claim was never
+  once asserted, and the suite still printed **ALL CHECKS PASSED**. ⛔ A guard that
+  turns "the data is missing" into silence is worse than a failure: a failure is
+  investigated. Skips are now printed and named in the verdict.
+  ⭐ The claim is now a real assertion: **0 swaps over 1239 two-hand frames**.
+
 ⚠ **Automated green is necessary, not sufficient.** §13.6.1 shipped **inverted**
 while passing an "end-to-end confirmed" claim. **A live look in both tools is
 what closes a change** — nothing else does.

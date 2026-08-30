@@ -35,6 +35,15 @@ can be transliterated to JS / Swift / Kotlin instead of rewritten.
 ⛔ **Do not import `cv2`, `numpy` or `scipy` into that layer**, however
 convenient. The whole of `U3` rests on this.
 
+✅ **And as of 2026-08-30 the claim is true of the FOLDER, not merely of the list
+above.** Three dead pinch-era modules (`classifier.py`, `features.py`,
+`event_layer.py`, plus the weights) had sat in `Resources/` since the 2026-08-01
+archival with no live importer — and `classifier.py` **imports numpy**. Anyone
+reading this constraint before a port would have found it falsified by the first
+file they opened. They are now in `_archive/pinch_era/` beside the rest of that
+project; nothing was deleted. ⭐ Verified: no `numpy` / `cv2` / `scipy` import
+remains anywhere in `Resources/` or `handinput/`.
+
 ## 3. ⛔ Golden vectors before the port exists — not after
 
 Rule 6 of the house rules, and it has already paid: the very first run of the

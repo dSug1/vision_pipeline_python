@@ -435,9 +435,12 @@ def pose_window(normal, palm_facing, yaw_deg=None, pitch_deg=None,
     flips `nx` and `nz` together, and `abs()` of the resulting angle is unchanged.
     Only the palm-vs-back question ever needed the hand's identity.
 
-    ⭐ ROLL IS NEVER GATED. Measured flat at every pose on both the gripping roll
-    take (1.35-2.55 deg p95) and the 2026-08-23 card take -- roll is the axis that
-    never touches world `z`, so it has no bad region to exclude.
+    ⭐ ROLL IS NEVER GATED **BY POSE**. Measured flat at every pose on both the
+    gripping roll take (1.35-2.55 deg p95) and the 2026-08-23 card take -- roll is
+    the axis that never touches world `z`, so it has no bad POSE region to exclude.
+    ⛔ That is NOT the same as "roll is always trustworthy": a missing normal or the
+    back of the hand means the landmarks themselves are unusable, and roll is gated
+    to zero with everything else. The first version conflated the two.
     """
     yd = WINDOW_YAW_DEG if yaw_deg is None else yaw_deg
     pd = WINDOW_PITCH_DEG if pitch_deg is None else pitch_deg
@@ -445,7 +448,15 @@ def pose_window(normal, palm_facing, yaw_deg=None, pitch_deg=None,
     if normal is None:
         # ⛔ No pose information is NOT an open gate. An integrating build must
         # refuse what it cannot vouch for.
-        return (0.0, 0.0, 1.0)
+        # ⛔⛔ FIXED 2026-08-30: this returned `(0.0, 0.0, 1.0)` -- ROLL AT FULL
+        # WEIGHT -- directly contradicting the two lines above it and the
+        # `palm_facing` branch below, which gets it right. The confusion was between
+        # two different statements: "roll has no bad POSE region" (true, and why the
+        # normal-available path returns 1.0) and "roll is fine when the LANDMARKS are
+        # unusable" (false). A `None` normal means the palm quad has collapsed, so
+        # every axis derived from those landmarks is garbage -- and in rate mode a
+        # garbage increment is integrated permanently rather than recovered from.
+        return (0.0, 0.0, 0.0)
     if palm_facing is None or not palm_facing:
         # ⛔ Back of the hand, or no cue at all: nothing here is trustworthy, and an
         # integrating build must refuse what it cannot vouch for.

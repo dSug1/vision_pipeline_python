@@ -5,7 +5,7 @@
 > → object control is rebuilt in
 > **READ IF** · you are touching landmarks, chirality, depth, occlusion, the camera
 > mount, or the object's rotation
-> **LAST VERIFIED** · 2026-08-29
+> **LAST VERIFIED** · 2026-08-30
 
 ⚠ The archive of what came before is commit `4dd0fc5` on `1.7.42-`
 (`trial finished`), and `2cdf9f7` before it. Nothing below is a patch on that work;
@@ -126,7 +126,7 @@ still, and a magnitude deadzone measured WORSE), and some **smoothing**.
 | `RB2` | chirality | ✅ **done** — determinant matches the declared hand and is **unchanged** by the viewpoint. ⛔ `head_worn` unresolved |
 | `RB3` | Horn orientation | ✅ **done offline** — invariants pass, all three axes agree between the hands (§8quater). ⛔ The live look is still owed |
 | `RB4` | hand identity | ✅ **done** — 0 swaps / 1652 frames; degenerate hands REFUSED (§8quinquies) |
-| `RB5` | the delta, integrated, no filters | closure: hand returns to a pose → object returns. Drift **measured** |
+| `RB5` | the delta, integrated, no filters | ⭐ **SPECIFIED BY THE OWNER 2026-08-30 — see §8sexies.** Closure: hand returns to a pose → object returns. Drift **measured** |
 | `RB6` | drift control, then anything else | only when a measurement asks for it |
 
 ⭐⭐ **`RB0` IS THE POINT OF THE WHOLE BRANCH.** Every defect of 2026-08-29 — the
@@ -382,6 +382,199 @@ guards.
 **Two hands of the same chirality** (two people) collapse to one key and the second
 is refused. The game is single-player with two hands; when that stops being true this
 module must be **REPLACED, not patched**.
+
+## 8sexies. ⭐⭐⭐ `RB5` — THE CONTROL LAW, SPECIFIED BY THE OWNER 2026-08-30
+
+> **Owner, 2026-08-30:** *"the user hand shall provide inputs when the hand is in
+> these ranges (convention: 0 degree is vertical, palm facing camera when camera is
+> facing user) … These ranges shall control the cube's following ranges … (similar to
+> a mouse in 2d: moving the mouse a couple of mm drives the cursor across the screen).
+> When the hand is outside these ranges, the delta increment shall not fire (smoothly
+> and rapidly decaying to zero gain). For the moment, do not build two different gains
+> based on velocity of hand rotation: just fix one matrix of gains, independently of
+> hand's rotation speed. No fine vs. rapid coarse rotation control."*
+
+**The reference pose is `0°` on every axis: the hand VERTICAL, PALM FACING THE
+CAMERA**, with the camera facing the user.
+
+| axis | hand window — ⭐ **REAL degrees** | cube span | nominal gain |
+|---|---|---|---|
+| **pitch** | **+15° → +50°** · ⭐ `+` = fingertips toward the camera, palm tilting **UP** | −90° → +90° | **5.14×** |
+| **yaw** | **0° → +60°** | −90° → +90° | **3.00×** |
+| **roll** | **−45° → +45°** | −90° → +90° | **2.00×** |
+
+⛔⛔ **NO VELOCITY TERM. ONE FIXED GAIN PER AXIS.** `DO2`'s rate curve
+(`RATE lo %` / `RATE hi %` / `RATE knee deg/s`) is **deleted, not deferred** — the
+owner ruled out fine-vs-coarse control explicitly. `SPEC_DELTA_ORBIT.md` §6 is
+superseded on this point, and so is its §7, whose clutch **was** that curve.
+
+### The four decisions taken with the specification (owner, 2026-08-30)
+
+| # | question | answer |
+|---|---|---|
+| 1 | leave a window and come back at a different angle | ⭐ **integrated delta, mouse-like** — a closed gate is no input, so re-entry **CLUTCHES**. Not an absolute pose mapping |
+| 2 | are the window numbers real angles or estimator readings | ⭐ **REAL hand angles.** The build converts; §8sexies-b is how |
+| 3 | one axis outside its window | ⭐ **zero that axis only**, in rotation-vector space |
+| 4 | pitch `15–50` excludes neutral | ⭐ **intended**, and `+` is fingertips toward the camera |
+
+⭐ Decision 3 is well-founded **here and not in general**: the log map's three
+components are independent only for SMALL rotations, and a per-frame delta is
+0.3–2.4° (`SPEC_DELTA_ORBIT.md` §9). ⚠ Its cost, named: zeroing one component tilts
+the delta's axis, so a diagonal hand motion comes out skewed.
+
+### 8sexies-b. ⛔⛔ THE UNIT TRAP, AND IT DECIDES THE GAIN
+
+**Three different scales are in play and they are not interchangeable:**
+
+| # | scale | who reads it |
+|---|---|---|
+| 1 | the hand's **REAL** angle | the owner's specification, and nothing in the code |
+| 2 | the **POSE GATE's** reading — palm-normal swing | the window only |
+| 3 | **HORN's delta** magnitude | what actually gets integrated onto the cube |
+
+⚠ **2 and 3 are both COMPRESSED against 1, by different and non-constant amounts.**
+Measured: the owner's ~80° of real yaw reads **~60°** on the pose gate, and at the
+declared zero the gate read **−12°** (yaw) / **−14°** (pitch) rather than 0. Horn's
+own yaw gain **ramps ~0.5 → 1.2** across the range, crossing 1.0 near 60°.
+
+⛔ **SO THE GAIN MUST NOT BE COMPUTED FROM THE RATIO OF NOMINAL NUMBERS.** `180/35`
+is the gain in **real-hand** degrees; applied to a compressed delta it under-rotates.
+⭐ **The implemented gain is `180° ÷ (the ESTIMATOR degrees the real window actually
+spans)`, measured per axis** — and the window edges come from the same measurement,
+so the two are consistent by construction.
+
+⚠ **A consequence, named now rather than discovered later**: because Horn's own gain
+is **non-linear** in the real angle, a **constant** gain can match the full-window
+sweep to ±90° **or** feel uniform locally — not both. The owner ruled out a curve, so
+**the full-window match is what ships** and the local feel varies with the
+estimator's own nonlinearity.
+
+⛔ **AND THIS IS A GATE, NOT A MEASUREMENT — IT IS NOT `T6`.** The empirical
+real→reading map feeds a **soft window edge**; it never feeds the object's rotation.
+`SPEC_DELTA_ORBIT.md` §8bis already drew that line — *"good enough for a soft gate
+with a ~15° fade; not good enough for a measurement"*. The dead ratio table was
+rejected as an **estimator**, and nothing here revives it.
+
+### 8sexies-c. ⚠ THE FADE SITS **OUTSIDE** THE STATED WINDOW
+
+The owner's sentence is directional: *inside* the range there is input; *outside* it
+**decays** to zero. So the weight is **1 across all of `[lo, hi]`** and smoothsteps
+`1 → 0` over `FADE_DEG` **beyond** each edge.
+
+⛔ **Not a fade inward from the edge.** For yaw that would attenuate the region
+around **face-on**, which is the most reliable pose the estimator has. ⭐ Smoothstep,
+not a ramp: `F1`'s trim died on being non-monotone in the declared angle (§10.1), and
+a kink mid-gesture is felt.
+
+### 8sexies-d. ⛔ WHAT THE SOFT WINDOWS DO **NOT** REPLACE
+
+* ⛔⛔ **The HARD edge-on gate stands** (`DO3`). Past edge-on the palm/back chirality
+  sign flips, and **in rate mode a flip is a permanent ~180° increment**, not a
+  glitch that recovers next frame. Hard, never a fade, under and above every soft
+  window.
+* ⛔ **A degenerate or absent palm normal is a CLOSED gate, never an open one.** An
+  integrating build must refuse what it cannot vouch for.
+* ⛔ **`RB4`'s refusal is a closed gate too** — a hand it will not name drives nothing.
+
+### 8sexies-e. ⛔ ROLL HAS NO POSE ESTIMATOR TODAY, AND MUST GET ONE
+
+The window gate reads the **palm normal**, and **a roll cannot move the palm normal —
+the normal IS the roll axis.** Measured: on the roll take the normal's yaw reading
+wanders **27°** while the hand only rolls. So the specified `−45…+45` roll window
+cannot be evaluated by the existing gate at all.
+
+⭐ **It is the easy one.** Roll is measurable from the **knuckle-row angle about the
+normal**, i.e. from `x, y` alone — it never touches world `z`, which is exactly why
+`ROLL` is the project's precision axis (usable from ~5°, gain ~1.00 throughout).
+
+### 8sexies-f. ⚠ THE DRIFT ARITHMETIC, BEFORE ANYTHING IS BUILT
+
+The old stack integrated **43 / 35 / 48 °/min** (yaw / pitch / roll) with the hand
+**held still**. At the specified gains that is:
+
+| axis | drift at gain 1 | × gain | **drift as specified** |
+|---|---|---|---|
+| yaw | 43 °/min | 3.00 | **129 °/min** |
+| pitch | 35 °/min | 5.14 | **180 °/min** |
+| roll | 48 °/min | 2.00 | **96 °/min** |
+
+⛔⛔ **A full turn every 20–40 seconds with the hand still** — and the old drift
+control (`FREEZE 1` / `RELEASE 60 deg/s`) was **STRIPPED by this branch** (§6). So
+`RB6` stops being *"only when a measurement asks"*: **if the rebuilt stack drifts like
+the old one, the measurement already asks.**
+⚠ *If.* Those numbers were measured on the OLD frame handling and **do not carry**
+(`METHOD`: a constant borrowed from another row's derivation inherits its question).
+`RB5` measures its own.
+
+⭐ **Gain does not improve signal-to-noise** — it scales both. At the ~6.5 deg/s the
+operator actually uses, deliberate motion and jitter were measured the **same size**.
+⛔ **A magnitude deadzone is measured WORSE** (43 → 72 °/min at 1.0°/frame): the noise
+is a random walk whose small steps largely cancel, and a deadzone throws the
+cancellation away. **Scale small deltas, never reject them.** Do not re-propose it.
+
+### 8sexies-g. ⚠ A FLAT GAIN REMOVES THE CLUTCH
+
+`DO`'s clutch **was** the fast/slow gain difference; with one gain a stroke out and a
+stroke back **cancel exactly**. ⭐ So **grab / release is the only clutch left**, and
+**±90° per axis is the whole travel available in one grab**. That follows from the
+specification rather than contradicting it — but it is the thing to watch in the live
+look.
+
+### 8sexies-h. The build order
+
+1. ⭐ **MEASURE first**, on the declared-hold takes replayed through the **NEW** stack:
+   real angle → pose-gate reading, and real angle → integrated Horn delta, per axis.
+   ⛔ Nothing carried from the old build.
+2. Set the window edges **and** the gains from that one measurement (§8sexies-b).
+3. Build the **roll pose reading** (§8sexies-e).
+4. Wire the law. Sliders for the window edges, the fade and the three gains — `L1`'s
+   rule: the constants live in **one** module, the debug sliders write it, production
+   reads it and has none.
+5. Measure **drift at gain 1 AND at the shipped gains**, plus the closure test (hand
+   returns to a pose → object returns).
+6. Golden vectors, `parity_replay`, then ⛔ **the live look in both tools**.
+
+### 8sexies-k. ⛔⛔ CLOSURE IS PATH-DEPENDENT AT ANY GAIN ≠ 1 — the acceptance test is qualified
+
+§8's step table gives `RB5`'s closure test as *"hand returns to a pose → object
+returns"*. **Measured (`verify_hand_control` §4), that holds single-axis at any gain,
+and multi-axis ONLY at unity gain:**
+
+| path the hand takes | gain 1 | gain 2 |
+|---|---|---|
+| single axis, out and back | 0.0000° | **0.0000°** |
+| multi-axis loop returning by a DIFFERENT route | 0.0000° | ⛔ **19.34° left on the object** |
+
+⭐ **Scaling a rotation vector does not commute with composition**, so a scaled
+integral is **path-dependent**. ⛔ This is not a defect and there is nothing to fix:
+it is what a gain ≠ 1 *means*, and the owner specified gains of 2–5×. ⚠ But the
+acceptance test must therefore be run **per axis**, or **at gain 1** — run
+multi-axis at the shipped gains it fails for a reason that is not a fault, and that
+is exactly how a good build gets reverted.
+
+### 8sexies-j. ⭐⭐ THE GATE READS BOTH ENDS OF THE DELTA, AND A SUITE CAUGHT IT FIRST
+
+The first build weighted each increment by the pose it **arrived at**. A hand that
+leaves its window and comes back then **delivers the whole return leg**, because the
+frame it lands on is inside — measured **45° of object rotation from an excursion
+that must leave nothing**, and 45° only because `MAX_STEP_DEG` clamped it. Gating on
+the **departure** pose alone has the mirror defect on the way out.
+
+⭐ **The effective weight is the per-axis MIN of the delta's two ends.** `min`, not a
+product, so a wholly in-window increment stays at exactly 1.0. The same excursion now
+measures **0.000°**, 0 frames driven.
+
+⭐⭐⭐ **THIS IS THE FIRST DEFECT OF THE GATE/SIGN CLASS IN THIS PROJECT'S RECORD
+THAT A SUITE CAUGHT RATHER THAN THE OWNER, LIVE.** Every one of 2026-08-29's four
+sign defects reached a camera first. That is what `RB0` was built for, and it is this
+branch's premise paying out.
+
+### 8sexies-i. ⚠ This is not a violation of §9 rule 2
+
+Rule 2 forbids adding a per-axis sign, gain or window **to make a later step pass** —
+the pile-up this branch exists to undo. An **owner-specified control law** is not
+that. ⛔ The prohibition on per-axis **SIGNS** stands unchanged, and `RB5` adds none:
+if a sign is needed, the frame is wrong and the frame gets fixed.
 
 ## 9. Acceptance
 

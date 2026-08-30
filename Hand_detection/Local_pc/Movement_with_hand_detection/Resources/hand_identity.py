@@ -85,7 +85,15 @@ class Identity(object):
 
     def __init__(self):
         self._last = {}        # key -> (last confident now_ms)
-        self._held = []        # per-detection held identity, index-stable per frame
+        # ⛔⛔ SINGLE-HAND ONLY. `_held` is read only when exactly one hand is in
+        # frame; see `classify`. It used to be read for ANY count, keyed on the
+        # detection's INDEX -- and MediaPipe does not guarantee that ordering, as the
+        # comment in `classify` said even while the code depended on it. Two
+        # simultaneously-degenerate hands returned in swapped order each inherited the
+        # OTHER's identity: the exact flip this module exists to prevent, and
+        # invisible to the same-chirality check below because the two keys stay
+        # distinct. Found by review 2026-08-30, before this module was ever wired.
+        self._held = []
 
     def reset(self):
         self._last.clear()
@@ -101,9 +109,11 @@ class Identity(object):
         """
         n = len(world_landmarks_list)
         if len(self._held) != n:
-            # ⚠ The detector's ordering is not stable between frames, so the held
-            # list is only meaningful while the count is unchanged. A change in count
-            # re-identifies everyone from geometry, which is cheap and honest.
+            # ⚠ The detector's ordering is not stable between frames. A change in
+            # count re-identifies everyone from geometry, which is cheap and honest.
+            # ⛔ Resetting on a COUNT change is NOT sufficient on its own -- the count
+            # can stay at 2 while the ORDER swaps -- which is why `_held` is now read
+            # only when `n == 1`.
             self._held = [None] * n
 
         raw, conf = [], []
@@ -122,14 +132,39 @@ class Identity(object):
             if conf[i] >= CONFIDENT_DET:
                 out.append(raw[i])
                 self._last[raw[i]] = now_ms
-            else:
-                # ⭐ DEGENERATE: hold what this detection was last confidently
-                # called. A flip requires CONFIDENCE and disagreement, never noise.
-                held = self._held[i]
+            elif n == 1:
+                # ⭐ DEGENERATE, and the ONLY hand in frame: hold what this detection
+                # was last confidently called. A flip requires CONFIDENCE and
+                # disagreement, never noise.
+                # ⭐ With `n == 1` there is exactly one slot, so "this detection" is
+                # unambiguous and the index cannot mean a different hand than it did
+                # last frame. That is the ONLY case where holding by index is sound.
+                held = self._held[0] if self._held else None
                 if held is not None and (now_ms - self._last.get(held, -1e18)) <= HOLD_MS:
                     out.append(held)
                 else:
                     out.append(None)
+            else:
+                # ⛔⛔ TWO OR MORE HANDS: DO NOT HOLD BY INDEX. Resolved below by
+                # ELIMINATION, or refused. See the note on `_held`.
+                out.append(None)
+
+        # ⭐⭐ ELIMINATION -- IDENTITY FOR AN UNCERTAIN HAND WITHOUT ANY HISTORY.
+        # With exactly two hands in view and one of them confidently named, the other
+        # is the remaining chirality: that is a COUNTING argument, not a temporal one,
+        # so it needs no `_held`, no index stability and no clock. It is strictly
+        # stronger than the hold it replaces -- a hold can be stale, and this cannot.
+        # ⚠ It rests on the module's stated assumption (ONE player, two hands of
+        # opposite chirality); two same-chirality hands are refused below and, per the
+        # header, are the case that requires REPLACING this module rather than
+        # patching it.
+        if n == 2:
+            unknown = [i for i in range(n) if out[i] is None]
+            claimed = {out[i] for i in range(n) if out[i] is not None}
+            if len(unknown) == 1:
+                free = [k for k in (LEFT, RIGHT) if k not in claimed]
+                if len(free) == 1:
+                    out[unknown[0]] = free[0]
 
         # ⛔ A SAME-CHIRALITY COLLISION IS REFUSED, NOT MERGED. Two hands reported as
         # the same hand would share per-hand state, which is the `T3` / `U8` defect

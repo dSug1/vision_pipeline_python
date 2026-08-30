@@ -15,7 +15,7 @@ except ImportError:                     # pragma: no cover
 from . import palm_geometry
 from . import camera_mount                   # ⭐ the ONE place that knows the mount
 from . import object_assembly                # imported, never copied (N6)
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
 # ⭐⭐ AS5 -- the mate connectors, drawn. Their colours say what state a mate is in;

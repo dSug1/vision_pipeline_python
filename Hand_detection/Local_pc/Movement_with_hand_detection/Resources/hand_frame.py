@@ -66,6 +66,12 @@ non-pure line is the env read, once, at import.
 """
 import math
 import os
+import sys
+
+# ⛔ IMPORTED FOR THE *SETTING* ONLY, never for its transforms. `1.7.42` replaces
+# `camera_mount`'s conjugation table with `to_user_frame`; what it must NOT do is
+# add a SECOND place that decides where the camera is.
+from . import camera_mount as _camera_mount
 
 FACING_USER = "facing_user"
 HEAD_WORN = "head_worn"
@@ -76,8 +82,61 @@ MOUNTS = (FACING_USER, HEAD_WORN)
 # sees and there is nothing to correct. ⛔ There is no `legacy`: the 2026-08-28
 # behaviour is reachable by checking out the archive commit, not by a flag, because
 # it was a hybrid rather than a viewpoint.
+# ⛔⛔ ONE PLACE KNOWS WHERE THE CAMERA IS (`CONSTRAINTS` §7bis). This module used
+# to read its OWN env var, `HAND_MOUNT`, while the shipped path read `CAMERA_MOUNT`
+# -- so setting one left the other on its default and chirality/identity could
+# resolve in one frame while orientation resolved in another. Each module stays
+# individually consistent and the COMPOSITE is a hybrid, which is precisely the
+# defect that caused this rebuild. Found by review 2026-08-30, before wiring.
+#
+# ⭐ So the mount is DERIVED from `camera_mount`, and `HAND_MOUNT` survives only as
+# an EXPLICIT override for harnesses -- one that must AGREE, or it raises. There is
+# no configuration in which disagreeing is the right answer.
+
+
+def resolve_mount(camera_value, hand_override=""):
+    """The single mount, from `camera_mount`'s setting plus an optional override.
+
+    ⭐ A pure function so the golden vectors can exercise every combination without
+    mutating the environment -- `F1`'s void take came from a switch verified where
+    it was SET rather than where it took EFFECT.
+    ⛔ Raises on a genuine disagreement: a build that reads two different viewpoints
+    is the hybrid, and there is no use for it.
+    """
+    cam = (camera_value or "").strip().lower()
+    override = (hand_override or "").strip().lower()
+
+    # ⚠ `legacy` is `camera_mount`'s DIAGNOSTIC baseline -- it reproduces the
+    # pre-2026-08-28 hybrid bit-for-bit for `A10` / `parity_replay`. This module has
+    # no legacy behaviour by design ("reachable by checking out the archive commit,
+    # not by a flag"), so it resolves to the physical viewpoint that baseline was
+    # recorded on and says so, rather than crashing a comparison run.
+    if cam == "legacy":
+        if override and override != FACING_USER:
+            raise ValueError(
+                "CAMERA_MOUNT=legacy with HAND_MOUNT=%s: `legacy` is a diagnostic "
+                "baseline and this module has no legacy mode." % override)
+        sys.stderr.write(
+            "[hand_frame] CAMERA_MOUNT=legacy is a DIAGNOSTIC baseline; hand_frame "
+            "has no legacy mode and is using `%s`.\n" % FACING_USER)
+        return FACING_USER
+
+    if cam not in MOUNTS:
+        cam = FACING_USER
+    if not override:
+        return cam
+    if override not in MOUNTS:
+        raise ValueError("HAND_MOUNT=%r is not one of %s" % (override, MOUNTS))
+    if override != cam:
+        raise ValueError(
+            "HAND_MOUNT=%s disagrees with CAMERA_MOUNT=%s. One place knows where "
+            "the camera is (CONSTRAINTS 7bis); a build that reads two viewpoints is "
+            "the hybrid this branch exists to end." % (override, cam))
+    return override
+
+
 _ENV = os.environ.get("HAND_MOUNT", "").strip().lower()
-MOUNT = _ENV if _ENV in MOUNTS else FACING_USER
+MOUNT = resolve_mount(_camera_mount.MOUNT, _ENV)
 
 WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP = 0, 5, 9, 13, 17
 PALM = (WRIST, INDEX_MCP, MIDDLE_MCP, RING_MCP, PINKY_MCP)

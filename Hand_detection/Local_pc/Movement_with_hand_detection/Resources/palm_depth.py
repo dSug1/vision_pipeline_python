@@ -224,6 +224,9 @@ class DepthRatioTracker:
         self.ratio = 1.0          # last reported ratio
         self.in_band = False
         self.exit_run = 0
+        # ⛔ What `update` last decided. `depth_valid` reports THIS, never a
+        # separately-derived condition -- see the property.
+        self._last_valid = False
         # diagnostics, same spirit as PalmFacingTracker's
         self.band_entries = 0
         self.frames_frozen = 0
@@ -231,9 +234,21 @@ class DepthRatioTracker:
 
     @property
     def depth_valid(self):
-        """False while the ratio is held rather than measured. Maps to
-        `HandState.quality.depthValid` when the v2 wire migration lands."""
-        return self.baseline is not None and not self.in_band
+        """False while the ratio is HELD rather than measured. Maps to
+        `HandState.quality.depthValid` when the v2 wire migration lands.
+
+        ⛔⛔ THIS USED TO READ `not self.in_band`, AND `in_band` STOPPED BEING THE
+        GATE. `update()` moved to a PER-SPAN test -- its own comment says *"being
+        edge-on no longer freezes depth on its own"* -- while this property was left
+        keyed on the edge-on band, so the two disagreed in BOTH directions: edge-on
+        with a surviving span (`update` valid, property invalid), and every span
+        collapsed outside the band (`update` holds, property valid).
+        ⚠ It was never wired -- the live snap gate reads `update()`'s returned flag,
+        not this -- so it was a trap laid for the v2 wire migration named above
+        rather than a live defect. Found by review 2026-08-30.
+        ⭐ Now it simply reports what `update()` last decided: one source of truth,
+        and the property cannot drift from the function again."""
+        return self.baseline is not None and self._last_valid
 
     def freeze(self, landmarks):
         """Capture the grab-time baseline. Returns True if it took.
@@ -248,12 +263,27 @@ class DepthRatioTracker:
         if PG.edge_on_measure(landmarks) < self.threshold:
             return False
         self.baseline = spans
+        # ⭐ The baseline frame IS a valid reading by definition: ratio is 1.0 because
+        # the spans are their own denominator. `update`'s own first branch says the
+        # same thing by returning `True` on a successful freeze.
+        self._last_valid = True
         self.ratio = 1.0
         self.in_band = False
         self.exit_run = 0
         return True
 
     def update(self, landmarks, dt_ms=None):
+        """Returns (ratio, valid), and RECORDS `valid` for `depth_valid`.
+
+        ⭐ A thin wrapper over `_update` deliberately: the body below has five return
+        points, and a flag assigned at each of them is a flag that will eventually be
+        missed at one. Recording it here means `depth_valid` and the returned value
+        cannot disagree by construction."""
+        ratio, valid = self._update(landmarks, dt_ms)
+        self._last_valid = bool(valid)
+        return ratio, valid
+
+    def _update(self, landmarks, dt_ms=None):
         """Returns (ratio, valid). Ratio is d/d0 -- >1 nearer, <1 further.
 
         `dt_ms` is the frame interval from `hand_state.frame_dt_ms`, already
@@ -331,6 +361,7 @@ class DepthRatioTracker:
         self.baseline = None
         self.ratio = 1.0
         self.in_band = False
+        self._last_valid = False
         self.exit_run = 0
 
 
